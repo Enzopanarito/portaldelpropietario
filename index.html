@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portal del Propietario - Villa Los Apamates</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f9fafb;
+        }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    </style>
+</head>
+<body class="bg-gray-50">
+
+    <header class="bg-white shadow-sm">
+        <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-800">Portal del Propietario</h1>
+                <p class="text-sm text-gray-500">Condominio Villa Los Apamates</p>
+            </div>
+            <div class="flex items-center gap-4">
+                <span class="text-sm font-medium text-gray-600 hidden sm:inline">Ver como:</span>
+                <select id="userSelector" class="bg-gray-200 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
+                    <!-- Opciones se llenarán con JS -->
+                </select>
+            </div>
+        </div>
+    </header>
+
+    <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        <div id="loading-state" class="mb-8 text-center py-10">
+            <h2 class="text-3xl font-bold text-gray-900">Cargando datos...</h2>
+            <p class="text-lg text-gray-600">Por favor espere un momento.</p>
+        </div>
+
+        <div id="error-state" class="hidden mb-8 text-center py-10 bg-red-50 border border-red-200 rounded-lg">
+             <h2 class="text-3xl font-bold text-red-600">Error</h2>
+             <p id="error-message" class="text-lg text-gray-600 mt-2"></p>
+        </div>
+
+        <div id="content-loaded" class="hidden">
+            <div id="welcome-message" class="mb-8">
+                <!-- Mensaje de bienvenida se inyecta aquí -->
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <!-- Columna Principal: Estado de Cuenta -->
+                <div class="md:col-span-2 space-y-8">
+                    <div class="bg-white p-6 rounded-2xl shadow-md">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4 border-b pb-2">Su Estado de Cuenta Actual</h3>
+                        <div id="debt-summary" class="space-y-3"></div>
+                    </div>
+                    <div class="bg-white p-6 rounded-2xl shadow-md">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4 border-b pb-2">Desglose de Cargos del Mes Actual</h3>
+                        <div id="expenses-breakdown" class="space-y-2"></div>
+                    </div>
+                </div>
+
+                <!-- Columna Lateral: Resumen del Condominio -->
+                <div class="md:col-span-1">
+                    <div class="bg-white p-6 rounded-2xl shadow-md space-y-4">
+                        <h3 class="text-xl font-bold text-gray-800 mb-2 border-b pb-2">Resumen General del Condominio</h3>
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-600 font-medium">💰 Deuda Total Pendiente:</span>
+                            <span id="kpi-deuda-total" class="font-bold text-lg text-sky-600">$0.00</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-600 font-medium">🏠 Propietarios en Mora:</span>
+                            <span id="kpi-propietarios-mora" class="font-bold text-lg text-red-500">0 / 0</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-600 font-medium">📈 % de Solvencia:</span>
+                            <span id="kpi-solvencia" class="font-bold text-lg text-green-500">0%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- CONFIGURACIÓN DE CONEXIÓN (¡NO USAR EN PRODUCCIÓN!) ---
+            const AIRTABLE_PERSONAL_ACCESS_TOKEN = 'patNhtVNNb2T1dywP.36de91cfa4975ff13c059c6d54203fa4551354a71ca201e5a88c85f219608644';
+            const AIRTABLE_BASE_ID = 'app4nE4ReGRi2SuP2';
+            const AIRTABLE_TABLE_PROPIETARIOS = 'Propietarios';
+            const AIRTABLE_TABLE_GASTOS = 'Gastos del Mes';
+
+            let GASTOS_DETALLADOS = [];
+            let propertyData = [];
+
+            // --- Elementos del DOM ---
+            const userSelector = document.getElementById('userSelector');
+            const loadingState = document.getElementById('loading-state');
+            const errorState = document.getElementById('error-state');
+            const errorMessage = document.getElementById('error-message');
+            const contentLoaded = document.getElementById('content-loaded');
+
+            function showError(message) {
+                loadingState.classList.add('hidden');
+                errorMessage.textContent = message;
+                errorState.classList.remove('hidden');
+            }
+
+            function showContent() {
+                loadingState.classList.add('hidden');
+                errorState.classList.add('hidden');
+                contentLoaded.classList.remove('hidden');
+            }
+
+            async function initApp() {
+                if (AIRTABLE_PERSONAL_ACCESS_TOKEN === 'PEGA_TU_TOKEN_AQUÍ' || AIRTABLE_BASE_ID === 'PEGA_TU_BASE_ID_AQUÍ') {
+                    showError("Por favor, edita el archivo HTML y agrega tu Base ID y Token de Airtable en las constantes correspondientes.");
+                    return;
+                }
+
+                try {
+                    const [propietariosRes, gastosRes] = await Promise.all([
+                        fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}`, { headers: { 'Authorization': `Bearer ${AIRTABLE_PERSONAL_ACCESS_TOKEN}` } }),
+                        fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE_GASTOS)}`, { headers: { 'Authorization': `Bearer ${AIRTABLE_PERSONAL_ACCESS_TOKEN}` } })
+                    ]);
+
+                    if (!propietariosRes.ok) throw new Error(`Error al cargar Propietarios: ${propietariosRes.statusText}`);
+                    if (!gastosRes.ok) throw new Error(`Error al cargar Gastos: ${gastosRes.statusText}`);
+                    
+                    const propietariosJson = await propietariosRes.json();
+                    const gastosJson = await gastosRes.json();
+                    
+                    if (!propietariosJson.records || !gastosJson.records) {
+                         throw new Error("La respuesta de Airtable no contiene 'records'. Revisa los nombres de las tablas y los permisos del token.");
+                    }
+                    
+                    propertyData = propietariosJson.records.map(r => ({
+                        id: r.id,
+                        casa: r.fields.Casa,
+                        propietario: r.fields.Propietario,
+                        alicuota: r.fields.Alicuota,
+                        deudaAnterior: r.fields['Deuda Anterior'] || 0,
+                        pagaGasoil: r.fields['Paga Gasoil'] || false,
+                        deudaRestante: r.fields['Deuda Restante'] || 0
+                    }));
+
+                    // --- SOLUCIÓN DEFINITIVA: Clasificar por concepto, no por tipo ---
+                    GASTOS_DETALLADOS = gastosJson.records.map(r => {
+                        const concepto = r.fields.Concepto || '';
+                        return {
+                            concepto: concepto,
+                            monto: r.fields.Monto,
+                            // Si el concepto incluye "gasoil", es especial. Si no, es común.
+                            tipo: concepto.toLowerCase().includes('gasoil') ? 'especial' : 'comun'
+                        };
+                    });
+                    
+                    showContent();
+                    populateUserSelector();
+                    renderPortalForUser(userSelector.value);
+                    updateGlobalKPIs();
+
+                } catch (error) {
+                    console.error("Error detallado al cargar datos:", error);
+                    showError(`No se pudo obtener la data de Airtable. Revisa el Base ID, Token, nombres de las tablas (especialmente "Deuda Restante") y tu conexión a internet.`);
+                }
+            }
+
+            function calculateCurrentMonthCharges(property) {
+                let cuotaBaseTotal = 0;
+                let montoEspecialTotal = 0;
+                
+                GASTOS_DETALLADOS.forEach(gasto => {
+                    if (gasto.tipo === "comun" && gasto.monto && property.alicuota) {
+                        cuotaBaseTotal += gasto.monto * property.alicuota;
+                    } else if (gasto.tipo === "especial" && property.pagaGasoil && gasto.monto) {
+                        const numPagadores = propertyData.filter(p => p.pagaGasoil).length || 1;
+                        montoEspecialTotal += gasto.monto / numPagadores;
+                    }
+                });
+                return { cuotaBaseTotal, montoEspecialTotal };
+            }
+
+            function populateUserSelector() {
+                userSelector.innerHTML = '';
+                propertyData.sort((a, b) => a.casa - b.casa).forEach(p => {
+                    const option = document.createElement('option');
+                    option.value = p.casa;
+                    option.textContent = `Casa ${p.casa} - ${p.propietario}`;
+                    userSelector.appendChild(option);
+                });
+            }
+
+            function renderPortalForUser(casaNum) {
+                const property = propertyData.find(p => p.casa == casaNum);
+                if (!property) return;
+
+                document.getElementById('welcome-message').innerHTML = `
+                    <h2 class="text-3xl font-bold text-gray-900">Bienvenido, ${property.propietario}</h2>
+                    <p class="text-lg text-gray-600">Este es el resumen de su estado de cuenta para la <span class="font-bold">Casa #${property.casa}</span>.</p>
+                `;
+
+                const { cuotaBaseTotal, montoEspecialTotal } = calculateCurrentMonthCharges(property);
+                const totalAPagar = property.deudaRestante;
+
+                document.getElementById('debt-summary').innerHTML = `
+                    <div class="flex justify-between items-baseline">
+                        <span class="text-gray-600">Deuda de Meses Anteriores:</span>
+                        <span class="font-semibold text-gray-800">$${property.deudaAnterior.toFixed(2)}</span>
+                    </div>
+                    <div class="flex justify-between items-baseline">
+                        <span class="text-gray-600">Total Cuota del Mes (por alícuota):</span>
+                        <span class="font-semibold text-gray-800">$${cuotaBaseTotal.toFixed(2)}</span>
+                    </div>
+                    <div class="flex justify-between items-baseline">
+                        <span class="text-gray-600">Cargos Especiales (Gasoil):</span>
+                        <span class="font-semibold text-gray-800">$${montoEspecialTotal.toFixed(2)}</span>
+                    </div>
+                    <div class="flex justify-between items-baseline text-2xl font-bold text-blue-600 border-t pt-3 mt-3">
+                        <span>Total a Pagar:</span>
+                        <span>$${totalAPagar.toFixed(2)}</span>
+                    </div>
+                `;
+
+                let expensesHtml = `<table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Concepto</th>
+                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Costo Total</th>
+                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Su Parte</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">`;
+                
+                const subtotalGastosCondominio = GASTOS_DETALLADOS.reduce((acc, gasto) => acc + (gasto.monto || 0), 0);
+
+                GASTOS_DETALLADOS.forEach(gasto => {
+                    let userShare = 0;
+                    let showRow = false;
+                    const gastoMonto = gasto.monto || 0;
+
+                    if (gasto.tipo === 'comun') {
+                        userShare = (gastoMonto * (property.alicuota || 0));
+                        showRow = true; // Los gastos comunes se muestran a todos
+                    } else if (gasto.tipo === 'especial' && property.pagaGasoil) {
+                        const numPagadores = propertyData.filter(p => p.pagaGasoil).length || 1;
+                        userShare = gastoMonto / numPagadores;
+                        showRow = true;
+                    }
+
+                    if (showRow) {
+                        expensesHtml += `<tr>
+                            <td class="px-4 py-2 text-sm text-gray-700">${gasto.concepto}</td>
+                            <td class="px-4 py-2 text-sm text-gray-700 text-right">$${gastoMonto.toFixed(2)}</td>
+                            <td class="px-4 py-2 text-sm text-gray-700 text-right">$${userShare.toFixed(2)}</td>
+                        </tr>`;
+                    }
+                });
+                
+                expensesHtml += `<tr class="font-bold bg-gray-50">
+                    <td class="px-4 py-2 text-sm text-gray-800">Subtotal Cargos del Mes</td>
+                    <td class="px-4 py-2 text-sm text-gray-800 text-right">$${subtotalGastosCondominio.toFixed(2)}</td>
+                    <td class="px-4 py-2 text-sm text-gray-800 text-right">$${(cuotaBaseTotal + montoEspecialTotal).toFixed(2)}</td>
+                </tr>`;
+                expensesHtml += '</tbody></table>';
+                document.getElementById('expenses-breakdown').innerHTML = expensesHtml;
+            }
+
+            function updateGlobalKPIs() {
+                if(propertyData.length === 0) return;
+                let deudaTotal = 0;
+                let morosos = 0;
+                propertyData.forEach(p => {
+                    const totalDeudaPropiedad = p.deudaRestante || 0;
+                    if (totalDeudaPropiedad > 0.01) {
+                        deudaTotal += totalDeudaPropiedad;
+                        morosos++;
+                    }
+                });
+                const solventes = propertyData.length - morosos;
+
+                document.getElementById('kpi-deuda-total').textContent = `$${deudaTotal.toFixed(2)}`;
+                document.getElementById('kpi-propietarios-mora').textContent = `${morosos} / ${propertyData.length}`;
+                document.getElementById('kpi-solvencia').textContent = `${((solventes / propertyData.length) * 100).toFixed(0)}%`;
+            }
+
+            userSelector.addEventListener('change', (e) => {
+                renderPortalForUser(e.target.value);
+            });
+
+            initApp();
+        });
+    </script>
+</body>
+</html>
