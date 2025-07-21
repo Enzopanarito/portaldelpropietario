@@ -217,7 +217,6 @@
                     updateGlobalKPIs();
 
                 } catch (error) {
-                    console.error("Error detallado al cargar datos:", error);
                     showError(`No se pudo obtener la data de Airtable. Revisa el Base ID, Token, y tu conexión. Error: ${error.message}`);
                 }
             }
