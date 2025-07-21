@@ -1,65 +1,49 @@
-// Ruta del archivo: netlify/functions/gemini.js
+// Ruta: netlify/functions/gemini.js (CON CÓDIGO DE DEPURACIÓN)
 
 exports.handler = async (event) => {
-  // 1. Extrae el "prompt" que envió tu portal desde el cuerpo de la solicitud
+  // --- INICIO DE DEPURACIÓN ---
+  // Esta línea nos mostrará en los logs si la variable existe o no.
+  console.log('Iniciando función gemini...');
+  console.log('Valor de GEMINI_API_KEY:', process.env.GEMINI_API_KEY);
+  // --- FIN DE DEPURACIÓN ---
+
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  if (!apiKey) {
+    // Si la variable no existe, devolvemos un error claro.
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'La variable de entorno GEMINI_API_KEY no se encontró en la configuración de Netlify.' }),
+    };
+  }
+
   let prompt;
   try {
     const body = JSON.parse(event.body);
     prompt = body.prompt;
-    if (!prompt) {
-      throw new Error('El campo "prompt" es requerido.');
-    }
+    if (!prompt) throw new Error('El campo "prompt" es requerido.');
   } catch (error) {
     return {
       statusCode: 400,
       body: JSON.stringify({ error: 'Cuerpo de la solicitud inválido o falta el "prompt".' }),
     };
   }
-
-  // 2. Llama a la API de Gemini de forma segura usando la variable de entorno
-  const apiKey = process.env.GEMINI_API_KEY;
+  
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`;
-
-  if (!apiKey) {
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: 'La variable GEMINI_API_KEY no está configurada en Netlify.' }),
-    };
-  }
 
   try {
     const geminiResponse = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{ text: prompt }],
-        }],
-      }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
     });
-
-    // Si Gemini devuelve un error, pásalo al frontend para más detalles
-    if (!geminiResponse.ok) {
-      const errorData = await geminiResponse.json();
-      return {
-        statusCode: geminiResponse.status,
-        body: JSON.stringify(errorData),
-      };
-    }
 
     const data = await geminiResponse.json();
 
-    // 3. Devuelve la respuesta exitosa de Gemini a tu portal
     return {
-      statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(data), // Tu frontend espera la respuesta completa de Gemini
+      statusCode: geminiResponse.status,
+      body: JSON.stringify(data),
     };
-
   } catch (error) {
     return {
       statusCode: 500,
