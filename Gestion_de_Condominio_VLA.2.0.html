@@ -19,7 +19,10 @@
         .section-content { display: none; }
         .section-content.active { display: block; }
         .modal-backdrop { transition: opacity 0.3s ease; }
-        .toast { transition: opacity 0.5s, transform 0.5s; }
+        .toast { 
+            transition: opacity 0.5s, transform 0.5s; 
+            z-index: 9999;
+        }
         .spinner {
             border: 4px solid rgba(0, 0, 0, 0.1);
             width: 36px;
@@ -45,6 +48,10 @@
         }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
+        .input-error {
+            border-color: #ef4444; /* red-500 */
+            ring-color: #ef4444;
+        }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800">
@@ -177,11 +184,11 @@
                             <form id="add-expense-form" class="space-y-4">
                                 <div>
                                     <label for="expense-concept" class="block text-sm font-medium text-slate-700">Concepto</label>
-                                    <input type="text" id="expense-concept" required class="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" placeholder="Ej: Mantenimiento de bomba, Gasoil">
+                                    <input type="text" id="expense-concept" class="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" placeholder="Ej: Mantenimiento de bomba, Gasoil">
                                 </div>
                                 <div>
                                     <label for="expense-amount" class="block text-sm font-medium text-slate-700">Monto ($)</label>
-                                    <input type="number" id="expense-amount" required class="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" placeholder="Ej: 150.50" step="0.01">
+                                    <input type="number" id="expense-amount" class="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" placeholder="Ej: 150.50" step="0.01">
                                 </div>
                                 <div>
                                     <label for="expense-type" class="block text-sm font-medium text-slate-700">Tipo de Gasto</label>
@@ -371,38 +378,11 @@
     </div>
 
     <script>
-        // --- INSTRUCCIONES IMPORTANTES PARA LA CONFIGURACIÓN DE AIRTABLE ---
-        // Para que esta aplicación funcione, tu base de Airtable debe tener las siguientes tablas y campos EXACTOS:
-        //
-        // Tabla 'Propietarios':
-        // 1. 'Cargos Acumulados': Campo de tipo Moneda (Currency). NO es una fórmula.
-        // 2. 'Pagos': Campo de tipo "Link to another record", vinculado a la tabla 'Pagos'.
-        // 3. 'Total Pagado': Campo de tipo "Rollup" (Compilación).
-        //    - Campo a compilar: El campo 'Pagos'.
-        //    - Campo del registro vinculado: 'Monto Pagado'.
-        //    - Función de agregación: SUM(values).
-        // 4. 'Deuda Restante': Campo de tipo "Formula".
-        //    - Fórmula: {Cargos Acumulados} - {Total Pagado}
-        //
-        // Tabla 'Pagos':
-        // 1. 'ID de Pago': Campo de tipo Autonumérico o Fórmula.
-        // 2. 'Propietario que Paga': Campo de tipo "Link to another record", vinculado a la tabla 'Propietarios'.
-        // 3. 'Monto Pagado': Campo de tipo Moneda (Currency).
-        // 4. 'Fecha de Pago': Campo de tipo Fecha (Date).
-        // 5. 'Metodo de Pago': Campo de tipo Texto/Selección Única.
-        //
-        // Esta aplicación ahora CREARÁ un nuevo registro en la tabla 'Pagos' cada vez que se registre un pago.
-        // --------------------------------------------------------------------
-
         // --- CONFIGURACIÓN DE CONEXIÓN ---
-        const AIRTABLE_PERSONAL_ACCESS_TOKEN = 'patNhtVNNb2T1dywP.36de91cfa4975ff13c059c6d54203fa4551354a71ca201e5a88c85f219608644';
-        const AIRTABLE_BASE_ID = 'app4nE4ReGRi2SuP2';
         const AIRTABLE_TABLE_PROPIETARIOS = 'Propietarios';
         const AIRTABLE_TABLE_GASTOS = 'Gastos del Mes';
-        const AIRTABLE_TABLE_PAGOS = 'Pagos'; // <-- ¡VERIFICA QUE ESTE SEA EL NOMBRE DE TU TABLA DE PAGOS!
+        const AIRTABLE_TABLE_PAGOS = 'Pagos';
         
-        const GEMINI_API_KEY = "AIzaSyA8cjaOGpLDQr-9grS__VGv0lpIWcy5rN8";
-
         let condominioData = [];
         let gastosDelMes = [];
         let solvencyChart, topDebtorsChart;
@@ -416,16 +396,11 @@
 
         // --- Gemini API Helper ---
         async function callGemini(prompt) {
-            if (GEMINI_API_KEY === "PEGA_TU_API_KEY_DE_GEMINI_AQUÍ") {
-                return "Error: La clave de API de Gemini no ha sido configurada. Por favor, edita el archivo HTML.";
-            }
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
-            const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
             try {
-                const response = await fetch(apiUrl, {
+                const response = await fetch('/.netlify/functions/gemini', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify({ prompt })
                 });
                 if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
                 const result = await response.json();
@@ -436,103 +411,56 @@
                     return "No se pudo generar el texto. Inténtalo de nuevo.";
                 }
             } catch (error) {
-                console.error("Error calling Gemini API:", error);
+                console.error("Error calling Gemini function:", error);
                 return "Error de conexión con el servicio de IA.";
             }
         }
 
         // --- Airtable API Helpers ---
-        async function updateAirtableRecords(tableName, recordsToUpdate) {
-            const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}`;
-            const payload = { records: recordsToUpdate };
+        async function airtableFetch(path, options = {}) {
+            const url = `/.netlify/functions/airtable${path}`;
             try {
-                const response = await fetch(url, {
-                    method: 'PATCH',
-                    headers: {
-                        'Authorization': `Bearer ${AIRTABLE_PERSONAL_ACCESS_TOKEN}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(payload)
-                });
+                const response = await fetch(url, options);
                 if (!response.ok) {
                     const errorData = await response.json();
-                    throw new Error(`Error al actualizar registros: ${JSON.stringify(errorData)}`);
+                    throw new Error(`Error de Airtable: ${errorData.error?.message || response.statusText}`);
                 }
                 return await response.json();
             } catch (error) {
-                console.error("Error en updateAirtableRecords:", error);
-                return null;
+                console.error("Error en airtableFetch:", error);
+                throw error;
             }
+        }
+
+        async function updateAirtableRecords(tableName, recordsToUpdate) {
+            return airtableFetch(`/${encodeURIComponent(tableName)}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ records: recordsToUpdate })
+            });
         }
 
         async function createAirtableRecord(tableName, fieldsToCreate) {
-             const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}`;
-             const payload = { records: [{ fields: fieldsToCreate }] };
-             try {
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${AIRTABLE_PERSONAL_ACCESS_TOKEN}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(payload)
-                });
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    return { error: errorData.error }; // Return error object for handling
-                }
-                return await response.json();
-             } catch (error) {
-                console.error("Error en createAirtableRecord:", error);
-                return { error: { message: error.message } };
-             }
+            return airtableFetch(`/${encodeURIComponent(tableName)}`, {
+                method: 'POST',
+                body: JSON.stringify({ records: [{ fields: fieldsToCreate }] })
+            });
         }
 
         async function deleteAirtableRecord(tableName, recordId) {
-            const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}/${recordId}`;
-            try {
-                const response = await fetch(url, {
-                    method: 'DELETE',
-                    headers: {
-                        'Authorization': `Bearer ${AIRTABLE_PERSONAL_ACCESS_TOKEN}`
-                    }
-                });
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(`Error al eliminar registro: ${JSON.stringify(errorData)}`);
-                }
-                return await response.json();
-            } catch (error) {
-                console.error("Error en deleteAirtableRecord:", error);
-                return null;
-            }
+            return airtableFetch(`/${encodeURIComponent(tableName)}/${recordId}`, {
+                method: 'DELETE'
+            });
         }
         
         async function initApp() {
             try {
-                const [propietariosRes, gastosRes] = await Promise.all([
-                    fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}`, { headers: { 'Authorization': `Bearer ${AIRTABLE_PERSONAL_ACCESS_TOKEN}` } }),
-                    fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE_GASTOS)}?view=Gastos%20Mensuales`, { headers: { 'Authorization': `Bearer ${AIRTABLE_PERSONAL_ACCESS_TOKEN}` } })
+                const [propietariosData, gastosData] = await Promise.all([
+                    airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}`),
+                    airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_GASTOS)}?view=Gastos%20Mensuales`)
                 ]);
 
-                if (!propietariosRes.ok || !gastosRes.ok) {
-                    throw new Error("No se pudo obtener la data de Airtable. Revisa el Base ID, Token y nombres de las tablas.");
-                }
-
-                const propietariosJson = await propietariosRes.json();
-                const gastosJson = await gastosRes.json();
-                
-                if (!propietariosJson.records || !gastosJson.records) {
-                     throw new Error("La respuesta de Airtable no contiene 'records'.");
-                }
-
-                gastosDelMes = gastosJson.records; // Keep full records with IDs
-                
-                condominioData = propietariosJson.records.map(r => ({ 
-                    id: r.id, 
-                    ...r.fields 
-                }));
-                
+                gastosDelMes = gastosData.records || [];
+                condominioData = propietariosData.records.map(r => ({ id: r.id, ...r.fields }));
                 condominioData.sort((a, b) => (a.Casa || 0) - (b.Casa || 0));
                 
                 setupUI();
@@ -542,8 +470,7 @@
                 populateOwnerSelector();
 
             } catch (error) {
-                console.error("Error detallado al cargar datos de Airtable:", error);
-                alert("Hubo un error al cargar los datos. Revisa la consola (F12) para más detalles y asegúrate que tu estructura de Airtable coincide con las instrucciones.");
+                alert(`Hubo un error al cargar los datos: ${error.message}. Revisa la consola (F12) para más detalles.`);
             }
         }
 
@@ -749,9 +676,10 @@
             setTimeout(() => modal.style.display = 'none', 300);
         }
 
-        function showToast(message) {
+        function showToast(message, isError = false) {
             const toast = document.getElementById('toast');
             toast.textContent = message;
+            toast.className = `fixed bottom-5 right-5 text-white py-3 px-5 rounded-lg shadow-lg opacity-0 transform translate-y-10 toast ${isError ? 'bg-red-500' : 'bg-green-500'}`;
             toast.classList.remove('opacity-0', 'translate-y-10');
             setTimeout(() => toast.classList.add('opacity-0', 'translate-y-10'), 4000);
         }
@@ -842,8 +770,8 @@
 
         document.getElementById('confirmPaymentBtn').addEventListener('click', async (e) => {
             const button = e.currentTarget;
-            button.disabled = true;
-            button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
+            const amountInput = document.getElementById('partial-amount');
+            amountInput.classList.remove('input-error');
 
             const property = condominioData.find(p => p.id === currentPropertyIdForAction);
             if (!property) return;
@@ -853,18 +781,18 @@
             let paymentAmount = 0;
 
             if (isPartialPayment) {
-                const amountInput = document.getElementById('partial-amount');
                 paymentAmount = parseFloat(amountInput.value);
-
                 if (isNaN(paymentAmount) || paymentAmount <= 0) {
-                    alert('Por favor, ingrese un monto válido.');
-                    button.disabled = false;
-                    button.textContent = 'Registrar Pago';
+                    showToast('Por favor, ingrese un monto válido.', true);
+                    amountInput.classList.add('input-error');
                     return;
                 }
             } else {
                 paymentAmount = currentDebt;
             }
+            
+            button.disabled = true;
+            button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
 
             const paymentRecord = {
                 'Monto Pagado': paymentAmount,
@@ -879,22 +807,22 @@
                 hideModal(paymentModalEl, paymentModalContentEl);
                 initApp();
             } else {
-                showToast('❌ Error al registrar el pago en Airtable.');
-                button.disabled = false;
-                button.textContent = 'Registrar Pago';
+                showToast('❌ Error al registrar el pago en Airtable.', true);
             }
+            button.disabled = false;
+            button.textContent = 'Registrar Pago';
         });
 
         document.getElementById('send-whatsapp-btn').addEventListener('click', () => {
             const property = condominioData.find(p => p.id === currentPropertyIdForAction);
             if (!property || !property.Telefono) {
-                alert('Este propietario no tiene un número de teléfono registrado en Airtable.');
+                showToast('Este propietario no tiene un número de teléfono registrado.', true);
                 return;
             }
             
             const message = document.getElementById('reminder-message-content').textContent;
             if (message.includes('generar un mensaje')) {
-                alert('Por favor, genera un mensaje con la IA antes de enviarlo.');
+                showToast('Por favor, genera un mensaje con la IA antes de enviarlo.', true);
                 return;
             }
             const encodedMessage = encodeURIComponent(message);
@@ -988,7 +916,7 @@ Junta de Condominio Villa Los Apamates`;
                     }
                     successCount += chunk.length;
                 } catch (error) {
-                    showToast(`❌ Error al actualizar un lote de registros. ${error.message}`);
+                    showToast(`❌ Error al actualizar un lote de registros. ${error.message}`, true);
                     return;
                 }
             }
@@ -1001,18 +929,20 @@ Junta de Condominio Villa Los Apamates`;
             e.preventDefault();
             const conceptInput = document.getElementById('expense-concept');
             const amountInput = document.getElementById('expense-amount');
-            const typeInput = document.getElementById('expense-type');
-            const frequencyInput = document.getElementById('expense-frequency');
+            conceptInput.classList.remove('input-error');
+            amountInput.classList.remove('input-error');
 
             const newExpense = {
                 'Concepto': conceptInput.value.trim(),
                 'Monto': parseFloat(amountInput.value),
-                'Tipo de Gasto': typeInput.value,
-                'Frecuencia': frequencyInput.value
+                'Tipo de Gasto': document.getElementById('expense-type').value,
+                'Frecuencia': document.getElementById('expense-frequency').value
             };
 
             if (!newExpense.Concepto || isNaN(newExpense.Monto) || newExpense.Monto <= 0) {
-                alert('Por favor, introduce un concepto y un monto válido.');
+                showToast('Por favor, introduce un concepto y un monto válido.', true);
+                if (!newExpense.Concepto) conceptInput.classList.add('input-error');
+                if (isNaN(newExpense.Monto) || newExpense.Monto <= 0) amountInput.classList.add('input-error');
                 return;
             }
 
@@ -1022,7 +952,7 @@ Junta de Condominio Villa Los Apamates`;
             });
 
             if (selectedOwners.length === 0) {
-                alert('Debe seleccionar al menos un propietario para asignar el gasto.');
+                showToast('Debe seleccionar al menos un propietario para asignar el gasto.', true);
                 return;
             }
             newExpense['Propietarios'] = selectedOwners;
@@ -1039,13 +969,13 @@ Junta de Condominio Villa Los Apamates`;
                 initApp(); // Refresh data without full reload
             } else {
                 if (result.error?.type === 'INVALID_MULTIPLE_CHOICE_OPTIONS') {
-                    showToast('❌ Error: Las opciones de gasto no existen en Airtable. Verifícalas.');
+                    showToast('❌ Error: Las opciones de gasto no existen en Airtable. Verifícalas.', true);
                 } else {
-                    showToast(`❌ Error al añadir el gasto: ${result.error?.message || 'Error desconocido'}`);
+                    showToast(`❌ Error al añadir el gasto: ${result.error?.message || 'Error desconocido'}`, true);
                 }
-                button.disabled = false;
-                button.textContent = 'Añadir Gasto';
             }
+            button.disabled = false;
+            button.textContent = 'Añadir Gasto';
         });
 
         document.getElementById('expensesTableBody').addEventListener('click', async (e) => {
@@ -1057,7 +987,7 @@ Junta de Condominio Villa Los Apamates`;
                     showToast('✅ Gasto eliminado. Actualizando...');
                     initApp(); // Refresh data without full reload
                 } else {
-                    showToast('❌ Error al eliminar el gasto.');
+                    showToast('❌ Error al eliminar el gasto.', true);
                 }
             }
         });
@@ -1102,7 +1032,8 @@ Junta de Condominio Villa Los Apamates`;
 
         document.getElementById('analyze-expenses-btn').addEventListener('click', async () => {
             const contentEl = document.getElementById('analysis-content');
-            showModal(analysisModalEl, analysisModalContentEl);
+            showModal(aiHelpModal, aiHelpModalContent);
+            aiHelpModalTitle.textContent = 'Análisis de Gastos del Mes';
             contentEl.innerHTML = '<div class="flex justify-center items-center h-full"><div class="spinner"></div></div>';
 
             const expensesText = gastosDelMes.map(g => `- ${g.fields.Concepto}: $${(g.fields.Monto || 0).toFixed(2)} (${g.fields['Tipo de Gasto']})`).join('\n');
@@ -1125,7 +1056,7 @@ Junta de Condominio Villa Los Apamates`;
         document.getElementById('generate-announcement-modal-btn').addEventListener('click', () => {
             document.getElementById('announcement-topic').value = '';
             document.getElementById('announcement-result').value = '';
-            showModal(announcementModalEl, announcementModalContentEl);
+            showModal(announcementModal, announcementModalContent);
         });
 
         document.getElementById('generate-announcement-btn').addEventListener('click', async (e) => {
@@ -1134,7 +1065,7 @@ Junta de Condominio Villa Los Apamates`;
             const resultTextarea = document.getElementById('announcement-result');
             
             if (!topic.trim()) {
-                alert('Por favor, introduce un tema para el anuncio.');
+                showToast('Por favor, introduce un tema para el anuncio.', true);
                 return;
             }
 

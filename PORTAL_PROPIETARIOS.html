@@ -132,12 +132,9 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            // --- CONFIGURACIÓN DE CONEXIÓN (¡NO USAR EN PRODUCCIÓN!) ---
-            const AIRTABLE_PERSONAL_ACCESS_TOKEN = 'patNhtVNNb2T1dywP.36de91cfa4975ff13c059c6d54203fa4551354a71ca201e5a88c85f219608644';
-            const AIRTABLE_BASE_ID = 'app4nE4ReGRi2SuP2';
+            // --- CONFIGURACIÓN DE CONEXIÓN ---
             const AIRTABLE_TABLE_PROPIETARIOS = 'Propietarios';
             const AIRTABLE_TABLE_GASTOS = 'Gastos del Mes';
-            const GEMINI_API_KEY = "AIzaSyA8cjaOGpLDQr-9grS__VGv0lpIWcy5rN8";
 
             let propertyData = [];
             let allExpenses = [];
@@ -156,16 +153,11 @@
 
             // --- Gemini API Helper ---
             async function callGemini(prompt) {
-                if (GEMINI_API_KEY === "PEGA_TU_API_KEY_DE_GEMINI_AQUÍ") {
-                    return "Error: La clave de API de Gemini no ha sido configurada. Por favor, edita el archivo HTML.";
-                }
-                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
-                const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
                 try {
-                    const response = await fetch(apiUrl, {
+                    const response = await fetch('/.netlify/functions/gemini', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
+                        body: JSON.stringify({ prompt })
                     });
                     if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
                     const result = await response.json();
@@ -176,13 +168,29 @@
                         return "No se pudo generar el texto. Inténtalo de nuevo.";
                     }
                 } catch (error) {
-                    console.error("Error calling Gemini API:", error);
+                    console.error("Error calling Gemini function:", error);
                     return "Error de conexión con el servicio de IA.";
                 }
             }
 
+            // --- Airtable API Helper ---
+            async function airtableFetch(path) {
+                const url = `/.netlify/functions/airtable${path}`;
+                try {
+                    const response = await fetch(url);
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(`Error de Airtable: ${errorData.error?.message || response.statusText}`);
+                    }
+                    return await response.json();
+                } catch (error) {
+                    console.error("Error en airtableFetch:", error);
+                    throw error;
+                }
+            }
+
             function showError(message) {
-                welcomeScreen.innerHTML = `<div class="text-red-600">${message}</div>`;
+                welcomeScreen.innerHTML = `<div class="text-red-600 p-8">${message}</div>`;
             }
 
             function showMainContent() {
@@ -192,22 +200,17 @@
 
             async function initApp() {
                 try {
-                    const [propietariosRes, gastosRes] = await Promise.all([
-                        fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}`, { headers: { 'Authorization': `Bearer ${AIRTABLE_PERSONAL_ACCESS_TOKEN}` } }),
-                        fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE_GASTOS)}?view=Gastos%20Mensuales`, { headers: { 'Authorization': `Bearer ${AIRTABLE_PERSONAL_ACCESS_TOKEN}` } })
+                    const [propietariosData, gastosData] = await Promise.all([
+                        airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}`),
+                        airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_GASTOS)}?view=Gastos%20Mensuales`)
                     ]);
-
-                    if (!propietariosRes.ok || !gastosRes.ok) throw new Error("Error al cargar datos iniciales.");
                     
-                    const propietariosJson = await propietariosRes.json();
-                    const gastosJson = await gastosRes.json();
-                    
-                    if (!propietariosJson.records || !gastosJson.records) {
+                    if (!propietariosData.records || !gastosData.records) {
                          throw new Error("La respuesta de Airtable no contiene 'records'.");
                     }
                     
-                    propertyData = propietariosJson.records.map(r => ({ id: r.id, ...r.fields }));
-                    allExpenses = gastosJson.records;
+                    propertyData = propietariosData.records.map(r => ({ id: r.id, ...r.fields }));
+                    allExpenses = gastosData.records;
                     
                     populateUserSelector(welcomeUserSelector);
                     populateUserSelector(userSelector);
@@ -215,7 +218,7 @@
 
                 } catch (error) {
                     console.error("Error detallado al cargar datos:", error);
-                    showError(`No se pudo obtener la data de Airtable. Revisa el Base ID, Token, y tu conexión.`);
+                    showError(`No se pudo obtener la data de Airtable. Revisa el Base ID, Token, y tu conexión. Error: ${error.message}`);
                 }
             }
 
@@ -244,7 +247,6 @@
 
                 const expensesForMonth = allExpenses;
 
-                // Calculate charges for the current month based on filtered expenses
                 let cuotaComunMes = 0;
                 const gastosComunesMes = expensesForMonth.filter(g => g.fields['Tipo de Gasto'] === 'Gasto Común');
                 gastosComunesMes.forEach(gasto => {
