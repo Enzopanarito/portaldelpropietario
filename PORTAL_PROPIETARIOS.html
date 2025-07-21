@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portal del Propietario - Villa Los Apamates</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc; /* slate-50 */
+        }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        #welcome-screen {
+            background-image: linear-gradient(to top, #f3e7e9 0%, #e3eeff 99%, #e3eeff 100%);
+        }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #0ea5e9;
+            animation: spin 1s ease infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <div id="welcome-screen" class="min-h-screen flex flex-col items-center justify-center p-4 text-center">
+        <img src="https://i.postimg.cc/WpyB1yTb/Logo-VLA.png" alt="Logo Villa Los Apamates" class="w-48 h-auto mb-6">
+        <h1 class="text-4xl font-bold text-slate-900">Bienvenido a Villa Los Apamates</h1>
+        <p class="text-lg text-slate-600 mt-2 mb-8">Su portal de gestión en línea.</p>
+        
+        <div class="w-full max-w-sm mx-auto bg-white p-6 rounded-2xl shadow-xl">
+             <label for="welcomeUserSelector" class="block text-sm font-medium text-slate-700 mb-2">Por favor, seleccione su casa para continuar</label>
+             <select id="welcomeUserSelector" class="bg-slate-100 border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-sky-500 focus:border-sky-500 block w-full p-2.5">
+                <option>Cargando propietarios...</option>
+             </select>
+             <button id="viewStatementBtn" class="mt-4 w-full bg-sky-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-sky-700 transition-colors shadow-sm">
+                Consultar Estado de Cuenta
+             </button>
+        </div>
+    </div>
+
+
+    <div id="main-content" class="hidden">
+        <header class="bg-white shadow-md">
+            <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+                <div class="flex items-center gap-3">
+                    <img src="https://i.postimg.cc/WpyB1yTb/Logo-VLA.png" alt="Logo Villa Los Apamates" class="w-12 h-auto">
+                    <div>
+                        <h1 class="text-xl sm:text-2xl font-bold text-slate-900">Villa Los Apamates</h1>
+                        <p class="text-sm text-slate-500">Portal del Propietario</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <select id="userSelector" class="bg-slate-100 border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-sky-500 focus:border-sky-500 block w-full p-2.5">
+                        <!-- Opciones se llenarán con JS -->
+                    </select>
+                </div>
+            </div>
+        </header>
+
+        <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div id="welcome-message" class="mb-8">
+                <!-- Mensaje de bienvenida se inyecta aquí -->
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <!-- Columna Principal: Estado de Cuenta -->
+                <div class="md:col-span-2 space-y-8">
+                    <div class="bg-white p-6 rounded-2xl shadow-lg">
+                        <h3 class="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Su Estado de Cuenta Actual</h3>
+                        <div id="debt-summary" class="space-y-3"></div>
+                    </div>
+                    <div class="bg-white p-6 rounded-2xl shadow-lg">
+                        <div class="flex justify-between items-center mb-4 border-b pb-2">
+                            <h3 id="expenses-breakdown-title" class="text-xl font-bold text-slate-800">Desglose de Cargos del Mes Actual</h3>
+                            <button id="explain-charges-btn" class="bg-sky-100 text-sky-700 font-semibold py-1 px-3 rounded-lg hover:bg-sky-200 transition-colors text-sm">
+                                ✨ Explicar mis cargos
+                            </button>
+                        </div>
+                        <div id="expenses-breakdown" class="space-y-2"></div>
+                    </div>
+                </div>
+
+                <!-- Columna Lateral: Resumen del Condominio -->
+                <div class="md:col-span-1">
+                    <div class="bg-white p-6 rounded-2xl shadow-lg space-y-4">
+                        <h3 class="text-xl font-bold text-slate-800 mb-2 border-b pb-2">Resumen General</h3>
+                        <div class="flex justify-between items-center">
+                            <span class="text-slate-600 font-medium">💰 Deuda Total:</span>
+                            <span id="kpi-deuda-total" class="font-bold text-lg text-sky-600">$0.00</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-slate-600 font-medium">🏠 En Mora:</span>
+                            <span id="kpi-propietarios-mora" class="font-bold text-lg text-red-500">0 / 0</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-slate-600 font-medium">📈 Solvencia:</span>
+                            <span id="kpi-solvencia" class="font-bold text-lg text-green-500">0%</span>
+                        </div>
+                         <div class="pt-4">
+                            <button id="improve-finances-btn" class="w-full bg-teal-100 text-teal-700 font-semibold py-2 px-4 rounded-lg hover:bg-teal-200 transition-colors text-sm">
+                                ✨ ¿Cómo podemos mejorar?
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal de Análisis de Gastos -->
+    <div id="aiHelpModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg transform transition-all" id="aiHelpModalContent">
+             <div class="p-6">
+                <div class="flex justify-between items-start mb-4">
+                    <h3 id="ai-help-modal-title" class="text-xl font-bold text-slate-900">Asistente de IA</h3>
+                    <button id="closeAiHelpModalBtn" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
+                </div>
+                <div id="ai-help-content" class="mt-4 bg-slate-50 rounded-lg p-4 border border-slate-200 min-h-[250px] max-h-[60vh] overflow-y-auto text-sm text-slate-700 whitespace-pre-wrap">
+                    <!-- Contenido del análisis se inserta aquí -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- CONFIGURACIÓN DE CONEXIÓN (¡NO USAR EN PRODUCCIÓN!) ---
+            const AIRTABLE_PERSONAL_ACCESS_TOKEN = 'patNhtVNNb2T1dywP.36de91cfa4975ff13c059c6d54203fa4551354a71ca201e5a88c85f219608644';
+            const AIRTABLE_BASE_ID = 'app4nE4ReGRi2SuP2';
+            const AIRTABLE_TABLE_PROPIETARIOS = 'Propietarios';
+            const AIRTABLE_TABLE_GASTOS = 'Gastos del Mes';
+            const GEMINI_API_KEY = "AIzaSyA8cjaOGpLDQr-9grS__VGv0lpIWcy5rN8";
+
+            let propertyData = [];
+            let allExpenses = [];
+
+            // --- Elementos del DOM ---
+            const welcomeScreen = document.getElementById('welcome-screen');
+            const mainContent = document.getElementById('main-content');
+            const welcomeUserSelector = document.getElementById('welcomeUserSelector');
+            const viewStatementBtn = document.getElementById('viewStatementBtn');
+            const userSelector = document.getElementById('userSelector');
+            const aiHelpModal = document.getElementById('aiHelpModal');
+            const aiHelpModalContent = document.getElementById('aiHelpModalContent');
+            const closeAiHelpModalBtn = document.getElementById('closeAiHelpModalBtn');
+            const aiHelpModalTitle = document.getElementById('ai-help-modal-title');
+            const aiHelpContent = document.getElementById('ai-help-content');
+
+            // --- Gemini API Helper ---
+            async function callGemini(prompt) {
+                if (GEMINI_API_KEY === "PEGA_TU_API_KEY_DE_GEMINI_AQUÍ") {
+                    return "Error: La clave de API de Gemini no ha sido configurada. Por favor, edita el archivo HTML.";
+                }
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+                const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
+                    const result = await response.json();
+                    if (result.candidates && result.candidates[0]?.content?.parts[0]?.text) {
+                        return result.candidates[0].content.parts[0].text;
+                    } else {
+                        console.error("Unexpected API response structure:", result);
+                        return "No se pudo generar el texto. Inténtalo de nuevo.";
+                    }
+                } catch (error) {
+                    console.error("Error calling Gemini API:", error);
+                    return "Error de conexión con el servicio de IA.";
+                }
+            }
+
+            function showError(message) {
+                welcomeScreen.innerHTML = `<div class="text-red-600">${message}</div>`;
+            }
+
+            function showMainContent() {
+                welcomeScreen.classList.add('hidden');
+                mainContent.classList.remove('hidden');
+            }
+
+            async function initApp() {
+                try {
+                    const [propietariosRes, gastosRes] = await Promise.all([
+                        fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}`, { headers: { 'Authorization': `Bearer ${AIRTABLE_PERSONAL_ACCESS_TOKEN}` } }),
+                        fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE_GASTOS)}?view=Gastos%20Mensuales`, { headers: { 'Authorization': `Bearer ${AIRTABLE_PERSONAL_ACCESS_TOKEN}` } })
+                    ]);
+
+                    if (!propietariosRes.ok || !gastosRes.ok) throw new Error("Error al cargar datos iniciales.");
+                    
+                    const propietariosJson = await propietariosRes.json();
+                    const gastosJson = await gastosRes.json();
+                    
+                    if (!propietariosJson.records || !gastosJson.records) {
+                         throw new Error("La respuesta de Airtable no contiene 'records'.");
+                    }
+                    
+                    propertyData = propietariosJson.records.map(r => ({ id: r.id, ...r.fields }));
+                    allExpenses = gastosJson.records;
+                    
+                    populateUserSelector(welcomeUserSelector);
+                    populateUserSelector(userSelector);
+                    updateGlobalKPIs();
+
+                } catch (error) {
+                    console.error("Error detallado al cargar datos:", error);
+                    showError(`No se pudo obtener la data de Airtable. Revisa el Base ID, Token, y tu conexión.`);
+                }
+            }
+
+            function renderPortalForUser(propertyId) {
+                const property = propertyData.find(p => p.id === propertyId);
+                if (!property) return;
+
+                const currentDate = new Date();
+                const dateString = currentDate.toLocaleString('es-VE', { day: '2-digit', month: 'long', year: 'numeric' });
+                const monthYearString = currentDate.toLocaleString('es-VE', { month: 'long', year: 'numeric' });
+
+                document.getElementById('welcome-message').innerHTML = `
+                    <h2 class="text-3xl font-bold text-slate-900">Bienvenido, ${property.Propietario}</h2>
+                    <p class="text-lg text-slate-600">Este es el resumen de su estado de cuenta para la <span class="font-bold">Casa #${property.Casa}</span>.</p>
+                    <p class="text-md text-slate-500 mt-2">Estado de Cuenta para: <span class="font-semibold">${dateString}</span></p>
+                `;
+
+                const deudaRestante = property['Deuda Restante'] || 0;
+                document.getElementById('debt-summary').innerHTML = `
+                    <div class="flex justify-between items-baseline text-3xl font-bold ${deudaRestante > 0 ? 'text-red-500' : 'text-green-600'} border-t pt-3 mt-3">
+                        <span>Deuda Total Actual:</span>
+                        <span>$${deudaRestante.toFixed(2)}</span>
+                    </div>
+                    <p class="text-xs text-slate-500 text-right">Este es su saldo total a la fecha de hoy.</p>
+                `;
+
+                const expensesForMonth = allExpenses;
+
+                // Calculate charges for the current month based on filtered expenses
+                let cuotaComunMes = 0;
+                const gastosComunesMes = expensesForMonth.filter(g => g.fields['Tipo de Gasto'] === 'Gasto Común');
+                gastosComunesMes.forEach(gasto => {
+                    if ((gasto.fields['Propietarios'] || []).includes(property.id)) {
+                        cuotaComunMes += (gasto.fields.Monto || 0) * (property.Alicuota || 0);
+                    }
+                });
+
+                let cuotaEspecialMes = 0;
+                const gastosEspecialesMes = expensesForMonth.filter(g => g.fields['Tipo de Gasto'] === 'Gasto Especial');
+                gastosEspecialesMes.forEach(gasto => {
+                    const assignedOwners = gasto.fields['Propietarios'] || [];
+                    if (assignedOwners.includes(property.id)) {
+                        const numAssigned = assignedOwners.length;
+                        if (numAssigned > 0) {
+                            cuotaEspecialMes += (gasto.fields.Monto || 0) / numAssigned;
+                        }
+                    }
+                });
+                
+                const totalGastosMes = expensesForMonth.reduce((sum, g) => sum + (g.fields.Monto || 0), 0);
+                document.getElementById('expenses-breakdown-title').textContent = `Desglose de Cargos para ${monthYearString}`;
+
+                let expensesHtml = `<table class="min-w-full">
+                    <thead class="border-b">
+                        <tr>
+                            <th class="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase">Concepto</th>
+                            <th class="px-4 py-2 text-right text-xs font-semibold text-slate-500 uppercase">Costo Total</th>
+                            <th class="px-4 py-2 text-right text-xs font-semibold text-slate-500 uppercase">Su Parte</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200">`;
+
+                if (expensesForMonth.length === 0) {
+                    expensesHtml += `<tr><td colspan="3" class="text-center p-4 text-slate-500">No hay gastos registrados para este mes.</td></tr>`;
+                } else {
+                    gastosComunesMes.forEach(g => {
+                        if ((g.fields['Propietarios'] || []).includes(property.id)) {
+                            expensesHtml += `<tr>
+                                <td class="px-4 py-3 text-sm text-slate-700">${g.fields.Concepto}</td>
+                                <td class="px-4 py-3 text-sm text-slate-500 text-right">$${(g.fields.Monto || 0).toFixed(2)}</td>
+                                <td class="px-4 py-3 text-sm text-slate-700 text-right">$${((g.fields.Monto || 0) * (property.Alicuota || 0)).toFixed(2)}</td>
+                            </tr>`;
+                        }
+                    });
+                    gastosEspecialesMes.forEach(g => {
+                         if ((g.fields['Propietarios'] || []).includes(property.id)) {
+                            const numAssigned = (g.fields['Propietarios'] || []).length || 1;
+                            expensesHtml += `<tr>
+                                <td class="px-4 py-3 text-sm text-slate-700">${g.fields.Concepto}</td>
+                                <td class="px-4 py-3 text-sm text-slate-500 text-right">$${(g.fields.Monto || 0).toFixed(2)}</td>
+                                <td class="px-4 py-3 text-sm text-slate-700 text-right">$${((g.fields.Monto || 0) / numAssigned).toFixed(2)}</td>
+                            </tr>`;
+                        }
+                    });
+                }
+                
+                expensesHtml += `<tr class="font-bold bg-slate-50">
+                    <td class="px-4 py-3 text-sm text-slate-800">Total Cargos del Mes</td>
+                    <td class="px-4 py-3 text-sm text-slate-800 text-right">$${totalGastosMes.toFixed(2)}</td>
+                    <td class="px-4 py-3 text-sm text-slate-800 text-right">$${(cuotaComunMes + cuotaEspecialMes).toFixed(2)}</td>
+                </tr>`;
+                expensesHtml += '</tbody></table>';
+                document.getElementById('expenses-breakdown').innerHTML = expensesHtml;
+            }
+
+            function populateUserSelector(selectorElement) {
+                selectorElement.innerHTML = '';
+                propertyData.sort((a, b) => a.Casa - b.Casa).forEach(p => {
+                    const option = document.createElement('option');
+                    option.value = p.id;
+                    option.textContent = `Casa ${p.Casa} - ${p.Propietario}`;
+                    selectorElement.appendChild(option);
+                });
+            }
+
+            function updateGlobalKPIs() {
+                if(propertyData.length === 0) return;
+                let deudaTotal = 0;
+                let morosos = 0;
+                propertyData.forEach(p => {
+                    const totalDeudaPropiedad = p['Deuda Restante'] || 0;
+                    if (totalDeudaPropiedad > 0.01) {
+                        deudaTotal += totalDeudaPropiedad;
+                        morosos++;
+                    }
+                });
+                const solventes = propertyData.length - morosos;
+
+                document.getElementById('kpi-deuda-total').textContent = `$${deudaTotal.toFixed(2)}`;
+                document.getElementById('kpi-propietarios-mora').textContent = `${morosos} / ${propertyData.length}`;
+                document.getElementById('kpi-solvencia').textContent = `${((solventes / propertyData.length) * 100).toFixed(0)}%`;
+            }
+
+            viewStatementBtn.addEventListener('click', () => {
+                const selectedUserId = welcomeUserSelector.value;
+                userSelector.value = selectedUserId;
+                renderPortalForUser(selectedUserId);
+                showMainContent();
+            });
+
+            userSelector.addEventListener('change', (e) => {
+                renderPortalForUser(e.target.value);
+            });
+
+            closeAiHelpModalBtn.addEventListener('click', () => {
+                aiHelpModal.classList.add('hidden');
+            });
+
+            document.getElementById('explain-charges-btn').addEventListener('click', async () => {
+                aiHelpModalTitle.textContent = 'Explicación de Cargos';
+                aiHelpContent.innerHTML = '<div class="flex justify-center items-center h-full"><div class="spinner"></div></div>';
+                aiHelpModal.classList.remove('hidden');
+
+                const propertyId = userSelector.value;
+                const property = propertyData.find(p => p.id === propertyId);
+                const chargesText = Array.from(document.querySelectorAll('#expenses-breakdown tbody tr'))
+                    .map(row => {
+                        const cells = row.querySelectorAll('td');
+                        if (cells.length === 3) {
+                            return `- ${cells[0].textContent}: Su parte es ${cells[2].textContent}`;
+                        }
+                        return '';
+                    }).join('\n');
+
+                const prompt = `Actúa como un administrador de condominios amigable. Explica los siguientes cargos del mes a un propietario de forma sencilla y clara.
+
+                Mis cargos del mes:
+                ${chargesText}
+
+                Explica qué significa cada línea y por qué es importante para el mantenimiento del condominio. Usa un tono tranquilizador.`;
+
+                const explanation = await callGemini(prompt);
+                aiHelpContent.textContent = explanation;
+            });
+
+            document.getElementById('improve-finances-btn').addEventListener('click', async () => {
+                aiHelpModalTitle.textContent = 'Sugerencias para la Comunidad';
+                aiHelpContent.innerHTML = '<div class="flex justify-center items-center h-full"><div class="spinner"></div></div>';
+                aiHelpModal.classList.remove('hidden');
+
+                const kpiDebt = document.getElementById('kpi-deuda-total').textContent;
+                const kpiDelinquency = document.getElementById('kpi-propietarios-mora').textContent;
+                const kpiSolvency = document.getElementById('kpi-solvencia').textContent;
+
+                const prompt = `Actúa como un consultor de gestión de condominios. Basado en la siguiente situación financiera de un condominio:
+                - Deuda Total: ${kpiDebt}
+                - Propietarios en Mora: ${kpiDelinquency}
+                - Porcentaje de Solvencia: ${kpiSolvency}
+
+                Proporciona 3 sugerencias generales y accionables que la junta de condominio y los residentes podrían tomar para mejorar la salud financiera de la comunidad. Sé breve y directo.`;
+
+                const suggestions = await callGemini(prompt);
+                aiHelpContent.textContent = suggestions;
+            });
+
+            initApp();
+        });
+    </script>
+</body>
+</html>
