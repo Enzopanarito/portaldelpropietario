@@ -424,7 +424,7 @@
             }
 
             debtors.forEach(p => {
-                const message = `*Asunto: Recordatorio de Saldo Pendiente*\n\n📅 _Mensaje generado el ${fechaActualStr}._${discountMessage}\n\nEstimado/a *${p.Propietario}*,\n\nLe contactamos para informarle que, según nuestros registros, su propiedad presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: $${(p['Deuda Restante'] || 0).toFixed(2)}*\n\nAgradecemos su pronta gestión para mantener la solvencia del condominio.\n\nSi desea más información, visite nuestro portal del propietario:\nhttps://villalosapamates.netlify.app\n\n*Nota sobre pagos en Bolívares:* Le recordamos que los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción.\n\nAtentamente,\nLa Junta de Condominio.`;
+                const message = `*Asunto: Recordatorio de Saldo Pendiente*\n\n📅 _Mensaje generado el ${fechaActualStr}._${discountMessage}\n\nEstimado/a *${p.Propietario}*,\n\nLe contactamos para informarle que, según nuestros registros, su propiedad presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: $${(p['Deuda Restante'] || 0).toFixed(2)}*\n\nAgradecemos su pronta gestión para mantener la solvencia del condominio.\n\nSi desea más información, visite nuestro portal del propietario:\nhttps://villalosapamates.netlify.app\n\n*Nota sobre pagos en Bolívares:* Los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción.\n\nAtentamente,\nLa Junta de Condominio.`;
                 window.open(`https://web.whatsapp.com/send?phone=${p.Telefono}&text=${encodeURIComponent(message)}`, '_blank');
             });
         });
@@ -440,7 +440,6 @@
                 const updates = condominioData.map(p => {
                     const previousDebt = p['Deuda Restante'] || 0;
                     const { cuotaComun, cuotaEspecial, beneficio } = calculateCurrentMonthCharges(p);
-                    // LÍNEA CORREGIDA: El descuento solo afecta a la cuota común
                     const finalMonthlyCharge = (cuotaComun - beneficio) + cuotaEspecial;
                     const newAccumulatedCharges = previousDebt + finalMonthlyCharge;
                     
