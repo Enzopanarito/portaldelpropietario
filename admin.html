@@ -54,7 +54,7 @@
         <div class="container mx-auto p-4 sm:p-6 lg:p-8">
             <header class="text-center mb-8">
                 <h1 class="text-3xl sm:text-4xl font-bold text-slate-900">Portal de Gestión: Villa Los Apamates</h1>
-                <p class="mt-2 text-lg text-slate-600">Un centro de comando con cálculos automáticos e inteligencia artificial.</p>
+                <p class="mt-2 text-lg text-slate-600">Un centro de comando con cálculos automáticos.</p>
             </header>
 
             <nav class="flex flex-wrap justify-center gap-2 sm:gap-4 mb-8">
@@ -68,16 +68,9 @@
                      <div class="bg-white p-6 rounded-2xl shadow-lg">
                         <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-1">
                             <h2 class="text-2xl font-bold text-slate-900">Resumen Financiero del Condominio</h2>
-                            <div class="flex gap-2">
-                                <button id="generate-announcement-modal-btn" class="bg-indigo-100 text-indigo-700 font-semibold py-2 px-4 rounded-lg hover:bg-indigo-200 transition-colors whitespace-nowrap text-center text-sm">✨ Redactar Anuncio</button>
-                                <button id="generate-summary-btn" class="bg-sky-100 text-sky-700 font-semibold py-2 px-4 rounded-lg hover:bg-sky-200 transition-colors whitespace-nowrap text-center text-sm">✨ Generar Resumen</button>
-                            </div>
                         </div>
                         <p class="text-slate-600 mb-6">Una vista en tiempo real del estado de la comunidad.</p>
-                        <div id="ai-summary-container" class="hidden bg-slate-50 p-4 rounded-lg mb-6 border border-slate-200">
-                            <h3 class="font-bold text-slate-800 mb-2">Análisis IA del Estado Financiero:</h3>
-                            <div id="ai-summary-content" class="text-slate-700 text-sm"></div>
-                        </div>
+                        
                         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 text-center mb-8">
                             <div class="kpi-card bg-slate-100 p-4 rounded-xl"><p class="text-sm text-slate-500 font-medium">💰 Deuda Total (a hoy)</p><p id="kpi-deuda-total" class="text-3xl font-bold text-sky-600">$0.00</p></div>
                             <div class="kpi-card bg-slate-100 p-4 rounded-xl"><p class="text-sm text-slate-500 font-medium">🏠 Propietarios en Mora</p><p id="kpi-propietarios-mora" class="text-3xl font-bold text-red-500">0 / 15</p></div>
@@ -124,7 +117,7 @@
                                 </form>
                             </div>
                             <div>
-                                <div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold text-slate-800">Gastos Registrados</h3><button id="analyze-expenses-btn" class="bg-teal-100 text-teal-700 font-semibold py-1 px-3 rounded-lg hover:bg-teal-200 transition-colors text-sm">✨ Analizar Gastos</button></div>
+                                <h3 class="text-lg font-semibold text-slate-800 mb-4">Gastos Registrados</h3>
                                 <div class="overflow-y-auto max-h-96 border rounded-lg"><table id="expensesTable" class="min-w-full bg-white divide-y divide-slate-200"><thead class="bg-slate-50 sticky top-0"><tr><th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Concepto</th><th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Monto</th><th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Tipo</th><th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase"></th></tr></thead><tbody id="expensesTableBody" class="bg-white divide-y divide-slate-200"></tbody></table></div>
                             </div>
                         </div>
@@ -137,8 +130,6 @@
         <div id="debtModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden modal-backdrop"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-md transform transition-all scale-95 opacity-0" id="debtModalContent"><div class="p-6"><div class="flex justify-between items-start"><div><h3 class="text-xl font-bold text-slate-900" id="debtModal-title">Desglose de Deuda</h3><p class="text-slate-600" id="debtModal-subtitle"></p></div><button id="closeDebtModalBtn" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button></div><div class="mt-4 border-t border-slate-200 pt-4 max-h-80 overflow-y-auto"><ul class="space-y-2" id="debtModal-list"></ul><div class="mt-4 pt-4 border-t border-slate-200 flex justify-between items-center"><span class="text-lg font-semibold text-slate-500">TOTAL A PAGAR HOY</span><span class="text-2xl font-bold text-sky-600" id="debtModal-total">$0.00</span></div></div></div></div></div>
         <div id="reminderModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden modal-backdrop"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-md transform transition-all scale-95 opacity-0" id="reminderModalContent"><div class="p-6"><div class="flex justify-between items-start mb-4"><h3 class="text-xl font-bold text-slate-900">Vista Previa del Mensaje</h3><button id="closeReminderModalBtn" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button></div><div id="reminder-message-container" class="mt-4 bg-slate-50 rounded-lg p-4 border border-slate-200 min-h-[150px]"><pre class="whitespace-pre-wrap text-sm text-slate-700" id="reminder-message-content" style="font-family: inherit;"></pre></div><div class="mt-6 flex justify-end gap-3"><button id="cancelSendBtn" class="py-2 px-4 bg-slate-200 text-slate-800 font-semibold rounded-lg hover:bg-slate-300 transition-colors">Cancelar</button><button id="send-whatsapp-btn" class="flex items-center gap-2 py-2 px-4 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-whatsapp" viewBox="0 0 16 16"><path d="M13.601 2.326A7.85 7.85 0 0 0 7.994 0C3.627 0 .068 3.558.064 7.926c0 1.399.366 2.76 1.057 3.965L0 16l4.204-1.102a7.9 7.9 0 0 0 3.79.965h.004c4.368 0 7.926-3.558 7.93-7.93A7.9 7.9 0 0 0 13.6 2.326zM7.994 14.521a6.6 6.6 0 0 1-3.356-.92l-.24-.144-2.494.654.666-2.433-.156-.251a6.56 6.56 0 0 1-1.007-3.505c0-3.626 2.957-6.584 6.591-6.584a6.56 6.56 0 0 1 4.66 1.931 6.56 6.56 0 0 1 1.928 4.66c-.004 3.639-2.961 6.592-6.592 6.592m3.615-4.934c-.197-.099-1.17-.578-1.353-.646-.182-.065-.315-.099-.445.099-.133.197-.513.646-.627.775-.114.133-.232.148-.43.05-.197-.1-.836-.308-1.592-.985-.59-.525-.985-1.175-1.103-1.372-.114-.198-.011-.304.088-.403.087-.088.197-.232.296-.346.1-.114.133-.198.198-.33.065-.134.034-.248-.015-.347-.05-.099-.445-1.076-.612-1.47-.16-.389-.323-.335-.445-.34-.114-.007-.247-.007-.38-.007a.73.73 0 0 0-.529.247c-.182.198-.691.677-.691 1.654s.71 1.916.81 2.049c.098.133 1.394 2.132 3.383 2.992.47.205.84.326 1.129.418.475.152.904.129 1.246.08.38-.058 1.171-.48 1.338-.943.164-.464.164-.86.114-.943-.049-.084-.182-.133-.38-.232z"/></svg>Enviar por WhatsApp</button></div></div></div></div>
         <div id="paymentModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden modal-backdrop"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-md transform transition-all scale-95 opacity-0" id="paymentModalContent"><div class="p-6"><div class="flex justify-between items-start mb-4"><h3 class="text-xl font-bold text-slate-900">Registrar Pago</h3><button id="closePaymentModalBtn" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button></div><div id="payment-modal-info" class="mb-4 text-sm"></div><div class="border-b border-slate-200"><nav class="-mb-px flex gap-6" aria-label="Tabs"><span id="tab-total" class="payment-tab active">Pago Total</span><span id="tab-partial" class="payment-tab">Pago Parcial</span></nav></div><div id="content-total" class="tab-content active mt-4"><p class="text-slate-600">Esta acción registrará un pago por el total de la deuda restante. ¿Desea continuar?</p></div><div id="content-partial" class="tab-content mt-4"><label for="partial-amount" class="block text-sm font-medium text-slate-700">Monto del Abono:</label><input type="number" id="partial-amount" class="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" placeholder="Ej: 50.00"></div><div class="mt-6 flex justify-end gap-3"><button id="cancelPaymentBtn" class="py-2 px-4 bg-slate-200 text-slate-800 font-semibold rounded-lg hover:bg-slate-300 transition-colors">Cancelar</button><button id="confirmPaymentBtn" class="py-2 px-4 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors">Registrar Pago</button></div></div></div></div>
-        <div id="analysisModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden modal-backdrop"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg transform transition-all scale-95 opacity-0" id="analysisModalContent"><div class="p-6"><div class="flex justify-between items-start mb-4"><h3 class="text-xl font-bold text-slate-900">Análisis de Gastos del Mes</h3><button id="closeAnalysisModalBtn" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button></div><div id="analysis-content" class="mt-4 bg-slate-50 rounded-lg p-4 border border-slate-200 min-h-[250px] max-h-[60vh] overflow-y-auto text-sm text-slate-700 whitespace-pre-wrap"></div></div></div></div>
-        <div id="announcementModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden modal-backdrop"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg transform transition-all scale-95 opacity-0" id="announcementModalContent"><div class="p-6"><div class="flex justify-between items-start mb-4"><h3 class="text-xl font-bold text-slate-900">Generador de Anuncios</h3><button id="closeAnnouncementModalBtn" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button></div><div class="space-y-4"><div><label for="announcement-topic" class="block text-sm font-medium text-slate-700">Tema del Anuncio</label><input type="text" id="announcement-topic" class="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" placeholder="Ej: Mantenimiento de la piscina, Reunión de condominio, Recordatorio de seguridad"></div><button id="generate-announcement-btn" class="w-full flex justify-center items-center gap-2 py-2 px-4 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-colors">✨ Generar Anuncio con IA</button><div><label for="announcement-result" class="block text-sm font-medium text-slate-700">Anuncio Generado</label><textarea id="announcement-result" rows="8" class="mt-1 block w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" readonly></textarea></div></div></div></div></div>
         <div id="toast" class="fixed bottom-5 right-5 bg-green-500 text-white py-3 px-5 rounded-lg shadow-lg opacity-0 transform translate-y-10 toast"></div>
     </div>
     
@@ -193,25 +184,6 @@
         const TASA_DESCUENTO = 0.10, DIA_LIMITE_PAGO = 10;
         const FECHA_ACTUAL = new Date(), DIA_ACTUAL = FECHA_ACTUAL.getDate();
 
-        async function callGemini(prompt) {
-            try {
-                const response = await fetch('/.netlify/functions/gemini', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt })
-                });
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.error || `Error ${response.statusText}`);
-                }
-                const result = await response.json();
-                return result.candidates[0].content.parts[0].text;
-            } catch (error) {
-                showToast(`Error con la IA: ${error.message}`, true);
-                return "No se pudo generar el texto. Revisa la consola.";
-            }
-        }
-
         async function airtableFetch(path, options = {}) {
             const url = `/.netlify/functions/airtable${path}`;
             const response = await fetch(url, options);
@@ -246,21 +218,26 @@
         }
 
         function setupUI() { document.getElementById('current-date-display').textContent = FECHA_ACTUAL.toLocaleDateString('es-VE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); }
+        
         function calculateCurrentMonthCharges(property) {
-            let cuotaComun = 0, cuotaEspecial = 0;
+            let cuotaComun = 0;
+            let cuotaEspecial = 0;
             gastosDelMes.forEach(gasto => {
                 const assignedOwners = gasto.fields.Propietarios || [];
                 if (assignedOwners.includes(property.id)) {
                     if (gasto.fields['Tipo de Gasto'] === 'Gasto Común') {
                         cuotaComun += (gasto.fields.Monto || 0) * (property.Alicuota || 0);
-                    } else {
-                        cuotaEspecial += (gasto.fields.Monto || 0) / (assignedOwners.length || 1);
+                    } 
+                    else if (gasto.fields['Tipo de Gasto'] === 'Gasto Especial') {
+                        const numAssigned = assignedOwners.length || 1;
+                        cuotaEspecial += (gasto.fields.Monto || 0) / numAssigned;
                     }
                 }
             });
             const beneficio = DIA_ACTUAL <= DIA_LIMITE_PAGO ? cuotaComun * TASA_DESCUENTO : 0;
             return { cuotaComun, cuotaEspecial, beneficio };
         }
+
         function updateDashboard() {
             let deudaTotal = 0, morosos = 0, totalACobrarMes = 0;
             condominioData.forEach(p => {
@@ -328,22 +305,7 @@
                 const diaTexto = diasRestantes === 1 ? 'día' : 'días';
                 discountMessage = `\n⚠️ Tiene ${diasRestantes} ${diaTexto} para aprovechar el descuento por pronto pago.`;
             }
-            const message = `*Recordatorio de Pago*
-
-📅 Mensaje generado automáticamente el ${fechaActualStr}.${discountMessage}
-
-Estimado/a *${property.Propietario}*,
-Según nuestro registro, usted presenta un saldo pendiente de:
-
-*TOTAL A PAGAR: $${(property['Deuda Restante'] || 0).toFixed(2)}*
-
-Le solicitamos cordialmente ponerse al día a la brevedad posible.
-
-Si desea más información, visite nuestro portal del propietario:
-https://villalosapamates.netlify.app
-
-Atentamente,
-La Junta de Condominio.`;
+            const message = `*Recordatorio de Pago*\n\n📅 Mensaje generado automáticamente el ${fechaActualStr}.${discountMessage}\n\nEstimado/a *${property.Propietario}*,\nSegún nuestro registro, usted presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: $${(property['Deuda Restante'] || 0).toFixed(2)}*\n\nLe solicitamos cordialmente ponerse al día a la brevedad posible.\n\nSi desea más información, visite nuestro portal del propietario:\nhttps://villalosapamates.netlify.app\n\nAtentamente,\nLa Junta de Condominio.`;
             contentEl.textContent = message;
             showModal(document.getElementById('reminderModal'));
         }
@@ -395,9 +357,7 @@ La Junta de Condominio.`;
         document.getElementById('cancelSendBtn').addEventListener('click', () => hideModal('reminderModal'));
         document.getElementById('closePaymentModalBtn').addEventListener('click', () => hideModal('paymentModal'));
         document.getElementById('cancelPaymentBtn').addEventListener('click', () => hideModal('paymentModal'));
-        document.getElementById('closeAnalysisModalBtn').addEventListener('click', () => hideModal('analysisModal'));
-        document.getElementById('closeAnnouncementModalBtn').addEventListener('click', () => hideModal('announcementModal'));
-
+        
         ['tab-total', 'tab-partial'].forEach(tabId => {
             document.getElementById(tabId).addEventListener('click', (e) => {
                 document.querySelectorAll('.payment-tab, .tab-content').forEach(el => el.classList.remove('active'));
@@ -556,57 +516,6 @@ La Junta de Condominio.`;
             const areAllChecked = Array.from(checkboxes).every(cb => cb.checked);
             checkboxes.forEach(cb => cb.checked = !areAllChecked);
             e.target.textContent = areAllChecked ? 'Seleccionar Todos' : 'Deseleccionar Todos';
-        });
-
-        // Event listener unificado para botones de IA (excepto recordatorios individuales)
-        document.querySelectorAll('#generate-summary-btn, #analyze-expenses-btn, #generate-announcement-modal-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                const button = e.currentTarget;
-                const buttonId = button.id;
-                button.disabled = true;
-
-                if (buttonId === 'generate-announcement-modal-btn') {
-                    showModal(document.getElementById('announcementModal'));
-                    button.disabled = false;
-                    return;
-                }
-                
-                let modalId, contentId, prompt;
-                 if (buttonId === 'generate-summary-btn') {
-                    modalId = 'ai-summary-container';
-                    contentId = 'ai-summary-content';
-                    const kpiData = { deuda: document.getElementById('kpi-deuda-total').textContent, morosos: document.getElementById('kpi-propietarios-mora').textContent, solvencia: document.getElementById('kpi-solvencia').textContent };
-                    prompt = `Actúa como un administrador de condominios. Basado en: Deuda Total: ${kpiData.deuda}, Propietarios en Mora: ${kpiData.morosos}, % de Solvencia: ${kpiData.solvencia}, escribe un resumen corto y profesional (máx 2 párrafos) sobre el estado financiero del condominio.`;
-                } else { // analyze-expenses-btn
-                    modalId = 'analysisModal';
-                    contentId = 'analysis-content';
-                    const expensesText = gastosDelMes.map(g => `- ${g.fields.Concepto}: $${(g.fields.Monto||0).toFixed(2)}`).join('\n');
-                    prompt = `Actúa como analista financiero. Analiza estos gastos:\n${expensesText}\nProporciona un resumen con: 1. Total de gastos. 2. Principales 3 categorías. 3. Conclusión o recomendación.`;
-                }
-
-                const modal = document.getElementById(modalId);
-                const contentEl = document.getElementById(contentId);
-                
-                modal.classList.remove('hidden');
-                if(modalId === 'analysisModal') showModal(modal);
-                contentEl.innerHTML = '<div class="flex justify-center items-center"><div class="spinner"></div></div>';
-
-                contentEl.textContent = await callGemini(prompt);
-                button.disabled = false;
-            });
-        });
-        
-        document.getElementById('generate-announcement-btn').addEventListener('click', async (e) => {
-            const button = e.currentTarget;
-            const topic = document.getElementById('announcement-topic').value;
-            const resultTextarea = document.getElementById('announcement-result');
-            if (!topic.trim()) { showToast('Introduce un tema.', true); return; }
-            button.disabled = true;
-            button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
-            const prompt = `Actúa como el administrador del Condominio "Villa Los Apamates". Redacta un anuncio profesional sobre: "${topic}". Debe tener título, introducción, detalles lógicos y una despedida cordial firmada por "La Junta de Condominio".`;
-            resultTextarea.value = await callGemini(prompt);
-            button.disabled = false;
-            button.innerHTML = '✨ Generar Anuncio con IA';
         });
 
     </script>
