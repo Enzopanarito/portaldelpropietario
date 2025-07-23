@@ -77,14 +77,10 @@
                         <div id="debt-summary" class="space-y-3"></div>
                     </div>
                     <div class="bg-white p-6 rounded-2xl shadow-lg">
-                        <div class="flex justify-between items-center mb-4 border-b pb-2">
-                            <h3 id="expenses-breakdown-title" class="text-xl font-bold text-slate-800">Desglose de Cargos del Mes Actual</h3>
-                            <button id="explain-charges-btn" class="bg-sky-100 text-sky-700 font-semibold py-1 px-3 rounded-lg hover:bg-sky-200 transition-colors text-sm">
-                                ✨ Explicar mis cargos
-                            </button>
-                        </div>
+                        <h3 id="expenses-breakdown-title" class="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Desglose de Cargos del Mes Actual</h3>
                         <div id="expenses-breakdown" class="space-y-2"></div>
                     </div>
+                    <div id="bcv-notice-container"></div>
                 </div>
 
                 <div class="md:col-span-1">
@@ -102,28 +98,10 @@
                             <span class="text-slate-600 font-medium">📈 Solvencia:</span>
                             <span id="kpi-solvencia" class="font-bold text-lg text-green-500">0%</span>
                         </div>
-                         <div class="pt-4">
-                            <button id="improve-finances-btn" class="w-full bg-teal-100 text-teal-700 font-semibold py-2 px-4 rounded-lg hover:bg-teal-200 transition-colors text-sm">
-                                ✨ ¿Cómo podemos mejorar?
-                            </button>
-                        </div>
                     </div>
                 </div>
             </div>
         </main>
-    </div>
-
-    <div id="aiHelpModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg transform transition-all" id="aiHelpModalContent">
-             <div class="p-6">
-                <div class="flex justify-between items-start mb-4">
-                    <h3 id="ai-help-modal-title" class="text-xl font-bold text-slate-900">Asistente de IA</h3>
-                    <button id="closeAiHelpModalBtn" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
-                </div>
-                <div id="ai-help-content" class="mt-4 bg-slate-50 rounded-lg p-4 border border-slate-200 min-h-[250px] max-h-[60vh] overflow-y-auto text-sm text-slate-700 whitespace-pre-wrap">
-                    </div>
-            </div>
-        </div>
     </div>
 
     <script>
@@ -143,34 +121,8 @@
             const welcomeUserSelector = document.getElementById('welcomeUserSelector');
             const viewStatementBtn = document.getElementById('viewStatementBtn');
             const userSelector = document.getElementById('userSelector');
-            const aiHelpModal = document.getElementById('aiHelpModal');
-            const closeAiHelpModalBtn = document.getElementById('closeAiHelpModalBtn');
-            const aiHelpModalTitle = document.getElementById('ai-help-modal-title');
-            const aiHelpContent = document.getElementById('ai-help-content');
             const discountBannerContainer = document.getElementById('discount-banner-container');
-
-
-            // --- Gemini API Helper ---
-            async function callGemini(prompt) {
-                try {
-                    const response = await fetch('/.netlify/functions/gemini', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ prompt })
-                    });
-                    if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
-                    const result = await response.json();
-                    if (result.candidates && result.candidates[0]?.content?.parts[0]?.text) {
-                        return result.candidates[0].content.parts[0].text;
-                    } else {
-                        console.error("Unexpected API response structure:", result);
-                        return "No se pudo generar el texto. Inténtalo de nuevo.";
-                    }
-                } catch (error) {
-                    console.error("Error calling Gemini function:", error);
-                    return "Error de conexión con el servicio de IA.";
-                }
-            }
+            const bcvNoticeContainer = document.getElementById('bcv-notice-container');
 
             // --- Airtable API Helper ---
             async function airtableFetch(path) {
@@ -243,9 +195,8 @@
                         </div>
                     `;
                 } else {
-                    discountBannerContainer.innerHTML = ''; // Oculta el banner si ya pasó la fecha
+                    discountBannerContainer.innerHTML = '';
                 }
-
 
                 document.getElementById('welcome-message').innerHTML = `
                     <h2 class="text-3xl font-bold text-slate-900">Bienvenido, ${property.Propietario}</h2>
@@ -261,9 +212,8 @@
                     </div>
                     <p class="text-xs text-slate-500 text-right">Este es su saldo total a la fecha de hoy.</p>
                 `;
-
+                
                 const expensesForMonth = allExpenses;
-
                 let cuotaComunMes = 0;
                 const gastosComunesMes = expensesForMonth.filter(g => g.fields['Tipo de Gasto'] === 'Gasto Común');
                 gastosComunesMes.forEach(gasto => {
@@ -271,7 +221,6 @@
                         cuotaComunMes += (gasto.fields.Monto || 0) * (property.Alicuota || 0);
                     }
                 });
-
                 let cuotaEspecialMes = 0;
                 const gastosEspecialesMes = expensesForMonth.filter(g => g.fields['Tipo de Gasto'] === 'Gasto Especial');
                 gastosEspecialesMes.forEach(gasto => {
@@ -283,51 +232,33 @@
                         }
                     }
                 });
-                
                 const totalGastosMes = expensesForMonth.reduce((sum, g) => sum + (g.fields.Monto || 0), 0);
                 document.getElementById('expenses-breakdown-title').textContent = `Desglose de Cargos para ${monthYearString}`;
-
-                let expensesHtml = `<table class="min-w-full">
-                    <thead class="border-b">
-                        <tr>
-                            <th class="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase">Concepto</th>
-                            <th class="px-4 py-2 text-right text-xs font-semibold text-slate-500 uppercase">Costo Total</th>
-                            <th class="px-4 py-2 text-right text-xs font-semibold text-slate-500 uppercase">Su Parte</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-200">`;
-
+                let expensesHtml = `<table class="min-w-full"><thead class="border-b"><tr><th class="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase">Concepto</th><th class="px-4 py-2 text-right text-xs font-semibold text-slate-500 uppercase">Costo Total</th><th class="px-4 py-2 text-right text-xs font-semibold text-slate-500 uppercase">Su Parte</th></tr></thead><tbody class="divide-y divide-slate-200">`;
                 if (expensesForMonth.length === 0) {
                     expensesHtml += `<tr><td colspan="3" class="text-center p-4 text-slate-500">No hay gastos registrados para este mes.</td></tr>`;
                 } else {
-                    gastosComunesMes.forEach(g => {
-                        if ((g.fields['Propietarios'] || []).includes(property.id)) {
-                            expensesHtml += `<tr>
-                                <td class="px-4 py-3 text-sm text-slate-700">${g.fields.Concepto}</td>
-                                <td class="px-4 py-3 text-sm text-slate-500 text-right">$${(g.fields.Monto || 0).toFixed(2)}</td>
-                                <td class="px-4 py-3 text-sm text-slate-700 text-right">$${((g.fields.Monto || 0) * (property.Alicuota || 0)).toFixed(2)}</td>
-                            </tr>`;
-                        }
-                    });
-                    gastosEspecialesMes.forEach(g => {
-                         if ((g.fields['Propietarios'] || []).includes(property.id)) {
-                            const numAssigned = (g.fields['Propietarios'] || []).length || 1;
-                            expensesHtml += `<tr>
-                                <td class="px-4 py-3 text-sm text-slate-700">${g.fields.Concepto}</td>
-                                <td class="px-4 py-3 text-sm text-slate-500 text-right">$${(g.fields.Monto || 0).toFixed(2)}</td>
-                                <td class="px-4 py-3 text-sm text-slate-700 text-right">$${((g.fields.Monto || 0) / numAssigned).toFixed(2)}</td>
-                            </tr>`;
-                        }
-                    });
+                    gastosComunesMes.forEach(g => { if ((g.fields['Propietarios'] || []).includes(property.id)) { expensesHtml += `<tr><td class="px-4 py-3 text-sm text-slate-700">${g.fields.Concepto}</td><td class="px-4 py-3 text-sm text-slate-500 text-right">$${(g.fields.Monto || 0).toFixed(2)}</td><td class="px-4 py-3 text-sm text-slate-700 text-right">$${((g.fields.Monto || 0) * (property.Alicuota || 0)).toFixed(2)}</td></tr>`; } });
+                    gastosEspecialesMes.forEach(g => { if ((g.fields['Propietarios'] || []).includes(property.id)) { const numAssigned = (g.fields['Propietarios'] || []).length || 1; expensesHtml += `<tr><td class="px-4 py-3 text-sm text-slate-700">${g.fields.Concepto}</td><td class="px-4 py-3 text-sm text-slate-500 text-right">$${(g.fields.Monto || 0).toFixed(2)}</td><td class="px-4 py-3 text-sm text-slate-700 text-right">$${((g.fields.Monto || 0) / numAssigned).toFixed(2)}</td></tr>`; } });
                 }
-                
-                expensesHtml += `<tr class="font-bold bg-slate-50">
-                    <td class="px-4 py-3 text-sm text-slate-800">Total Cargos del Mes</td>
-                    <td class="px-4 py-3 text-sm text-slate-800 text-right">$${totalGastosMes.toFixed(2)}</td>
-                    <td class="px-4 py-3 text-sm text-slate-800 text-right">$${(cuotaComunMes + cuotaEspecialMes).toFixed(2)}</td>
-                </tr>`;
+                expensesHtml += `<tr class="font-bold bg-slate-50"><td class="px-4 py-3 text-sm text-slate-800">Total Cargos del Mes</td><td class="px-4 py-3 text-sm text-slate-800 text-right">$${totalGastosMes.toFixed(2)}</td><td class="px-4 py-3 text-sm text-slate-800 text-right">$${(cuotaComunMes + cuotaEspecialMes).toFixed(2)}</td></tr>`;
                 expensesHtml += '</tbody></table>';
                 document.getElementById('expenses-breakdown').innerHTML = expensesHtml;
+
+                // Aviso sobre BCV
+                bcvNoticeContainer.innerHTML = `
+                    <div class="bg-slate-100 border-l-4 border-sky-500 text-slate-700 p-4 rounded-r-lg" role="alert">
+                        <div class="flex items-center">
+                            <div class="py-1">
+                                <svg class="fill-current h-6 w-6 text-sky-500 mr-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M2.93 17.07A10 10 0 1 1 17.07 2.93 10 10 0 0 1 2.93 17.07zM10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16zm-1-9a1 1 0 0 1 1-1h.01a1 1 0 1 1 0 2H10a1 1 0 0 1-1-1zm1-4a1 1 0 0 1 1-1h.01a1 1 0 1 1 0 2H10a1 1 0 0 1-1-1z"/></svg>
+                            </div>
+                            <div>
+                                <p class="font-bold">Nota sobre Pagos en Bolívares</p>
+                                <p class="text-sm">Le recordamos que los pagos efectuados en Bs. se calculan a la tasa oficial del Banco Central de Venezuela (BCV) del día de la transacción.</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
             }
 
             function populateUserSelector(selectorElement) {
@@ -352,7 +283,6 @@
                     }
                 });
                 const solventes = propertyData.length - morosos;
-
                 document.getElementById('kpi-deuda-total').textContent = `$${deudaTotal.toFixed(2)}`;
                 document.getElementById('kpi-propietarios-mora').textContent = `${morosos} / ${propertyData.length}`;
                 document.getElementById('kpi-solvencia').textContent = `${((solventes / propertyData.length) * 100).toFixed(0)}%`;
@@ -367,53 +297,6 @@
 
             userSelector.addEventListener('change', (e) => {
                 renderPortalForUser(e.target.value);
-            });
-
-            closeAiHelpModalBtn.addEventListener('click', () => {
-                aiHelpModal.classList.add('hidden');
-            });
-
-            document.getElementById('explain-charges-btn').addEventListener('click', async () => {
-                aiHelpModalTitle.textContent = 'Explicación de Cargos';
-                aiHelpContent.innerHTML = '<div class="flex justify-center items-center h-full"><div class="spinner"></div></div>';
-                aiHelpModal.classList.remove('hidden');
-
-                const chargesText = Array.from(document.querySelectorAll('#expenses-breakdown tbody tr'))
-                    .map(row => {
-                        const cells = row.querySelectorAll('td');
-                        if (cells.length === 3) return `- ${cells[0].textContent}: Su parte es ${cells[2].textContent}`;
-                        return '';
-                    }).join('\n');
-
-                const prompt = `Actúa como un administrador de condominios amigable. Explica los siguientes cargos del mes a un propietario de forma sencilla y clara.
-
-                Mis cargos del mes:
-                ${chargesText}
-
-                Explica qué significa cada línea y por qué es importante para el mantenimiento del condominio. Usa un tono tranquilizador.`;
-
-                const explanation = await callGemini(prompt);
-                aiHelpContent.textContent = explanation;
-            });
-
-            document.getElementById('improve-finances-btn').addEventListener('click', async () => {
-                aiHelpModalTitle.textContent = 'Sugerencias para la Comunidad';
-                aiHelpContent.innerHTML = '<div class="flex justify-center items-center h-full"><div class="spinner"></div></div>';
-                aiHelpModal.classList.remove('hidden');
-
-                const kpiDebt = document.getElementById('kpi-deuda-total').textContent;
-                const kpiDelinquency = document.getElementById('kpi-propietarios-mora').textContent;
-                const kpiSolvency = document.getElementById('kpi-solvencia').textContent;
-
-                const prompt = `Actúa como un consultor de gestión de condominios. Basado en la siguiente situación financiera de un condominio:
-                - Deuda Total: ${kpiDebt}
-                - Propietarios en Mora: ${kpiDelinquency}
-                - Porcentaje de Solvencia: ${kpiSolvency}
-
-                Proporciona 3 sugerencias generales y accionables que la junta de condominio y los residentes podrían tomar para mejorar la salud financiera de la comunidad. Sé breve y directo.`;
-
-                const suggestions = await callGemini(prompt);
-                aiHelpContent.textContent = suggestions;
             });
 
             initApp();
