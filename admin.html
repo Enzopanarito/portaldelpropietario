@@ -316,23 +316,18 @@
             showModal(document.getElementById('debtModal'));
         }
         
-        // MODIFICACIÓN: Lógica de mensaje predeterminado
         function showReminderModal(propertyId) {
             currentPropertyIdForAction = propertyId;
             const property = condominioData.find(p => p.id === propertyId);
             if (!property) return;
-
             const contentEl = document.getElementById('reminder-message-content');
-            
             const fechaActualStr = FECHA_ACTUAL.toLocaleDateString('es-VE');
             let discountMessage = '';
-
             if (DIA_ACTUAL <= DIA_LIMITE_PAGO) {
                 const diasRestantes = DIA_LIMITE_PAGO - DIA_ACTUAL;
                 const diaTexto = diasRestantes === 1 ? 'día' : 'días';
                 discountMessage = `\n⚠️ Tiene ${diasRestantes} ${diaTexto} para aprovechar el descuento por pronto pago.`;
             }
-
             const message = `*Recordatorio de Pago*
 
 📅 Mensaje generado automáticamente el ${fechaActualStr}.${discountMessage}
@@ -344,9 +339,11 @@ Según nuestro registro, usted presenta un saldo pendiente de:
 
 Le solicitamos cordialmente ponerse al día a la brevedad posible.
 
+Si desea más información, visite nuestro portal del propietario:
+https://villalosapamates.netlify.app
+
 Atentamente,
 La Junta de Condominio.`;
-
             contentEl.textContent = message;
             showModal(document.getElementById('reminderModal'));
         }
@@ -463,7 +460,7 @@ La Junta de Condominio.`;
             }
 
             debtors.forEach(p => {
-                const message = `*Recordatorio de Pago - Condominio Villa Los Apamates*\n\n📅 _Mensaje generado el ${fechaActualStr}._${discountMessage}\n\nEstimado/a *${p.Propietario}*,\n\nLe recordamos que presenta un saldo pendiente de: *$${(p['Deuda Restante'] || 0).toFixed(2)}*.\n\nAtentamente,\nLa Junta de Condominio.`;
+                const message = `*Recordatorio de Pago - Condominio Villa Los Apamates*\n\n📅 _Mensaje generado el ${fechaActualStr}._${discountMessage}\n\nEstimado/a *${p.Propietario}*,\n\nLe recordamos que presenta un saldo pendiente de: *$${(p['Deuda Restante'] || 0).toFixed(2)}*.\n\nSi desea más información, visite nuestro portal del propietario:\nhttps://villalosapamates.netlify.app\n\nAtentamente,\nLa Junta de Condominio.`;
                 window.open(`https://web.whatsapp.com/send?phone=${p.Telefono}&text=${encodeURIComponent(message)}`, '_blank');
             });
         });
