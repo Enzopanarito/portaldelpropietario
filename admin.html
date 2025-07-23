@@ -1,4 +1,4 @@
-DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -131,7 +131,7 @@ DOCTYPE html>
             <footer class="text-center mt-12"><p class="text-sm text-slate-500">Prototipo generado para el Condominio Villa Los Apamates. © 2025</p></footer>
         </div>
 
-        <div id="debtModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden modal-backdrop"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-md transform transition-all scale-95 opacity-0" id="debtModalContent"><div class="p-6"><div class="flex justify-between items-start"><div><h3 class="text-xl font-bold text-slate-900" id="debtModal-title">Desglose de Deuda</h3><p class="text-slate-600" id="debtModal-subtitle"></p></div><button id="closeDebtModalBtn" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button></div><div class="mt-4 border-t border-slate-200 pt-4 max-h-80 overflow-y-auto"><ul class="space-y-2" id="debtModal-list"></ul><div class="mt-4 pt-4 border-t border-slate-200 flex justify-between items-center"><span class="text-lg font-semibold text-slate-500">TOTAL A PAGAR HOY</span><span class="text-2xl font-bold text-sky-600" id="debtModal-total">$0.00</span></div></div></div></div></div>
+        <div id="debtModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden modal-backdrop"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-md transform transition-all scale-95 opacity-0" id="debtModalContent"><div class="p-6"><div class="flex justify-between items-start"><div><h3 class="text-xl font-bold text-slate-900" id="debtModal-title">Estado de Cuenta</h3><p class="text-slate-600" id="debtModal-subtitle"></p></div><button id="closeDebtModalBtn" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button></div><div class="mt-4 border-t border-slate-200 pt-4 max-h-80 overflow-y-auto"><ul class="space-y-2" id="debtModal-list"></ul><div class="mt-4 pt-4 border-t border-slate-200 flex justify-between items-center"><span class="text-lg font-semibold text-slate-500">SALDO A PAGAR HOY</span><span class="text-2xl font-bold text-sky-600" id="debtModal-total">$0.00</span></div></div></div></div></div>
         <div id="reminderModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden modal-backdrop"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-md transform transition-all scale-95 opacity-0" id="reminderModalContent"><div class="p-6"><div class="flex justify-between items-start mb-4"><h3 class="text-xl font-bold text-slate-900">Vista Previa del Mensaje</h3><button id="closeReminderModalBtn" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button></div><div id="reminder-message-container" class="mt-4 bg-slate-50 rounded-lg p-4 border border-slate-200 min-h-[150px]"><pre class="whitespace-pre-wrap text-sm text-slate-700" id="reminder-message-content" style="font-family: inherit;"></pre></div><div class="mt-6 flex justify-end gap-3"><button id="cancelSendBtn" class="py-2 px-4 bg-slate-200 text-slate-800 font-semibold rounded-lg hover:bg-slate-300 transition-colors">Cancelar</button><button id="send-whatsapp-btn" class="flex items-center gap-2 py-2 px-4 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-whatsapp" viewBox="0 0 16 16"><path d="M13.601 2.326A7.85 7.85 0 0 0 7.994 0C3.627 0 .068 3.558.064 7.926c0 1.399.366 2.76 1.057 3.965L0 16l4.204-1.102a7.9 7.9 0 0 0 3.79.965h.004c4.368 0 7.926-3.558 7.93-7.93A7.9 7.9 0 0 0 13.6 2.326zM7.994 14.521a6.6 6.6 0 0 1-3.356-.92l-.24-.144-2.494.654.666-2.433-.156-.251a6.56 6.56 0 0 1-1.007-3.505c0-3.626 2.957-6.584 6.591-6.584a6.56 6.56 0 0 1 4.66 1.931 6.56 6.56 0 0 1 1.928 4.66c-.004 3.639-2.961 6.592-6.592 6.592m3.615-4.934c-.197-.099-1.17-.578-1.353-.646-.182-.065-.315-.099-.445.099-.133.197-.513.646-.627.775-.114.133-.232.148-.43.05-.197-.1-.836-.308-1.592-.985-.59-.525-.985-1.175-1.103-1.372-.114-.198-.011-.304.088-.403.087-.088.197-.232.296-.346.1-.114.133-.198.198-.33.065-.134.034-.248-.015-.347-.05-.099-.445-1.076-.612-1.47-.16-.389-.323-.335-.445-.34-.114-.007-.247-.007-.38-.007a.73.73 0 0 0-.529.247c-.182.198-.691.677-.691 1.654s.71 1.916.81 2.049c.098.133 1.394 2.132 3.383 2.992.47.205.84.326 1.129.418.475.152.904.129 1.246.08.38-.058 1.171-.48 1.338-.943.164-.464.164-.86.114-.943-.049-.084-.182-.133-.38-.232z"/></svg>Enviar por WhatsApp</button></div></div></div></div>
         <div id="paymentModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden modal-backdrop"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-md transform transition-all scale-95 opacity-0" id="paymentModalContent"><div class="p-6"><div class="flex justify-between items-start mb-4"><h3 class="text-xl font-bold text-slate-900">Registrar Pago</h3><button id="closePaymentModalBtn" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button></div><div id="payment-modal-info" class="mb-4 text-sm"></div><div class="border-b border-slate-200"><nav class="-mb-px flex gap-6" aria-label="Tabs"><span id="tab-total" class="payment-tab active">Pago Total</span><span id="tab-partial" class="payment-tab">Pago Parcial</span></nav></div><div id="content-total" class="tab-content active mt-4"><p class="text-slate-600">Esta acción registrará un pago por el total de la deuda restante. ¿Desea continuar?</p></div><div id="content-partial" class="tab-content mt-4"><label for="partial-amount" class="block text-sm font-medium text-slate-700">Monto del Abono:</label><input type="number" id="partial-amount" class="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" placeholder="Ej: 50.00"></div><div class="mt-6 flex justify-end gap-3"><button id="cancelPaymentBtn" class="py-2 px-4 bg-slate-200 text-slate-800 font-semibold rounded-lg hover:bg-slate-300 transition-colors">Cancelar</button><button id="confirmPaymentBtn" class="py-2 px-4 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors">Registrar Pago</button></div></div></div></div>
         <div id="toast" class="fixed bottom-5 right-5 bg-green-500 text-white py-3 px-5 rounded-lg shadow-lg opacity-0 transform translate-y-10 toast"></div>
@@ -190,7 +190,8 @@ DOCTYPE html>
 
         let condominioData = [], gastosDelMes = [], solvencyChart, topDebtorsChart;
         let currentPropertyIdForAction = null;
-        const TASA_DESCUENTO = 0.10, DIA_LIMITE_PAGO = 10;
+        const TASA_RECARGO = 0.10; // This is the 10% buffer/penalty
+        const DIA_LIMITE_PAGO = 10;
         const FECHA_ACTUAL = new Date(), DIA_ACTUAL = FECHA_ACTUAL.getDate();
 
         async function airtableFetch(path, options = {}) {
@@ -228,35 +229,51 @@ DOCTYPE html>
 
         function setupUI() { document.getElementById('current-date-display').textContent = FECHA_ACTUAL.toLocaleDateString('es-VE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); }
         
-        function calculateCurrentMonthCharges(property) {
-            let cuotaComun = 0;
+        // This function now only calculates the PREVIEW for a single property
+        function calculatePreviewCharges(property, totalGastosComunes) {
+            // 1. Calculate the real common charge based on the total
+            const cargoComunReal = totalGastosComunes * (property.Alicuota || 0);
+            
+            // 2. Calculate the penalty/buffer
+            const recargo = cargoComunReal * TASA_RECARGO;
+            
+            // 3. Determine the benefit (which is avoiding the penalty)
+            const beneficio = DIA_ACTUAL <= DIA_LIMITE_PAGO ? recargo : 0;
+
+            // 4. Calculate special charges separately
             let cuotaEspecial = 0;
             gastosDelMes.forEach(gasto => {
-                const assignedOwners = gasto.fields.Propietarios || [];
-                if (assignedOwners.includes(property.id)) {
-                    const tipoDeGasto = gasto.fields['Tipo de Gasto'];
-                    // Using constants for comparison
-                    if (tipoDeGasto === TIPO_GASTO_COMUN) {
-                        cuotaComun += (gasto.fields.Monto || 0) * (property.Alicuota || 0);
-                    } 
-                    else if (tipoDeGasto === TIPO_GASTO_ESPECIAL) {
+                const tipoDeGasto = gasto.fields['Tipo de Gasto'];
+                if (tipoDeGasto === TIPO_GASTO_ESPECIAL) {
+                    const assignedOwners = gasto.fields.Propietarios || [];
+                    if (assignedOwners.includes(property.id)) {
                         const numAssigned = assignedOwners.length || 1;
                         cuotaEspecial += (gasto.fields.Monto || 0) / numAssigned;
                     }
                 }
             });
-            const beneficio = DIA_ACTUAL <= DIA_LIMITE_PAGO ? cuotaComun * TASA_DESCUENTO : 0;
-            return { cuotaComun, cuotaEspecial, beneficio };
+
+            const cargoComunConRecargo = cargoComunReal + recargo;
+            return { cargoComunConRecargo, cuotaEspecial, beneficio };
         }
 
         function updateDashboard() {
             let deudaTotal = 0, morosos = 0, totalACobrarMes = 0;
+
+            // Pre-calculate total common expenses for efficiency
+            const totalGastosComunes = gastosDelMes
+                .filter(g => g.fields['Tipo de Gasto'] === TIPO_GASTO_COMUN)
+                .reduce((sum, g) => sum + (g.fields.Monto || 0), 0);
+
             condominioData.forEach(p => {
                 const deudaRestante = p['Deuda Restante'] || 0;
                 if (deudaRestante > 0.01) { deudaTotal += deudaRestante; morosos++; }
-                const { cuotaComun, cuotaEspecial } = calculateCurrentMonthCharges(p);
-                totalACobrarMes += cuotaComun + cuotaEspecial;
+                
+                // Use the preview function for dashboard calculation
+                const { cargoComunConRecargo, cuotaEspecial, beneficio } = calculatePreviewCharges(p, totalGastosComunes);
+                totalACobrarMes += (cargoComunConRecargo - beneficio) + cuotaEspecial;
             });
+
             document.getElementById('kpi-deuda-total').textContent = `$${deudaTotal.toFixed(2)}`;
             document.getElementById('kpi-propietarios-mora').textContent = `${morosos} / ${condominioData.length}`;
             document.getElementById('kpi-solvencia').textContent = `${(((condominioData.length - morosos) / condominioData.length) * 100).toFixed(0)}%`;
@@ -278,12 +295,11 @@ DOCTYPE html>
         function populateExpensesTable(data) {
             const tableBody = document.getElementById('expensesTableBody');
             
-            // Helper function to show user-friendly names for visual consistency
             const formatExpenseTypeForDisplay = (type) => {
                 if (type === TIPO_GASTO_ESPECIAL) {
-                    return 'Gasto Planta Electrica'; // Show user-friendly name instead of the internal value
+                    return 'Gasto Planta Electrica';
                 }
-                return type || ''; // Return original type or empty string
+                return type || '';
             };
 
             tableBody.innerHTML = !data || data.length === 0 ? `<tr><td colspan="4" class="text-center p-4 text-slate-500">No hay gastos registrados.</td></tr>` : data.map(item => `<tr><td class="px-4 py-3 text-sm">${item.fields.Concepto||''}</td><td class="px-4 py-3 text-sm">$${(item.fields.Monto||0).toFixed(2)}</td><td class="px-4 py-3 text-sm">${formatExpenseTypeForDisplay(item.fields['Tipo de Gasto'])}</td><td class="px-4 py-3 text-right"><button data-id="${item.id}" class="delete-expense-btn text-red-500 hover:text-red-700 font-bold">&times;</button></td></tr>`).join('');
@@ -300,16 +316,33 @@ DOCTYPE html>
             const topDebtors = condominioData.filter(p => (p['Deuda Restante'] || 0) > 0).sort((a, b) => b['Deuda Restante'] - a['Deuda Restante']).slice(0, 5);
             topDebtorsChart = new Chart(document.getElementById('topDebtorsChart').getContext('2d'), { type: 'bar', data: { labels: topDebtors.map(d => `Casa ${d.Casa}`), datasets: [{ label: 'Deuda ($)', data: topDebtors.map(d => d['Deuda Restante']), backgroundColor: '#38bdf8', borderRadius: 6 }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
         }
+        
+        // --- FIX: Updated modal logic to show a real-time statement of account ---
         function showDebtModal(propertyId) {
             const p = condominioData.find(prop => prop.id === propertyId);
             if (!p) return;
-            const { cuotaComun, cuotaEspecial, beneficio } = calculateCurrentMonthCharges(p);
+
             document.getElementById('debtModal-subtitle').textContent = `Casa ${p.Casa} - ${p.Propietario}`;
-            let html = `<li class="flex justify-between"><span>Saldo anterior</span><span class="font-medium">$${(p['Deuda Anterior']||0).toFixed(2)}</span></li><li class="flex justify-between"><span>Cuota Común</span><span class="font-medium">$${cuotaComun.toFixed(2)}</span></li>`;
-            if (cuotaEspecial > 0) html += `<li class="flex justify-between"><span>Cargos Especiales</span><span class="font-medium">$${cuotaEspecial.toFixed(2)}</span></li>`;
-            if (beneficio > 0) html += `<li class="flex justify-between text-green-600"><span>(Beneficio Pronto Pago)</span><span class="font-medium">-$${beneficio.toFixed(2)}</span></li>`;
+            
+            // Get the real-time values directly from the property object
+            const cargosAcumulados = p['Cargos Acumulados'] || 0;
+            const totalPagado = p['Total Pagado'] || 0;
+            const deudaRestante = p['Deuda Restante'] || 0;
+
+            // Build the list to reflect a clear statement
+            let html = `<li class="flex justify-between"><span>Monto Total Facturado</span><span class="font-medium">$${cargosAcumulados.toFixed(2)}</span></li>`;
+            
+            if (totalPagado > 0) {
+                html += `<li class="flex justify-between text-green-600"><span>Pagos Registrados</span><span class="font-medium">-$${totalPagado.toFixed(2)}</span></li>`;
+            } else {
+                html += `<li class="flex justify-between text-slate-500"><span>Pagos Registrados</span><span class="font-medium">$0.00</span></li>`;
+            }
+
+            // The list items now logically lead to the final total.
             document.getElementById('debtModal-list').innerHTML = html;
-            document.getElementById('debtModal-total').textContent = `$${(p['Deuda Restante']||0).toFixed(2)}`;
+            // The final total is always the 'Deuda Restante' field, which is the single source of truth.
+            document.getElementById('debtModal-total').textContent = `$${deudaRestante.toFixed(2)}`;
+            
             showModal(document.getElementById('debtModal'));
         }
         
@@ -453,10 +486,42 @@ DOCTYPE html>
             showToast("Actualizando cargos mensuales... Esto puede tardar.");
 
             try {
+                // 1. Calculate total common expenses for the month ONCE.
+                const totalGastosComunes = gastosDelMes
+                    .filter(g => g.fields['Tipo de Gasto'] === TIPO_GASTO_COMUN)
+                    .reduce((sum, g) => sum + (g.fields.Monto || 0), 0);
+
                 const updates = condominioData.map(p => {
                     const previousDebt = p['Deuda Restante'] || 0;
-                    const { cuotaComun, cuotaEspecial, beneficio } = calculateCurrentMonthCharges(p);
-                    const finalMonthlyCharge = (cuotaComun - beneficio) + cuotaEspecial;
+                    
+                    // --- NEW CALCULATION LOGIC ---
+
+                    // a. Calculate real common charge based on total and alicuota
+                    const cargoComunReal = totalGastosComunes * (p.Alicuota || 0);
+                    
+                    // b. Calculate the 10% penalty/buffer
+                    const recargo = cargoComunReal * TASA_RECARGO;
+                    
+                    // c. The charge to apply includes the penalty
+                    const cargoComunConRecargo = cargoComunReal + recargo;
+
+                    // d. The benefit is avoiding the penalty if paid on time
+                    const beneficio = DIA_ACTUAL <= DIA_LIMITE_PAGO ? recargo : 0;
+
+                    // e. Calculate special charges completely separately
+                    let cargoEspecial = 0;
+                    gastosDelMes.forEach(gasto => {
+                        if (gasto.fields['Tipo de Gasto'] === TIPO_GASTO_ESPECIAL) {
+                            const assignedOwners = gasto.fields.Propietarios || [];
+                            if (assignedOwners.includes(p.id)) {
+                                const numAssigned = assignedOwners.length || 1;
+                                cargoEspecial += (gasto.fields.Monto || 0) / numAssigned;
+                            }
+                        }
+                    });
+
+                    // f. Assemble the final charge for the month
+                    const finalMonthlyCharge = (cargoComunConRecargo - beneficio) + cargoEspecial;
                     const newAccumulatedCharges = previousDebt + finalMonthlyCharge;
                     
                     return {
