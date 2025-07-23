@@ -38,10 +38,10 @@
         <div class="w-full max-w-sm mx-auto bg-white p-6 rounded-2xl shadow-xl">
              <label for="welcomeUserSelector" class="block text-sm font-medium text-slate-700 mb-2">Por favor, seleccione su casa para continuar</label>
              <select id="welcomeUserSelector" class="bg-slate-100 border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-sky-500 focus:border-sky-500 block w-full p-2.5">
-                <option>Cargando propietarios...</option>
+                 <option>Cargando propietarios...</option>
              </select>
              <button id="viewStatementBtn" class="mt-4 w-full bg-sky-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-sky-700 transition-colors shadow-sm">
-                Consultar Estado de Cuenta
+                 Consultar Estado de Cuenta
              </button>
         </div>
     </div>
@@ -59,19 +59,18 @@
                 </div>
                 <div class="flex items-center gap-4">
                     <select id="userSelector" class="bg-slate-100 border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-sky-500 focus:border-sky-500 block w-full p-2.5">
-                        <!-- Opciones se llenarán con JS -->
-                    </select>
+                        </select>
                 </div>
             </div>
         </header>
 
         <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            <div id="welcome-message" class="mb-8">
-                <!-- Mensaje de bienvenida se inyecta aquí -->
-            </div>
+            <div id="welcome-message" class="mb-6">
+                </div>
+            
+            <div id="discount-banner-container" class="mb-8"></div>
             
             <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <!-- Columna Principal: Estado de Cuenta -->
                 <div class="md:col-span-2 space-y-8">
                     <div class="bg-white p-6 rounded-2xl shadow-lg">
                         <h3 class="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Su Estado de Cuenta Actual</h3>
@@ -88,7 +87,6 @@
                     </div>
                 </div>
 
-                <!-- Columna Lateral: Resumen del Condominio -->
                 <div class="md:col-span-1">
                     <div class="bg-white p-6 rounded-2xl shadow-lg space-y-4">
                         <h3 class="text-xl font-bold text-slate-800 mb-2 border-b pb-2">Resumen General</h3>
@@ -115,7 +113,6 @@
         </main>
     </div>
 
-    <!-- Modal de Análisis de Gastos -->
     <div id="aiHelpModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg transform transition-all" id="aiHelpModalContent">
              <div class="p-6">
@@ -124,17 +121,18 @@
                     <button id="closeAiHelpModalBtn" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
                 </div>
                 <div id="ai-help-content" class="mt-4 bg-slate-50 rounded-lg p-4 border border-slate-200 min-h-[250px] max-h-[60vh] overflow-y-auto text-sm text-slate-700 whitespace-pre-wrap">
-                    <!-- Contenido del análisis se inserta aquí -->
-                </div>
+                    </div>
             </div>
         </div>
     </div>
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            // --- CONFIGURACIÓN DE CONEXIÓN ---
+            // --- CONFIGURACIÓN DE CONEXIÓN Y REGLAS ---
             const AIRTABLE_TABLE_PROPIETARIOS = 'Propietarios';
             const AIRTABLE_TABLE_GASTOS = 'Gastos del Mes';
+            const TASA_DESCUENTO = 0.10; // 10% de descuento
+            const DIA_LIMITE_PAGO = 10;   // Día 10 del mes
 
             let propertyData = [];
             let allExpenses = [];
@@ -146,10 +144,11 @@
             const viewStatementBtn = document.getElementById('viewStatementBtn');
             const userSelector = document.getElementById('userSelector');
             const aiHelpModal = document.getElementById('aiHelpModal');
-            const aiHelpModalContent = document.getElementById('aiHelpModalContent');
             const closeAiHelpModalBtn = document.getElementById('closeAiHelpModalBtn');
             const aiHelpModalTitle = document.getElementById('ai-help-modal-title');
             const aiHelpContent = document.getElementById('ai-help-content');
+            const discountBannerContainer = document.getElementById('discount-banner-container');
+
 
             // --- Gemini API Helper ---
             async function callGemini(prompt) {
@@ -228,6 +227,25 @@
                 const currentDate = new Date();
                 const dateString = currentDate.toLocaleString('es-VE', { day: '2-digit', month: 'long', year: 'numeric' });
                 const monthYearString = currentDate.toLocaleString('es-VE', { month: 'long', year: 'numeric' });
+
+                // Lógica del Banner de Descuento
+                const diaActual = currentDate.getDate();
+                if (diaActual <= DIA_LIMITE_PAGO) {
+                    discountBannerContainer.innerHTML = `
+                        <div class="bg-teal-100 border-l-4 border-teal-500 text-teal-800 p-4 rounded-r-lg shadow" role="alert">
+                            <div class="flex items-center">
+                                <div class="py-1"><svg class="fill-current h-6 w-6 text-teal-500 mr-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M2.93 17.07A10 10 0 1 1 17.07 2.93 10 10 0 0 1 2.93 17.07zM10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16zm-1-9a1 1 0 0 1 1-1h.01a1 1 0 1 1 0 2H10a1 1 0 0 1-1-1zm1-4a1 1 0 0 1 1-1h.01a1 1 0 1 1 0 2H10a1 1 0 0 1-1-1z"/></svg></div>
+                                <div>
+                                    <p class="font-bold">¡Buenas Noticias!</p>
+                                    <p class="text-sm">Está a tiempo para disfrutar del descuento del ${TASA_DESCUENTO * 100}% por pronto pago en sus gastos comunes.</p>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    discountBannerContainer.innerHTML = ''; // Oculta el banner si ya pasó la fecha
+                }
+
 
                 document.getElementById('welcome-message').innerHTML = `
                     <h2 class="text-3xl font-bold text-slate-900">Bienvenido, ${property.Propietario}</h2>
@@ -360,14 +378,10 @@
                 aiHelpContent.innerHTML = '<div class="flex justify-center items-center h-full"><div class="spinner"></div></div>';
                 aiHelpModal.classList.remove('hidden');
 
-                const propertyId = userSelector.value;
-                const property = propertyData.find(p => p.id === propertyId);
                 const chargesText = Array.from(document.querySelectorAll('#expenses-breakdown tbody tr'))
                     .map(row => {
                         const cells = row.querySelectorAll('td');
-                        if (cells.length === 3) {
-                            return `- ${cells[0].textContent}: Su parte es ${cells[2].textContent}`;
-                        }
+                        if (cells.length === 3) return `- ${cells[0].textContent}: Su parte es ${cells[2].textContent}`;
                         return '';
                     }).join('\n');
 
