@@ -440,7 +440,8 @@
                 const updates = condominioData.map(p => {
                     const previousDebt = p['Deuda Restante'] || 0;
                     const { cuotaComun, cuotaEspecial, beneficio } = calculateCurrentMonthCharges(p);
-                    const finalMonthlyCharge = cuotaComun + cuotaEspecial - beneficio;
+                    // LÍNEA CORREGIDA: El descuento solo afecta a la cuota común
+                    const finalMonthlyCharge = (cuotaComun - beneficio) + cuotaEspecial;
                     const newAccumulatedCharges = previousDebt + finalMonthlyCharge;
                     
                     return {
