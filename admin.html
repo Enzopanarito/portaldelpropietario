@@ -66,9 +66,7 @@
             <main>
                 <section id="dashboard" class="section-content active">
                      <div class="bg-white p-6 rounded-2xl shadow-lg">
-                        <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-1">
-                            <h2 class="text-2xl font-bold text-slate-900">Resumen Financiero del Condominio</h2>
-                        </div>
+                        <h2 class="text-2xl font-bold text-slate-900 mb-1">Resumen Financiero del Condominio</h2>
                         <p class="text-slate-600 mb-6">Una vista en tiempo real del estado de la comunidad.</p>
                         
                         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 text-center mb-8">
@@ -108,7 +106,7 @@
                             <div>
                                 <h3 class="text-lg font-semibold text-slate-800 mb-4">Añadir Nuevo Gasto</h3>
                                 <form id="add-expense-form" class="space-y-4">
-                                    <div><label for="expense-concept" class="block text-sm font-medium text-slate-700">Concepto</label><input type="text" id="expense-concept" class="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" placeholder="Ej: Mantenimiento de bomba, Gasoil"></div>
+                                    <div><label for="expense-concept" class="block text-sm font-medium text-slate-700">Concepto</label><input type="text" id="expense-concept" class="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" placeholder="Ej: Mantenimiento de bomba"></div>
                                     <div><label for="expense-amount" class="block text-sm font-medium text-slate-700">Monto ($)</label><input type="number" id="expense-amount" class="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" placeholder="Ej: 150.50" step="0.01"></div>
                                     <div><label for="expense-type" class="block text-sm font-medium text-slate-700">Tipo de Gasto</label><select id="expense-type" class="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm"><option>Gasto Común</option><option>Gasto Especial</option></select></div>
                                     <div id="expense-owners-container"><div class="flex justify-between items-center mb-2"><label class="block text-sm font-medium text-slate-700">Propietarios a Cobrar</label><button type="button" id="toggle-all-owners" class="text-xs text-sky-600 font-semibold hover:underline">Deseleccionar Todos</button></div><div id="expense-owners-list" class="mt-2 max-h-40 overflow-y-auto rounded-md border border-slate-300 p-2 space-y-2"></div></div>
@@ -305,7 +303,7 @@
                 const diaTexto = diasRestantes === 1 ? 'día' : 'días';
                 discountMessage = `\n⚠️ Tiene ${diasRestantes} ${diaTexto} para aprovechar el descuento por pronto pago.`;
             }
-            const message = `*Asunto: Recordatorio de Saldo Pendiente - Condominio Villa Los Apamates*\n\n📅 _Mensaje generado el ${fechaActualStr}._${discountMessage}\n\nEstimado/a *${property.Propietario}*,\n\nLe contactamos para informarle que, según nuestros registros, su propiedad presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: $${(property['Deuda Restante'] || 0).toFixed(2)}*\n\nAgradecemos su pronta gestión para mantener la solvencia del condominio.\n\nSi desea más información, visite nuestro portal del propietario:\nhttps://villalosapamates.netlify.app\n\n*Nota sobre pagos en Bolívares:* Le recordamos que los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción.\n\nAtentamente,\nLa Junta de Condominio.`;
+            const message = `*Asunto: Recordatorio de Saldo Pendiente*\n\n📅 _Mensaje generado el ${fechaActualStr}._${discountMessage}\n\nEstimado/a *${property.Propietario}*,\n\nLe contactamos para informarle que, según nuestros registros, su propiedad presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: $${(property['Deuda Restante'] || 0).toFixed(2)}*\n\nAgradecemos su pronta gestión para mantener la solvencia del condominio.\n\nSi desea más información, visite nuestro portal del propietario:\nhttps://villalosapamates.netlify.app\n\n*Nota sobre pagos en Bolívares:* Le recordamos que los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción.\n\nAtentamente,\nLa Junta de Condominio.`;
             contentEl.textContent = message;
             showModal(document.getElementById('reminderModal'));
         }
@@ -420,12 +418,13 @@
             }
 
             debtors.forEach(p => {
-                const message = `*Asunto: Recordatorio de Saldo Pendiente - Condominio Villa Los Apamates*\n\n📅 _Mensaje generado el ${fechaActualStr}._${discountMessage}\n\nEstimado/a *${p.Propietario}*,\n\nLe contactamos para informarle que, según nuestros registros, su propiedad presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: $${(p['Deuda Restante'] || 0).toFixed(2)}*\n\nAgradecemos su pronta gestión para mantener la solvencia del condominio.\n\nSi desea más información, visite nuestro portal del propietario:\nhttps://villalosapamates.netlify.app\n\n*Nota sobre pagos en Bolívares:* Le recordamos que los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción.\n\nAtentamente,\nLa Junta de Condominio.`;
+                const message = `*Asunto: Recordatorio de Saldo Pendiente*\n\n📅 _Mensaje generado el ${fechaActualStr}._${discountMessage}\n\nEstimado/a *${p.Propietario}*,\n\nLe contactamos para informarle que, según nuestros registros, su propiedad presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: $${(p['Deuda Restante'] || 0).toFixed(2)}*\n\nAgradecemos su pronta gestión para mantener la solvencia del condominio.\n\nSi desea más información, visite nuestro portal del propietario:\nhttps://villalosapamates.netlify.app\n\n*Nota sobre pagos en Bolívares:* Le recordamos que los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción.\n\nAtentamente,\nLa Junta de Condominio.`;
                 window.open(`https://web.whatsapp.com/send?phone=${p.Telefono}&text=${encodeURIComponent(message)}`, '_blank');
             });
         });
         
         document.getElementById('update-monthly-charges-btn').addEventListener('click', async (e) => {
+            if (!confirm('¡ATENCIÓN! Esta acción cerrará el mes y calculará la deuda final para TODOS los propietarios. ¿Estás seguro?')) return;
             const button = e.currentTarget;
             button.disabled = true;
             button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
@@ -433,13 +432,22 @@
 
             try {
                 const updates = condominioData.map(p => {
+                    const previousDebt = p['Deuda Restante'] || 0;
                     const { cuotaComun, cuotaEspecial, beneficio } = calculateCurrentMonthCharges(p);
                     const finalMonthlyCharge = cuotaComun + cuotaEspecial - beneficio;
-                    return { id: p.id, fields: { 'Cargos Acumulados': (p['Deuda Restante'] || 0) + finalMonthlyCharge } };
+                    const newAccumulatedCharges = previousDebt + finalMonthlyCharge;
+                    
+                    return {
+                        id: p.id,
+                        fields: {
+                            'Deuda Anterior': previousDebt,
+                            'Cargos Acumulados': newAccumulatedCharges
+                        }
+                    };
                 });
                 await updateAirtableRecords(AIRTABLE_TABLE_PROPIETARIOS, updates);
                 showToast(`✅ Proceso completado. Recargando...`);
-                setTimeout(initApp, 1500);
+                setTimeout(initApp, 2000);
             } catch (error) {
                 showToast(`❌ Error al actualizar cargos: ${error.message}`, true);
             } finally {
