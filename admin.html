@@ -305,7 +305,7 @@
                 const diaTexto = diasRestantes === 1 ? 'día' : 'días';
                 discountMessage = `\n⚠️ Tiene ${diasRestantes} ${diaTexto} para aprovechar el descuento por pronto pago.`;
             }
-            const message = `*Recordatorio de Pago*\n\n📅 Mensaje generado automáticamente el ${fechaActualStr}.${discountMessage}\n\nEstimado/a *${property.Propietario}*,\nSegún nuestro registro, usted presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: $${(property['Deuda Restante'] || 0).toFixed(2)}*\n\nLe solicitamos cordialmente ponerse al día a la brevedad posible.\n\nSi desea más información, visite nuestro portal del propietario:\nhttps://villalosapamates.netlify.app\n\nAtentamente,\nLa Junta de Condominio.`;
+            const message = `*Asunto: Recordatorio de Saldo Pendiente - Condominio Villa Los Apamates*\n\n📅 _Mensaje generado el ${fechaActualStr}._${discountMessage}\n\nEstimado/a *${property.Propietario}*,\n\nLe contactamos para informarle que, según nuestros registros, su propiedad presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: $${(property['Deuda Restante'] || 0).toFixed(2)}*\n\nAgradecemos su pronta gestión para mantener la solvencia del condominio.\n\nSi desea más información, visite nuestro portal del propietario:\nhttps://villalosapamates.netlify.app\n\n*Nota sobre pagos en Bolívares:* Le recordamos que los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción.\n\nAtentamente,\nLa Junta de Condominio.`;
             contentEl.textContent = message;
             showModal(document.getElementById('reminderModal'));
         }
@@ -420,7 +420,7 @@
             }
 
             debtors.forEach(p => {
-                const message = `*Recordatorio de Pago - Condominio Villa Los Apamates*\n\n📅 _Mensaje generado el ${fechaActualStr}._${discountMessage}\n\nEstimado/a *${p.Propietario}*,\n\nLe recordamos que presenta un saldo pendiente de: *$${(p['Deuda Restante'] || 0).toFixed(2)}*.\n\nSi desea más información, visite nuestro portal del propietario:\nhttps://villalosapamates.netlify.app\n\nAtentamente,\nLa Junta de Condominio.`;
+                const message = `*Asunto: Recordatorio de Saldo Pendiente - Condominio Villa Los Apamates*\n\n📅 _Mensaje generado el ${fechaActualStr}._${discountMessage}\n\nEstimado/a *${p.Propietario}*,\n\nLe contactamos para informarle que, según nuestros registros, su propiedad presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: $${(p['Deuda Restante'] || 0).toFixed(2)}*\n\nAgradecemos su pronta gestión para mantener la solvencia del condominio.\n\nSi desea más información, visite nuestro portal del propietario:\nhttps://villalosapamates.netlify.app\n\n*Nota sobre pagos en Bolívares:* Le recordamos que los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción.\n\nAtentamente,\nLa Junta de Condominio.`;
                 window.open(`https://web.whatsapp.com/send?phone=${p.Telefono}&text=${encodeURIComponent(message)}`, '_blank');
             });
         });
@@ -500,15 +500,6 @@
             const isCommon = e.target.value === 'Gasto Común';
             document.querySelectorAll('#expense-owners-list input').forEach(cb => cb.checked = isCommon);
             document.getElementById('toggle-all-owners').textContent = isCommon ? 'Deseleccionar Todos' : 'Seleccionar Todos';
-        });
-
-        document.getElementById('expense-concept').addEventListener('keyup', (e) => {
-            if (document.getElementById('expense-type').value === 'Gasto Especial' && e.target.value.toLowerCase().includes('gasoil')) {
-                document.querySelectorAll('#expense-owners-list input').forEach(cb => {
-                    const owner = condominioData.find(p => p.id === cb.value);
-                    cb.checked = !!(owner && owner['Paga Gasoil']);
-                });
-            }
         });
 
         document.getElementById('toggle-all-owners').addEventListener('click', (e) => {
