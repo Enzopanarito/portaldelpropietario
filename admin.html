@@ -108,7 +108,13 @@
                                 <form id="add-expense-form" class="space-y-4">
                                     <div><label for="expense-concept" class="block text-sm font-medium text-slate-700">Concepto</label><input type="text" id="expense-concept" class="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" placeholder="Ej: Mantenimiento de bomba"></div>
                                     <div><label for="expense-amount" class="block text-sm font-medium text-slate-700">Monto ($)</label><input type="number" id="expense-amount" class="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" placeholder="Ej: 150.50" step="0.01"></div>
-                                    <div><label for="expense-type" class="block text-sm font-medium text-slate-700">Tipo de Gasto</label><select id="expense-type" class="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm"><option>Gasto Común</option><option>Gasto Especial</option></select></div>
+                                    <div>
+                                        <label for="expense-type" class="block text-sm font-medium text-slate-700">Tipo de Gasto</label>
+                                        <select id="expense-type" class="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm">
+                                            <option value="Gasto Común">Gasto Común</option>
+                                            <option value="Gasto Especial">GASTO PLANTA ELECTRICA</option>
+                                        </select>
+                                    </div>
                                     <div id="expense-owners-container"><div class="flex justify-between items-center mb-2"><label class="block text-sm font-medium text-slate-700">Propietarios a Cobrar</label><button type="button" id="toggle-all-owners" class="text-xs text-sky-600 font-semibold hover:underline">Deseleccionar Todos</button></div><div id="expense-owners-list" class="mt-2 max-h-40 overflow-y-auto rounded-md border border-slate-300 p-2 space-y-2"></div></div>
                                     <div><label for="expense-frequency" class="block text-sm font-medium text-slate-700">Frecuencia</label><select id="expense-frequency" class="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm"><option>Eventual</option><option>Fijo</option></select></div>
                                     <button type="submit" class="w-full py-2 px-4 bg-sky-600 text-white font-semibold rounded-lg hover:bg-sky-700 transition-colors">Añadir Gasto</button>
@@ -223,10 +229,10 @@
             gastosDelMes.forEach(gasto => {
                 const assignedOwners = gasto.fields.Propietarios || [];
                 if (assignedOwners.includes(property.id)) {
+                    // Mantenemos la lógica original separada
                     if (gasto.fields['Tipo de Gasto'] === 'Gasto Común') {
                         cuotaComun += (gasto.fields.Monto || 0) * (property.Alicuota || 0);
-                    } 
-                    else if (gasto.fields['Tipo de Gasto'] === 'Gasto Especial') {
+                    } else { // Cualquier otra cosa se trata como especial
                         const numAssigned = assignedOwners.length || 1;
                         cuotaEspecial += (gasto.fields.Monto || 0) / numAssigned;
                     }
