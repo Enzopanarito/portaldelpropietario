@@ -61,6 +61,10 @@
                 <button data-target="dashboard" class="nav-button active text-sm sm:text-base font-semibold py-2 px-4 rounded-full bg-white text-slate-700 shadow-sm hover:bg-slate-100">📊 Dashboard</button>
                 <button data-target="management" class="nav-button text-sm sm:text-base font-semibold py-2 px-4 rounded-full bg-white text-slate-700 shadow-sm hover:bg-slate-100">⚙️ Gestión de Propietarios</button>
                 <button data-target="expenses" class="nav-button text-sm sm:text-base font-semibold py-2 px-4 rounded-full bg-white text-slate-700 shadow-sm hover:bg-slate-100">💸 Gestión de Gastos</button>
+                <button data-target="reports" class="nav-button relative text-sm sm:text-base font-semibold py-2 px-4 rounded-full bg-white text-slate-700 shadow-sm hover:bg-slate-100">
+                    🔔 Reportes de Pago
+                    <span id="pending-reports-badge" class="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white hidden">0</span>
+                </button>
             </nav>
 
             <main>
@@ -68,7 +72,6 @@
                      <div class="bg-white p-6 rounded-2xl shadow-lg">
                          <h2 class="text-2xl font-bold text-slate-900 mb-1">Resumen Financiero del Condominio</h2>
                          <p class="text-slate-600 mb-6">Una vista en tiempo real del estado de la comunidad.</p>
-                         
                          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 text-center mb-8">
                              <div class="kpi-card bg-slate-100 p-4 rounded-xl"><p class="text-sm text-slate-500 font-medium">💰 Deuda Total (a hoy)</p><p id="kpi-deuda-total" class="text-3xl font-bold text-sky-600">$0.00</p></div>
                              <div class="kpi-card bg-slate-100 p-4 rounded-xl"><p class="text-sm text-slate-500 font-medium">🏠 Propietarios en Mora</p><p id="kpi-propietarios-mora" class="text-3xl font-bold text-red-500">0 / 15</p></div>
@@ -127,6 +130,31 @@
                          </div>
                      </div>
                 </section>
+                
+                <section id="reports" class="section-content">
+                    <div class="bg-white p-6 rounded-2xl shadow-lg">
+                        <div class="mb-6">
+                             <h2 class="text-2xl font-bold mb-1 text-slate-900">Pagos Pendientes por Confirmar</h2>
+                             <p class="text-slate-600">Reportes de pago enviados por los propietarios que esperan su aprobación.</p>
+                        </div>
+                        <div id="pending-reports-container" class="overflow-x-auto">
+                            <table id="pendingReportsTable" class="min-w-full bg-white divide-y divide-slate-200">
+                                <thead class="bg-slate-100">
+                                    <tr>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Propietario</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Fecha Reporte</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Monto Reportado</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Referencia</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="pendingReportsTableBody">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
             </main>
             <footer class="text-center mt-12"><p class="text-sm text-slate-500">Prototipo generado para el Condominio Villa Los Apamates. © 2025</p></footer>
         </div>
@@ -183,14 +211,14 @@
         const AIRTABLE_TABLE_PROPIETARIOS = 'Propietarios';
         const AIRTABLE_TABLE_GASTOS = 'Gastos del Mes';
         const AIRTABLE_TABLE_PAGOS = 'Pagos';
+        const AIRTABLE_TABLE_REPORTES = 'Reportes de Pago';
 
-        // Best Practice: Use constants for string literals
         const TIPO_GASTO_COMUN = 'Gasto Común';
         const TIPO_GASTO_ESPECIAL = 'Gasto Especial';
 
-        let condominioData = [], gastosDelMes = [], solvencyChart, topDebtorsChart;
+        let condominioData = [], gastosDelMes = [], pendingReports = [], solvencyChart, topDebtorsChart;
         let currentPropertyIdForAction = null;
-        const TASA_RECARGO = 0.10; // This is the 10% buffer/penalty
+        const TASA_RECARGO = 0.10;
         const DIA_LIMITE_PAGO = 10;
         const FECHA_ACTUAL = new Date(), DIA_ACTUAL = FECHA_ACTUAL.getDate();
 
@@ -208,39 +236,46 @@
         const createAirtableRecord = (tableName, fields) => airtableFetch(`/${encodeURIComponent(tableName)}`, { method: 'POST', body: JSON.stringify({ records: [{ fields }] }) });
         const deleteAirtableRecord = (tableName, id) => airtableFetch(`/${encodeURIComponent(tableName)}/${id}`, { method: 'DELETE' });
         
+        const processAirtableReport = (action, reportId, data = {}) => airtableFetch(`?action=${action}&reportId=${reportId}`, { method: 'POST', body: JSON.stringify(data) });
+
         async function initApp() {
             try {
-                const [propietariosData, gastosData] = await Promise.all([
+                const [propietariosData, gastosData, reportesData] = await Promise.all([
                     airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}`),
-                    airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_GASTOS)}?view=Gastos%20Mensuales`)
+                    airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_GASTOS)}?view=Gastos%20Mensuales`),
+                    airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTES)}?view=Pendientes`)
                 ]);
                 gastosDelMes = gastosData.records || [];
+                pendingReports = reportesData.records || [];
                 condominioData = propietariosData.records.map(r => ({ id: r.id, ...r.fields }));
                 condominioData.sort((a, b) => (a.Casa || 0) - (b.Casa || 0));
+                
                 setupUI();
                 updateDashboard();
                 populateTable(condominioData);
                 populateExpensesTable(gastosDelMes);
                 populateOwnerSelector();
+                populatePendingReportsTable(pendingReports);
             } catch (error) {
                 alert(`Hubo un error al cargar los datos: ${error.message}.`);
             }
         }
 
-        function setupUI() { document.getElementById('current-date-display').textContent = FECHA_ACTUAL.toLocaleDateString('es-VE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); }
+        function setupUI() { 
+            document.getElementById('current-date-display').textContent = FECHA_ACTUAL.toLocaleDateString('es-VE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); 
+            const badge = document.getElementById('pending-reports-badge');
+            if (pendingReports.length > 0) {
+                badge.textContent = pendingReports.length;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
         
-        // This function now only calculates the PREVIEW for a single property
         function calculatePreviewCharges(property, totalGastosComunes) {
-            // 1. Calculate the real common charge based on the total
             const cargoComunReal = totalGastosComunes * (property.Alicuota || 0);
-            
-            // 2. Calculate the penalty/buffer
             const recargo = cargoComunReal * TASA_RECARGO;
-            
-            // 3. Determine the benefit (which is avoiding the penalty)
             const beneficio = DIA_ACTUAL <= DIA_LIMITE_PAGO ? recargo : 0;
-
-            // 4. Calculate special charges separately
             let cuotaEspecial = 0;
             gastosDelMes.forEach(gasto => {
                 const tipoDeGasto = gasto.fields['Tipo de Gasto'];
@@ -252,34 +287,28 @@
                     }
                 }
             });
-
             const cargoComunConRecargo = cargoComunReal + recargo;
             return { cargoComunConRecargo, cuotaEspecial, beneficio };
         }
 
         function updateDashboard() {
             let deudaTotal = 0, morosos = 0, totalACobrarMes = 0;
-
-            // Pre-calculate total common expenses for efficiency
             const totalGastosComunes = gastosDelMes
                 .filter(g => g.fields['Tipo de Gasto'] === TIPO_GASTO_COMUN)
                 .reduce((sum, g) => sum + (g.fields.Monto || 0), 0);
-
             condominioData.forEach(p => {
                 const deudaRestante = p['Deuda Restante'] || 0;
                 if (deudaRestante > 0.01) { deudaTotal += deudaRestante; morosos++; }
-                
-                // Use the preview function for dashboard calculation
                 const { cargoComunConRecargo, cuotaEspecial, beneficio } = calculatePreviewCharges(p, totalGastosComunes);
                 totalACobrarMes += (cargoComunConRecargo - beneficio) + cuotaEspecial;
             });
-
             document.getElementById('kpi-deuda-total').textContent = `$${deudaTotal.toFixed(2)}`;
             document.getElementById('kpi-propietarios-mora').textContent = `${morosos} / ${condominioData.length}`;
             document.getElementById('kpi-solvencia').textContent = `${(((condominioData.length - morosos) / condominioData.length) * 100).toFixed(0)}%`;
             document.getElementById('kpi-cobrar-mes').textContent = `$${totalACobrarMes.toFixed(2)}`;
             createCharts(condominioData.length - morosos, morosos);
         }
+        
         function populateTable(data) {
             const tableBody = document.getElementById('debtorsTableBody');
             tableBody.innerHTML = '';
@@ -292,23 +321,19 @@
                 tableBody.insertRow().innerHTML = `<td class="px-4 py-3 whitespace-nowrap"><span class="font-semibold text-slate-900">${item.Casa || ''}</span></td><td class="px-4 py-3 whitespace-nowrap">${item.Propietario || ''}</td><td class="px-4 py-3 whitespace-nowrap font-medium ${isSolvent ? 'text-green-600' : 'text-red-600'}">$${(item['Deuda Restante'] || 0).toFixed(2)}</td><td class="px-4 py-3 whitespace-nowrap text-sm space-x-3">${actionsHtml}</td>`;
             });
         }
+        
         function populateExpensesTable(data) {
             const tableBody = document.getElementById('expensesTableBody');
-            
-            const formatExpenseTypeForDisplay = (type) => {
-                if (type === TIPO_GASTO_ESPECIAL) {
-                    return 'Gasto Planta Electrica';
-                }
-                return type || '';
-            };
-
+            const formatExpenseTypeForDisplay = (type) => type === TIPO_GASTO_ESPECIAL ? 'Gasto Planta Electrica' : type || '';
             tableBody.innerHTML = !data || data.length === 0 ? `<tr><td colspan="4" class="text-center p-4 text-slate-500">No hay gastos registrados.</td></tr>` : data.map(item => `<tr><td class="px-4 py-3 text-sm">${item.fields.Concepto||''}</td><td class="px-4 py-3 text-sm">$${(item.fields.Monto||0).toFixed(2)}</td><td class="px-4 py-3 text-sm">${formatExpenseTypeForDisplay(item.fields['Tipo de Gasto'])}</td><td class="px-4 py-3 text-right"><button data-id="${item.id}" class="delete-expense-btn text-red-500 hover:text-red-700 font-bold">&times;</button></td></tr>`).join('');
         }
+        
         function populateOwnerSelector() {
             const ownerListDiv = document.getElementById('expense-owners-list');
             ownerListDiv.innerHTML = condominioData.map(owner => `<div class="flex items-center"><input id="owner-${owner.id}" type="checkbox" value="${owner.id}" class="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"><label for="owner-${owner.id}" class="ml-3 block text-sm">${owner.Propietario||`Casa ${owner.Casa}`}</label></div>`).join('');
             document.querySelectorAll('#expense-owners-list input').forEach(cb => cb.checked = true);
         }
+
         function createCharts(solventes, morosos) {
             if (solvencyChart) solvencyChart.destroy();
             solvencyChart = new Chart(document.getElementById('solvencyChart').getContext('2d'), { type: 'doughnut', data: { labels: ['Solventes', 'En Mora'], datasets: [{ data: [solventes, morosos], backgroundColor: ['#22c55e', '#ef4444'], borderColor: '#ffffff', borderWidth: 4 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'bottom' } } } });
@@ -317,38 +342,50 @@
             topDebtorsChart = new Chart(document.getElementById('topDebtorsChart').getContext('2d'), { type: 'bar', data: { labels: topDebtors.map(d => `Casa ${d.Casa}`), datasets: [{ label: 'Deuda ($)', data: topDebtors.map(d => d['Deuda Restante']), backgroundColor: '#38bdf8', borderRadius: 6 }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
         }
         
-        // --- FIX: Updated modal logic to show a real-time statement of account with clear penalty/benefit ---
+        function populatePendingReportsTable(reports) {
+            const tableBody = document.getElementById('pendingReportsTableBody');
+            if (reports.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="5" class="text-center p-6 text-slate-500">🎉 No hay pagos pendientes por confirmar.</td></tr>`;
+                return;
+            }
+            
+            tableBody.innerHTML = reports.map(report => {
+                const fields = report.fields;
+                const ownerName = fields['Nombre Propietario (de Propietario que Reporta)']?.[0] || 'Propietario no encontrado';
+                return `
+                    <tr id="report-row-${report.id}">
+                        <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-slate-900">${ownerName}</td>
+                        <td class="px-4 py-3 whitespace-nowrap text-sm text-slate-600">${new Date(fields['Fecha del Reporte'] + 'T00:00:00').toLocaleDateString('es-VE')}</td>
+                        <td class="px-4 py-3 whitespace-nowrap text-sm font-semibold text-slate-800">$${(fields['Monto Reportado'] || 0).toFixed(2)}</td>
+                        <td class="px-4 py-3 whitespace-nowrap text-sm text-slate-600">${fields['Referencia'] || '-'}</td>
+                        <td class="px-4 py-3 whitespace-nowrap text-sm space-x-2">
+                            <button data-report-id="${report.id}" data-owner-id="${fields['Propietario que Reporta']?.[0]}" data-amount="${fields['Monto Reportado']}" class="confirm-report-btn bg-green-100 text-green-700 font-semibold py-1 px-3 rounded-full hover:bg-green-200">Confirmar</button>
+                            <button data-report-id="${report.id}" class="reject-report-btn bg-red-100 text-red-700 font-semibold py-1 px-3 rounded-full hover:bg-red-200">Rechazar</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
         function showDebtModal(propertyId) {
             const p = condominioData.find(prop => prop.id === propertyId);
             if (!p) return;
-
             document.getElementById('debtModal-subtitle').textContent = `Casa ${p.Casa} - ${p.Propietario}`;
-            
             const deudaAnterior = p['Deuda Anterior'] || 0;
             const totalPagado = p['Total Pagado'] || 0;
             const deudaRestante = p['Deuda Restante'] || 0;
-
             let totalCargosComunesPropietario = 0;
             let html = `<li class="flex justify-between"><span>Deuda del Mes Anterior</span><span class="font-medium">$${deudaAnterior.toFixed(2)}</span></li>`;
             html += `<li class="font-semibold text-slate-800 mt-2 mb-1">Cargos del Mes:</li>`;
-            
-            // Determine the adjustment factor based on the date
             const factorAjuste = DIA_ACTUAL > DIA_LIMITE_PAGO ? (1 + TASA_RECARGO) : 1.0;
-
-            // Loop through each expense to show individual lines
             gastosDelMes.forEach(gasto => {
                 const monto = gasto.fields.Monto || 0;
                 const concepto = gasto.fields.Concepto || 'Gasto sin descripción';
-
                 if (gasto.fields['Tipo de Gasto'] === TIPO_GASTO_COMUN) {
                     let cargoIndividual = monto * (p.Alicuota || 0);
-                    totalCargosComunesPropietario += cargoIndividual; // Accumulate the real amount for the benefit calculation
-                    
-                    // Apply the adjustment factor for display purposes if after the 10th
+                    totalCargosComunesPropietario += cargoIndividual;
                     const cargoMostrado = cargoIndividual * factorAjuste;
-                    
                     html += `<li class="flex justify-between text-sm ml-2"><span>+ ${concepto}</span><span class="font-medium">$${cargoMostrado.toFixed(2)}</span></li>`;
-
                 } else if (gasto.fields['Tipo de Gasto'] === TIPO_GASTO_ESPECIAL) {
                     const assignedOwners = gasto.fields.Propietarios || [];
                     if (assignedOwners.includes(p.id)) {
@@ -358,20 +395,15 @@
                     }
                 }
             });
-
-            // Only show the benefit line if it's on or before the 10th
             if (DIA_ACTUAL <= DIA_LIMITE_PAGO) {
                 const recargo = totalCargosComunesPropietario * TASA_RECARGO;
                 html += `<li class="flex justify-between text-green-600 text-sm ml-2 mt-1"><span>- Beneficio Pronto Pago</span><span class="font-medium">-$${recargo.toFixed(2)}</span></li>`;
             }
-
             if (totalPagado > 0) {
                 html += `<li class="flex justify-between text-green-600 border-t pt-2 mt-2"><span>- Total Pagado</span><span class="font-medium">-$${totalPagado.toFixed(2)}</span></li>`;
             }
-
             document.getElementById('debtModal-list').innerHTML = html;
             document.getElementById('debtModal-total').textContent = `$${deudaRestante.toFixed(2)}`;
-            
             showModal(document.getElementById('debtModal'));
         }
         
@@ -389,251 +421,4 @@
             }
             const message = `*Asunto: Recordatorio de Saldo Pendiente*\n\n📅 _Mensaje generado el ${fechaActualStr}._${discountMessage}\n\nEstimado/a *${property.Propietario}*,\n\nLe contactamos para informarle que, según nuestros registros, su propiedad presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: $${(property['Deuda Restante'] || 0).toFixed(2)}*\n\nAgradecemos su pronta gestión para mantener la solvencia del condominio.\n\nSi desea más información, visite nuestro portal del propietario:\nhttps://villalosapamates.netlify.app\n\n*Nota sobre pagos en Bolívares:* Le recordamos que los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción.\n\nAtentamente,\nLa Junta de Condominio.`;
             contentEl.textContent = message;
-            showModal(document.getElementById('reminderModal'));
-        }
-
-        const showPaymentModal = (id) => {
-            currentPropertyIdForAction = id;
-            const p = condominioData.find(prop => prop.id === id);
-            if (!p) return;
-            document.getElementById('payment-modal-info').innerHTML = `<p>Propietario: <span class="font-semibold">${p.Propietario}</span></p><p>Deuda Actual: <span class="font-semibold">$${(p['Deuda Restante']||0).toFixed(2)}</span></p>`;
-            document.getElementById('partial-amount').value = '';
-            showModal(document.getElementById('paymentModal'));
-        };
-        function showModal(modal) {
-            modal.classList.remove('hidden');
-            const content = modal.querySelector('.transform');
-            setTimeout(() => content.classList.remove('scale-95', 'opacity-0'), 10);
-        }
-        function hideModal(modalId) {
-            const modal = document.getElementById(modalId);
-            const content = modal.querySelector('.transform');
-            content.classList.add('scale-95', 'opacity-0');
-            setTimeout(() => modal.classList.add('hidden'), 300);
-        }
-        function showToast(message, isError = false) {
-            const toast = document.getElementById('toast');
-            toast.textContent = message;
-            toast.className = `fixed bottom-5 right-5 text-white py-3 px-5 rounded-lg shadow-lg opacity-0 transform translate-y-10 toast ${isError ? 'bg-red-500' : 'bg-green-500'}`;
-            toast.classList.remove('opacity-0', 'translate-y-10');
-            setTimeout(() => toast.classList.add('opacity-0', 'translate-y-10'), 4000);
-        }
-        
-        // --- Event Listeners ---
-        document.querySelectorAll('.nav-button').forEach(button => button.addEventListener('click', (e) => {
-            document.querySelectorAll('.nav-button, .section-content').forEach(el => el.classList.remove('active'));
-            e.currentTarget.classList.add('active');
-            document.getElementById(e.currentTarget.dataset.target).classList.add('active');
-        }));
-        document.getElementById('searchInput').addEventListener('keyup', e => populateTable(condominioData.filter(p => (p.Propietario||'').toLowerCase().includes(e.target.value.toLowerCase()) || (p.Casa||'').toString().includes(e.target.value))));
-        document.getElementById('debtorsTableBody').addEventListener('click', (e) => {
-            const target = e.target.closest('button');
-            if (!target) return;
-            const id = target.dataset.id;
-            if (target.classList.contains('view-breakdown-btn')) showDebtModal(id);
-            else if (target.classList.contains('send-reminder-btn')) showReminderModal(id);
-            else if (target.classList.contains('register-payment-btn')) showPaymentModal(id);
-        });
-        document.getElementById('closeDebtModalBtn').addEventListener('click', () => hideModal('debtModal'));
-        document.getElementById('closeReminderModalBtn').addEventListener('click', () => hideModal('reminderModal'));
-        document.getElementById('cancelSendBtn').addEventListener('click', () => hideModal('reminderModal'));
-        document.getElementById('closePaymentModalBtn').addEventListener('click', () => hideModal('paymentModal'));
-        document.getElementById('cancelPaymentBtn').addEventListener('click', () => hideModal('paymentModal'));
-        
-        ['tab-total', 'tab-partial'].forEach(tabId => {
-            document.getElementById(tabId).addEventListener('click', (e) => {
-                document.querySelectorAll('.payment-tab, .tab-content').forEach(el => el.classList.remove('active'));
-                e.currentTarget.classList.add('active');
-                document.getElementById(e.currentTarget.id.replace('tab', 'content')).classList.add('active');
-            });
-        });
-
-        document.getElementById('confirmPaymentBtn').addEventListener('click', async (e) => {
-            const button = e.currentTarget;
-            const amountInput = document.getElementById('partial-amount');
-            amountInput.classList.remove('input-error');
-            const p = condominioData.find(prop => prop.id === currentPropertyIdForAction);
-            if (!p) return;
-            const isPartial = document.getElementById('tab-partial').classList.contains('active');
-            let paymentAmount = isPartial ? parseFloat(amountInput.value) : (p['Deuda Restante'] || 0);
-            if (isPartial && (isNaN(paymentAmount) || paymentAmount <= 0)) {
-                showToast('Ingrese un monto válido.', true);
-                amountInput.classList.add('input-error');
-                return;
-            }
-            button.disabled = true;
-            button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
-            try {
-                await createAirtableRecord(AIRTABLE_TABLE_PAGOS, { 'Monto Pagado': paymentAmount, 'Fecha de Pago': new Date().toISOString().slice(0, 10), 'Propietario que Paga': [p.id] });
-                showToast('✅ Pago registrado. Actualizando...');
-                hideModal('paymentModal');
-                setTimeout(initApp, 1500);
-            } catch (error) {
-                showToast(`❌ Error al registrar pago: ${error.message}`, true);
-            } finally {
-                button.disabled = false;
-                button.textContent = 'Registrar Pago';
-            }
-        });
-
-        document.getElementById('send-whatsapp-btn').addEventListener('click', () => {
-            const p = condominioData.find(prop => prop.id === currentPropertyIdForAction);
-            if (!p || !p.Telefono) { showToast('Propietario sin teléfono registrado.', true); return; }
-            const msg = document.getElementById('reminder-message-content').textContent;
-            window.open(`https://web.whatsapp.com/send?phone=${p.Telefono}&text=${encodeURIComponent(msg)}`, '_blank');
-            hideModal('reminderModal');
-        });
-
-        document.getElementById('send-bulk-reminders-btn').addEventListener('click', () => {
-            const debtors = condominioData.filter(p => (p['Deuda Restante'] || 0) > 0.01 && p.Telefono);
-            if (debtors.length === 0) {
-                showToast('No hay morosos con números de teléfono registrados para notificar.', false);
-                return;
-            }
-            
-            if (!confirm(`Esto abrirá ${debtors.length} pestaña(s) de WhatsApp para enviar recordatorios. ¿Desea continuar?`)) return;
-
-            const fechaActualStr = new Date().toLocaleDateString('es-VE');
-            let discountMessage = '';
-            if (DIA_ACTUAL <= DIA_LIMITE_PAGO) {
-                const diasRestantes = DIA_LIMITE_PAGO - DIA_ACTUAL;
-                const diaTexto = diasRestantes === 1 ? 'día' : 'días';
-                discountMessage = `\n\n⚠️ Le quedan ${diasRestantes} ${diaTexto} para aprovechar el descuento por pronto pago.`;
-            }
-
-            debtors.forEach(p => {
-                const message = `*Asunto: Recordatorio de Saldo Pendiente*\n\n📅 _Mensaje generado el ${fechaActualStr}._${discountMessage}\n\nEstimado/a *${p.Propietario}*,\n\nLe contactamos para informarle que, según nuestros registros, su propiedad presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: $${(p['Deuda Restante'] || 0).toFixed(2)}*\n\nAgradecemos su pronta gestión para mantener la solvencia del condominio.\n\nSi desea más información, visite nuestro portal del propietario:\nhttps://villalosapamates.netlify.app\n\n*Nota sobre pagos en Bolívares:* Los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción.\n\nAtentamente,\nLa Junta de Condominio.`;
-                window.open(`https://web.whatsapp.com/send?phone=${p.Telefono}&text=${encodeURIComponent(message)}`, '_blank');
-            });
-        });
-        
-        document.getElementById('update-monthly-charges-btn').addEventListener('click', async (e) => {
-            if (!confirm('¡ATENCIÓN! Esta acción cerrará el mes y calculará la deuda final para TODOS los propietarios. ¿Estás seguro?')) return;
-            const button = e.currentTarget;
-            button.disabled = true;
-            button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
-            showToast("Actualizando cargos mensuales... Esto puede tardar.");
-
-            try {
-                // 1. Calculate total common expenses for the month ONCE.
-                const totalGastosComunes = gastosDelMes
-                    .filter(g => g.fields['Tipo de Gasto'] === TIPO_GASTO_COMUN)
-                    .reduce((sum, g) => sum + (g.fields.Monto || 0), 0);
-
-                const updates = condominioData.map(p => {
-                    const previousDebt = p['Deuda Restante'] || 0;
-                    
-                    // --- NEW CALCULATION LOGIC ---
-
-                    // a. Calculate real common charge based on total and alicuota
-                    const cargoComunReal = totalGastosComunes * (p.Alicuota || 0);
-                    
-                    // b. Calculate the 10% penalty/buffer
-                    const recargo = cargoComunReal * TASA_RECARGO;
-                    
-                    // c. The charge to apply includes the penalty
-                    const cargoComunConRecargo = cargoComunReal + recargo;
-
-                    // d. The benefit is avoiding the penalty if paid on time
-                    const beneficio = DIA_ACTUAL <= DIA_LIMITE_PAGO ? recargo : 0;
-
-                    // e. Calculate special charges completely separately
-                    let cargoEspecial = 0;
-                    gastosDelMes.forEach(gasto => {
-                        if (gasto.fields['Tipo de Gasto'] === TIPO_GASTO_ESPECIAL) {
-                            const assignedOwners = gasto.fields.Propietarios || [];
-                            if (assignedOwners.includes(p.id)) {
-                                const numAssigned = assignedOwners.length || 1;
-                                cargoEspecial += (gasto.fields.Monto || 0) / numAssigned;
-                            }
-                        }
-                    });
-
-                    // f. Assemble the final charge for the month
-                    const finalMonthlyCharge = (cargoComunConRecargo - beneficio) + cargoEspecial;
-                    const newAccumulatedCharges = previousDebt + finalMonthlyCharge;
-                    
-                    return {
-                        id: p.id,
-                        fields: {
-                            'Deuda Anterior': previousDebt,
-                            'Cargos Acumulados': newAccumulatedCharges
-                        }
-                    };
-                });
-                await updateAirtableRecords(AIRTABLE_TABLE_PROPIETARIOS, updates);
-                showToast(`✅ Proceso completado. Recargando...`);
-                setTimeout(initApp, 2000);
-            } catch (error) {
-                showToast(`❌ Error al actualizar cargos: ${error.message}`, true);
-            } finally {
-                button.disabled = false;
-                button.innerHTML = '🔄 Actualizar Cargos del Mes';
-            }
-        });
-
-        document.getElementById('add-expense-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const conceptInput = document.getElementById('expense-concept');
-            const amountInput = document.getElementById('expense-amount');
-            const button = e.currentTarget.querySelector('button[type="submit"]');
-            conceptInput.classList.remove('input-error');
-            amountInput.classList.remove('input-error');
-            const newExpense = {
-                'Concepto': conceptInput.value.trim(),
-                'Monto': parseFloat(amountInput.value),
-                'Tipo de Gasto': document.getElementById('expense-type').value,
-                'Frecuencia': document.getElementById('expense-frequency').value,
-                'Propietarios': Array.from(document.querySelectorAll('#expense-owners-list input:checked')).map(cb => cb.value)
-            };
-            if (!newExpense.Concepto || isNaN(newExpense.Monto) || newExpense.Monto <= 0 || newExpense.Propietarios.length === 0) {
-                showToast('Completa todos los campos correctamente.', true);
-                if (!newExpense.Concepto) conceptInput.classList.add('input-error');
-                if (isNaN(newExpense.Monto) || newExpense.Monto <= 0) amountInput.classList.add('input-error');
-                return;
-            }
-            button.disabled = true;
-            button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
-            try {
-                await createAirtableRecord(AIRTABLE_TABLE_GASTOS, newExpense);
-                showToast('✅ Gasto añadido. Actualizando...');
-                e.target.reset();
-                document.querySelectorAll('#expense-owners-list input').forEach(cb => cb.checked = true);
-                initApp();
-            } catch (error) {
-                showToast(`❌ Error al añadir gasto: ${error.message}`, true);
-            } finally {
-                button.disabled = false;
-                button.textContent = 'Añadir Gasto';
-            }
-        });
-
-        document.getElementById('expensesTableBody').addEventListener('click', async (e) => {
-            if (!e.target.closest('.delete-expense-btn')) return;
-            const recordId = e.target.closest('.delete-expense-btn').dataset.id;
-            try {
-                await deleteAirtableRecord(AIRTABLE_TABLE_GASTOS, recordId);
-                showToast('✅ Gasto eliminado.');
-                initApp();
-            } catch (error) {
-                showToast('❌ Error al eliminar gasto.', true);
-            }
-        });
-        
-        document.getElementById('expense-type').addEventListener('change', (e) => {
-            // Using constant for comparison
-            const isCommon = e.target.value === TIPO_GASTO_COMUN;
-            document.querySelectorAll('#expense-owners-list input').forEach(cb => cb.checked = isCommon);
-            document.getElementById('toggle-all-owners').textContent = isCommon ? 'Deseleccionar Todos' : 'Seleccionar Todos';
-        });
-
-        document.getElementById('toggle-all-owners').addEventListener('click', (e) => {
-            const checkboxes = document.querySelectorAll('#expense-owners-list input');
-            const areAllChecked = Array.from(checkboxes).every(cb => cb.checked);
-            checkboxes.forEach(cb => cb.checked = !areAllChecked);
-            e.target.textContent = areAllChecked ? 'Seleccionar Todos' : 'Deseleccionar Todos';
-        });
-
-    </script>
-</body>
-</html>
+            showModal(
