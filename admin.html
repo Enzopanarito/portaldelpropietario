@@ -421,4 +421,268 @@
             }
             const message = `*Asunto: Recordatorio de Saldo Pendiente*\n\n📅 _Mensaje generado el ${fechaActualStr}._${discountMessage}\n\nEstimado/a *${property.Propietario}*,\n\nLe contactamos para informarle que, según nuestros registros, su propiedad presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: $${(property['Deuda Restante'] || 0).toFixed(2)}*\n\nAgradecemos su pronta gestión para mantener la solvencia del condominio.\n\nSi desea más información, visite nuestro portal del propietario:\nhttps://villalosapamates.netlify.app\n\n*Nota sobre pagos en Bolívares:* Le recordamos que los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción.\n\nAtentamente,\nLa Junta de Condominio.`;
             contentEl.textContent = message;
-            showModal(
+            showModal(document.getElementById('reminderModal'));
+        }
+
+        const showPaymentModal = (id) => {
+            currentPropertyIdForAction = id;
+            const p = condominioData.find(prop => prop.id === id);
+            if (!p) return;
+            document.getElementById('payment-modal-info').innerHTML = `<p>Propietario: <span class="font-semibold">${p.Propietario}</span></p><p>Deuda Actual: <span class="font-semibold">$${(p['Deuda Restante']||0).toFixed(2)}</span></p>`;
+            document.getElementById('partial-amount').value = '';
+            showModal(document.getElementById('paymentModal'));
+        };
+
+        function showModal(modal) {
+            modal.classList.remove('hidden');
+            const content = modal.querySelector('.transform');
+            setTimeout(() => content.classList.remove('scale-95', 'opacity-0'), 10);
+        }
+
+        function hideModal(modalId) {
+            const modal = document.getElementById(modalId);
+            const content = modal.querySelector('.transform');
+            content.classList.add('scale-95', 'opacity-0');
+            setTimeout(() => modal.classList.add('hidden'), 300);
+        }
+
+        function showToast(message, isError = false) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `fixed bottom-5 right-5 text-white py-3 px-5 rounded-lg shadow-lg opacity-0 transform translate-y-10 toast ${isError ? 'bg-red-500' : 'bg-green-500'}`;
+            toast.classList.remove('opacity-0', 'translate-y-10');
+            setTimeout(() => toast.classList.add('opacity-0', 'translate-y-10'), 4000);
+        }
+        
+        document.querySelectorAll('.nav-button').forEach(button => button.addEventListener('click', (e) => {
+            document.querySelectorAll('.nav-button, .section-content').forEach(el => el.classList.remove('active'));
+            e.currentTarget.classList.add('active');
+            document.getElementById(e.currentTarget.dataset.target).classList.add('active');
+        }));
+        
+        document.getElementById('searchInput').addEventListener('keyup', e => populateTable(condominioData.filter(p => (p.Propietario||'').toLowerCase().includes(e.target.value.toLowerCase()) || (p.Casa||'').toString().includes(e.target.value))));
+        
+        document.getElementById('debtorsTableBody').addEventListener('click', (e) => {
+            const target = e.target.closest('button');
+            if (!target) return;
+            const id = target.dataset.id;
+            if (target.classList.contains('view-breakdown-btn')) showDebtModal(id);
+            else if (target.classList.contains('send-reminder-btn')) showReminderModal(id);
+            else if (target.classList.contains('register-payment-btn')) showPaymentModal(id);
+        });
+
+        document.getElementById('pendingReportsTableBody').addEventListener('click', async (e) => {
+            const button = e.target.closest('button');
+            if (!button) return;
+            const reportId = button.dataset.reportId;
+            const row = document.getElementById(`report-row-${reportId}`);
+            if (button.classList.contains('reject-report-btn')) {
+                if (!confirm('¿Está seguro de que desea RECHAZAR este reporte de pago? Esta acción no se puede deshacer.')) {
+                    return;
+                }
+            }
+            button.disabled = true;
+            button.innerHTML = '<div class="spinner mx-auto" style="width: 16px; height: 16px; border-width: 2px;"></div>';
+            try {
+                if (button.classList.contains('confirm-report-btn')) {
+                    const ownerId = button.dataset.ownerId;
+                    const amount = parseFloat(button.dataset.amount);
+                    await processAirtableReport('confirm', reportId, { ownerId, amount });
+                    showToast('✅ Pago confirmado y registrado.');
+                } else if (button.classList.contains('reject-report-btn')) {
+                    await processAirtableReport('reject', reportId);
+                    showToast('ℹ️ Reporte rechazado.');
+                }
+                row.style.opacity = '0.5';
+                setTimeout(initApp, 1000);
+            } catch (error) {
+                showToast(`❌ Error: ${error.message}`, true);
+                button.disabled = false;
+                button.textContent = button.classList.contains('confirm-report-btn') ? 'Confirmar' : 'Rechazar';
+            }
+        });
+        
+        document.getElementById('closeDebtModalBtn').addEventListener('click', () => hideModal('debtModal'));
+        document.getElementById('closeReminderModalBtn').addEventListener('click', () => hideModal('reminderModal'));
+        document.getElementById('cancelSendBtn').addEventListener('click', () => hideModal('reminderModal'));
+        document.getElementById('closePaymentModalBtn').addEventListener('click', () => hideModal('paymentModal'));
+        document.getElementById('cancelPaymentBtn').addEventListener('click', () => hideModal('paymentModal'));
+        
+        ['tab-total', 'tab-partial'].forEach(tabId => {
+            document.getElementById(tabId).addEventListener('click', (e) => {
+                document.querySelectorAll('.payment-tab, .tab-content').forEach(el => el.classList.remove('active'));
+                e.currentTarget.classList.add('active');
+                document.getElementById(e.currentTarget.id.replace('tab', 'content')).classList.add('active');
+            });
+        });
+
+        document.getElementById('confirmPaymentBtn').addEventListener('click', async (e) => {
+            const button = e.currentTarget;
+            const amountInput = document.getElementById('partial-amount');
+            amountInput.classList.remove('input-error');
+            const p = condominioData.find(prop => prop.id === currentPropertyIdForAction);
+            if (!p) return;
+            const isPartial = document.getElementById('tab-partial').classList.contains('active');
+            let paymentAmount = isPartial ? parseFloat(amountInput.value) : (p['Deuda Restante'] || 0);
+            if (isPartial && (isNaN(paymentAmount) || paymentAmount <= 0)) {
+                showToast('Ingrese un monto válido.', true);
+                amountInput.classList.add('input-error');
+                return;
+            }
+            button.disabled = true;
+            button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
+            try {
+                await createAirtableRecord(AIRTABLE_TABLE_PAGOS, { 'Monto Pagado': paymentAmount, 'Fecha de Pago': new Date().toISOString().slice(0, 10), 'Propietario que Paga': [p.id] });
+                showToast('✅ Pago registrado. Actualizando...');
+                hideModal('paymentModal');
+                setTimeout(initApp, 1500);
+            } catch (error) {
+                showToast(`❌ Error al registrar pago: ${error.message}`, true);
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Registrar Pago';
+            }
+        });
+
+        document.getElementById('send-whatsapp-btn').addEventListener('click', () => {
+            const p = condominioData.find(prop => prop.id === currentPropertyIdForAction);
+            if (!p || !p.Telefono) { showToast('Propietario sin teléfono registrado.', true); return; }
+            const msg = document.getElementById('reminder-message-content').textContent;
+            window.open(`https://web.whatsapp.com/send?phone=${p.Telefono}&text=${encodeURIComponent(msg)}`, '_blank');
+            hideModal('reminderModal');
+        });
+
+        document.getElementById('send-bulk-reminders-btn').addEventListener('click', () => {
+            const debtors = condominioData.filter(p => (p['Deuda Restante'] || 0) > 0.01 && p.Telefono);
+            if (debtors.length === 0) {
+                showToast('No hay morosos con números de teléfono registrados para notificar.', false);
+                return;
+            }
+            if (!confirm(`Esto abrirá ${debtors.length} pestaña(s) de WhatsApp para enviar recordatorios. ¿Desea continuar?`)) return;
+            const fechaActualStr = new Date().toLocaleDateString('es-VE');
+            let discountMessage = '';
+            if (DIA_ACTUAL <= DIA_LIMITE_PAGO) {
+                const diasRestantes = DIA_LIMITE_PAGO - DIA_ACTUAL;
+                const diaTexto = diasRestantes === 1 ? 'día' : 'días';
+                discountMessage = `\n\n⚠️ Le quedan ${diasRestantes} ${diaTexto} para aprovechar el descuento por pronto pago.`;
+            }
+            debtors.forEach(p => {
+                const message = `*Asunto: Recordatorio de Saldo Pendiente*\n\n📅 _Mensaje generado el ${fechaActualStr}._${discountMessage}\n\nEstimado/a *${p.Propietario}*,\n\nLe contactamos para informarle que, según nuestros registros, su propiedad presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: $${(p['Deuda Restante'] || 0).toFixed(2)}*\n\nAgradecemos su pronta gestión para mantener la solvencia del condominio.\n\nSi desea más información, visite nuestro portal del propietario:\nhttps://villalosapamates.netlify.app\n\n*Nota sobre pagos en Bolívares:* Los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción.\n\nAtentamente,\nLa Junta de Condominio.`;
+                window.open(`https://web.whatsapp.com/send?phone=${p.Telefono}&text=${encodeURIComponent(message)}`, '_blank');
+            });
+        });
+        
+        document.getElementById('update-monthly-charges-btn').addEventListener('click', async (e) => {
+            if (!confirm('¡ATENCIÓN! Esta acción cerrará el mes y calculará la deuda final para TODOS los propietarios. ¿Estás seguro?')) return;
+            const button = e.currentTarget;
+            button.disabled = true;
+            button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
+            showToast("Actualizando cargos mensuales... Esto puede tardar.");
+            try {
+                const totalGastosComunes = gastosDelMes
+                    .filter(g => g.fields['Tipo de Gasto'] === TIPO_GASTO_COMUN)
+                    .reduce((sum, g) => sum + (g.fields.Monto || 0), 0);
+                const updates = condominioData.map(p => {
+                    const previousDebt = p['Deuda Restante'] || 0;
+                    const cargoComunReal = totalGastosComunes * (p.Alicuota || 0);
+                    const recargo = cargoComunReal * TASA_RECARGO;
+                    const cargoComunConRecargo = cargoComunReal + recargo;
+                    const beneficio = DIA_ACTUAL <= DIA_LIMITE_PAGO ? recargo : 0;
+                    let cargoEspecial = 0;
+                    gastosDelMes.forEach(gasto => {
+                        if (gasto.fields['Tipo de Gasto'] === TIPO_GASTO_ESPECIAL) {
+                            const assignedOwners = gasto.fields.Propietarios || [];
+                            if (assignedOwners.includes(p.id)) {
+                                const numAssigned = assignedOwners.length || 1;
+                                cargoEspecial += (gasto.fields.Monto || 0) / numAssigned;
+                            }
+                        }
+                    });
+                    const finalMonthlyCharge = (cargoComunConRecargo - beneficio) + cargoEspecial;
+                    const newAccumulatedCharges = previousDebt + finalMonthlyCharge;
+                    return {
+                        id: p.id,
+                        fields: {
+                            'Deuda Anterior': previousDebt,
+                            'Cargos Acumulados': newAccumulatedCharges
+                        }
+                    };
+                });
+                await updateAirtableRecords(AIRTABLE_TABLE_PROPIETARIOS, updates);
+                showToast(`✅ Proceso completado. Recargando...`);
+                setTimeout(initApp, 2000);
+            } catch (error) {
+                showToast(`❌ Error al actualizar cargos: ${error.message}`, true);
+            } finally {
+                button.disabled = false;
+                button.innerHTML = '🔄 Actualizar Cargos del Mes';
+            }
+        });
+
+        document.getElementById('add-expense-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const conceptInput = document.getElementById('expense-concept');
+            const amountInput = document.getElementById('expense-amount');
+            const button = e.currentTarget.querySelector('button[type="submit"]');
+            conceptInput.classList.remove('input-error');
+            amountInput.classList.remove('input-error');
+            const newExpense = {
+                'Concepto': conceptInput.value.trim(),
+                'Monto': parseFloat(amountInput.value),
+                'Tipo de Gasto': document.getElementById('expense-type').value,
+                'Frecuencia': document.getElementById('expense-frequency').value,
+                'Propietarios': Array.from(document.querySelectorAll('#expense-owners-list input:checked')).map(cb => cb.value)
+            };
+            if (!newExpense.Concepto || isNaN(newExpense.Monto) || newExpense.Monto <= 0 || newExpense.Propietarios.length === 0) {
+                showToast('Completa todos los campos correctamente.', true);
+                if (!newExpense.Concepto) conceptInput.classList.add('input-error');
+                if (isNaN(newExpense.Monto) || newExpense.Monto <= 0) amountInput.classList.add('input-error');
+                return;
+            }
+            button.disabled = true;
+            button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
+            try {
+                await createAirtableRecord(AIRTABLE_TABLE_GASTOS, newExpense);
+                showToast('✅ Gasto añadido. Actualizando...');
+                e.target.reset();
+                document.querySelectorAll('#expense-owners-list input').forEach(cb => cb.checked = true);
+                initApp();
+            } catch (error) {
+                showToast(`❌ Error al añadir gasto: ${error.message}`, true);
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Añadir Gasto';
+            }
+        });
+
+        document.getElementById('expensesTableBody').addEventListener('click', async (e) => {
+            if (!e.target.closest('.delete-expense-btn')) return;
+            const recordId = e.target.closest('.delete-expense-btn').dataset.id;
+            try {
+                await deleteAirtableRecord(AIRTABLE_TABLE_GASTOS, recordId);
+                showToast('✅ Gasto eliminado.');
+                initApp();
+            } catch (error) {
+                showToast('❌ Error al eliminar gasto.', true);
+            }
+        });
+        
+        document.getElementById('expense-type').addEventListener('change', (e) => {
+            const isCommon = e.target.value === TIPO_GASTO_COMUN;
+            document.querySelectorAll('#expense-owners-list input').forEach(cb => cb.checked = isCommon);
+            document.getElementById('toggle-all-owners').textContent = isCommon ? 'Deseleccionar Todos' : 'Seleccionar Todos';
+        });
+
+        document.getElementById('toggle-all-owners').addEventListener('click', (e) => {
+            const checkboxes = document.querySelectorAll('#expense-owners-list input');
+            const areAllChecked = Array.from(checkboxes).every(cb => cb.checked);
+            checkboxes.forEach(cb => cb.checked = !areAllChecked);
+            e.target.textContent = areAllChecked ? 'Seleccionar Todos' : 'Deseleccionar Todos';
+        });
+
+        // Inicia la aplicación principal
+        initApp();
+    });
+    </script>
+</body>
+</html>
