@@ -66,7 +66,7 @@
 
         <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
             <div id="welcome-message" class="mb-6">
-                </div>
+            </div>
             
             <div id="discount-banner-container" class="mb-8"></div>
             
@@ -83,7 +83,7 @@
                     <div id="bcv-notice-container"></div>
                 </div>
 
-                <div class="md:col-span-1">
+                <div class="md:col-span-1 space-y-8">
                     <div class="bg-white p-6 rounded-2xl shadow-lg space-y-4">
                         <h3 class="text-xl font-bold text-slate-800 mb-2 border-b pb-2">Resumen General</h3>
                         <div class="flex justify-between items-center">
@@ -99,6 +99,23 @@
                             <span id="kpi-solvencia" class="font-bold text-lg text-green-500">0%</span>
                         </div>
                     </div>
+                    <!-- NEW: Payment History Card -->
+                    <div class="bg-white p-6 rounded-2xl shadow-lg">
+                        <h3 class="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Historial de Pagos del Mes</h3>
+                        <div class="overflow-y-auto max-h-60">
+                            <table class="min-w-full">
+                                <thead class="bg-slate-50 sticky top-0">
+                                    <tr>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Fecha</th>
+                                        <th class="px-4 py-2 text-right text-xs font-medium text-slate-500 uppercase">Monto</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="payments-history-body" class="bg-white divide-y divide-slate-200">
+                                    <!-- Payment history will be loaded here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
         </main>
@@ -106,16 +123,21 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            // --- CONFIGURACIÓN DE CONEXIÓN Y REGLAS ---
+            // --- CONFIG & CONSTANTS ---
             const AIRTABLE_TABLE_PROPIETARIOS = 'Propietarios';
             const AIRTABLE_TABLE_GASTOS = 'Gastos del Mes';
-            const TASA_DESCUENTO = 0.10; // 10% de descuento
-            const DIA_LIMITE_PAGO = 10;   // Día 10 del mes
+            const AIRTABLE_TABLE_PAGOS = 'Pagos';
 
-            let propertyData = [];
-            let allExpenses = [];
+            const TIPO_GASTO_COMUN = 'Gasto Común';
+            const TIPO_GASTO_ESPECIAL = 'Gasto Especial';
 
-            // --- Elementos del DOM ---
+            const TASA_RECARGO = 0.10;
+            const DIA_LIMITE_PAGO = 10;
+            const FECHA_ACTUAL = new Date(), DIA_ACTUAL = FECHA_ACTUAL.getDate();
+
+            let allData = { propietarios: [], gastos: [], pagos: [] };
+
+            // --- DOM ELEMENTS ---
             const welcomeScreen = document.getElementById('welcome-screen');
             const mainContent = document.getElementById('main-content');
             const welcomeUserSelector = document.getElementById('welcomeUserSelector');
@@ -124,146 +146,46 @@
             const discountBannerContainer = document.getElementById('discount-banner-container');
             const bcvNoticeContainer = document.getElementById('bcv-notice-container');
 
-            // --- Airtable API Helper ---
+            // --- API HELPER ---
             async function airtableFetch(path) {
                 const url = `/.netlify/functions/airtable${path}`;
-                try {
-                    const response = await fetch(url);
-                    if (!response.ok) {
-                        const errorData = await response.json();
-                        throw new Error(`Error de Airtable: ${errorData.error?.message || response.statusText}`);
-                    }
-                    return await response.json();
-                } catch (error) {
-                    console.error("Error en airtableFetch:", error);
-                    throw error;
+                const response = await fetch(url);
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`Error de Airtable: ${errorData.error?.message || response.statusText}`);
                 }
+                return response.json();
             }
 
-            function showError(message) {
-                welcomeScreen.innerHTML = `<div class="text-red-600 p-8">${message}</div>`;
-            }
-
-            function showMainContent() {
-                welcomeScreen.classList.add('hidden');
-                mainContent.classList.remove('hidden');
-            }
-
+            // --- INITIALIZATION ---
             async function initApp() {
                 try {
-                    const [propietariosData, gastosData] = await Promise.all([
+                    const [propietariosData, gastosData, pagosData] = await Promise.all([
                         airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}`),
-                        airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_GASTOS)}?view=Gastos%20Mensuales`)
+                        airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_GASTOS)}?view=Gastos%20Mensuales`),
+                        airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PAGOS)}`)
                     ]);
                     
-                    if (!propietariosData.records || !gastosData.records) {
-                         throw new Error("La respuesta de Airtable no contiene 'records'.");
-                    }
+                    allData.propietarios = (propietariosData.records || []).map(r => ({ id: r.id, ...r.fields }));
+                    allData.gastos = gastosData.records || [];
+                    allData.pagos = pagosData.records || [];
                     
-                    propertyData = propietariosData.records.map(r => ({ id: r.id, ...r.fields }));
-                    allExpenses = gastosData.records;
+                    allData.propietarios.sort((a, b) => (a.Casa || 0) - (b.Casa || 0));
                     
                     populateUserSelector(welcomeUserSelector);
                     populateUserSelector(userSelector);
                     updateGlobalKPIs();
 
                 } catch (error) {
-                    showError(`No se pudo obtener la data de Airtable. Revisa el Base ID, Token, y tu conexión. Error: ${error.message}`);
+                    welcomeUserSelector.innerHTML = `<option>Error al cargar datos</option>`;
+                    console.error("Error initializing app:", error);
                 }
             }
 
-            function renderPortalForUser(propertyId) {
-                const property = propertyData.find(p => p.id === propertyId);
-                if (!property) return;
-
-                const currentDate = new Date();
-                const dateString = currentDate.toLocaleString('es-VE', { day: '2-digit', month: 'long', year: 'numeric' });
-                const monthYearString = currentDate.toLocaleString('es-VE', { month: 'long', year: 'numeric' });
-
-                // Lógica del Banner de Descuento
-                const diaActual = currentDate.getDate();
-                if (diaActual <= DIA_LIMITE_PAGO) {
-                    discountBannerContainer.innerHTML = `
-                        <div class="bg-teal-100 border-l-4 border-teal-500 text-teal-800 p-4 rounded-r-lg shadow" role="alert">
-                            <div class="flex items-center">
-                                <div class="py-1"><svg class="fill-current h-6 w-6 text-teal-500 mr-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M2.93 17.07A10 10 0 1 1 17.07 2.93 10 10 0 0 1 2.93 17.07zM10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16zm-1-9a1 1 0 0 1 1-1h.01a1 1 0 1 1 0 2H10a1 1 0 0 1-1-1zm1-4a1 1 0 0 1 1-1h.01a1 1 0 1 1 0 2H10a1 1 0 0 1-1-1z"/></svg></div>
-                                <div>
-                                    <p class="font-bold">¡Buenas Noticias!</p>
-                                    <p class="text-sm">Está a tiempo para disfrutar del descuento del ${TASA_DESCUENTO * 100}% por pronto pago en sus gastos comunes.</p>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                } else {
-                    discountBannerContainer.innerHTML = '';
-                }
-
-                document.getElementById('welcome-message').innerHTML = `
-                    <h2 class="text-3xl font-bold text-slate-900">Bienvenido, ${property.Propietario}</h2>
-                    <p class="text-lg text-slate-600">Este es el resumen de su estado de cuenta para la <span class="font-bold">Casa #${property.Casa}</span>.</p>
-                    <p class="text-md text-slate-500 mt-2">Estado de Cuenta para: <span class="font-semibold">${dateString}</span></p>
-                `;
-
-                const deudaRestante = property['Deuda Restante'] || 0;
-                document.getElementById('debt-summary').innerHTML = `
-                    <div class="flex justify-between items-baseline text-3xl font-bold ${deudaRestante > 0 ? 'text-red-500' : 'text-green-600'} border-t pt-3 mt-3">
-                        <span>Deuda Total Actual:</span>
-                        <span>$${deudaRestante.toFixed(2)}</span>
-                    </div>
-                    <p class="text-xs text-slate-500 text-right">Este es su saldo total a la fecha de hoy.</p>
-                `;
-                
-                const expensesForMonth = allExpenses;
-                let cuotaComunMes = 0;
-                const gastosComunesMes = expensesForMonth.filter(g => g.fields['Tipo de Gasto'] === 'Gasto Común');
-                gastosComunesMes.forEach(gasto => {
-                    if ((gasto.fields['Propietarios'] || []).includes(property.id)) {
-                        cuotaComunMes += (gasto.fields.Monto || 0) * (property.Alicuota || 0);
-                    }
-                });
-                let cuotaEspecialMes = 0;
-                const gastosEspecialesMes = expensesForMonth.filter(g => g.fields['Tipo de Gasto'] === 'Gasto Especial');
-                gastosEspecialesMes.forEach(gasto => {
-                    const assignedOwners = gasto.fields['Propietarios'] || [];
-                    if (assignedOwners.includes(property.id)) {
-                        const numAssigned = assignedOwners.length;
-                        if (numAssigned > 0) {
-                            cuotaEspecialMes += (gasto.fields.Monto || 0) / numAssigned;
-                        }
-                    }
-                });
-                const totalGastosMes = expensesForMonth.reduce((sum, g) => sum + (g.fields.Monto || 0), 0);
-                document.getElementById('expenses-breakdown-title').textContent = `Desglose de Cargos para ${monthYearString}`;
-                let expensesHtml = `<table class="min-w-full"><thead class="border-b"><tr><th class="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase">Concepto</th><th class="px-4 py-2 text-right text-xs font-semibold text-slate-500 uppercase">Costo Total</th><th class="px-4 py-2 text-right text-xs font-semibold text-slate-500 uppercase">Su Parte</th></tr></thead><tbody class="divide-y divide-slate-200">`;
-                if (expensesForMonth.length === 0) {
-                    expensesHtml += `<tr><td colspan="3" class="text-center p-4 text-slate-500">No hay gastos registrados para este mes.</td></tr>`;
-                } else {
-                    gastosComunesMes.forEach(g => { if ((g.fields['Propietarios'] || []).includes(property.id)) { expensesHtml += `<tr><td class="px-4 py-3 text-sm text-slate-700">${g.fields.Concepto}</td><td class="px-4 py-3 text-sm text-slate-500 text-right">$${(g.fields.Monto || 0).toFixed(2)}</td><td class="px-4 py-3 text-sm text-slate-700 text-right">$${((g.fields.Monto || 0) * (property.Alicuota || 0)).toFixed(2)}</td></tr>`; } });
-                    gastosEspecialesMes.forEach(g => { if ((g.fields['Propietarios'] || []).includes(property.id)) { const numAssigned = (g.fields['Propietarios'] || []).length || 1; expensesHtml += `<tr><td class="px-4 py-3 text-sm text-slate-700">${g.fields.Concepto}</td><td class="px-4 py-3 text-sm text-slate-500 text-right">$${(g.fields.Monto || 0).toFixed(2)}</td><td class="px-4 py-3 text-sm text-slate-700 text-right">$${((g.fields.Monto || 0) / numAssigned).toFixed(2)}</td></tr>`; } });
-                }
-                expensesHtml += `<tr class="font-bold bg-slate-50"><td class="px-4 py-3 text-sm text-slate-800">Total Cargos del Mes</td><td class="px-4 py-3 text-sm text-slate-800 text-right">$${totalGastosMes.toFixed(2)}</td><td class="px-4 py-3 text-sm text-slate-800 text-right">$${(cuotaComunMes + cuotaEspecialMes).toFixed(2)}</td></tr>`;
-                expensesHtml += '</tbody></table>';
-                document.getElementById('expenses-breakdown').innerHTML = expensesHtml;
-
-                // Aviso sobre BCV
-                bcvNoticeContainer.innerHTML = `
-                    <div class="bg-slate-100 border-l-4 border-sky-500 text-slate-700 p-4 rounded-r-lg" role="alert">
-                        <div class="flex items-center">
-                            <div class="py-1">
-                                <svg class="fill-current h-6 w-6 text-sky-500 mr-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M2.93 17.07A10 10 0 1 1 17.07 2.93 10 10 0 0 1 2.93 17.07zM10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16zm-1-9a1 1 0 0 1 1-1h.01a1 1 0 1 1 0 2H10a1 1 0 0 1-1-1zm1-4a1 1 0 0 1 1-1h.01a1 1 0 1 1 0 2H10a1 1 0 0 1-1-1z"/></svg>
-                            </div>
-                            <div>
-                                <p class="font-bold">Nota sobre Pagos en Bolívares</p>
-                                <p class="text-sm">Le recordamos que los pagos efectuados en Bs. se calculan a la tasa oficial del Banco Central de Venezuela (BCV) del día de la transacción.</p>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }
-
+            // --- UI RENDERING FUNCTIONS ---
             function populateUserSelector(selectorElement) {
-                selectorElement.innerHTML = '';
-                propertyData.sort((a, b) => a.Casa - b.Casa).forEach(p => {
+                selectorElement.innerHTML = '<option value="">-- Seleccione su casa --</option>';
+                allData.propietarios.forEach(p => {
                     const option = document.createElement('option');
                     option.value = p.id;
                     option.textContent = `Casa ${p.Casa} - ${p.Propietario}`;
@@ -271,28 +193,153 @@
                 });
             }
 
+            function renderPortalForUser(propertyId) {
+                const property = allData.propietarios.find(p => p.id === propertyId);
+                if (!property) return;
+
+                const currentDate = new Date();
+                const dateString = currentDate.toLocaleString('es-VE', { day: '2-digit', month: 'long', year: 'numeric' });
+                const monthYearString = currentDate.toLocaleString('es-VE', { month: 'long', year: 'numeric' });
+
+                // Welcome Message
+                document.getElementById('welcome-message').innerHTML = `
+                    <h2 class="text-3xl font-bold text-slate-900">Bienvenido, ${property.Propietario}</h2>
+                    <p class="text-lg text-slate-600">Este es el resumen de su estado de cuenta para la <span class="font-bold">Casa #${property.Casa}</span>.</p>
+                    <p class="text-md text-slate-500 mt-2">Estado de Cuenta para: <span class="font-semibold">${dateString}</span></p>
+                `;
+
+                // Debt Summary
+                const deudaRestante = property['Deuda Restante'] || 0;
+                document.getElementById('debt-summary').innerHTML = `
+                    <div class="flex justify-between items-baseline text-3xl font-bold ${deudaRestante > 0.01 ? 'text-red-500' : 'text-green-600'}">
+                        <span>Deuda Total Actual:</span>
+                        <span>$${deudaRestante.toFixed(2)}</span>
+                    </div>
+                    <p class="text-xs text-slate-500 text-right">Este es su saldo total a la fecha de hoy.</p>
+                `;
+
+                // Detailed Breakdown
+                displayChargesBreakdown(property, monthYearString);
+
+                // Payment History
+                displayPaymentsHistory(property);
+
+                // Discount Banner
+                displayDiscountBanner();
+
+                // BCV Notice
+                displayBcvNotice();
+            }
+
+            function displayChargesBreakdown(property, monthYearString) {
+                document.getElementById('expenses-breakdown-title').textContent = `Desglose de Cargos para ${monthYearString}`;
+                const breakdownDiv = document.getElementById('expenses-breakdown');
+
+                const deudaAnterior = property['Deuda Anterior'] || 0;
+                const totalPagado = property['Total Pagado'] || 0;
+                let totalCargosComunesPropietario = 0;
+
+                let html = `<ul class="space-y-2 text-sm">`;
+                html += `<li class="flex justify-between font-semibold"><span>Deuda del Mes Anterior</span><span>$${deudaAnterior.toFixed(2)}</span></li>`;
+                html += `<li class="font-semibold text-slate-800 mt-2 mb-1">Cargos del Mes:</li>`;
+                
+                const factorAjuste = DIA_ACTUAL > DIA_LIMITE_PAGO ? (1 + TASA_RECARGO) : 1.0;
+
+                allData.gastos.forEach(gasto => {
+                    const monto = gasto.fields.Monto || 0;
+                    const concepto = gasto.fields.Concepto || 'Gasto sin descripción';
+
+                    if (gasto.fields['Tipo de Gasto'] === TIPO_GASTO_COMUN) {
+                        let cargoIndividual = monto * (property.Alicuota || 0);
+                        totalCargosComunesPropietario += cargoIndividual;
+                        const cargoMostrado = cargoIndividual * factorAjuste;
+                        html += `<li class="flex justify-between text-sm ml-4"><span>+ ${concepto}</span><span>$${cargoMostrado.toFixed(2)}</span></li>`;
+                    } else if (gasto.fields['Tipo de Gasto'] === TIPO_GASTO_ESPECIAL) {
+                        const assignedOwners = gasto.fields.Propietarios || [];
+                        if (assignedOwners.includes(property.id)) {
+                            const numAssigned = assignedOwners.length || 1;
+                            const cargoIndividual = monto / numAssigned;
+                            html += `<li class="flex justify-between text-sm ml-4"><span>+ ${concepto}</span><span>$${cargoIndividual.toFixed(2)}</span></li>`;
+                        }
+                    }
+                });
+
+                if (DIA_ACTUAL <= DIA_LIMITE_PAGO) {
+                    const recargo = totalCargosComunesPropietario * TASA_RECARGO;
+                    html += `<li class="flex justify-between text-green-600 text-sm ml-4 mt-1"><span>- Beneficio Pronto Pago</span><span>-$${recargo.toFixed(2)}</span></li>`;
+                }
+
+                if (totalPagado > 0) {
+                    html += `<li class="flex justify-between text-green-600 border-t pt-2 mt-2"><span>- Total Pagado</span><span>-$${totalPagado.toFixed(2)}</span></li>`;
+                }
+                html += `</ul>`;
+                breakdownDiv.innerHTML = html;
+            }
+
+            function displayPaymentsHistory(property) {
+                const tbody = document.getElementById('payments-history-body');
+                const ownerPayments = allData.pagos.filter(p => p.fields['Propietario que Paga'] && p.fields['Propietario que Paga'][0] === property.id);
+
+                if (ownerPayments.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="2" class="text-center p-4 text-slate-500">No hay pagos registrados.</td></tr>`;
+                    return;
+                }
+
+                tbody.innerHTML = ownerPayments
+                    .sort((a, b) => new Date(b.fields['Fecha de Pago']) - new Date(a.fields['Fecha de Pago']))
+                    .map(p => `
+                        <tr>
+                            <td class="px-4 py-3 text-sm">${new Date(p.fields['Fecha de Pago'] + 'T00:00:00').toLocaleDateString('es-VE')}</td>
+                            <td class="px-4 py-3 text-sm text-right font-medium text-green-600">$${(p.fields['Monto Pagado'] || 0).toFixed(2)}</td>
+                        </tr>
+                    `).join('');
+            }
+
+            function displayDiscountBanner() {
+                if (DIA_ACTUAL <= DIA_LIMITE_PAGO) {
+                    discountBannerContainer.innerHTML = `
+                        <div class="bg-teal-100 border-l-4 border-teal-500 text-teal-800 p-4 rounded-r-lg shadow" role="alert">
+                            <p class="font-bold">¡Buenas Noticias!</p>
+                            <p class="text-sm">Está a tiempo para disfrutar del descuento del ${TASA_RECARGO * 100}% por pronto pago en sus gastos comunes.</p>
+                        </div>`;
+                } else {
+                    discountBannerContainer.innerHTML = '';
+                }
+            }
+
+            function displayBcvNotice() {
+                bcvNoticeContainer.innerHTML = `
+                    <div class="bg-slate-100 border-l-4 border-sky-500 text-slate-700 p-4 rounded-r-lg" role="alert">
+                        <p class="font-bold">Nota sobre Pagos en Bolívares</p>
+                        <p class="text-sm">Le recordamos que los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción.</p>
+                    </div>`;
+            }
+
             function updateGlobalKPIs() {
-                if(propertyData.length === 0) return;
+                if(allData.propietarios.length === 0) return;
                 let deudaTotal = 0;
                 let morosos = 0;
-                propertyData.forEach(p => {
+                allData.propietarios.forEach(p => {
                     const totalDeudaPropiedad = p['Deuda Restante'] || 0;
                     if (totalDeudaPropiedad > 0.01) {
                         deudaTotal += totalDeudaPropiedad;
                         morosos++;
                     }
                 });
-                const solventes = propertyData.length - morosos;
+                const solventes = allData.propietarios.length - morosos;
                 document.getElementById('kpi-deuda-total').textContent = `$${deudaTotal.toFixed(2)}`;
-                document.getElementById('kpi-propietarios-mora').textContent = `${morosos} / ${propertyData.length}`;
-                document.getElementById('kpi-solvencia').textContent = `${((solventes / propertyData.length) * 100).toFixed(0)}%`;
+                document.getElementById('kpi-propietarios-mora').textContent = `${morosos} / ${allData.propietarios.length}`;
+                document.getElementById('kpi-solvencia').textContent = `${((solventes / allData.propietarios.length) * 100).toFixed(0)}%`;
             }
 
+            // --- EVENT LISTENERS ---
             viewStatementBtn.addEventListener('click', () => {
                 const selectedUserId = welcomeUserSelector.value;
+                if (!selectedUserId) return;
                 userSelector.value = selectedUserId;
                 renderPortalForUser(selectedUserId);
-                showMainContent();
+                welcomeScreen.classList.add('hidden');
+                mainContent.classList.remove('hidden');
             });
 
             userSelector.addEventListener('change', (e) => {
