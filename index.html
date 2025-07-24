@@ -6,18 +6,26 @@
     <title>Portal del Propietario - Villa Los Apamates</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc; /* slate-50 */
+        }
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        #welcome-screen { background-image: linear-gradient(to top, #f3e7e9 0%, #e3eeff 99%, #e3eeff 100%); }
+        #welcome-screen {
+            background-image: linear-gradient(to top, #f3e7e9 0%, #e3eeff 99%, #e3eeff 100%);
+        }
         .spinner {
-            border: 4px solid rgba(0, 0, 0, 0.1); width: 36px; height: 36px;
-            border-radius: 50%; border-left-color: #0ea5e9;
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #0ea5e9;
             animation: spin 1s ease infinite;
         }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .modal-backdrop { transition: opacity 0.3s ease; z-index: 50; }
-        .input-error { border-color: #ef4444; ring-color: #ef4444; }
-        .toast { transition: opacity 0.5s, transform 0.5s; z-index: 9999; }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800">
@@ -40,7 +48,7 @@
 
 
     <div id="main-content" class="hidden">
-        <header class="bg-white shadow-md sticky top-0 z-40">
+        <header class="bg-white shadow-md">
             <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
                 <div class="flex items-center gap-3">
                     <img src="https://i.postimg.cc/WpyB1yTb/Logo-VLA.png" alt="Logo Villa Los Apamates" class="w-12 h-auto">
@@ -90,11 +98,6 @@
                             <span class="text-slate-600 font-medium">📈 Solvencia:</span>
                             <span id="kpi-solvencia" class="font-bold text-lg text-green-500">0%</span>
                         </div>
-                        <div class="pt-4 border-t">
-                             <button id="report-payment-btn" class="w-full bg-green-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-green-700 transition-colors shadow-sm">
-                                🔔 Reportar un Pago
-                            </button>
-                        </div>
                     </div>
                     <div class="bg-white p-6 rounded-2xl shadow-lg">
                         <h3 class="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Historial de Pagos del Mes</h3>
@@ -107,7 +110,7 @@
                                     </tr>
                                 </thead>
                                 <tbody id="payments-history-body" class="bg-white divide-y divide-slate-200">
-                                </tbody>
+                                    </tbody>
                             </table>
                         </div>
                     </div>
@@ -116,40 +119,12 @@
         </main>
     </div>
 
-    <div id="reportModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden modal-backdrop">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md transform transition-all scale-95 opacity-0" id="reportModalContent">
-            <div class="p-6">
-                <div class="flex justify-between items-start mb-4">
-                    <h3 class="text-xl font-bold text-slate-900">Reportar Pago</h3>
-                    <button id="closeReportModalBtn" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
-                </div>
-                <p class="text-sm text-slate-600 mb-4">Complete los datos de su pago. Será revisado por la administración a la brevedad posible.</p>
-                <form id="report-payment-form" class="space-y-4">
-                    <div>
-                        <label for="report-amount" class="block text-sm font-medium text-slate-700">Monto Pagado ($)</label>
-                        <input type="number" id="report-amount" step="0.01" class="mt-1 block w-full px-3 py-2 bg-slate-100 border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" placeholder="Ej: 75.50" required>
-                    </div>
-                    <div>
-                        <label for="report-reference" class="block text-sm font-medium text-slate-700">Referencia del Pago (Opcional)</label>
-                        <input type="text" id="report-reference" class="mt-1 block w-full px-3 py-2 bg-slate-100 border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" placeholder="Ej: PagoMóvil ref. 1234">
-                    </div>
-                    <div class="mt-6 flex justify-end gap-3">
-                        <button type="button" id="cancelReportBtn" class="py-2 px-4 bg-slate-200 text-slate-800 font-semibold rounded-lg hover:bg-slate-300 transition-colors">Cancelar</button>
-                        <button type="submit" class="py-2 px-4 bg-sky-600 text-white font-semibold rounded-lg hover:bg-sky-700 transition-colors">Enviar Reporte</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <div id="toast" class="fixed bottom-5 right-5 bg-green-500 text-white py-3 px-5 rounded-lg shadow-lg opacity-0 transform translate-y-10 toast"></div>
-    
     <script>
         document.addEventListener('DOMContentLoaded', () => {
+            // --- CONFIG & CONSTANTS ---
             const AIRTABLE_TABLE_PROPIETARIOS = 'Propietarios';
             const AIRTABLE_TABLE_GASTOS = 'Gastos del Mes';
             const AIRTABLE_TABLE_PAGOS = 'Pagos';
-            const AIRTABLE_TABLE_REPORTES = 'Reportes de Pago';
 
             const TIPO_GASTO_COMUN = 'Gasto Común';
             const TIPO_GASTO_ESPECIAL = 'Gasto Especial';
@@ -159,8 +134,8 @@
             const FECHA_ACTUAL = new Date(), DIA_ACTUAL = FECHA_ACTUAL.getDate();
 
             let allData = { propietarios: [], gastos: [], pagos: [] };
-            let currentPropertyId = null;
 
+            // --- DOM ELEMENTS ---
             const welcomeScreen = document.getElementById('welcome-screen');
             const mainContent = document.getElementById('main-content');
             const welcomeUserSelector = document.getElementById('welcomeUserSelector');
@@ -168,28 +143,19 @@
             const userSelector = document.getElementById('userSelector');
             const discountBannerContainer = document.getElementById('discount-banner-container');
             const bcvNoticeContainer = document.getElementById('bcv-notice-container');
-            
-            const reportModal = document.getElementById('reportModal');
-            const reportPaymentBtn = document.getElementById('report-payment-btn');
-            const closeReportModalBtn = document.getElementById('closeReportModalBtn');
-            const cancelReportBtn = document.getElementById('cancelReportBtn');
-            const reportPaymentForm = document.getElementById('report-payment-form');
 
-            async function airtableFetch(path, options = {}) {
+            // --- API HELPER ---
+            async function airtableFetch(path) {
                 const url = `/.netlify/functions/airtable${path}`;
-                const response = await fetch(url, options);
+                const response = await fetch(url);
                 if (!response.ok) {
                     const errorData = await response.json();
                     throw new Error(`Error de Airtable: ${errorData.error?.message || response.statusText}`);
                 }
                 return response.json();
             }
-            
-            const createAirtableRecord = (tableName, fields) => airtableFetch(`/${encodeURIComponent(tableName)}`, { 
-                method: 'POST', 
-                body: JSON.stringify({ records: [{ fields }] }) 
-            });
 
+            // --- INITIALIZATION ---
             async function initApp() {
                 try {
                     const [propietariosData, gastosData, pagosData] = await Promise.all([
@@ -214,6 +180,7 @@
                 }
             }
 
+            // --- UI RENDERING FUNCTIONS ---
             function populateUserSelector(selectorElement) {
                 selectorElement.innerHTML = '<option value="">-- Seleccione su casa --</option>';
                 allData.propietarios.forEach(p => {
@@ -225,7 +192,6 @@
             }
 
             function renderPortalForUser(propertyId) {
-                currentPropertyId = propertyId;
                 const property = allData.propietarios.find(p => p.id === propertyId);
                 if (!property) return;
 
@@ -388,26 +354,7 @@
                 document.getElementById('kpi-solvencia').textContent = `${((solventes / allData.propietarios.length) * 100).toFixed(0)}%`;
             }
 
-            function showModal(modal) {
-                modal.classList.remove('hidden');
-                const content = modal.querySelector('.transform');
-                setTimeout(() => content.classList.remove('scale-95', 'opacity-0'), 10);
-            }
-
-            function hideModal(modal) {
-                const content = modal.querySelector('.transform');
-                content.classList.add('scale-95', 'opacity-0');
-                setTimeout(() => modal.classList.add('hidden'), 300);
-            }
-
-            function showToast(message, isError = false) {
-                const toast = document.getElementById('toast');
-                toast.textContent = message;
-                toast.className = `fixed bottom-5 right-5 text-white py-3 px-5 rounded-lg shadow-lg opacity-0 transform translate-y-10 toast ${isError ? 'bg-red-500' : 'bg-green-500'}`;
-                toast.classList.remove('opacity-0', 'translate-y-10');
-                setTimeout(() => toast.classList.add('opacity-0', 'translate-y-10'), 4000);
-            }
-
+            // --- EVENT LISTENERS ---
             viewStatementBtn.addEventListener('click', () => {
                 const selectedUserId = welcomeUserSelector.value;
                 if (!selectedUserId) return;
@@ -419,50 +366,6 @@
 
             userSelector.addEventListener('change', (e) => {
                 renderPortalForUser(e.target.value);
-            });
-
-            reportPaymentBtn.addEventListener('click', () => showModal(reportModal));
-            closeReportModalBtn.addEventListener('click', () => hideModal(reportModal));
-            cancelReportBtn.addEventListener('click', () => hideModal(reportModal));
-
-            reportPaymentForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const amountInput = document.getElementById('report-amount');
-                const referenceInput = document.getElementById('report-reference');
-                const submitButton = e.currentTarget.querySelector('button[type="submit"]');
-
-                const amount = parseFloat(amountInput.value);
-                const reference = referenceInput.value.trim();
-
-                if (isNaN(amount) || amount <= 0) {
-                    showToast('Por favor, ingrese un monto válido.', true);
-                    return;
-                }
-
-                submitButton.disabled = true;
-                submitButton.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px; border-left-color: white;"></div>';
-
-                try {
-                    const newReport = {
-                        'Propietario que Reporta': [currentPropertyId],
-                        'Monto Reportado': amount,
-                        'Referencia': reference,
-                        'Fecha del Reporte': new Date().toISOString().slice(0, 10),
-                        'Estado': 'Pendiente'
-                    };
-                    
-                    await createAirtableRecord(AIRTABLE_TABLE_REPORTES, newReport);
-
-                    hideModal(reportModal);
-                    reportPaymentForm.reset();
-                    showToast('✅ Reporte enviado. Será validado por la administración.');
-
-                } catch (error) {
-                    showToast(`❌ Error al enviar el reporte: ${error.message}`, true);
-                } finally {
-                    submitButton.disabled = false;
-                    submitButton.textContent = 'Enviar Reporte';
-                }
             });
 
             initApp();
