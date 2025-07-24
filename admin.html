@@ -317,30 +317,59 @@
             topDebtorsChart = new Chart(document.getElementById('topDebtorsChart').getContext('2d'), { type: 'bar', data: { labels: topDebtors.map(d => `Casa ${d.Casa}`), datasets: [{ label: 'Deuda ($)', data: topDebtors.map(d => d['Deuda Restante']), backgroundColor: '#38bdf8', borderRadius: 6 }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
         }
         
-        // --- FIX: Updated modal logic to show a real-time statement of account ---
+        // --- FIX: Updated modal logic to show a real-time statement of account with clear penalty/benefit ---
         function showDebtModal(propertyId) {
             const p = condominioData.find(prop => prop.id === propertyId);
             if (!p) return;
 
             document.getElementById('debtModal-subtitle').textContent = `Casa ${p.Casa} - ${p.Propietario}`;
             
-            // Get the real-time values directly from the property object
-            const cargosAcumulados = p['Cargos Acumulados'] || 0;
+            const deudaAnterior = p['Deuda Anterior'] || 0;
             const totalPagado = p['Total Pagado'] || 0;
             const deudaRestante = p['Deuda Restante'] || 0;
 
-            // Build the list to reflect a clear statement
-            let html = `<li class="flex justify-between"><span>Monto Total Facturado</span><span class="font-medium">$${cargosAcumulados.toFixed(2)}</span></li>`;
+            let totalCargosComunesPropietario = 0;
+            let html = `<li class="flex justify-between"><span>Deuda del Mes Anterior</span><span class="font-medium">$${deudaAnterior.toFixed(2)}</span></li>`;
+            html += `<li class="font-semibold text-slate-800 mt-2 mb-1">Cargos del Mes:</li>`;
             
-            if (totalPagado > 0) {
-                html += `<li class="flex justify-between text-green-600"><span>Pagos Registrados</span><span class="font-medium">-$${totalPagado.toFixed(2)}</span></li>`;
-            } else {
-                html += `<li class="flex justify-between text-slate-500"><span>Pagos Registrados</span><span class="font-medium">$0.00</span></li>`;
+            // Determine the adjustment factor based on the date
+            const factorAjuste = DIA_ACTUAL > DIA_LIMITE_PAGO ? (1 + TASA_RECARGO) : 1.0;
+
+            // Loop through each expense to show individual lines
+            gastosDelMes.forEach(gasto => {
+                const monto = gasto.fields.Monto || 0;
+                const concepto = gasto.fields.Concepto || 'Gasto sin descripción';
+
+                if (gasto.fields['Tipo de Gasto'] === TIPO_GASTO_COMUN) {
+                    let cargoIndividual = monto * (p.Alicuota || 0);
+                    totalCargosComunesPropietario += cargoIndividual; // Accumulate the real amount for the benefit calculation
+                    
+                    // Apply the adjustment factor for display purposes if after the 10th
+                    const cargoMostrado = cargoIndividual * factorAjuste;
+                    
+                    html += `<li class="flex justify-between text-sm ml-2"><span>+ ${concepto}</span><span class="font-medium">$${cargoMostrado.toFixed(2)}</span></li>`;
+
+                } else if (gasto.fields['Tipo de Gasto'] === TIPO_GASTO_ESPECIAL) {
+                    const assignedOwners = gasto.fields.Propietarios || [];
+                    if (assignedOwners.includes(p.id)) {
+                        const numAssigned = assignedOwners.length || 1;
+                        const cargoIndividual = monto / numAssigned;
+                        html += `<li class="flex justify-between text-sm ml-2"><span>+ ${concepto}</span><span class="font-medium">$${cargoIndividual.toFixed(2)}</span></li>`;
+                    }
+                }
+            });
+
+            // Only show the benefit line if it's on or before the 10th
+            if (DIA_ACTUAL <= DIA_LIMITE_PAGO) {
+                const recargo = totalCargosComunesPropietario * TASA_RECARGO;
+                html += `<li class="flex justify-between text-green-600 text-sm ml-2 mt-1"><span>- Beneficio Pronto Pago</span><span class="font-medium">-$${recargo.toFixed(2)}</span></li>`;
             }
 
-            // The list items now logically lead to the final total.
+            if (totalPagado > 0) {
+                html += `<li class="flex justify-between text-green-600 border-t pt-2 mt-2"><span>- Total Pagado</span><span class="font-medium">-$${totalPagado.toFixed(2)}</span></li>`;
+            }
+
             document.getElementById('debtModal-list').innerHTML = html;
-            // The final total is always the 'Deuda Restante' field, which is the single source of truth.
             document.getElementById('debtModal-total').textContent = `$${deudaRestante.toFixed(2)}`;
             
             showModal(document.getElementById('debtModal'));
