@@ -433,6 +433,7 @@
         
         document.getElementById('searchInput').addEventListener('keyup', e => populateTable(condominioData.filter(p => (p.Propietario||'').toLowerCase().includes(e.target.value.toLowerCase()) || (p.Casa||'').toString().includes(e.target.value))));
         
+        // ▼▼ INICIO DE LA MODIFICACIÓN (LISTENER RESTAURADO) ▼▼
         document.getElementById('debtorsTableBody').addEventListener('click', (e) => {
             const target = e.target.closest('button');
             if (!target) return;
@@ -441,6 +442,7 @@
             else if (target.classList.contains('send-reminder-btn')) showReminderModal(id);
             else if (target.classList.contains('register-payment-btn')) showPaymentModal(id);
         });
+        // ▲▲ FIN DE LA MODIFICACIÓN ▲▲
         
         document.getElementById('closeDebtModalBtn').addEventListener('click', () => hideModal('debtModal'));
         document.getElementById('closeReminderModalBtn').addEventListener('click', () => hideModal('reminderModal'));
@@ -529,24 +531,22 @@
 
                 const updates = condominioData.map(p => {
                     const previousDebt = p['Deuda Restante'] || 0;
-                    const cargoComunReal = totalGastosComunes * (p.Alicuota || 0);
-                    const recargo = cargoComunReal * TASA_RECARGO;
-                    const cargoComunConRecargo = cargoComunReal + recargo;
-                    const beneficio = DIA_ACTUAL <= DIA_LIMITE_PAGO ? recargo : 0;
                     
-                    let cargoEspecial = 0;
+                    let thisMonthCharges = 0;
+                    
+                    thisMonthCharges += totalGastosComunes * (p.Alicuota || 0);
+
                     gastosDelMes.forEach(gasto => {
                         if (gasto.fields['Tipo de Gasto'] === TIPO_GASTO_ESPECIAL) {
                             const assignedOwners = gasto.fields.Propietarios || [];
                             if (assignedOwners.includes(p.id)) {
                                 const numAssigned = assignedOwners.length || 1;
-                                cargoEspecial += (gasto.fields.Monto || 0) / numAssigned;
+                                thisMonthCharges += (gasto.fields.Monto || 0) / numAssigned;
                             }
                         }
                     });
 
-                    const finalMonthlyCharge = (cargoComunConRecargo - beneficio) + cargoEspecial;
-                    const newAccumulatedCharges = previousDebt + finalMonthlyCharge;
+                    const newAccumulatedCharges = previousDebt + thisMonthCharges;
                     
                     return {
                         id: p.id,
