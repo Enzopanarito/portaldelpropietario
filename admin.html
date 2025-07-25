@@ -59,11 +59,12 @@
 
             <nav class="flex flex-wrap justify-center gap-2 sm:gap-4 mb-8">
                 <button data-target="dashboard" class="nav-button active text-sm sm:text-base font-semibold py-2 px-4 rounded-full bg-white text-slate-700 shadow-sm hover:bg-slate-100">📊 Dashboard</button>
-                <button data-target="management" class="nav-button relative text-sm sm:text-base font-semibold py-2 px-4 rounded-full bg-white text-slate-700 shadow-sm hover:bg-slate-100">
-                    ⚙️ Gestión de Propietarios
+                <button data-target="management" class="nav-button text-sm sm:text-base font-semibold py-2 px-4 rounded-full bg-white text-slate-700 shadow-sm hover:bg-slate-100">⚙️ Gestión de Propietarios</button>
+                <button data-target="expenses" class="nav-button text-sm sm:text-base font-semibold py-2 px-4 rounded-full bg-white text-slate-700 shadow-sm hover:bg-slate-100">💸 Gestión de Gastos</button>
+                <button data-target="reported-payments" class="nav-button relative text-sm sm:text-base font-semibold py-2 px-4 rounded-full bg-white text-slate-700 shadow-sm hover:bg-slate-100">
+                    🚨 Pagos Reportados
                     <span id="pending-payments-badge" class="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center hidden">0</span>
                 </button>
-                <button data-target="expenses" class="nav-button text-sm sm:text-base font-semibold py-2 px-4 rounded-full bg-white text-slate-700 shadow-sm hover:bg-slate-100">💸 Gestión de Gastos</button>
             </nav>
 
             <main>
@@ -100,24 +101,6 @@
                         <div id="date-info-banner" class="bg-amber-100 border-l-4 border-amber-500 text-amber-700 p-4 rounded-r-lg mb-6"><h4 class="font-bold">Información de Fecha</h4><p class="text-sm">Hoy es <span id="current-date-display" class="font-semibold"></span>. El beneficio por pronto pago aplica hasta el día 10 del mes en curso.</p></div>
                         <div class="mb-4"><input type="text" id="searchInput" placeholder="🔎 Buscar por nombre o número de casa..." class="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500"></div>
                         <div class="overflow-x-auto"><table id="debtorsTable" class="min-w-full bg-white divide-y divide-slate-200"><thead class="bg-slate-100"><tr><th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Casa</th><th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Propietario</th><th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Deuda Restante</th><th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Acciones</th></tr></thead><tbody id="debtorsTableBody"></tbody></table></div>
-                        
-                        <div id="reported-payments-section" class="mt-12 pt-8 border-t-2 border-slate-200">
-                            <h3 class="text-xl font-bold text-slate-900 mb-4">Pagos Reportados Pendientes</h3>
-                            <div class="overflow-x-auto rounded-lg border border-slate-200">
-                                <table class="min-w-full bg-white divide-y divide-slate-200">
-                                    <thead class="bg-slate-50">
-                                        <tr>
-                                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Propietario</th>
-                                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Monto Reportado</th>
-                                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Referencia</th>
-                                            <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Acciones</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="reportedPaymentsTableBody">
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
                     </div>
                 </section>
 
@@ -147,6 +130,27 @@
                              </div>
                          </div>
                      </div>
+                </section>
+                
+                <section id="reported-payments" class="section-content">
+                    <div class="bg-white p-6 rounded-2xl shadow-lg">
+                        <h2 class="text-2xl font-bold mb-1 text-slate-900">Pagos Reportados Pendientes</h2>
+                        <p class="text-slate-600 mb-6">Confirma o rechaza los pagos reportados por los propietarios.</p>
+                        <div class="overflow-x-auto rounded-lg border border-slate-200">
+                            <table class="min-w-full bg-white divide-y divide-slate-200">
+                                <thead class="bg-slate-50">
+                                    <tr>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Propietario</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Monto Reportado</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Referencia</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="reportedPaymentsTableBody">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </section>
             </main>
             <footer class="text-center mt-12"><p class="text-sm text-slate-500">Prototipo generado para el Condominio Villa Los Apamates. © 2025</p></footer>
@@ -202,7 +206,7 @@
         const AIRTABLE_TABLE_PROPIETARIOS = 'Propietarios';
         const AIRTABLE_TABLE_GASTOS = 'Gastos del Mes';
         const AIRTABLE_TABLE_PAGOS = 'Pagos';
-        const AIRTABLE_TABLE_REPORTE_PAGO = 'Reportes de Pago'; // CORRECCIÓN APLICADA
+        const AIRTABLE_TABLE_REPORTE_PAGO = 'Reportes de Pago';
 
         const TIPO_GASTO_COMUN = 'Gasto Común';
         const TIPO_GASTO_ESPECIAL = 'Gasto Especial';
@@ -230,14 +234,15 @@
                 const [propietariosData, gastosData, reportedPaymentsData] = await Promise.all([
                     airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}`),
                     airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_GASTOS)}?view=Gastos%20Mensuales`),
-                    airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}?filterByFormula={Estado}='Pendiente'`)
+                    airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}?view=Grid%20View`)
                 ]);
                 
                 gastosDelMes = gastosData.records || [];
                 condominioData = propietariosData.records.map(r => ({ id: r.id, ...r.fields }));
                 condominioData.sort((a, b) => (a.Casa || 0) - (b.Casa || 0));
                 
-                const pendingPayments = reportedPaymentsData.records || [];
+                const allReportedPayments = reportedPaymentsData.records || [];
+                const pendingPayments = allReportedPayments.filter(p => p.fields.Estado === 'Pendiente');
                 
                 setupUI();
                 updateDashboard();
@@ -327,7 +332,13 @@
             badge.classList.remove('hidden');
 
             payments.forEach(payment => {
-                const ownerId = payment.fields['Propietario que Reporta'][0];
+                const ownerLink = payment.fields['Propietario que Reporta'];
+                if (!ownerLink || ownerLink.length === 0) {
+                    console.error('Se encontró un reporte de pago sin propietario vinculado. ID del reporte:', payment.id);
+                    return; 
+                }
+                const ownerId = ownerLink[0];
+
                 const owner = condominioData.find(o => o.id === ownerId);
                 const ownerName = owner ? `Casa ${owner.Casa} - ${owner.Propietario}` : 'Propietario no encontrado';
 
