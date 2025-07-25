@@ -59,7 +59,7 @@
                 </div>
                 <div class="flex items-center gap-4">
                     <select id="userSelector" class="bg-slate-100 border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-sky-500 focus:border-sky-500 block w-full p-2.5">
-                        </select>
+                    </select>
                 </div>
             </div>
         </header>
@@ -75,6 +75,10 @@
                     <div class="bg-white p-6 rounded-2xl shadow-lg">
                         <h3 class="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Su Estado de Cuenta Actual</h3>
                         <div id="debt-summary" class="space-y-3"></div>
+
+                        <button id="report-payment-btn" class="mt-6 w-full bg-teal-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-teal-700 transition-colors shadow-sm">
+                            Reportar un Pago
+                        </button>
                     </div>
                     <div class="bg-white p-6 rounded-2xl shadow-lg">
                         <h3 id="expenses-breakdown-title" class="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Desglose de Cargos del Mes Actual</h3>
@@ -110,13 +114,38 @@
                                     </tr>
                                 </thead>
                                 <tbody id="payments-history-body" class="bg-white divide-y divide-slate-200">
-                                    </tbody>
+                                </tbody>
                             </table>
                         </div>
                     </div>
                 </div>
             </div>
         </main>
+    </div>
+
+    <div id="reportPaymentModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 transform transition-all">
+            <div class="flex justify-between items-start mb-4">
+                <h3 class="text-xl font-bold text-slate-900">Reportar Nuevo Pago</h3>
+                <button id="closeReportModalBtn" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
+            </div>
+            <form id="report-payment-form">
+                <div class="space-y-4">
+                    <div>
+                        <label for="report-amount" class="block text-sm font-medium text-slate-700">Monto del Pago ($)</label>
+                        <input type="number" id="report-amount" step="0.01" class="mt-1 block w-full px-3 py-2 bg-slate-100 border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-sky-500 focus:border-sky-500" required placeholder="Ej: 125.50">
+                    </div>
+                    <div>
+                        <label for="report-reference" class="block text-sm font-medium text-slate-700">Número de Referencia o Confirmación</label>
+                        <input type="text" id="report-reference" class="mt-1 block w-full px-3 py-2 bg-slate-100 border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-sky-500 focus:border-sky-500" required placeholder="Ej: 04121234567">
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end gap-3">
+                    <button type="button" id="cancelReportBtn" class="py-2 px-4 bg-slate-200 text-slate-800 font-semibold rounded-lg hover:bg-slate-300">Cancelar</button>
+                    <button type="submit" id="submitReportBtn" class="py-2 px-4 bg-sky-600 text-white font-semibold rounded-lg hover:bg-sky-700">Enviar Reporte</button>
+                </div>
+            </form>
+        </div>
     </div>
 
     <script>
@@ -145,9 +174,9 @@
             const bcvNoticeContainer = document.getElementById('bcv-notice-container');
 
             // --- API HELPER ---
-            async function airtableFetch(path) {
+            async function airtableFetch(path, options = {}) {
                 const url = `/.netlify/functions/airtable${path}`;
-                const response = await fetch(url);
+                const response = await fetch(url, options);
                 if (!response.ok) {
                     const errorData = await response.json();
                     throw new Error(`Error de Airtable: ${errorData.error?.message || response.statusText}`);
@@ -369,6 +398,76 @@
             });
 
             initApp();
+
+            // --- LÓGICA PARA REPORTAR PAGO ---
+            const reportPaymentBtn = document.getElementById('report-payment-btn');
+            const reportPaymentModal = document.getElementById('reportPaymentModal');
+            const closeReportModalBtn = document.getElementById('closeReportModalBtn');
+            const cancelReportBtn = document.getElementById('cancelReportBtn');
+            const reportPaymentForm = document.getElementById('report-payment-form');
+
+            // Abrir modal
+            reportPaymentBtn.addEventListener('click', () => {
+                reportPaymentModal.classList.remove('hidden');
+            });
+
+            // Función para cerrar el modal
+            const hideReportModal = () => {
+                reportPaymentModal.classList.add('hidden');
+                reportPaymentForm.reset(); // Limpiar el formulario al cerrar
+            };
+
+            // Eventos para cerrar el modal
+            closeReportModalBtn.addEventListener('click', hideReportModal);
+            cancelReportBtn.addEventListener('click', hideReportModal);
+
+            // Evento para enviar el formulario de reporte
+            reportPaymentForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const submitBtn = document.getElementById('submitReportBtn');
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Enviando...';
+                
+                const selectedUserId = userSelector.value;
+                const amount = parseFloat(document.getElementById('report-amount').value);
+                const reference = document.getElementById('report-reference').value;
+
+                if (!selectedUserId || isNaN(amount) || amount <= 0 || !reference.trim()) {
+                    alert('Por favor, complete todos los campos correctamente.');
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Enviar Reporte';
+                    return;
+                }
+
+                try {
+                    // Usamos el proxy de airtable.js para crear un registro en la tabla "Reporte de pago"
+                    // con los nombres de campo que definimos.
+                    await airtableFetch('/Reporte%20de%20pago', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            records: [{
+                                fields: {
+                                    'Propietario que Reporta': [selectedUserId],
+                                    'Monto Reportado': amount,
+                                    'Referencia': reference
+                                    // El campo 'Estado' usará el valor por defecto "Pendiente" en Airtable.
+                                    // El campo 'Reporte' puede ser una fórmula en Airtable para autogenerarse.
+                                }
+                            }]
+                        })
+                    });
+                    
+                    hideReportModal();
+                    alert('✅ ¡Pago reportado con éxito! El administrador lo revisará y aplicará a su cuenta pronto.');
+
+                } catch (error) {
+                    console.error('Error reportando pago:', error);
+                    alert('❌ Hubo un error al reportar el pago. Por favor, intente de nuevo.');
+                } finally {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Enviar Reporte';
+                }
+            });
         });
     </script>
 </body>
