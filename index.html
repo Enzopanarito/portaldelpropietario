@@ -56,8 +56,8 @@
                     </svg>
                 </button>
             </div>
-            <div id="morosos-list" class="text-left text-sm space-y-2 max-h-48 overflow-y-auto">
-            </div>
+            <div id="morosos-list" class="text-left text-sm space-y-2">
+                </div>
         </div>
 
     </div>
@@ -234,8 +234,12 @@
 
                 if (morosos.length > 0) {
                     morososListDiv.innerHTML = morosos.map(moroso => 
-                        `<div class="flex items-center">
-                            <span class="font-semibold text-slate-700">Casa #${moroso.Casa || 'N/A'}</span>
+                        `<div class="flex justify-between items-center py-1 border-b border-slate-100">
+                            <div>
+                                <span class="font-semibold text-slate-700">Casa #${moroso.Casa || 'N/A'}</span>
+                                <span class="text-slate-500 ml-2">${moroso.Propietario || ''}</span>
+                            </div>
+                            <span class="font-bold text-red-500">$${(moroso['Deuda Restante'] || 0).toFixed(2)}</span>
                          </div>`
                     ).join('');
                     morososContainer.classList.remove('hidden');
@@ -499,7 +503,6 @@
                 }
             });
 
-            // ▼▼ INICIO DEL NUEVO SCRIPT PARA DESCARGAR IMAGEN ▼▼
             document.getElementById('share-morosos-btn').addEventListener('click', () => {
                 const morososContainer = document.getElementById('morosos-container');
                 
@@ -510,7 +513,6 @@
                     link.click();
                 });
             });
-            // ▲▲ FIN DEL NUEVO SCRIPT PARA DESCARGAR IMAGEN ▲▲
         });
     </script>
 </body>
