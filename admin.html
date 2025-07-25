@@ -114,11 +114,11 @@
                                         </tr>
                                     </thead>
                                     <tbody id="reportedPaymentsTableBody">
-                                        </tbody>
+                                    </tbody>
                                 </table>
                             </div>
                         </div>
-                        </div>
+                    </div>
                 </section>
 
                 <section id="expenses" class="section-content">
@@ -159,9 +159,6 @@
     </div>
     
     <script>
-        // --- SCRIPT COMPLETO PARA ADMIN.HTML ---
-        
-        // --- LÓGICA DE LOGIN ---
         document.addEventListener('DOMContentLoaded', () => {
             if (sessionStorage.getItem('vla-admin-auth') === 'true') { showMainContent(); }
             document.getElementById('login-form').addEventListener('submit', async (e) => {
@@ -202,11 +199,10 @@
             initApp();
         }
 
-        // --- CÓDIGO PRINCIPAL ---
         const AIRTABLE_TABLE_PROPIETARIOS = 'Propietarios';
         const AIRTABLE_TABLE_GASTOS = 'Gastos del Mes';
         const AIRTABLE_TABLE_PAGOS = 'Pagos';
-        const AIRTABLE_TABLE_REPORTE_PAGO = 'Reporte de pago'; // Tabla nueva
+        const AIRTABLE_TABLE_REPORTE_PAGO = 'Reportes de Pago'; // CORRECCIÓN APLICADA
 
         const TIPO_GASTO_COMUN = 'Gasto Común';
         const TIPO_GASTO_ESPECIAL = 'Gasto Especial';
@@ -248,10 +244,10 @@
                 populateTable(condominioData);
                 populateExpensesTable(gastosDelMes);
                 populateOwnerSelector();
-                populateReportedPayments(pendingPayments); // Nueva función
+                populateReportedPayments(pendingPayments);
 
             } catch (error) {
-                alert(`Hubo un error al cargar los datos: ${error.message}.`);
+                alert(`Hubo un error al cargar los datos: ${error.message}`);
             }
         }
 
@@ -416,7 +412,6 @@
             setTimeout(() => toast.classList.add('opacity-0', 'translate-y-10'), 4000);
         }
         
-        // --- EVENT LISTENERS ---
         document.querySelectorAll('.nav-button').forEach(button => button.addEventListener('click', (e) => {
             document.querySelectorAll('.nav-button, .section-content').forEach(el => el.classList.remove('active'));
             e.currentTarget.classList.add('active');
@@ -549,7 +544,6 @@
                     };
                 });
                 
-                // Airtable API allows updating 10 records at a time. We need to chunk the updates.
                 for (let i = 0; i < updates.length; i += 10) {
                     const chunk = updates.slice(i, i + 10);
                     await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}`, { method: 'PATCH', body: JSON.stringify({ records: chunk }) });
@@ -616,7 +610,7 @@
         document.getElementById('expense-type').addEventListener('change', (e) => {
             const isCommon = e.target.value === 'Gasto Común';
             document.querySelectorAll('#expense-owners-list input').forEach(cb => cb.checked = isCommon);
-            document.getElementById('toggle-all-owners').textContent = isCommon ? 'Deseleccionar Todos' : 'Seleccionar Todos';
+            document.getElementById('toggle-all-owners').textContent = isCommon ? 'Deseleccionar Todos' : 'Deseleccionar Todos';
         });
 
         document.getElementById('toggle-all-owners').addEventListener('click', (e) => {
@@ -626,7 +620,6 @@
             e.target.textContent = areAllChecked ? 'Seleccionar Todos' : 'Deseleccionar Todos';
         });
         
-        // Listener para la nueva tabla de pagos reportados
         document.getElementById('reportedPaymentsTableBody').addEventListener('click', async (e) => {
             const button = e.target.closest('button');
             if (!button) return;
@@ -639,27 +632,21 @@
 
             try {
                 if (isConfirm) {
-                    // 1. Obtener los datos del pago reportado
                     const reportedPayment = await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`);
                     const fields = reportedPayment.fields;
                     
-                    // 2. Crear el registro en la tabla de Pagos real
                     await createAirtableRecord(AIRTABLE_TABLE_PAGOS, {
                         'Monto Pagado': fields['Monto Reportado'],
                         'Fecha de Pago': new Date().toISOString().slice(0, 10),
                         'Propietario que Paga': fields['Propietario que Reporta']
                     });
 
-                    // 3. Actualizar el estado del pago reportado a "Confirmado"
                     await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`, {
                         method: 'PATCH',
                         body: JSON.stringify({ fields: { 'Estado': 'Confirmado' } })
                     });
-
                     showToast('✅ Pago confirmado y aplicado.');
-
-                } else { // Si es Rechazar
-                    // Simplemente actualizamos el estado a "Rechazado"
+                } else {
                     await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`, {
                         method: 'PATCH',
                         body: JSON.stringify({ fields: { 'Estado': 'Rechazado' } })
@@ -667,13 +654,11 @@
                     showToast('️✔️ Pago rechazado con éxito.');
                 }
                 
-                // Recargar todo para ver los cambios
                 setTimeout(initApp, 1500);
 
             } catch (error) {
                 showToast(`❌ Error: ${error.message}`, true);
                 button.disabled = false;
-                // Restaurar texto del botón según la acción
                 button.innerHTML = isConfirm ? 'Confirmar' : 'Rechazar';
             }
         });
