@@ -51,7 +51,7 @@
         <header class="bg-white shadow-md">
             <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
                 <div class="flex items-center gap-3">
-                    <img src="https://i.postimg.cc/WpyB1yTb/Logo-VLA.png" alt="Logo Villa Los Apamates" class="w-12 h-auto">
+                    <img src="https://i.postimg.cc/WpyB1yTb/Logo_VLA.png" alt="Logo Villa Los Apamates" class="w-12 h-auto">
                     <div>
                         <h1 class="text-xl sm:text-2xl font-bold text-slate-900">Villa Los Apamates</h1>
                         <p class="text-sm text-slate-500">Portal del Propietario</p>
@@ -121,6 +121,9 @@
                 </div>
             </div>
         </main>
+        <footer class="text-center mt-12">
+            <p class="text-sm text-slate-500">Sistema generado por ENZO PANARITO para el Condominio Villa Los Apamates. © 2025</p>
+        </footer>
     </div>
 
     <div id="reportPaymentModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">
@@ -413,20 +416,23 @@
 
             reportPaymentForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
-                const submitBtn = document.getElementById('submitReportBtn');
-                submitBtn.disabled = true;
-                submitBtn.textContent = 'Enviando...';
                 
-                const selectedUserId = userSelector.value;
                 const amount = parseFloat(document.getElementById('report-amount').value);
                 const reference = document.getElementById('report-reference').value;
+                const selectedUserId = userSelector.value;
 
                 if (!selectedUserId || isNaN(amount) || amount <= 0 || !reference.trim()) {
                     alert('Por favor, complete todos los campos correctamente.');
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = 'Enviar Reporte';
                     return;
                 }
+
+                if (!confirm(`¿Está seguro de que desea reportar un pago por $${amount.toFixed(2)}?`)) {
+                    return;
+                }
+
+                const submitBtn = document.getElementById('submitReportBtn');
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Enviando...';
 
                 try {
                     await airtableFetch('/Reportes%20de%20Pago', {
