@@ -150,7 +150,6 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            // --- CONFIG & CONSTANTS ---
             const AIRTABLE_TABLE_PROPIETARIOS = 'Propietarios';
             const AIRTABLE_TABLE_GASTOS = 'Gastos del Mes';
             const AIRTABLE_TABLE_PAGOS = 'Pagos';
@@ -164,7 +163,6 @@
 
             let allData = { propietarios: [], gastos: [], pagos: [] };
 
-            // --- DOM ELEMENTS ---
             const welcomeScreen = document.getElementById('welcome-screen');
             const mainContent = document.getElementById('main-content');
             const welcomeUserSelector = document.getElementById('welcomeUserSelector');
@@ -173,7 +171,6 @@
             const discountBannerContainer = document.getElementById('discount-banner-container');
             const bcvNoticeContainer = document.getElementById('bcv-notice-container');
 
-            // --- API HELPER ---
             async function airtableFetch(path, options = {}) {
                 const url = `/.netlify/functions/airtable${path}`;
                 const response = await fetch(url, options);
@@ -184,7 +181,6 @@
                 return response.json();
             }
 
-            // --- INITIALIZATION ---
             async function initApp() {
                 try {
                     const [propietariosData, gastosData, pagosData] = await Promise.all([
@@ -209,7 +205,6 @@
                 }
             }
 
-            // --- UI RENDERING FUNCTIONS ---
             function populateUserSelector(selectorElement) {
                 selectorElement.innerHTML = '<option value="">-- Seleccione su casa --</option>';
                 allData.propietarios.forEach(p => {
@@ -383,7 +378,6 @@
                 document.getElementById('kpi-solvencia').textContent = `${((solventes / allData.propietarios.length) * 100).toFixed(0)}%`;
             }
 
-            // --- EVENT LISTENERS ---
             viewStatementBtn.addEventListener('click', () => {
                 const selectedUserId = welcomeUserSelector.value;
                 if (!selectedUserId) return;
@@ -399,29 +393,24 @@
 
             initApp();
 
-            // --- LÓGICA PARA REPORTAR PAGO ---
             const reportPaymentBtn = document.getElementById('report-payment-btn');
             const reportPaymentModal = document.getElementById('reportPaymentModal');
             const closeReportModalBtn = document.getElementById('closeReportModalBtn');
             const cancelReportBtn = document.getElementById('cancelReportBtn');
             const reportPaymentForm = document.getElementById('report-payment-form');
 
-            // Abrir modal
             reportPaymentBtn.addEventListener('click', () => {
                 reportPaymentModal.classList.remove('hidden');
             });
 
-            // Función para cerrar el modal
             const hideReportModal = () => {
                 reportPaymentModal.classList.add('hidden');
-                reportPaymentForm.reset(); // Limpiar el formulario al cerrar
+                reportPaymentForm.reset();
             };
 
-            // Eventos para cerrar el modal
             closeReportModalBtn.addEventListener('click', hideReportModal);
             cancelReportBtn.addEventListener('click', hideReportModal);
 
-            // Evento para enviar el formulario de reporte
             reportPaymentForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const submitBtn = document.getElementById('submitReportBtn');
@@ -440,9 +429,7 @@
                 }
 
                 try {
-                    // Usamos el proxy de airtable.js para crear un registro en la tabla "Reporte de pago"
-                    // con los nombres de campo que definimos.
-                    await airtableFetch('/Reporte%20de%20pago', {
+                    await airtableFetch('/Reportes%20de%20Pago', {
                         method: 'POST',
                         body: JSON.stringify({
                             records: [{
@@ -450,8 +437,6 @@
                                     'Propietario que Reporta': [selectedUserId],
                                     'Monto Reportado': amount,
                                     'Referencia': reference
-                                    // El campo 'Estado' usará el valor por defecto "Pendiente" en Airtable.
-                                    // El campo 'Reporte' puede ser una fórmula en Airtable para autogenerarse.
                                 }
                             }]
                         })
