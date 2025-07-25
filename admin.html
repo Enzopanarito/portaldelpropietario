@@ -231,18 +231,30 @@
         
         async function initApp() {
             try {
+                console.log("--- INICIANDO CARGA DE DATOS ---");
+
                 const [propietariosData, gastosData, reportedPaymentsData] = await Promise.all([
                     airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}`),
                     airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_GASTOS)}?view=Gastos%20Mensuales`),
                     airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}?view=Grid%20View`)
                 ]);
                 
+                console.log("1. Datos de Airtable RECIBIDOS:", { propietariosData, gastosData, reportedPaymentsData });
+                
                 gastosDelMes = gastosData.records || [];
                 condominioData = propietariosData.records.map(r => ({ id: r.id, ...r.fields }));
                 condominioData.sort((a, b) => (a.Casa || 0) - (b.Casa || 0));
                 
                 const allReportedPayments = reportedPaymentsData.records || [];
-                const pendingPayments = allReportedPayments.filter(p => p.fields.Estado === 'Pendiente');
+                console.log("2. Todos los pagos reportados (antes de filtrar):", allReportedPayments);
+
+                const pendingPayments = allReportedPayments.filter(p => {
+                    // Añadimos un log para ver qué tiene cada registro en el campo "Estado"
+                    console.log(`Revisando reporte ID ${p.id}: Estado =`, p.fields.Estado);
+                    return p.fields.Estado === 'Pendiente';
+                });
+                
+                console.log("3. Pagos PENDIENTES (después de filtrar):", pendingPayments);
                 
                 setupUI();
                 updateDashboard();
@@ -251,7 +263,10 @@
                 populateOwnerSelector();
                 populateReportedPayments(pendingPayments);
 
+                console.log("--- CARGA DE DATOS COMPLETADA ---");
+
             } catch (error) {
+                console.error("--- ERROR CATASTRÓFICO EN initApp ---", error);
                 alert(`Hubo un error al cargar los datos: ${error.message}`);
             }
         }
