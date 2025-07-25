@@ -153,7 +153,9 @@
                     </div>
                 </section>
             </main>
-            <footer class="text-center mt-12"><p class="text-sm text-slate-500">Prototipo generado para el Condominio Villa Los Apamates. © 2025</p></footer>
+            <footer class="text-center mt-12">
+                <p class="text-sm text-slate-500">Sistema generado por ENZO PANARITO para el Condominio Villa Los Apamates. © 2025</p>
+            </footer>
         </div>
 
         <div id="debtModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden modal-backdrop"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-md transform transition-all scale-95 opacity-0" id="debtModalContent"><div class="p-6"><div class="flex justify-between items-start"><div><h3 class="text-xl font-bold text-slate-900" id="debtModal-title">Desglose de Deuda</h3><p class="text-slate-600" id="debtModal-subtitle"></p></div><button id="closeDebtModalBtn" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button></div><div class="mt-4 border-t border-slate-200 pt-4 max-h-80 overflow-y-auto"><ul class="space-y-2" id="debtModal-list"></ul><div class="mt-4 pt-4 border-t border-slate-200 flex justify-between items-center"><span class="text-lg font-semibold text-slate-500">TOTAL A PAGAR HOY</span><span class="text-2xl font-bold text-sky-600" id="debtModal-total">$0.00</span></div></div></div></div>
@@ -231,30 +233,18 @@
         
         async function initApp() {
             try {
-                console.log("--- INICIANDO CARGA DE DATOS ---");
-
                 const [propietariosData, gastosData, reportedPaymentsData] = await Promise.all([
                     airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}`),
                     airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_GASTOS)}?view=Gastos%20Mensuales`),
                     airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}?view=Grid%20View`)
                 ]);
                 
-                console.log("1. Datos de Airtable RECIBIDOS:", { propietariosData, gastosData, reportedPaymentsData });
-                
                 gastosDelMes = gastosData.records || [];
                 condominioData = propietariosData.records.map(r => ({ id: r.id, ...r.fields }));
                 condominioData.sort((a, b) => (a.Casa || 0) - (b.Casa || 0));
                 
                 const allReportedPayments = reportedPaymentsData.records || [];
-                console.log("2. Todos los pagos reportados (antes de filtrar):", allReportedPayments);
-
-                const pendingPayments = allReportedPayments.filter(p => {
-                    // Añadimos un log para ver qué tiene cada registro en el campo "Estado"
-                    console.log(`Revisando reporte ID ${p.id}: Estado =`, p.fields.Estado);
-                    return p.fields.Estado === 'Pendiente';
-                });
-                
-                console.log("3. Pagos PENDIENTES (después de filtrar):", pendingPayments);
+                const pendingPayments = allReportedPayments.filter(p => p.fields.Estado === 'Pendiente');
                 
                 setupUI();
                 updateDashboard();
@@ -263,10 +253,7 @@
                 populateOwnerSelector();
                 populateReportedPayments(pendingPayments);
 
-                console.log("--- CARGA DE DATOS COMPLETADA ---");
-
             } catch (error) {
-                console.error("--- ERROR CATASTRÓFICO EN initApp ---", error);
                 alert(`Hubo un error al cargar los datos: ${error.message}`);
             }
         }
@@ -652,6 +639,12 @@
 
             const recordId = button.dataset.id;
             const isConfirm = button.classList.contains('confirm-payment-btn');
+            
+            if (!isConfirm) {
+                if (!confirm('¿Estás seguro de que deseas rechazar este pago?')) {
+                    return;
+                }
+            }
             
             button.disabled = true;
             button.innerHTML = '...';
