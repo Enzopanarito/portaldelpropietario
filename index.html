@@ -5,10 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal del Propietario - Villa Los Apamates</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #f8fafc; /* slate-50 */
+            background-color: #f8fafc;
         }
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         #welcome-screen {
@@ -31,7 +32,7 @@
 <body class="bg-slate-50 text-slate-800">
 
     <div id="welcome-screen" class="min-h-screen flex flex-col items-center justify-center p-4 text-center">
-        <img src="https://i.postimg.cc/WpyB1yTb/Logo-VLA.png" alt="Logo Villa Los Apamates" class="w-48 h-auto mb-6">
+        <img src="https://i.postimg.cc/WpyB1yTb/Logo_VLA.png" alt="Logo Villa Los Apamates" class="w-48 h-auto mb-6">
         <h1 class="text-4xl font-bold text-slate-900">Bienvenido a Villa Los Apamates</h1>
         <p class="text-lg text-slate-600 mt-2 mb-8">Su portal de gestión en línea.</p>
         
@@ -44,6 +45,21 @@
                  Consultar Estado de Cuenta
              </button>
         </div>
+
+        <div id="morosos-container" class="w-full max-w-sm mx-auto bg-white p-6 rounded-2xl shadow-xl mt-6 hidden">
+            <div class="flex justify-between items-center border-b pb-2 mb-3">
+                <h3 class="text-lg font-bold text-slate-800">❌ Propietarios en Mora</h3>
+                <button id="share-morosos-btn" title="Descargar como imagen" class="text-sky-600 hover:text-sky-800">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-camera-fill" viewBox="0 0 16 16">
+                        <path d="M10.5 8.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0"/>
+                        <path d="M2 4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-1.172a2 2 0 0 1-1.414-.586l-.828-.828A2 2 0 0 0 9.172 2H6.828a2 2 0 0 0-1.414.586l-.828.828A2 2 0 0 1 3.172 4H2zm.5 2a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1m9 2.5a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0"/>
+                    </svg>
+                </button>
+            </div>
+            <div id="morosos-list" class="text-left text-sm space-y-2 max-h-48 overflow-y-auto">
+            </div>
+        </div>
+
     </div>
 
 
@@ -201,12 +217,34 @@
                     populateUserSelector(welcomeUserSelector);
                     populateUserSelector(userSelector);
                     updateGlobalKPIs();
+                    displayMorososList();
 
                 } catch (error) {
                     welcomeUserSelector.innerHTML = `<option>Error al cargar datos</option>`;
                     console.error("Error initializing app:", error);
                 }
             }
+            
+            function displayMorososList() {
+                const morososContainer = document.getElementById('morosos-container');
+                const morososListDiv = document.getElementById('morosos-list');
+
+                const morosos = allData.propietarios.filter(p => p['Deuda Restante'] && p['Deuda Restante'] > 0.01);
+                morosos.sort((a, b) => (a.Casa || 0) - (b.Casa || 0));
+
+                if (morosos.length > 0) {
+                    morososListDiv.innerHTML = morosos.map(moroso => 
+                        `<div class="flex items-center">
+                            <span class="font-semibold text-slate-700">Casa #${moroso.Casa || 'N/A'}</span>
+                         </div>`
+                    ).join('');
+                    morososContainer.classList.remove('hidden');
+                } else {
+                    morososListDiv.innerHTML = `<p class="text-green-600 font-semibold">¡Felicitaciones! No hay propietarios en mora.</p>`;
+                    morososContainer.classList.remove('hidden');
+                }
+            }
+
 
             function populateUserSelector(selectorElement) {
                 selectorElement.innerHTML = '<option value="">-- Seleccione su casa --</option>';
@@ -460,6 +498,19 @@
                     submitBtn.textContent = 'Enviar Reporte';
                 }
             });
+
+            // ▼▼ INICIO DEL NUEVO SCRIPT PARA DESCARGAR IMAGEN ▼▼
+            document.getElementById('share-morosos-btn').addEventListener('click', () => {
+                const morososContainer = document.getElementById('morosos-container');
+                
+                html2canvas(morososContainer).then(canvas => {
+                    const link = document.createElement('a');
+                    link.download = 'lista-de-morosos.png';
+                    link.href = canvas.toDataURL('image/png');
+                    link.click();
+                });
+            });
+            // ▲▲ FIN DEL NUEVO SCRIPT PARA DESCARGAR IMAGEN ▲▲
         });
     </script>
 </body>
