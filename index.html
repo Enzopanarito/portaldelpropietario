@@ -136,7 +136,7 @@
                     </div>
                     <div id="morosos-container-private" class="bg-white p-6 rounded-2xl shadow-lg hidden">
                         <div class="flex justify-between items-center border-b pb-2 mb-3">
-                            <h3 class="text-lg font-bold text-slate-800">❌ Propietarios en Mora</h3>
+                            <h3 class="text-lg font-bold text-slate-800">Saldos Pendientes por Propietario</h3>
                             <button id="share-morosos-btn" title="Descargar como imagen" class="text-sky-600 hover:text-sky-800">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-camera-fill" viewBox="0 0 16 16">
                                     <path d="M10.5 8.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0"/>
@@ -151,7 +151,7 @@
             </div>
         </main>
         <footer class="text-center mt-12">
-            <p class="text-sm text-slate-500">Sistema generado por ENZO PANARITO para el Condominio Villa Los Apamates. © 2025</p>
+            <p class="text-sm text-slate-500">Sistema generado por Enzo Panarito para el Condominio Villa Los Apamates. © 2025</p>
         </footer>
     </div>
 
@@ -185,16 +185,12 @@
             const AIRTABLE_TABLE_PROPIETARIOS = 'Propietarios';
             const AIRTABLE_TABLE_GASTOS = 'Gastos del Mes';
             const AIRTABLE_TABLE_PAGOS = 'Pagos';
-
             const TIPO_GASTO_COMUN = 'Gasto Común';
             const TIPO_GASTO_ESPECIAL = 'Gasto Especial';
-
             const TASA_RECARGO = 0.10;
             const DIA_LIMITE_PAGO = 10;
             const FECHA_ACTUAL = new Date(), DIA_ACTUAL = FECHA_ACTUAL.getDate();
-
             let allData = { propietarios: [], gastos: [], pagos: [] };
-
             const welcomeScreen = document.getElementById('welcome-screen');
             const mainContent = document.getElementById('main-content');
             const welcomeUserSelector = document.getElementById('welcomeUserSelector');
@@ -220,33 +216,27 @@
                         airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_GASTOS)}?view=Gastos%20Mensuales`),
                         airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PAGOS)}`)
                     ]);
-                    
                     allData.propietarios = (propietariosData.records || []).map(r => ({ id: r.id, ...r.fields }));
                     allData.gastos = gastosData.records || [];
                     allData.pagos = pagosData.records || [];
-                    
                     allData.propietarios.sort((a, b) => (a.Casa || 0) - (b.Casa || 0));
-                    
                     populateUserSelector(welcomeUserSelector);
                     populateUserSelector(userSelector);
                     updateGlobalKPIs();
                     displayPublicKPIs();
-
                 } catch (error) {
                     welcomeUserSelector.innerHTML = `<option>Error al cargar datos</option>`;
                     console.error("Error initializing app:", error);
                 }
             }
-            
+
             function displayPublicKPIs() {
                 const kpiContainer = document.getElementById('kpi-container-public');
-                if(allData.propietarios.length === 0) return;
-
+                if (allData.propietarios.length === 0) return;
                 const totalPropietarios = allData.propietarios.length;
                 const morosos = allData.propietarios.filter(p => p['Deuda Restante'] && p['Deuda Restante'] > 0.01).length;
                 const solventes = totalPropietarios - morosos;
-                const porcentajeSolvencia = ((solventes / totalPropietarios) * 100).toFixed(0);
-
+                const porcentajeSolvencia = totalPropietarios > 0 ? ((solventes / totalPropietarios) * 100).toFixed(0) : 0;
                 document.getElementById('kpi-public-solventes').textContent = `${solventes} de ${totalPropietarios}`;
                 document.getElementById('kpi-public-solvencia').textContent = `${porcentajeSolvencia}%`;
                 kpiContainer.classList.remove('hidden');
@@ -255,12 +245,10 @@
             function displayPrivateMorososList() {
                 const morososContainer = document.getElementById('morosos-container-private');
                 const morososListDiv = document.getElementById('morosos-list-private');
-
                 const morosos = allData.propietarios.filter(p => p['Deuda Restante'] && p['Deuda Restante'] > 0.01);
                 morosos.sort((a, b) => (a.Casa || 0) - (b.Casa || 0));
-
                 if (morosos.length > 0) {
-                    morososListDiv.innerHTML = morosos.map(moroso => 
+                    morososListDiv.innerHTML = morosos.map(moroso =>
                         `<div class="flex justify-between items-center py-1 border-b border-slate-100">
                             <div>
                                 <span class="font-semibold text-slate-700">Casa #${moroso.Casa || 'N/A'}</span>
@@ -288,26 +276,20 @@
             function renderPortalForUser(propertyId) {
                 const property = allData.propietarios.find(p => p.id === propertyId);
                 if (!property) return;
-
                 const currentDate = new Date();
                 const dateString = currentDate.toLocaleString('es-VE', { day: '2-digit', month: 'long', year: 'numeric' });
                 const monthYearString = currentDate.toLocaleString('es-VE', { month: 'long', year: 'numeric' });
-
                 document.getElementById('welcome-message').innerHTML = `
                     <h2 class="text-3xl font-bold text-slate-900">Bienvenido, ${property.Propietario}</h2>
                     <p class="text-lg text-slate-600">Este es el resumen de su estado de cuenta para la <span class="font-bold">Casa #${property.Casa}</span>.</p>
-                    <p class="text-md text-slate-500 mt-2">Estado de Cuenta para: <span class="font-semibold">${dateString}</span></p>
-                `;
-
+                    <p class="text-md text-slate-500 mt-2">Estado de Cuenta para: <span class="font-semibold">${dateString}</span></p>`;
                 const deudaRestante = property['Deuda Restante'] || 0;
                 document.getElementById('debt-summary').innerHTML = `
                     <div class="flex justify-between items-baseline text-3xl font-bold ${deudaRestante > 0.01 ? 'text-red-500' : 'text-green-600'}">
                         <span>Deuda Total Actual:</span>
                         <span>$${deudaRestante.toFixed(2)}</span>
                     </div>
-                    <p class="text-xs text-slate-500 text-right">Este es su saldo total a la fecha de hoy.</p>
-                `;
-
+                    <p class="text-xs text-slate-500 text-right">Este es su saldo total a la fecha de hoy.</p>`;
                 displayChargesBreakdown(property, monthYearString);
                 displayPaymentsHistory(property);
                 displayDiscountBanner();
@@ -316,17 +298,11 @@
             }
 
             function displayChargesBreakdown(property, monthYearString) {
-                const TASA_RECARGO = 0.10;
-                const DIA_LIMITE_PAGO = 10;
-                const FECHA_ACTUAL = new Date(), DIA_ACTUAL = FECHA_ACTUAL.getDate();
                 document.getElementById('expenses-breakdown-title').textContent = `Desglose de Cargos para ${monthYearString}`;
                 const breakdownDiv = document.getElementById('expenses-breakdown');
-
                 const deudaAnterior = property['Deuda Anterior'] || 0;
                 const totalPagado = property['Total Pagado'] || 0;
                 let totalCargosComunesPropietario = 0;
-                let totalCargosMesPropietario = 0;
-
                 let tableHtml = `<table class="min-w-full text-sm">
                     <thead class="border-b">
                         <tr>
@@ -336,19 +312,12 @@
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-200">`;
-                
-                tableHtml += `<tr>
-                                <td class="px-2 py-2 font-semibold" colspan="2">Deuda del Mes Anterior</td>
-                                <td class="px-2 py-2 text-right font-semibold">$${deudaAnterior.toFixed(2)}</td>
-                              </tr>`;
-
+                tableHtml += `<tr><td class="px-2 py-2 font-semibold" colspan="2">Deuda del Mes Anterior</td><td class="px-2 py-2 text-right font-semibold">$${deudaAnterior.toFixed(2)}</td></tr>`;
                 const factorAjuste = DIA_ACTUAL > DIA_LIMITE_PAGO ? (1 + TASA_RECARGO) : 1.0;
-
                 allData.gastos.forEach(gasto => {
                     const monto = gasto.fields.Monto || 0;
                     const concepto = gasto.fields.Concepto || 'Gasto sin descripción';
                     let suParte = 0;
-
                     if (gasto.fields['Tipo de Gasto'] === TIPO_GASTO_COMUN) {
                         let cargoIndividualReal = monto * (property.Alicuota || 0);
                         totalCargosComunesPropietario += cargoIndividualReal;
@@ -356,42 +325,23 @@
                     } else if (gasto.fields['Tipo de Gasto'] === TIPO_GASTO_ESPECIAL) {
                         const assignedOwners = gasto.fields.Propietarios || [];
                         if (assignedOwners.includes(property.id)) {
-                            const numAssigned = assignedOwners.length || 1;
-                            suParte = monto / numAssigned;
+                            suParte = monto / (assignedOwners.length || 1);
                         }
                     }
-
                     if (suParte > 0) {
-                        tableHtml += `<tr>
-                            <td class="px-2 py-2 text-slate-700">${concepto}</td>
-                            <td class="px-2 py-2 text-slate-500 text-right">$${monto.toFixed(2)}</td>
-                            <td class="px-2 py-2 text-slate-700 text-right">$${suParte.toFixed(2)}</td>
-                        </tr>`;
-                        totalCargosMesPropietario += suParte;
+                        tableHtml += `<tr><td class="px-2 py-2 text-slate-700">${concepto}</td><td class="px-2 py-2 text-slate-500 text-right">$${monto.toFixed(2)}</td><td class="px-2 py-2 text-slate-700 text-right">$${suParte.toFixed(2)}</td></tr>`;
                     }
                 });
-
                 tableHtml += `</tbody>`;
-
                 let tfootHtml = `<tfoot class="border-t-2 border-slate-300">`;
-
                 if (DIA_ACTUAL <= DIA_LIMITE_PAGO) {
                     const beneficio = totalCargosComunesPropietario * TASA_RECARGO;
-                    tfootHtml += `<tr>
-                        <td class="px-2 pt-2 text-green-600 font-semibold" colspan="2">Beneficio Pronto Pago</td>
-                        <td class="px-2 pt-2 text-right text-green-600 font-semibold">-$${beneficio.toFixed(2)}</td>
-                    </tr>`;
+                    tfootHtml += `<tr><td class="px-2 pt-2 text-green-600 font-semibold" colspan="2">Beneficio Pronto Pago</td><td class="px-2 pt-2 text-right text-green-600 font-semibold">-$${beneficio.toFixed(2)}</td></tr>`;
                 }
-
                 if (totalPagado > 0) {
-                    tfootHtml += `<tr>
-                        <td class="px-2 py-2 text-green-600 font-semibold" colspan="2">Total Pagado</td>
-                        <td class="px-2 py-2 text-right text-green-600 font-semibold">-$${totalPagado.toFixed(2)}</td>
-                    </tr>`;
+                    tfootHtml += `<tr><td class="px-2 py-2 text-green-600 font-semibold" colspan="2">Total Pagado</td><td class="px-2 py-2 text-right text-green-600 font-semibold">-$${totalPagado.toFixed(2)}</td></tr>`;
                 }
-
                 tfootHtml += `</tfoot>`;
-
                 tableHtml += tfootHtml + `</table>`;
                 breakdownDiv.innerHTML = tableHtml;
             }
@@ -399,44 +349,27 @@
             function displayPaymentsHistory(property) {
                 const tbody = document.getElementById('payments-history-body');
                 const ownerPayments = allData.pagos.filter(p => p.fields['Propietario que Paga'] && p.fields['Propietario que Paga'][0] === property.id);
-
                 if (ownerPayments.length === 0) {
                     tbody.innerHTML = `<tr><td colspan="2" class="text-center p-4 text-slate-500">No hay pagos registrados.</td></tr>`;
                     return;
                 }
-
-                tbody.innerHTML = ownerPayments
-                    .sort((a, b) => new Date(b.fields['Fecha de Pago']) - new Date(a.fields['Fecha de Pago']))
-                    .map(p => `
-                        <tr>
-                            <td class="px-4 py-3 text-sm">${new Date(p.fields['Fecha de Pago'] + 'T00:00:00').toLocaleDateString('es-VE')}</td>
-                            <td class="px-4 py-3 text-sm text-right font-medium text-green-600">$${(p.fields['Monto Pagado'] || 0).toFixed(2)}</td>
-                        </tr>
-                    `).join('');
+                tbody.innerHTML = ownerPayments.sort((a, b) => new Date(b.fields['Fecha de Pago']) - new Date(a.fields['Fecha de Pago'])).map(p => `<tr><td class="px-4 py-3 text-sm">${new Date(p.fields['Fecha de Pago'] + 'T00:00:00').toLocaleDateString('es-VE')}</td><td class="px-4 py-3 text-sm text-right font-medium text-green-600">$${(p.fields['Monto Pagado'] || 0).toFixed(2)}</td></tr>`).join('');
             }
 
             function displayDiscountBanner() {
                 if (DIA_ACTUAL <= DIA_LIMITE_PAGO) {
-                    discountBannerContainer.innerHTML = `
-                        <div class="bg-teal-100 border-l-4 border-teal-500 text-teal-800 p-4 rounded-r-lg shadow" role="alert">
-                            <p class="font-bold">¡Buenas Noticias!</p>
-                            <p class="text-sm">Está a tiempo para disfrutar del descuento del ${TASA_RECARGO * 100}% por pronto pago en sus gastos comunes.</p>
-                        </div>`;
+                    discountBannerContainer.innerHTML = `<div class="bg-teal-100 border-l-4 border-teal-500 text-teal-800 p-4 rounded-r-lg shadow" role="alert"><p class="font-bold">¡Buenas Noticias!</p><p class="text-sm">Está a tiempo para disfrutar del descuento del ${TASA_RECARGO * 100}% por pronto pago en sus gastos comunes.</p></div>`;
                 } else {
                     discountBannerContainer.innerHTML = '';
                 }
             }
 
             function displayBcvNotice() {
-                bcvNoticeContainer.innerHTML = `
-                    <div class="bg-slate-100 border-l-4 border-sky-500 text-slate-700 p-4 rounded-r-lg" role="alert">
-                        <p class="font-bold">Nota sobre Pagos en Bolívares</p>
-                        <p class="text-sm">Le recordamos que los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción.</p>
-                    </div>`;
+                bcvNoticeContainer.innerHTML = `<div class="bg-slate-100 border-l-4 border-sky-500 text-slate-700 p-4 rounded-r-lg" role="alert"><p class="font-bold">Nota sobre Pagos en Bolívares</p><p class="text-sm">Le recordamos que los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción.</p></div>`;
             }
 
             function updateGlobalKPIs() {
-                if(allData.propietarios.length === 0) return;
+                if (allData.propietarios.length === 0) return;
                 let deudaTotal = 0;
                 let morosos = 0;
                 allData.propietarios.forEach(p => {
@@ -454,7 +387,10 @@
 
             viewStatementBtn.addEventListener('click', () => {
                 const selectedUserId = welcomeUserSelector.value;
-                if (!selectedUserId) return;
+                if (!selectedUserId) {
+                    alert('Por favor, seleccione una casa para continuar.');
+                    return;
+                }
                 userSelector.value = selectedUserId;
                 renderPortalForUser(selectedUserId);
                 welcomeScreen.classList.add('hidden');
@@ -487,24 +423,19 @@
 
             reportPaymentForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
-                
                 const amount = parseFloat(document.getElementById('report-amount').value);
                 const reference = document.getElementById('report-reference').value;
                 const selectedUserId = userSelector.value;
-
                 if (!selectedUserId || isNaN(amount) || amount <= 0 || !reference.trim()) {
                     alert('Por favor, complete todos los campos correctamente.');
                     return;
                 }
-
                 if (!confirm(`¿Está seguro de que desea reportar un pago por $${amount.toFixed(2)}?`)) {
                     return;
                 }
-
                 const submitBtn = document.getElementById('submitReportBtn');
                 submitBtn.disabled = true;
                 submitBtn.textContent = 'Enviando...';
-
                 try {
                     await airtableFetch('/Reportes%20de%20Pago', {
                         method: 'POST',
@@ -519,10 +450,8 @@
                             }]
                         })
                     });
-                    
                     hideReportModal();
                     alert('✅ ¡Pago reportado con éxito! El administrador lo revisará y aplicará a su cuenta pronto.');
-
                 } catch (error) {
                     console.error('Error reportando pago:', error);
                     alert('❌ Hubo un error al reportar el pago. Por favor, intente de nuevo.');
@@ -534,7 +463,6 @@
 
             document.getElementById('share-morosos-btn').addEventListener('click', () => {
                 const morososContainer = document.getElementById('morosos-container-private');
-                
                 html2canvas(morososContainer).then(canvas => {
                     const link = document.createElement('a');
                     link.download = 'lista-de-morosos-VLA.png';
