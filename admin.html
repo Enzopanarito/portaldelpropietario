@@ -530,24 +530,22 @@
 
                 const updates = condominioData.map(p => {
                     const previousDebt = p['Deuda Restante'] || 0;
-                    const cargoComunReal = totalGastosComunes * (p.Alicuota || 0);
-                    const recargo = cargoComunReal * TASA_RECARGO;
-                    const cargoComunConRecargo = cargoComunReal + recargo;
-                    const beneficio = DIA_ACTUAL <= DIA_LIMITE_PAGO ? recargo : 0;
                     
-                    let cargoEspecial = 0;
+                    let thisMonthCharges = 0;
+                    
+                    thisMonthCharges += totalGastosComunes * (p.Alicuota || 0);
+
                     gastosDelMes.forEach(gasto => {
                         if (gasto.fields['Tipo de Gasto'] === TIPO_GASTO_ESPECIAL) {
                             const assignedOwners = gasto.fields.Propietarios || [];
                             if (assignedOwners.includes(p.id)) {
                                 const numAssigned = assignedOwners.length || 1;
-                                cargoEspecial += (gasto.fields.Monto || 0) / numAssigned;
+                                thisMonthCharges += (gasto.fields.Monto || 0) / numAssigned;
                             }
                         }
                     });
 
-                    const finalMonthlyCharge = (cargoComunConRecargo - beneficio) + cargoEspecial;
-                    const newAccumulatedCharges = previousDebt + finalMonthlyCharge;
+                    const newAccumulatedCharges = previousDebt + thisMonthCharges;
                     
                     return {
                         id: p.id,
@@ -558,7 +556,6 @@
                     };
                 });
                 
-                // Airtable API allows updating 10 records at a time. We need to chunk the updates.
                 for (let i = 0; i < updates.length; i += 10) {
                     const chunk = updates.slice(i, i + 10);
                     await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}`, { method: 'PATCH', body: JSON.stringify({ records: chunk }) });
@@ -633,6 +630,55 @@
             const areAllChecked = Array.from(checkboxes).every(cb => cb.checked);
             checkboxes.forEach(cb => cb.checked = !areAllChecked);
             e.target.textContent = areAllChecked ? 'Seleccionar Todos' : 'Deseleccionar Todos';
+        });
+        
+        document.getElementById('reportedPaymentsTableBody').addEventListener('click', async (e) => {
+            const button = e.target.closest('button');
+            if (!button) return;
+
+            const recordId = button.dataset.id;
+            const isConfirm = button.classList.contains('confirm-payment-btn');
+            
+            if (!isConfirm) {
+                if (!confirm('¿Estás seguro de que deseas rechazar este pago?')) {
+                    return;
+                }
+            }
+            
+            button.disabled = true;
+            button.innerHTML = '...';
+
+            try {
+                if (isConfirm) {
+                    const reportedPayment = await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`);
+                    const fields = reportedPayment.fields;
+                    
+                    await createAirtableRecord(AIRTABLE_TABLE_PAGOS, {
+                        'Monto Pagado': fields['Monto Reportado'],
+                        'Fecha de Pago': new Date().toISOString().slice(0, 10),
+                        'Propietario que Paga': fields['Propietario que Reporta']
+                    });
+
+                    await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({ fields: { 'Estado': 'Confirmado' } })
+                    });
+                    showToast('✅ Pago confirmado y aplicado.');
+                } else {
+                    await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({ fields: { 'Estado': 'Rechazado' } })
+                    });
+                    showToast('️✔️ Pago rechazado con éxito.');
+                }
+                
+                setTimeout(initApp, 1500);
+
+            } catch (error) {
+                showToast(`❌ Error: ${error.message}`, true);
+                button.disabled = false;
+                button.innerHTML = isConfirm ? 'Confirmar' : 'Rechazar';
+            }
         });
     </script>
 </body>
