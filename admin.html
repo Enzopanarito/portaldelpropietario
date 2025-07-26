@@ -166,7 +166,10 @@
     
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            if (sessionStorage.getItem('vla-admin-auth') === 'true') { showMainContent(); }
+            if (sessionStorage.getItem('vla-admin-auth') === 'true') {
+                showMainContent();
+            }
+            
             document.getElementById('login-form').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const passwordInput = document.getElementById('password');
@@ -203,6 +206,7 @@
             document.getElementById('login-container').style.display = 'none';
             document.getElementById('main-content').style.display = 'block';
             initApp();
+            setupEventListeners(); // Llamada a la función que configura los listeners
         }
 
         // --- CÓDIGO PRINCIPAL ---
@@ -409,252 +413,255 @@
         }
         
         // --- EVENT LISTENERS ---
-        document.querySelectorAll('.nav-button').forEach(button => button.addEventListener('click', (e) => {
-            document.querySelectorAll('.nav-button, .section-content').forEach(el => el.classList.remove('active'));
-            e.currentTarget.classList.add('active');
-            document.getElementById(e.currentTarget.dataset.target).classList.add('active');
-        }));
-        
-        document.getElementById('searchInput').addEventListener('keyup', e => populateTable(condominioData.filter(p => (p.Propietario||'').toLowerCase().includes(e.target.value.toLowerCase()) || (p.Casa||'').toString().includes(e.target.value))));
-        
-        document.getElementById('debtorsTableBody').addEventListener('click', (e) => {
-            const target = e.target.closest('button');
-            if (!target) return;
-            const id = target.dataset.id;
-            if (target.classList.contains('view-breakdown-btn')) showDebtModal(id);
-            else if (target.classList.contains('send-reminder-btn')) showReminderModal(id);
-            else if (target.classList.contains('register-payment-btn')) showPaymentModal(id);
-        });
-        
-        document.getElementById('closeDebtModalBtn').addEventListener('click', () => hideModal('debtModal'));
-        document.getElementById('closeReminderModalBtn').addEventListener('click', () => hideModal('reminderModal'));
-        document.getElementById('cancelSendBtn').addEventListener('click', () => hideModal('reminderModal'));
-        document.getElementById('closePaymentModalBtn').addEventListener('click', () => hideModal('paymentModal'));
-        document.getElementById('cancelPaymentBtn').addEventListener('click', () => hideModal('paymentModal'));
-        
-        ['tab-total', 'tab-partial'].forEach(tabId => {
-            document.getElementById(tabId).addEventListener('click', (e) => {
-                document.querySelectorAll('.payment-tab, .tab-content').forEach(el => el.classList.remove('active'));
+        function setupEventListeners() {
+            document.querySelectorAll('.nav-button').forEach(button => button.addEventListener('click', (e) => {
+                document.querySelectorAll('.nav-button, .section-content').forEach(el => el.classList.remove('active'));
                 e.currentTarget.classList.add('active');
-                document.getElementById(e.currentTarget.id.replace('tab', 'content')).classList.add('active');
-            });
-        });
-
-        document.getElementById('confirmPaymentBtn').addEventListener('click', async (e) => {
-            const button = e.currentTarget;
-            const amountInput = document.getElementById('partial-amount');
-            amountInput.classList.remove('input-error');
-            const p = condominioData.find(prop => prop.id === currentPropertyIdForAction);
-            if (!p) return;
-            const isPartial = document.getElementById('tab-partial').classList.contains('active');
-            let paymentAmount = isPartial ? parseFloat(amountInput.value) : (p['Deuda Restante'] || 0);
-            if (isPartial && (isNaN(paymentAmount) || paymentAmount <= 0)) {
-                showToast('Ingrese un monto válido.', true);
-                amountInput.classList.add('input-error');
-                return;
-            }
-            button.disabled = true;
-            button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
-            try {
-                await createAirtableRecord(AIRTABLE_TABLE_PAGOS, { 'Monto Pagado': paymentAmount, 'Fecha de Pago': new Date().toISOString().slice(0, 10), 'Propietario que Paga': [p.id] });
-                showToast('✅ Pago registrado. Actualizando...');
-                hideModal('paymentModal');
-                setTimeout(initApp, 1500);
-            } catch (error) {
-                showToast(`❌ Error al registrar pago: ${error.message}`, true);
-            } finally {
-                button.disabled = false;
-                button.textContent = 'Registrar Pago';
-            }
-        });
-
-        document.getElementById('send-whatsapp-btn').addEventListener('click', () => {
-            const p = condominioData.find(prop => prop.id === currentPropertyIdForAction);
-            if (!p || !p.Telefono) { showToast('Propietario sin teléfono registrado.', true); return; }
-            const msg = document.getElementById('reminder-message-content').textContent;
-            window.open(`https://web.whatsapp.com/send?phone=${p.Telefono}&text=${encodeURIComponent(msg)}`, '_blank');
-            hideModal('reminderModal');
-        });
-
-        document.getElementById('send-bulk-reminders-btn').addEventListener('click', () => {
-            const debtors = condominioData.filter(p => (p['Deuda Restante'] || 0) > 0.01 && p.Telefono);
-            if (debtors.length === 0) {
-                showToast('No hay morosos con números de teléfono registrados para notificar.', false);
-                return;
-            }
+                document.getElementById(e.currentTarget.dataset.target).classList.add('active');
+            }));
             
-            if (!confirm(`Esto abrirá ${debtors.length} pestaña(s) de WhatsApp para enviar recordatorios. ¿Desea continuar?`)) return;
-
-            const fechaActualStr = new Date().toLocaleDateString('es-VE');
-            let discountMessage = '';
-            if (DIA_ACTUAL <= DIA_LIMITE_PAGO) {
-                const diasRestantes = DIA_LIMITE_PAGO - DIA_ACTUAL;
-                const diaTexto = diasRestantes === 1 ? 'día' : 'días';
-                discountMessage = `\n\n⚠️ Le quedan ${diasRestantes} ${diaTexto} para aprovechar el descuento por pronto pago.`;
-            }
-
-            debtors.forEach(p => {
-                const message = `*Asunto: Recordatorio de Saldo Pendiente*\n\n📅 _Mensaje generado el ${fechaActualStr}._${discountMessage}\n\nEstimado/a *${p.Propietario}*,\n\nLe contactamos para informarle que, según nuestros registros, su propiedad presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: $${(p['Deuda Restante'] || 0).toFixed(2)}*\n\nAgradecemos su pronta gestión para mantener la solvencia del condominio.\n\nSi desea más información, visite nuestro portal del propietario:\nhttps://villalosapamates.netlify.app\n\n*Nota sobre pagos en Bolívares:* Los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción.\n\nAtentamente,\nLa Junta de Condominio.`;
-                window.open(`https://web.whatsapp.com/send?phone=${p.Telefono}&text=${encodeURIComponent(message)}`, '_blank');
+            document.getElementById('searchInput').addEventListener('keyup', e => populateTable(condominioData.filter(p => (p.Propietario||'').toLowerCase().includes(e.target.value.toLowerCase()) || (p.Casa||'').toString().includes(e.target.value))));
+            
+            // ### BLOQUE DE CÓDIGO RESTAURADO Y CORREGIDO ###
+            document.getElementById('debtorsTableBody').addEventListener('click', (e) => {
+                const target = e.target.closest('button');
+                if (!target) return;
+                const id = target.dataset.id;
+                if (target.classList.contains('view-breakdown-btn')) showDebtModal(id);
+                else if (target.classList.contains('send-reminder-btn')) showReminderModal(id);
+                else if (target.classList.contains('register-payment-btn')) showPaymentModal(id);
             });
-        });
-        
-        document.getElementById('update-monthly-charges-btn').addEventListener('click', async (e) => {
-            if (!confirm('¡ATENCIÓN! Esta acción cerrará el mes y calculará la deuda final para TODOS los propietarios. ¿Estás seguro?')) return;
-            const button = e.currentTarget;
-            button.disabled = true;
-            button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
-            showToast("Actualizando cargos mensuales... Esto puede tardar.");
-
-            try {
-                const totalGastosComunes = gastosDelMes
-                    .filter(g => g.fields['Tipo de Gasto'] === TIPO_GASTO_COMUN)
-                    .reduce((sum, g) => sum + (g.fields.Monto || 0), 0);
-
-                const updates = condominioData.map(p => {
-                    const previousDebt = p['Deuda Restante'] || 0;
-                    
-                    let thisMonthCharges = 0;
-                    thisMonthCharges += totalGastosComunes * (p.Alicuota || 0);
-                    gastosDelMes.forEach(gasto => {
-                        if (gasto.fields['Tipo de Gasto'] === TIPO_GASTO_ESPECIAL) {
-                            const assignedOwners = gasto.fields.Propietarios || [];
-                            if (assignedOwners.includes(p.id)) {
-                                const numAssigned = assignedOwners.length || 1;
-                                thisMonthCharges += (gasto.fields.Monto || 0) / numAssigned;
-                            }
-                        }
-                    });
-
-                    const newAccumulatedCharges = previousDebt + thisMonthCharges;
-                    
-                    return { id: p.id, fields: { 'Deuda Anterior': previousDebt, 'Cargos Acumulados': newAccumulatedCharges } };
+            
+            document.getElementById('closeDebtModalBtn').addEventListener('click', () => hideModal('debtModal'));
+            document.getElementById('closeReminderModalBtn').addEventListener('click', () => hideModal('reminderModal'));
+            document.getElementById('cancelSendBtn').addEventListener('click', () => hideModal('reminderModal'));
+            document.getElementById('closePaymentModalBtn').addEventListener('click', () => hideModal('paymentModal'));
+            document.getElementById('cancelPaymentBtn').addEventListener('click', () => hideModal('paymentModal'));
+            
+            ['tab-total', 'tab-partial'].forEach(tabId => {
+                document.getElementById(tabId).addEventListener('click', (e) => {
+                    document.querySelectorAll('.payment-tab, .tab-content').forEach(el => el.classList.remove('active'));
+                    e.currentTarget.classList.add('active');
+                    document.getElementById(e.currentTarget.id.replace('tab', 'content')).classList.add('active');
                 });
-                
-                for (let i = 0; i < updates.length; i += 10) {
-                    const chunk = updates.slice(i, i + 10);
-                    await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}`, { method: 'PATCH', body: JSON.stringify({ records: chunk }) });
-                }
+            });
 
-                showToast(`✅ Proceso completado. Recargando...`);
-                setTimeout(initApp, 2000);
-            } catch (error) {
-                showToast(`❌ Error al actualizar cargos: ${error.message}`, true);
-            } finally {
-                button.disabled = false;
-                button.innerHTML = '🔄 Actualizar Cargos del Mes';
-            }
-        });
-
-        document.getElementById('add-expense-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const conceptInput = document.getElementById('expense-concept');
-            const amountInput = document.getElementById('expense-amount');
-            const button = e.currentTarget.querySelector('button[type="submit"]');
-            conceptInput.classList.remove('input-error');
-            amountInput.classList.remove('input-error');
-            const newExpense = {
-                'Concepto': conceptInput.value.trim(),
-                'Monto': parseFloat(amountInput.value),
-                'Tipo de Gasto': document.getElementById('expense-type').value,
-                'Frecuencia': document.getElementById('expense-frequency').value,
-                'Propietarios': Array.from(document.querySelectorAll('#expense-owners-list input:checked')).map(cb => cb.value)
-            };
-            if (!newExpense.Concepto || isNaN(newExpense.Monto) || newExpense.Monto <= 0 || newExpense.Propietarios.length === 0) {
-                showToast('Completa todos los campos correctamente.', true);
-                if (!newExpense.Concepto) conceptInput.classList.add('input-error');
-                if (isNaN(newExpense.Monto) || newExpense.Monto <= 0) amountInput.classList.add('input-error');
-                return;
-            }
-            button.disabled = true;
-            button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
-            try {
-                await createAirtableRecord(AIRTABLE_TABLE_GASTOS, newExpense);
-                showToast('✅ Gasto añadido. Actualizando...');
-                e.target.reset();
-                document.querySelectorAll('#expense-owners-list input').forEach(cb => cb.checked = true);
-                initApp();
-            } catch (error) {
-                showToast(`❌ Error al añadir gasto: ${error.message}`, true);
-            } finally {
-                button.disabled = false;
-                button.textContent = 'Añadir Gasto';
-            }
-        });
-
-        document.getElementById('expensesTableBody').addEventListener('click', async (e) => {
-            if (!e.target.closest('.delete-expense-btn')) return;
-            const recordId = e.target.closest('.delete-expense-btn').dataset.id;
-            try {
-                await deleteAirtableRecord(AIRTABLE_TABLE_GASTOS, recordId);
-                showToast('✅ Gasto eliminado.');
-                initApp();
-            } catch (error) {
-                showToast('❌ Error al eliminar gasto.', true);
-            }
-        });
-        
-        document.getElementById('expense-type').addEventListener('change', (e) => {
-            const isCommon = e.target.value === 'Gasto Común';
-            document.querySelectorAll('#expense-owners-list input').forEach(cb => cb.checked = isCommon);
-            document.getElementById('toggle-all-owners').textContent = isCommon ? 'Deseleccionar Todos' : 'Deseleccionar Todos';
-        });
-
-        document.getElementById('toggle-all-owners').addEventListener('click', (e) => {
-            const checkboxes = document.querySelectorAll('#expense-owners-list input');
-            const areAllChecked = Array.from(checkboxes).every(cb => cb.checked);
-            checkboxes.forEach(cb => cb.checked = !areAllChecked);
-            e.target.textContent = areAllChecked ? 'Seleccionar Todos' : 'Deseleccionar Todos';
-        });
-        
-        document.getElementById('reportedPaymentsTableBody').addEventListener('click', async (e) => {
-            const button = e.target.closest('button');
-            if (!button) return;
-
-            const recordId = button.dataset.id;
-            const isConfirm = button.classList.contains('confirm-payment-btn');
-            
-            if (!isConfirm) {
-                if (!confirm('¿Estás seguro de que deseas rechazar este pago?')) {
+            document.getElementById('confirmPaymentBtn').addEventListener('click', async (e) => {
+                const button = e.currentTarget;
+                const amountInput = document.getElementById('partial-amount');
+                amountInput.classList.remove('input-error');
+                const p = condominioData.find(prop => prop.id === currentPropertyIdForAction);
+                if (!p) return;
+                const isPartial = document.getElementById('tab-partial').classList.contains('active');
+                let paymentAmount = isPartial ? parseFloat(amountInput.value) : (p['Deuda Restante'] || 0);
+                if (isPartial && (isNaN(paymentAmount) || paymentAmount <= 0)) {
+                    showToast('Ingrese un monto válido.', true);
+                    amountInput.classList.add('input-error');
                     return;
                 }
-            }
-            
-            button.disabled = true;
-            button.innerHTML = '...';
+                button.disabled = true;
+                button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
+                try {
+                    await createAirtableRecord(AIRTABLE_TABLE_PAGOS, { 'Monto Pagado': paymentAmount, 'Fecha de Pago': new Date().toISOString().slice(0, 10), 'Propietario que Paga': [p.id] });
+                    showToast('✅ Pago registrado. Actualizando...');
+                    hideModal('paymentModal');
+                    setTimeout(initApp, 1500);
+                } catch (error) {
+                    showToast(`❌ Error al registrar pago: ${error.message}`, true);
+                } finally {
+                    button.disabled = false;
+                    button.textContent = 'Registrar Pago';
+                }
+            });
 
-            try {
-                if (isConfirm) {
-                    const reportedPayment = await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`);
-                    const fields = reportedPayment.fields;
-                    
-                    await createAirtableRecord(AIRTABLE_TABLE_PAGOS, {
-                        'Monto Pagado': fields['Monto Reportado'],
-                        'Fecha de Pago': new Date().toISOString().slice(0, 10),
-                        'Propietario que Paga': fields['Propietario que Reporta']
-                    });
+            document.getElementById('send-whatsapp-btn').addEventListener('click', () => {
+                const p = condominioData.find(prop => prop.id === currentPropertyIdForAction);
+                if (!p || !p.Telefono) { showToast('Propietario sin teléfono registrado.', true); return; }
+                const msg = document.getElementById('reminder-message-content').textContent;
+                window.open(`https://web.whatsapp.com/send?phone=${p.Telefono}&text=${encodeURIComponent(msg)}`, '_blank');
+                hideModal('reminderModal');
+            });
 
-                    await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`, {
-                        method: 'PATCH',
-                        body: JSON.stringify({ fields: { 'Estado': 'Confirmado' } })
-                    });
-                    showToast('✅ Pago confirmado y aplicado.');
-                } else {
-                    await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`, {
-                        method: 'PATCH',
-                        body: JSON.stringify({ fields: { 'Estado': 'Rechazado' } })
-                    });
-                    showToast('️✔️ Pago rechazado con éxito.');
+            document.getElementById('send-bulk-reminders-btn').addEventListener('click', () => {
+                const debtors = condominioData.filter(p => (p['Deuda Restante'] || 0) > 0.01 && p.Telefono);
+                if (debtors.length === 0) {
+                    showToast('No hay morosos con números de teléfono registrados para notificar.', false);
+                    return;
                 }
                 
-                setTimeout(initApp, 1500);
+                if (!confirm(`Esto abrirá ${debtors.length} pestaña(s) de WhatsApp para enviar recordatorios. ¿Desea continuar?`)) return;
 
-            } catch (error) {
-                showToast(`❌ Error: ${error.message}`, true);
-                button.disabled = false;
-                button.innerHTML = isConfirm ? 'Confirmar' : 'Rechazar';
-            }
-        });
+                const fechaActualStr = new Date().toLocaleDateString('es-VE');
+                let discountMessage = '';
+                if (DIA_ACTUAL <= DIA_LIMITE_PAGO) {
+                    const diasRestantes = DIA_LIMITE_PAGO - DIA_ACTUAL;
+                    const diaTexto = diasRestantes === 1 ? 'día' : 'días';
+                    discountMessage = `\n\n⚠️ Le quedan ${diasRestantes} ${diaTexto} para aprovechar el descuento por pronto pago.`;
+                }
+
+                debtors.forEach(p => {
+                    const message = `*Asunto: Recordatorio de Saldo Pendiente*\n\n📅 _Mensaje generado el ${fechaActualStr}._${discountMessage}\n\nEstimado/a *${p.Propietario}*,\n\nLe contactamos para informarle que, según nuestros registros, su propiedad presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: $${(p['Deuda Restante'] || 0).toFixed(2)}*\n\nAgradecemos su pronta gestión para mantener la solvencia del condominio.\n\nSi desea más información, visite nuestro portal del propietario:\nhttps://villalosapamates.netlify.app\n\n*Nota sobre pagos en Bolívares:* Los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción.\n\nAtentamente,\nLa Junta de Condominio.`;
+                    window.open(`https://web.whatsapp.com/send?phone=${p.Telefono}&text=${encodeURIComponent(message)}`, '_blank');
+                });
+            });
+            
+            document.getElementById('update-monthly-charges-btn').addEventListener('click', async (e) => {
+                if (!confirm('¡ATENCIÓN! Esta acción cerrará el mes y calculará la deuda final para TODOS los propietarios. ¿Estás seguro?')) return;
+                const button = e.currentTarget;
+                button.disabled = true;
+                button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
+                showToast("Actualizando cargos mensuales... Esto puede tardar.");
+
+                try {
+                    const totalGastosComunes = gastosDelMes
+                        .filter(g => g.fields['Tipo de Gasto'] === TIPO_GASTO_COMUN)
+                        .reduce((sum, g) => sum + (g.fields.Monto || 0), 0);
+
+                    const updates = condominioData.map(p => {
+                        const previousDebt = p['Deuda Restante'] || 0;
+                        
+                        let thisMonthCharges = 0;
+                        thisMonthCharges += totalGastosComunes * (p.Alicuota || 0);
+                        gastosDelMes.forEach(gasto => {
+                            if (gasto.fields['Tipo de Gasto'] === TIPO_GASTO_ESPECIAL) {
+                                const assignedOwners = gasto.fields.Propietarios || [];
+                                if (assignedOwners.includes(p.id)) {
+                                    const numAssigned = assignedOwners.length || 1;
+                                    thisMonthCharges += (gasto.fields.Monto || 0) / numAssigned;
+                                }
+                            }
+                        });
+
+                        const newAccumulatedCharges = previousDebt + thisMonthCharges;
+                        
+                        return { id: p.id, fields: { 'Deuda Anterior': previousDebt, 'Cargos Acumulados': newAccumulatedCharges } };
+                    });
+                    
+                    for (let i = 0; i < updates.length; i += 10) {
+                        const chunk = updates.slice(i, i + 10);
+                        await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}`, { method: 'PATCH', body: JSON.stringify({ records: chunk }) });
+                    }
+
+                    showToast(`✅ Proceso completado. Recargando...`);
+                    setTimeout(initApp, 2000);
+                } catch (error) {
+                    showToast(`❌ Error al actualizar cargos: ${error.message}`, true);
+                } finally {
+                    button.disabled = false;
+                    button.innerHTML = '🔄 Actualizar Cargos del Mes';
+                }
+            });
+
+            document.getElementById('add-expense-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const conceptInput = document.getElementById('expense-concept');
+                const amountInput = document.getElementById('expense-amount');
+                const button = e.currentTarget.querySelector('button[type="submit"]');
+                conceptInput.classList.remove('input-error');
+                amountInput.classList.remove('input-error');
+                const newExpense = {
+                    'Concepto': conceptInput.value.trim(),
+                    'Monto': parseFloat(amountInput.value),
+                    'Tipo de Gasto': document.getElementById('expense-type').value,
+                    'Frecuencia': document.getElementById('expense-frequency').value,
+                    'Propietarios': Array.from(document.querySelectorAll('#expense-owners-list input:checked')).map(cb => cb.value)
+                };
+                if (!newExpense.Concepto || isNaN(newExpense.Monto) || newExpense.Monto <= 0 || newExpense.Propietarios.length === 0) {
+                    showToast('Completa todos los campos correctamente.', true);
+                    if (!newExpense.Concepto) conceptInput.classList.add('input-error');
+                    if (isNaN(newExpense.Monto) || newExpense.Monto <= 0) amountInput.classList.add('input-error');
+                    return;
+                }
+                button.disabled = true;
+                button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
+                try {
+                    await createAirtableRecord(AIRTABLE_TABLE_GASTOS, newExpense);
+                    showToast('✅ Gasto añadido. Actualizando...');
+                    e.target.reset();
+                    document.querySelectorAll('#expense-owners-list input').forEach(cb => cb.checked = true);
+                    initApp();
+                } catch (error) {
+                    showToast(`❌ Error al añadir gasto: ${error.message}`, true);
+                } finally {
+                    button.disabled = false;
+                    button.textContent = 'Añadir Gasto';
+                }
+            });
+
+            document.getElementById('expensesTableBody').addEventListener('click', async (e) => {
+                if (!e.target.closest('.delete-expense-btn')) return;
+                const recordId = e.target.closest('.delete-expense-btn').dataset.id;
+                try {
+                    await deleteAirtableRecord(AIRTABLE_TABLE_GASTOS, recordId);
+                    showToast('✅ Gasto eliminado.');
+                    initApp();
+                } catch (error) {
+                    showToast('❌ Error al eliminar gasto.', true);
+                }
+            });
+            
+            document.getElementById('expense-type').addEventListener('change', (e) => {
+                const isCommon = e.target.value === 'Gasto Común';
+                document.querySelectorAll('#expense-owners-list input').forEach(cb => cb.checked = isCommon);
+                document.getElementById('toggle-all-owners').textContent = isCommon ? 'Deseleccionar Todos' : 'Deseleccionar Todos';
+            });
+
+            document.getElementById('toggle-all-owners').addEventListener('click', (e) => {
+                const checkboxes = document.querySelectorAll('#expense-owners-list input');
+                const areAllChecked = Array.from(checkboxes).every(cb => cb.checked);
+                checkboxes.forEach(cb => cb.checked = !areAllChecked);
+                e.target.textContent = areAllChecked ? 'Seleccionar Todos' : 'Deseleccionar Todos';
+            });
+            
+            document.getElementById('reportedPaymentsTableBody').addEventListener('click', async (e) => {
+                const button = e.target.closest('button');
+                if (!button) return;
+
+                const recordId = button.dataset.id;
+                const isConfirm = button.classList.contains('confirm-payment-btn');
+                
+                if (!isConfirm) {
+                    if (!confirm('¿Estás seguro de que deseas rechazar este pago?')) {
+                        return;
+                    }
+                }
+                
+                button.disabled = true;
+                button.innerHTML = '...';
+
+                try {
+                    if (isConfirm) {
+                        const reportedPayment = await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`);
+                        const fields = reportedPayment.fields;
+                        
+                        await createAirtableRecord(AIRTABLE_TABLE_PAGOS, {
+                            'Monto Pagado': fields['Monto Reportado'],
+                            'Fecha de Pago': new Date().toISOString().slice(0, 10),
+                            'Propietario que Paga': fields['Propietario que Reporta']
+                        });
+
+                        await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`, {
+                            method: 'PATCH',
+                            body: JSON.stringify({ fields: { 'Estado': 'Confirmado' } })
+                        });
+                        showToast('✅ Pago confirmado y aplicado.');
+                    } else {
+                        await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`, {
+                            method: 'PATCH',
+                            body: JSON.stringify({ fields: { 'Estado': 'Rechazado' } })
+                        });
+                        showToast('️✔️ Pago rechazado con éxito.');
+                    }
+                    
+                    setTimeout(initApp, 1500);
+
+                } catch (error) {
+                    showToast(`❌ Error: ${error.message}`, true);
+                    button.disabled = false;
+                    button.innerHTML = isConfirm ? 'Confirmar' : 'Rechazar';
+                }
+            });
+        }
     </script>
 </body>
 </html>
