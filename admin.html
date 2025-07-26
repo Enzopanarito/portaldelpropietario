@@ -7,8 +7,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         .nav-button.active { background-color: #0284c7; color: white; }
         .section-content { display: none; }
         .section-content.active { display: block; }
@@ -61,10 +61,6 @@
                 <button data-target="dashboard" class="nav-button active text-sm sm:text-base font-semibold py-2 px-4 rounded-full bg-white text-slate-700 shadow-sm hover:bg-slate-100">📊 Dashboard</button>
                 <button data-target="management" class="nav-button text-sm sm:text-base font-semibold py-2 px-4 rounded-full bg-white text-slate-700 shadow-sm hover:bg-slate-100">⚙️ Gestión de Propietarios</button>
                 <button data-target="expenses" class="nav-button text-sm sm:text-base font-semibold py-2 px-4 rounded-full bg-white text-slate-700 shadow-sm hover:bg-slate-100">💸 Gestión de Gastos</button>
-                <button data-target="reported-payments" class="nav-button relative text-sm sm:text-base font-semibold py-2 px-4 rounded-full bg-white text-slate-700 shadow-sm hover:bg-slate-100">
-                    🚨 Pagos Reportados
-                    <span id="pending-payments-badge" class="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center hidden">0</span>
-                </button>
             </nav>
 
             <main>
@@ -116,7 +112,7 @@
                                          <label for="expense-type" class="block text-sm font-medium text-slate-700">Tipo de Gasto</label>
                                          <select id="expense-type" class="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm">
                                              <option value="Gasto Común">Gasto Común</option>
-                                             <option value="Gasto Especial">Gasto Especial</option>
+                                             <option value="Gasto Especial">Gasto Planta Electrica</option>
                                          </select>
                                      </div>
                                      <div id="expense-owners-container"><div class="flex justify-between items-center mb-2"><label class="block text-sm font-medium text-slate-700">Propietarios a Cobrar</label><button type="button" id="toggle-all-owners" class="text-xs text-sky-600 font-semibold hover:underline">Deseleccionar Todos</button></div><div id="expense-owners-list" class="mt-2 max-h-40 overflow-y-auto rounded-md border border-slate-300 p-2 space-y-2"></div></div>
@@ -131,45 +127,22 @@
                          </div>
                      </div>
                 </section>
-                
-                <section id="reported-payments" class="section-content">
-                    <div class="bg-white p-6 rounded-2xl shadow-lg">
-                        <h2 class="text-2xl font-bold mb-1 text-slate-900">Pagos Reportados Pendientes</h2>
-                        <p class="text-slate-600 mb-6">Confirma o rechaza los pagos reportados por los propietarios.</p>
-                        <div class="overflow-x-auto rounded-lg border border-slate-200">
-                            <table class="min-w-full bg-white divide-y divide-slate-200">
-                                <thead class="bg-slate-50">
-                                    <tr>
-                                        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Propietario</th>
-                                        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Monto Reportado</th>
-                                        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Referencia</th>
-                                        <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Acciones</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="reportedPaymentsTableBody">
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </section>
             </main>
-            <footer class="text-center mt-12">
-                <p class="text-sm text-slate-500">Sistema generado por ENZO PANARITO para el Condominio Villa Los Apamates. © 2025</p>
-            </footer>
+            <footer class="text-center mt-12"><p class="text-sm text-slate-500">Prototipo generado para el Condominio Villa Los Apamates. © 2025</p></footer>
         </div>
 
-        <div id="debtModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden modal-backdrop"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-md transform transition-all scale-95 opacity-0" id="debtModalContent"><div class="p-6"><div class="flex justify-between items-start"><div><h3 class="text-xl font-bold text-slate-900" id="debtModal-title">Desglose de Deuda</h3><p class="text-slate-600" id="debtModal-subtitle"></p></div><button id="closeDebtModalBtn" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button></div><div class="mt-4 border-t border-slate-200 pt-4 max-h-80 overflow-y-auto"><ul class="space-y-2" id="debtModal-list"></ul><div class="mt-4 pt-4 border-t border-slate-200 flex justify-between items-center"><span class="text-lg font-semibold text-slate-500">TOTAL A PAGAR HOY</span><span class="text-2xl font-bold text-sky-600" id="debtModal-total">$0.00</span></div></div></div></div>
-        <div id="reminderModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden modal-backdrop"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-md transform transition-all scale-95 opacity-0" id="reminderModalContent"><div class="p-6"><div class="flex justify-between items-start mb-4"><h3 class="text-xl font-bold text-slate-900">Vista Previa del Mensaje</h3><button id="closeReminderModalBtn" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button></div><div id="reminder-message-container" class="mt-4 bg-slate-50 rounded-lg p-4 border border-slate-200 min-h-[150px]"><pre class="whitespace-pre-wrap text-sm text-slate-700" id="reminder-message-content" style="font-family: inherit;"></pre></div><div class="mt-6 flex justify-end gap-3"><button id="cancelSendBtn" class="py-2 px-4 bg-slate-200 text-slate-800 font-semibold rounded-lg hover:bg-slate-300 transition-colors">Cancelar</button><button id="send-whatsapp-btn" class="flex items-center gap-2 py-2 px-4 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-whatsapp" viewBox="0 0 16 16"><path d="M13.601 2.326A7.85 7.85 0 0 0 7.994 0C3.627 0 .068 3.558.064 7.926c0 1.399.366 2.76 1.057 3.965L0 16l4.204-1.102a7.9 7.9 0 0 0 3.79.965h.004c4.368 0 7.926-3.558 7.93-7.93A7.9 7.9 0 0 0 13.6 2.326zM7.994 14.521a6.6 6.6 0 0 1-3.356-.92l-.24-.144-2.494.654.666-2.433-.156-.251a6.56 6.56 0 0 1-1.007-3.505c0-3.626 2.957-6.584 6.591-6.584a6.56 6.56 0 0 1 4.66 1.931 6.56 6.56 0 0 1 1.928 4.66c-.004 3.639-2.961 6.592-6.592 6.592m3.615-4.934c-.197-.099-1.17-.578-1.353-.646-.182-.065-.315-.099-.445.099-.133.197-.513.646-.627.775-.114.133-.232.148-.43.05-.197-.1-.836-.308-1.592-.985-.59-.525-.985-1.175-1.103-1.372-.114-.198-.011-.304.088-.403.087-.088.197-.232.296-.346.1-.114.133-.198.198-.33.065-.134.034-.248-.015-.347-.05-.099-.445-1.076-.612-1.47-.16-.389-.323-.335-.445-.34-.114-.007-.247-.007-.38-.007a.73.73 0 0 0-.529.247c-.182.198-.691.677-.691 1.654s.71 1.916.81 2.049c.098.133 1.394 2.132 3.383 2.992.47.205.84.326 1.129.418.475.152.904.129 1.246.08.38-.058 1.171-.48 1.338-.943.164-.464.164-.86.114-.943-.049-.084-.182-.133-.38-.232z"/></svg>Enviar por WhatsApp</button></div></div></div>
-        <div id="paymentModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden modal-backdrop"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-md transform transition-all scale-95 opacity-0" id="paymentModalContent"><div class="p-6"><div class="flex justify-between items-start mb-4"><h3 class="text-xl font-bold text-slate-900">Registrar Pago</h3><button id="closePaymentModalBtn" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button></div><div id="payment-modal-info" class="mb-4 text-sm"></div><div class="border-b border-slate-200"><nav class="-mb-px flex gap-6" aria-label="Tabs"><span id="tab-total" class="payment-tab active">Pago Total</span><span id="tab-partial" class="payment-tab">Pago Parcial</span></nav></div><div id="content-total" class="tab-content active mt-4"><p class="text-slate-600">Esta acción registrará un pago por el total de la deuda restante. ¿Desea continuar?</p></div><div id="content-partial" class="tab-content mt-4"><label for="partial-amount" class="block text-sm font-medium text-slate-700">Monto del Abono:</label><input type="number" id="partial-amount" class="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" placeholder="Ej: 50.00"></div><div class="mt-6 flex justify-end gap-3"><button id="cancelPaymentBtn" class="py-2 px-4 bg-slate-200 text-slate-800 font-semibold rounded-lg hover:bg-slate-300 transition-colors">Cancelar</button><button id="confirmPaymentBtn" class="py-2 px-4 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors">Registrar Pago</button></div></div></div>
+        <div id="debtModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden modal-backdrop"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-md transform transition-all scale-95 opacity-0" id="debtModalContent"><div class="p-6"><div class="flex justify-between items-start"><div><h3 class="text-xl font-bold text-slate-900" id="debtModal-title">Desglose de Deuda</h3><p class="text-slate-600" id="debtModal-subtitle"></p></div><button id="closeDebtModalBtn" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button></div><div class="mt-4 border-t border-slate-200 pt-4 max-h-80 overflow-y-auto"><ul class="space-y-2" id="debtModal-list"></ul><div class="mt-4 pt-4 border-t border-slate-200 flex justify-between items-center"><span class="text-lg font-semibold text-slate-500">TOTAL A PAGAR HOY</span><span class="text-2xl font-bold text-sky-600" id="debtModal-total">$0.00</span></div></div></div></div></div>
+        <div id="reminderModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden modal-backdrop"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-md transform transition-all scale-95 opacity-0" id="reminderModalContent"><div class="p-6"><div class="flex justify-between items-start mb-4"><h3 class="text-xl font-bold text-slate-900">Vista Previa del Mensaje</h3><button id="closeReminderModalBtn" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button></div><div id="reminder-message-container" class="mt-4 bg-slate-50 rounded-lg p-4 border border-slate-200 min-h-[150px]"><pre class="whitespace-pre-wrap text-sm text-slate-700" id="reminder-message-content" style="font-family: inherit;"></pre></div><div class="mt-6 flex justify-end gap-3"><button id="cancelSendBtn" class="py-2 px-4 bg-slate-200 text-slate-800 font-semibold rounded-lg hover:bg-slate-300 transition-colors">Cancelar</button><button id="send-whatsapp-btn" class="flex items-center gap-2 py-2 px-4 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-whatsapp" viewBox="0 0 16 16"><path d="M13.601 2.326A7.85 7.85 0 0 0 7.994 0C3.627 0 .068 3.558.064 7.926c0 1.399.366 2.76 1.057 3.965L0 16l4.204-1.102a7.9 7.9 0 0 0 3.79.965h.004c4.368 0 7.926-3.558 7.93-7.93A7.9 7.9 0 0 0 13.6 2.326zM7.994 14.521a6.6 6.6 0 0 1-3.356-.92l-.24-.144-2.494.654.666-2.433-.156-.251a6.56 6.56 0 0 1-1.007-3.505c0-3.626 2.957-6.584 6.591-6.584a6.56 6.56 0 0 1 4.66 1.931 6.56 6.56 0 0 1 1.928 4.66c-.004 3.639-2.961 6.592-6.592 6.592m3.615-4.934c-.197-.099-1.17-.578-1.353-.646-.182-.065-.315-.099-.445.099-.133.197-.513.646-.627.775-.114.133-.232.148-.43.05-.197-.1-.836-.308-1.592-.985-.59-.525-.985-1.175-1.103-1.372-.114-.198-.011-.304.088-.403.087-.088.197-.232.296-.346.1-.114.133-.198.198-.33.065-.134.034-.248-.015-.347-.05-.099-.445-1.076-.612-1.47-.16-.389-.323-.335-.445-.34-.114-.007-.247-.007-.38-.007a.73.73 0 0 0-.529.247c-.182.198-.691.677-.691 1.654s.71 1.916.81 2.049c.098.133 1.394 2.132 3.383 2.992.47.205.84.326 1.129.418.475.152.904.129 1.246.08.38-.058 1.171-.48 1.338-.943.164-.464.164-.86.114-.943-.049-.084-.182-.133-.38-.232z"/></svg>Enviar por WhatsApp</button></div></div></div></div>
+        <div id="paymentModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden modal-backdrop"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-md transform transition-all scale-95 opacity-0" id="paymentModalContent"><div class="p-6"><div class="flex justify-between items-start mb-4"><h3 class="text-xl font-bold text-slate-900">Registrar Pago</h3><button id="closePaymentModalBtn" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button></div><div id="payment-modal-info" class="mb-4 text-sm"></div><div class="border-b border-slate-200"><nav class="-mb-px flex gap-6" aria-label="Tabs"><span id="tab-total" class="payment-tab active">Pago Total</span><span id="tab-partial" class="payment-tab">Pago Parcial</span></nav></div><div id="content-total" class="tab-content active mt-4"><p class="text-slate-600">Esta acción registrará un pago por el total de la deuda restante. ¿Desea continuar?</p></div><div id="content-partial" class="tab-content mt-4"><label for="partial-amount" class="block text-sm font-medium text-slate-700">Monto del Abono:</label><input type="number" id="partial-amount" class="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm" placeholder="Ej: 50.00"></div><div class="mt-6 flex justify-end gap-3"><button id="cancelPaymentBtn" class="py-2 px-4 bg-slate-200 text-slate-800 font-semibold rounded-lg hover:bg-slate-300 transition-colors">Cancelar</button><button id="confirmPaymentBtn" class="py-2 px-4 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors">Registrar Pago</button></div></div></div></div>
         <div id="toast" class="fixed bottom-5 right-5 bg-green-500 text-white py-3 px-5 rounded-lg shadow-lg opacity-0 transform translate-y-10 toast"></div>
     </div>
     
     <script>
+        // --- SCRIPT COMPLETO PARA ADMIN.HTML ---
+        
+        // --- LÓGICA DE LOGIN ---
         document.addEventListener('DOMContentLoaded', () => {
-            if (sessionStorage.getItem('vla-admin-auth') === 'true') {
-                showMainContent();
-            }
-            
+            if (sessionStorage.getItem('vla-admin-auth') === 'true') { showMainContent(); }
             document.getElementById('login-form').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const passwordInput = document.getElementById('password');
@@ -206,16 +179,16 @@
             document.getElementById('login-container').style.display = 'none';
             document.getElementById('main-content').style.display = 'block';
             initApp();
-            setupEventListeners(); // Llamada a la función que configura los listeners
         }
 
         // --- CÓDIGO PRINCIPAL ---
         const AIRTABLE_TABLE_PROPIETARIOS = 'Propietarios';
         const AIRTABLE_TABLE_GASTOS = 'Gastos del Mes';
         const AIRTABLE_TABLE_PAGOS = 'Pagos';
-        const AIRTABLE_TABLE_REPORTE_PAGO = 'Reportes de Pago';
+
         const TIPO_GASTO_COMUN = 'Gasto Común';
         const TIPO_GASTO_ESPECIAL = 'Gasto Especial';
+
         let condominioData = [], gastosDelMes = [], solvencyChart, topDebtorsChart;
         let currentPropertyIdForAction = null;
         const TASA_RECARGO = 0.10, DIA_LIMITE_PAGO = 10;
@@ -236,28 +209,22 @@
         
         async function initApp() {
             try {
-                const [propietariosData, gastosData, reportedPaymentsData] = await Promise.all([
+                const [propietariosData, gastosData] = await Promise.all([
                     airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}`),
-                    airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_GASTOS)}?view=Gastos%20Mensuales`),
-                    airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}?view=Grid%20View`)
+                    airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_GASTOS)}?view=Gastos%20Mensuales`)
                 ]);
-                
                 gastosDelMes = gastosData.records || [];
                 condominioData = propietariosData.records.map(r => ({ id: r.id, ...r.fields }));
                 condominioData.sort((a, b) => (a.Casa || 0) - (b.Casa || 0));
-                
-                const allReportedPayments = reportedPaymentsData.records || [];
-                const pendingPayments = allReportedPayments.filter(p => p.fields.Estado === 'Pendiente');
                 
                 setupUI();
                 updateDashboard();
                 populateTable(condominioData);
                 populateExpensesTable(gastosDelMes);
                 populateOwnerSelector();
-                populateReportedPayments(pendingPayments);
 
             } catch (error) {
-                alert(`Hubo un error al cargar los datos: ${error.message}`);
+                alert(`Hubo un error al cargar los datos: ${error.message}.`);
             }
         }
 
@@ -322,28 +289,6 @@
             document.querySelectorAll('#expense-owners-list input').forEach(cb => cb.checked = true);
         }
         
-        function populateReportedPayments(payments) {
-            const tableBody = document.getElementById('reportedPaymentsTableBody');
-            const badge = document.getElementById('pending-payments-badge');
-            tableBody.innerHTML = '';
-            if (!payments || payments.length === 0) {
-                tableBody.innerHTML = `<tr><td colspan="4" class="text-center p-4 text-slate-500">No hay pagos pendientes por revisar.</td></tr>`;
-                badge.classList.add('hidden');
-                return;
-            }
-            badge.textContent = payments.length;
-            badge.classList.remove('hidden');
-            payments.forEach(payment => {
-                const ownerLink = payment.fields['Propietario que Reporta'];
-                if (!ownerLink || ownerLink.length === 0) { return; }
-                const ownerId = ownerLink[0];
-                const owner = condominioData.find(o => o.id === ownerId);
-                const ownerName = owner ? `Casa ${owner.Casa} - ${owner.Propietario}` : 'Propietario no encontrado';
-                const row = tableBody.insertRow();
-                row.innerHTML = `<td class="px-4 py-3 text-sm text-slate-700">${ownerName}</td><td class="px-4 py-3 text-sm font-medium text-slate-900">$${(payment.fields['Monto Reportado'] || 0).toFixed(2)}</td><td class="px-4 py-3 text-sm text-slate-500">${payment.fields.Referencia || ''}</td><td class="px-4 py-3 space-x-2 whitespace-nowrap"><button data-id="${payment.id}" class="confirm-payment-btn py-1 px-3 text-xs font-semibold rounded-full bg-green-100 text-green-800 hover:bg-green-200">Confirmar</button><button data-id="${payment.id}" class="reject-payment-btn py-1 px-3 text-xs font-semibold rounded-full bg-red-100 text-red-800 hover:bg-red-200">Rechazar</button></td>`;
-            });
-        }
-
         function createCharts(solventes, morosos) {
             if (solvencyChart) solvencyChart.destroy();
             solvencyChart = new Chart(document.getElementById('solvencyChart').getContext('2d'), { type: 'doughnut', data: { labels: ['Solventes', 'En Mora'], datasets: [{ data: [solventes, morosos], backgroundColor: ['#22c55e', '#ef4444'], borderColor: '#ffffff', borderWidth: 4 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'bottom' } } } });
@@ -413,255 +358,214 @@
         }
         
         // --- EVENT LISTENERS ---
-        function setupEventListeners() {
-            document.querySelectorAll('.nav-button').forEach(button => button.addEventListener('click', (e) => {
-                document.querySelectorAll('.nav-button, .section-content').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-button').forEach(button => button.addEventListener('click', (e) => {
+            document.querySelectorAll('.nav-button, .section-content').forEach(el => el.classList.remove('active'));
+            e.currentTarget.classList.add('active');
+            document.getElementById(e.currentTarget.dataset.target).classList.add('active');
+        }));
+        
+        document.getElementById('searchInput').addEventListener('keyup', e => populateTable(condominioData.filter(p => (p.Propietario||'').toLowerCase().includes(e.target.value.toLowerCase()) || (p.Casa||'').toString().includes(e.target.value))));
+        
+        document.getElementById('debtorsTableBody').addEventListener('click', (e) => {
+            const target = e.target.closest('button');
+            if (!target) return;
+            const id = target.dataset.id;
+            if (target.classList.contains('view-breakdown-btn')) showDebtModal(id);
+            else if (target.classList.contains('send-reminder-btn')) showReminderModal(id);
+            else if (target.classList.contains('register-payment-btn')) showPaymentModal(id);
+        });
+        
+        document.getElementById('closeDebtModalBtn').addEventListener('click', () => hideModal('debtModal'));
+        document.getElementById('closeReminderModalBtn').addEventListener('click', () => hideModal('reminderModal'));
+        document.getElementById('cancelSendBtn').addEventListener('click', () => hideModal('reminderModal'));
+        document.getElementById('closePaymentModalBtn').addEventListener('click', () => hideModal('paymentModal'));
+        document.getElementById('cancelPaymentBtn').addEventListener('click', () => hideModal('paymentModal'));
+        
+        ['tab-total', 'tab-partial'].forEach(tabId => {
+            document.getElementById(tabId).addEventListener('click', (e) => {
+                document.querySelectorAll('.payment-tab, .tab-content').forEach(el => el.classList.remove('active'));
                 e.currentTarget.classList.add('active');
-                document.getElementById(e.currentTarget.dataset.target).classList.add('active');
-            }));
-            
-            document.getElementById('searchInput').addEventListener('keyup', e => populateTable(condominioData.filter(p => (p.Propietario||'').toLowerCase().includes(e.target.value.toLowerCase()) || (p.Casa||'').toString().includes(e.target.value))));
-            
-            // ### BLOQUE DE CÓDIGO RESTAURADO Y CORREGIDO ###
-            document.getElementById('debtorsTableBody').addEventListener('click', (e) => {
-                const target = e.target.closest('button');
-                if (!target) return;
-                const id = target.dataset.id;
-                if (target.classList.contains('view-breakdown-btn')) showDebtModal(id);
-                else if (target.classList.contains('send-reminder-btn')) showReminderModal(id);
-                else if (target.classList.contains('register-payment-btn')) showPaymentModal(id);
+                document.getElementById(e.currentTarget.id.replace('tab', 'content')).classList.add('active');
             });
+        });
+
+        document.getElementById('confirmPaymentBtn').addEventListener('click', async (e) => {
+            const button = e.currentTarget;
+            const amountInput = document.getElementById('partial-amount');
+            amountInput.classList.remove('input-error');
+            const p = condominioData.find(prop => prop.id === currentPropertyIdForAction);
+            if (!p) return;
+            const isPartial = document.getElementById('tab-partial').classList.contains('active');
+            let paymentAmount = isPartial ? parseFloat(amountInput.value) : (p['Deuda Restante'] || 0);
+            if (isPartial && (isNaN(paymentAmount) || paymentAmount <= 0)) {
+                showToast('Ingrese un monto válido.', true);
+                amountInput.classList.add('input-error');
+                return;
+            }
+            button.disabled = true;
+            button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
+            try {
+                await createAirtableRecord(AIRTABLE_TABLE_PAGOS, { 'Monto Pagado': paymentAmount, 'Fecha de Pago': new Date().toISOString().slice(0, 10), 'Propietario que Paga': [p.id] });
+                showToast('✅ Pago registrado. Actualizando...');
+                hideModal('paymentModal');
+                setTimeout(initApp, 1500);
+            } catch (error) {
+                showToast(`❌ Error al registrar pago: ${error.message}`, true);
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Registrar Pago';
+            }
+        });
+
+        document.getElementById('send-whatsapp-btn').addEventListener('click', () => {
+            const p = condominioData.find(prop => prop.id === currentPropertyIdForAction);
+            if (!p || !p.Telefono) { showToast('Propietario sin teléfono registrado.', true); return; }
+            const msg = document.getElementById('reminder-message-content').textContent;
+            window.open(`https://web.whatsapp.com/send?phone=${p.Telefono}&text=${encodeURIComponent(msg)}`, '_blank');
+            hideModal('reminderModal');
+        });
+
+        document.getElementById('send-bulk-reminders-btn').addEventListener('click', () => {
+            const debtors = condominioData.filter(p => (p['Deuda Restante'] || 0) > 0.01 && p.Telefono);
+            if (debtors.length === 0) {
+                showToast('No hay morosos con números de teléfono registrados para notificar.', false);
+                return;
+            }
             
-            document.getElementById('closeDebtModalBtn').addEventListener('click', () => hideModal('debtModal'));
-            document.getElementById('closeReminderModalBtn').addEventListener('click', () => hideModal('reminderModal'));
-            document.getElementById('cancelSendBtn').addEventListener('click', () => hideModal('reminderModal'));
-            document.getElementById('closePaymentModalBtn').addEventListener('click', () => hideModal('paymentModal'));
-            document.getElementById('cancelPaymentBtn').addEventListener('click', () => hideModal('paymentModal'));
-            
-            ['tab-total', 'tab-partial'].forEach(tabId => {
-                document.getElementById(tabId).addEventListener('click', (e) => {
-                    document.querySelectorAll('.payment-tab, .tab-content').forEach(el => el.classList.remove('active'));
-                    e.currentTarget.classList.add('active');
-                    document.getElementById(e.currentTarget.id.replace('tab', 'content')).classList.add('active');
-                });
+            if (!confirm(`Esto abrirá ${debtors.length} pestaña(s) de WhatsApp para enviar recordatorios. ¿Desea continuar?`)) return;
+
+            const fechaActualStr = new Date().toLocaleDateString('es-VE');
+            let discountMessage = '';
+            if (DIA_ACTUAL <= DIA_LIMITE_PAGO) {
+                const diasRestantes = DIA_LIMITE_PAGO - DIA_ACTUAL;
+                const diaTexto = diasRestantes === 1 ? 'día' : 'días';
+                discountMessage = `\n\n⚠️ Le quedan ${diasRestantes} ${diaTexto} para aprovechar el descuento por pronto pago.`;
+            }
+
+            debtors.forEach(p => {
+                const message = `*Asunto: Recordatorio de Saldo Pendiente*\n\n📅 _Mensaje generado el ${fechaActualStr}._${discountMessage}\n\nEstimado/a *${p.Propietario}*,\n\nLe contactamos para informarle que, según nuestros registros, su propiedad presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: $${(p['Deuda Restante'] || 0).toFixed(2)}*\n\nAgradecemos su pronta gestión para mantener la solvencia del condominio.\n\nSi desea más información, visite nuestro portal del propietario:\nhttps://villalosapamates.netlify.app\n\n*Nota sobre pagos en Bolívares:* Los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción.\n\nAtentamente,\nLa Junta de Condominio.`;
+                window.open(`https://web.whatsapp.com/send?phone=${p.Telefono}&text=${encodeURIComponent(message)}`, '_blank');
             });
+        });
+        
+        document.getElementById('update-monthly-charges-btn').addEventListener('click', async (e) => {
+            if (!confirm('¡ATENCIÓN! Esta acción cerrará el mes y calculará la deuda final para TODOS los propietarios. ¿Estás seguro?')) return;
+            const button = e.currentTarget;
+            button.disabled = true;
+            button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
+            showToast("Actualizando cargos mensuales... Esto puede tardar.");
 
-            document.getElementById('confirmPaymentBtn').addEventListener('click', async (e) => {
-                const button = e.currentTarget;
-                const amountInput = document.getElementById('partial-amount');
-                amountInput.classList.remove('input-error');
-                const p = condominioData.find(prop => prop.id === currentPropertyIdForAction);
-                if (!p) return;
-                const isPartial = document.getElementById('tab-partial').classList.contains('active');
-                let paymentAmount = isPartial ? parseFloat(amountInput.value) : (p['Deuda Restante'] || 0);
-                if (isPartial && (isNaN(paymentAmount) || paymentAmount <= 0)) {
-                    showToast('Ingrese un monto válido.', true);
-                    amountInput.classList.add('input-error');
-                    return;
-                }
-                button.disabled = true;
-                button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
-                try {
-                    await createAirtableRecord(AIRTABLE_TABLE_PAGOS, { 'Monto Pagado': paymentAmount, 'Fecha de Pago': new Date().toISOString().slice(0, 10), 'Propietario que Paga': [p.id] });
-                    showToast('✅ Pago registrado. Actualizando...');
-                    hideModal('paymentModal');
-                    setTimeout(initApp, 1500);
-                } catch (error) {
-                    showToast(`❌ Error al registrar pago: ${error.message}`, true);
-                } finally {
-                    button.disabled = false;
-                    button.textContent = 'Registrar Pago';
-                }
-            });
+            try {
+                const totalGastosComunes = gastosDelMes
+                    .filter(g => g.fields['Tipo de Gasto'] === TIPO_GASTO_COMUN)
+                    .reduce((sum, g) => sum + (g.fields.Monto || 0), 0);
 
-            document.getElementById('send-whatsapp-btn').addEventListener('click', () => {
-                const p = condominioData.find(prop => prop.id === currentPropertyIdForAction);
-                if (!p || !p.Telefono) { showToast('Propietario sin teléfono registrado.', true); return; }
-                const msg = document.getElementById('reminder-message-content').textContent;
-                window.open(`https://web.whatsapp.com/send?phone=${p.Telefono}&text=${encodeURIComponent(msg)}`, '_blank');
-                hideModal('reminderModal');
-            });
-
-            document.getElementById('send-bulk-reminders-btn').addEventListener('click', () => {
-                const debtors = condominioData.filter(p => (p['Deuda Restante'] || 0) > 0.01 && p.Telefono);
-                if (debtors.length === 0) {
-                    showToast('No hay morosos con números de teléfono registrados para notificar.', false);
-                    return;
-                }
-                
-                if (!confirm(`Esto abrirá ${debtors.length} pestaña(s) de WhatsApp para enviar recordatorios. ¿Desea continuar?`)) return;
-
-                const fechaActualStr = new Date().toLocaleDateString('es-VE');
-                let discountMessage = '';
-                if (DIA_ACTUAL <= DIA_LIMITE_PAGO) {
-                    const diasRestantes = DIA_LIMITE_PAGO - DIA_ACTUAL;
-                    const diaTexto = diasRestantes === 1 ? 'día' : 'días';
-                    discountMessage = `\n\n⚠️ Le quedan ${diasRestantes} ${diaTexto} para aprovechar el descuento por pronto pago.`;
-                }
-
-                debtors.forEach(p => {
-                    const message = `*Asunto: Recordatorio de Saldo Pendiente*\n\n📅 _Mensaje generado el ${fechaActualStr}._${discountMessage}\n\nEstimado/a *${p.Propietario}*,\n\nLe contactamos para informarle que, según nuestros registros, su propiedad presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: $${(p['Deuda Restante'] || 0).toFixed(2)}*\n\nAgradecemos su pronta gestión para mantener la solvencia del condominio.\n\nSi desea más información, visite nuestro portal del propietario:\nhttps://villalosapamates.netlify.app\n\n*Nota sobre pagos en Bolívares:* Los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción.\n\nAtentamente,\nLa Junta de Condominio.`;
-                    window.open(`https://web.whatsapp.com/send?phone=${p.Telefono}&text=${encodeURIComponent(message)}`, '_blank');
-                });
-            });
-            
-            document.getElementById('update-monthly-charges-btn').addEventListener('click', async (e) => {
-                if (!confirm('¡ATENCIÓN! Esta acción cerrará el mes y calculará la deuda final para TODOS los propietarios. ¿Estás seguro?')) return;
-                const button = e.currentTarget;
-                button.disabled = true;
-                button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
-                showToast("Actualizando cargos mensuales... Esto puede tardar.");
-
-                try {
-                    const totalGastosComunes = gastosDelMes
-                        .filter(g => g.fields['Tipo de Gasto'] === TIPO_GASTO_COMUN)
-                        .reduce((sum, g) => sum + (g.fields.Monto || 0), 0);
-
-                    const updates = condominioData.map(p => {
-                        const previousDebt = p['Deuda Restante'] || 0;
-                        
-                        let thisMonthCharges = 0;
-                        thisMonthCharges += totalGastosComunes * (p.Alicuota || 0);
-                        gastosDelMes.forEach(gasto => {
-                            if (gasto.fields['Tipo de Gasto'] === TIPO_GASTO_ESPECIAL) {
-                                const assignedOwners = gasto.fields.Propietarios || [];
-                                if (assignedOwners.includes(p.id)) {
-                                    const numAssigned = assignedOwners.length || 1;
-                                    thisMonthCharges += (gasto.fields.Monto || 0) / numAssigned;
-                                }
+                const updates = condominioData.map(p => {
+                    const previousDebt = p['Deuda Restante'] || 0;
+                    const cargoComunReal = totalGastosComunes * (p.Alicuota || 0);
+                    const recargo = cargoComunReal * TASA_RECARGO;
+                    const cargoComunConRecargo = cargoComunReal + recargo;
+                    const beneficio = DIA_ACTUAL <= DIA_LIMITE_PAGO ? recargo : 0;
+                    
+                    let cargoEspecial = 0;
+                    gastosDelMes.forEach(gasto => {
+                        if (gasto.fields['Tipo de Gasto'] === TIPO_GASTO_ESPECIAL) {
+                            const assignedOwners = gasto.fields.Propietarios || [];
+                            if (assignedOwners.includes(p.id)) {
+                                const numAssigned = assignedOwners.length || 1;
+                                cargoEspecial += (gasto.fields.Monto || 0) / numAssigned;
                             }
-                        });
-
-                        const newAccumulatedCharges = previousDebt + thisMonthCharges;
-                        
-                        return { id: p.id, fields: { 'Deuda Anterior': previousDebt, 'Cargos Acumulados': newAccumulatedCharges } };
+                        }
                     });
+
+                    const finalMonthlyCharge = (cargoComunConRecargo - beneficio) + cargoEspecial;
+                    const newAccumulatedCharges = previousDebt + finalMonthlyCharge;
                     
-                    for (let i = 0; i < updates.length; i += 10) {
-                        const chunk = updates.slice(i, i + 10);
-                        await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}`, { method: 'PATCH', body: JSON.stringify({ records: chunk }) });
-                    }
-
-                    showToast(`✅ Proceso completado. Recargando...`);
-                    setTimeout(initApp, 2000);
-                } catch (error) {
-                    showToast(`❌ Error al actualizar cargos: ${error.message}`, true);
-                } finally {
-                    button.disabled = false;
-                    button.innerHTML = '🔄 Actualizar Cargos del Mes';
-                }
-            });
-
-            document.getElementById('add-expense-form').addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const conceptInput = document.getElementById('expense-concept');
-                const amountInput = document.getElementById('expense-amount');
-                const button = e.currentTarget.querySelector('button[type="submit"]');
-                conceptInput.classList.remove('input-error');
-                amountInput.classList.remove('input-error');
-                const newExpense = {
-                    'Concepto': conceptInput.value.trim(),
-                    'Monto': parseFloat(amountInput.value),
-                    'Tipo de Gasto': document.getElementById('expense-type').value,
-                    'Frecuencia': document.getElementById('expense-frequency').value,
-                    'Propietarios': Array.from(document.querySelectorAll('#expense-owners-list input:checked')).map(cb => cb.value)
-                };
-                if (!newExpense.Concepto || isNaN(newExpense.Monto) || newExpense.Monto <= 0 || newExpense.Propietarios.length === 0) {
-                    showToast('Completa todos los campos correctamente.', true);
-                    if (!newExpense.Concepto) conceptInput.classList.add('input-error');
-                    if (isNaN(newExpense.Monto) || newExpense.Monto <= 0) amountInput.classList.add('input-error');
-                    return;
-                }
-                button.disabled = true;
-                button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
-                try {
-                    await createAirtableRecord(AIRTABLE_TABLE_GASTOS, newExpense);
-                    showToast('✅ Gasto añadido. Actualizando...');
-                    e.target.reset();
-                    document.querySelectorAll('#expense-owners-list input').forEach(cb => cb.checked = true);
-                    initApp();
-                } catch (error) {
-                    showToast(`❌ Error al añadir gasto: ${error.message}`, true);
-                } finally {
-                    button.disabled = false;
-                    button.textContent = 'Añadir Gasto';
-                }
-            });
-
-            document.getElementById('expensesTableBody').addEventListener('click', async (e) => {
-                if (!e.target.closest('.delete-expense-btn')) return;
-                const recordId = e.target.closest('.delete-expense-btn').dataset.id;
-                try {
-                    await deleteAirtableRecord(AIRTABLE_TABLE_GASTOS, recordId);
-                    showToast('✅ Gasto eliminado.');
-                    initApp();
-                } catch (error) {
-                    showToast('❌ Error al eliminar gasto.', true);
-                }
-            });
-            
-            document.getElementById('expense-type').addEventListener('change', (e) => {
-                const isCommon = e.target.value === 'Gasto Común';
-                document.querySelectorAll('#expense-owners-list input').forEach(cb => cb.checked = isCommon);
-                document.getElementById('toggle-all-owners').textContent = isCommon ? 'Deseleccionar Todos' : 'Deseleccionar Todos';
-            });
-
-            document.getElementById('toggle-all-owners').addEventListener('click', (e) => {
-                const checkboxes = document.querySelectorAll('#expense-owners-list input');
-                const areAllChecked = Array.from(checkboxes).every(cb => cb.checked);
-                checkboxes.forEach(cb => cb.checked = !areAllChecked);
-                e.target.textContent = areAllChecked ? 'Seleccionar Todos' : 'Deseleccionar Todos';
-            });
-            
-            document.getElementById('reportedPaymentsTableBody').addEventListener('click', async (e) => {
-                const button = e.target.closest('button');
-                if (!button) return;
-
-                const recordId = button.dataset.id;
-                const isConfirm = button.classList.contains('confirm-payment-btn');
+                    return {
+                        id: p.id,
+                        fields: {
+                            'Deuda Anterior': previousDebt,
+                            'Cargos Acumulados': newAccumulatedCharges
+                        }
+                    };
+                });
                 
-                if (!isConfirm) {
-                    if (!confirm('¿Estás seguro de que deseas rechazar este pago?')) {
-                        return;
-                    }
+                // Airtable API allows updating 10 records at a time. We need to chunk the updates.
+                for (let i = 0; i < updates.length; i += 10) {
+                    const chunk = updates.slice(i, i + 10);
+                    await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}`, { method: 'PATCH', body: JSON.stringify({ records: chunk }) });
                 }
-                
-                button.disabled = true;
-                button.innerHTML = '...';
 
-                try {
-                    if (isConfirm) {
-                        const reportedPayment = await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`);
-                        const fields = reportedPayment.fields;
-                        
-                        await createAirtableRecord(AIRTABLE_TABLE_PAGOS, {
-                            'Monto Pagado': fields['Monto Reportado'],
-                            'Fecha de Pago': new Date().toISOString().slice(0, 10),
-                            'Propietario que Paga': fields['Propietario que Reporta']
-                        });
+                showToast(`✅ Proceso completado. Recargando...`);
+                setTimeout(initApp, 2000);
+            } catch (error) {
+                showToast(`❌ Error al actualizar cargos: ${error.message}`, true);
+            } finally {
+                button.disabled = false;
+                button.innerHTML = '🔄 Actualizar Cargos del Mes';
+            }
+        });
 
-                        await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`, {
-                            method: 'PATCH',
-                            body: JSON.stringify({ fields: { 'Estado': 'Confirmado' } })
-                        });
-                        showToast('✅ Pago confirmado y aplicado.');
-                    } else {
-                        await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`, {
-                            method: 'PATCH',
-                            body: JSON.stringify({ fields: { 'Estado': 'Rechazado' } })
-                        });
-                        showToast('️✔️ Pago rechazado con éxito.');
-                    }
-                    
-                    setTimeout(initApp, 1500);
+        document.getElementById('add-expense-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const conceptInput = document.getElementById('expense-concept');
+            const amountInput = document.getElementById('expense-amount');
+            const button = e.currentTarget.querySelector('button[type="submit"]');
+            conceptInput.classList.remove('input-error');
+            amountInput.classList.remove('input-error');
+            const newExpense = {
+                'Concepto': conceptInput.value.trim(),
+                'Monto': parseFloat(amountInput.value),
+                'Tipo de Gasto': document.getElementById('expense-type').value,
+                'Frecuencia': document.getElementById('expense-frequency').value,
+                'Propietarios': Array.from(document.querySelectorAll('#expense-owners-list input:checked')).map(cb => cb.value)
+            };
+            if (!newExpense.Concepto || isNaN(newExpense.Monto) || newExpense.Monto <= 0 || newExpense.Propietarios.length === 0) {
+                showToast('Completa todos los campos correctamente.', true);
+                if (!newExpense.Concepto) conceptInput.classList.add('input-error');
+                if (isNaN(newExpense.Monto) || newExpense.Monto <= 0) amountInput.classList.add('input-error');
+                return;
+            }
+            button.disabled = true;
+            button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
+            try {
+                await createAirtableRecord(AIRTABLE_TABLE_GASTOS, newExpense);
+                showToast('✅ Gasto añadido. Actualizando...');
+                e.target.reset();
+                document.querySelectorAll('#expense-owners-list input').forEach(cb => cb.checked = true);
+                initApp();
+            } catch (error) {
+                showToast(`❌ Error al añadir gasto: ${error.message}`, true);
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Añadir Gasto';
+            }
+        });
 
-                } catch (error) {
-                    showToast(`❌ Error: ${error.message}`, true);
-                    button.disabled = false;
-                    button.innerHTML = isConfirm ? 'Confirmar' : 'Rechazar';
-                }
-            });
-        }
+        document.getElementById('expensesTableBody').addEventListener('click', async (e) => {
+            if (!e.target.closest('.delete-expense-btn')) return;
+            const recordId = e.target.closest('.delete-expense-btn').dataset.id;
+            try {
+                await deleteAirtableRecord(AIRTABLE_TABLE_GASTOS, recordId);
+                showToast('✅ Gasto eliminado.');
+                initApp();
+            } catch (error) {
+                showToast('❌ Error al eliminar gasto.', true);
+            }
+        });
+        
+        document.getElementById('expense-type').addEventListener('change', (e) => {
+            const isCommon = e.target.value === 'Gasto Común';
+            document.querySelectorAll('#expense-owners-list input').forEach(cb => cb.checked = isCommon);
+            document.getElementById('toggle-all-owners').textContent = isCommon ? 'Deseleccionar Todos' : 'Seleccionar Todos';
+        });
+
+        document.getElementById('toggle-all-owners').addEventListener('click', (e) => {
+            const checkboxes = document.querySelectorAll('#expense-owners-list input');
+            const areAllChecked = Array.from(checkboxes).every(cb => cb.checked);
+            checkboxes.forEach(cb => cb.checked = !areAllChecked);
+            e.target.textContent = areAllChecked ? 'Seleccionar Todos' : 'Deseleccionar Todos';
+        });
     </script>
 </body>
 </html>
