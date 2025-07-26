@@ -433,9 +433,15 @@
         
         function hideModal(modalId) {
             const modal = document.getElementById(modalId);
+            if (!modal) return;
             const content = modal.querySelector('.transform');
-            content.classList.add('scale-95', 'opacity-0');
-            setTimeout(() => modal.classList.add('hidden'), 300);
+            if (content) {
+                content.classList.add('scale-95', 'opacity-0');
+                setTimeout(() => {
+                    modal.classList.add('hidden');
+                    content.classList.remove('scale-95', 'opacity-0');
+                }, 300);
+            }
         }
         
         function showToast(message, isError = false) {
@@ -456,12 +462,25 @@
             document.getElementById('searchInput').addEventListener('keyup', e => populateTable(condominioData.filter(p => (p.Propietario||'').toLowerCase().includes(e.target.value.toLowerCase()) || (p.Casa||'').toString().includes(e.target.value))));
             
             document.getElementById('debtorsTableBody').addEventListener('click', (e) => {
+                e.stopPropagation();
                 const target = e.target.closest('button');
                 if (!target) return;
                 const id = target.dataset.id;
-                if (target.classList.contains('view-breakdown-btn')) showDebtModal(id);
-                else if (target.classList.contains('send-reminder-btn')) showReminderModal(id);
-                else if (target.classList.contains('register-payment-btn')) showPaymentModal(id);
+                if (!id) {
+                    console.error('No se encontró dataset.id en el botón clicado:', target);
+                    return;
+                }
+                console.log('Botón clicado:', target.className, 'ID:', id);
+
+                ['debtModal', 'reminderModal', 'paymentModal'].forEach(modalId => hideModal(modalId));
+
+                if (target.classList.contains('view-breakdown-btn')) {
+                    showDebtModal(id);
+                } else if (target.classList.contains('send-reminder-btn')) {
+                    showReminderModal(id);
+                } else if (target.classList.contains('register-payment-btn')) {
+                    showPaymentModal(id);
+                }
             });
             
             document.getElementById('closeDebtModalBtn').addEventListener('click', () => hideModal('debtModal'));
@@ -632,7 +651,7 @@
                 }
             });
             
-            document.getElementById('expense-type').addEventListener('change', (e) => {
+            document.getElementById('expense-type').addEventListener('click', (e) => {
                 const isCommon = e.target.value === 'Gasto Común';
                 document.querySelectorAll('#expense-owners-list input').forEach(cb => cb.checked = isCommon);
                 document.getElementById('toggle-all-owners').textContent = isCommon ? 'Deseleccionar Todos' : 'Deseleccionar Todos';
