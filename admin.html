@@ -205,14 +205,13 @@
             initApp();
         }
 
+        // --- CÓDIGO PRINCIPAL ---
         const AIRTABLE_TABLE_PROPIETARIOS = 'Propietarios';
         const AIRTABLE_TABLE_GASTOS = 'Gastos del Mes';
         const AIRTABLE_TABLE_PAGOS = 'Pagos';
         const AIRTABLE_TABLE_REPORTE_PAGO = 'Reportes de Pago';
-
         const TIPO_GASTO_COMUN = 'Gasto Común';
         const TIPO_GASTO_ESPECIAL = 'Gasto Especial';
-
         let condominioData = [], gastosDelMes = [], solvencyChart, topDebtorsChart;
         let currentPropertyIdForAction = null;
         const TASA_RECARGO = 0.10, DIA_LIMITE_PAGO = 10;
@@ -323,37 +322,21 @@
             const tableBody = document.getElementById('reportedPaymentsTableBody');
             const badge = document.getElementById('pending-payments-badge');
             tableBody.innerHTML = '';
-
             if (!payments || payments.length === 0) {
                 tableBody.innerHTML = `<tr><td colspan="4" class="text-center p-4 text-slate-500">No hay pagos pendientes por revisar.</td></tr>`;
                 badge.classList.add('hidden');
                 return;
             }
-
             badge.textContent = payments.length;
             badge.classList.remove('hidden');
-
             payments.forEach(payment => {
                 const ownerLink = payment.fields['Propietario que Reporta'];
-                if (!ownerLink || ownerLink.length === 0) {
-                    console.error('Se encontró un reporte de pago sin propietario vinculado. ID del reporte:', payment.id);
-                    return; 
-                }
+                if (!ownerLink || ownerLink.length === 0) { return; }
                 const ownerId = ownerLink[0];
-
                 const owner = condominioData.find(o => o.id === ownerId);
                 const ownerName = owner ? `Casa ${owner.Casa} - ${owner.Propietario}` : 'Propietario no encontrado';
-
                 const row = tableBody.insertRow();
-                row.innerHTML = `
-                    <td class="px-4 py-3 text-sm text-slate-700">${ownerName}</td>
-                    <td class="px-4 py-3 text-sm font-medium text-slate-900">$${(payment.fields['Monto Reportado'] || 0).toFixed(2)}</td>
-                    <td class="px-4 py-3 text-sm text-slate-500">${payment.fields.Referencia || ''}</td>
-                    <td class="px-4 py-3 space-x-2 whitespace-nowrap">
-                        <button data-id="${payment.id}" class="confirm-payment-btn bg-green-500 text-white px-3 py-1 rounded-lg text-sm font-semibold hover:bg-green-600">Confirmar</button>
-                        <button data-id="${payment.id}" class="reject-payment-btn bg-red-500 text-white px-3 py-1 rounded-lg text-sm font-semibold hover:bg-red-600">Rechazar</button>
-                    </td>
-                `;
+                row.innerHTML = `<td class="px-4 py-3 text-sm text-slate-700">${ownerName}</td><td class="px-4 py-3 text-sm font-medium text-slate-900">$${(payment.fields['Monto Reportado'] || 0).toFixed(2)}</td><td class="px-4 py-3 text-sm text-slate-500">${payment.fields.Referencia || ''}</td><td class="px-4 py-3 space-x-2 whitespace-nowrap"><button data-id="${payment.id}" class="confirm-payment-btn ...">Confirmar</button><button data-id="${payment.id}" class="reject-payment-btn ...">Rechazar</button></td>`;
             });
         }
 
@@ -532,9 +515,7 @@
                     const previousDebt = p['Deuda Restante'] || 0;
                     
                     let thisMonthCharges = 0;
-                    
                     thisMonthCharges += totalGastosComunes * (p.Alicuota || 0);
-
                     gastosDelMes.forEach(gasto => {
                         if (gasto.fields['Tipo de Gasto'] === TIPO_GASTO_ESPECIAL) {
                             const assignedOwners = gasto.fields.Propietarios || [];
@@ -547,13 +528,7 @@
 
                     const newAccumulatedCharges = previousDebt + thisMonthCharges;
                     
-                    return {
-                        id: p.id,
-                        fields: {
-                            'Deuda Anterior': previousDebt,
-                            'Cargos Acumulados': newAccumulatedCharges
-                        }
-                    };
+                    return { id: p.id, fields: { 'Deuda Anterior': previousDebt, 'Cargos Acumulados': newAccumulatedCharges } };
                 });
                 
                 for (let i = 0; i < updates.length; i += 10) {
