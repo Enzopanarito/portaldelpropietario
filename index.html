@@ -5,137 +5,98 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal del Propietario - Villa Los Apamates</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
         #welcome-screen { background-image: linear-gradient(to top, #f3e7e9 0%, #e3eeff 99%, #e3eeff 100%); }
-        .spinner { border: 4px solid rgba(0, 0, 0, 0.1); width: 36px; height: 36px; border-radius: 50%; border-left-color: #0ea5e9; animation: spin 1s ease infinite; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .spinner { border: 4px solid rgba(0,0,0,0.1); width:36px; height:36px; border-radius:50%; border-left-color:#0ea5e9; animation:spin 1s infinite linear; }
+        @keyframes spin { 0%{transform:rotate(0deg);}100%{transform:rotate(360deg);} }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800">
 
+    <!-- Pantalla de bienvenida -->
     <div id="welcome-screen" class="min-h-screen flex flex-col items-center justify-center p-4 text-center">
-        <img src="https://i.postimg.cc/WpyB1yTb/Logo_VLA.png" alt="Logo Villa" class="w-48 h-auto mb-6">
-        <h1 class="text-4xl font-bold text-slate-900">Bienvenido a Villa Los Apamates</h1>
-        <p class="text-lg text-slate-600 mt-2 mb-8">Su portal de gestión en línea.</p>
-        <div class="w-full max-w-sm mx-auto bg-white p-6 rounded-2xl shadow-xl">
-            <label for="welcomeUserSelector" class="block text-sm font-medium text-slate-700 mb-2">Seleccione su casa</label>
-            <select id="welcomeUserSelector" class="bg-slate-100 border border-slate-300 rounded-lg block w-full p-2.5">
+        <img src="https://i.postimg.cc/WpyB1yTb/Logo_VLA.png" alt="Logo VLA" class="w-48 mb-6">
+        <h1 class="text-4xl font-bold mb-2">Bienvenido a Villa Los Apamates</h1>
+        <p class="text-lg text-slate-600 mb-8">Su portal de gestión en línea.</p>
+        <div class="w-full max-w-sm bg-white p-6 rounded-2xl shadow-xl">
+            <label for="welcomeUserSelector" class="block mb-2 text-sm font-medium">Seleccione su casa</label>
+            <select id="welcomeUserSelector" class="w-full p-2.5 border rounded-lg">
                 <option value="">Cargando...</option>
             </select>
-            <button id="viewStatementBtn" class="mt-4 w-full bg-sky-600 text-white font-semibold py-3 rounded-lg hover:bg-sky-700 transition-colors">Consultar Estado de Cuenta</button>
-        </div>
-        <div id="kpi-container-public" class="w-full max-w-sm mx-auto bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-xl mt-6 hidden">
-            <h3 class="text-lg font-bold text-slate-800 mb-3 text-left border-b pb-2">📊 Estado General</h3>
-            <div class="text-left text-sm space-y-3">
-                <div class="flex justify-between items-center"><span>Solventes:</span><span id="kpi-public-solventes">...</span></div>
-                <div class="flex justify-between items-center"><span>Solvencia:</span><span id="kpi-public-solvencia">...</span></div>
-            </div>
+            <button id="viewStatementBtn" class="mt-4 w-full bg-sky-600 text-white py-3 rounded-lg hover:bg-sky-700">Consultar Estado de Cuenta</button>
         </div>
     </div>
 
-    <div id="main-content" class="hidden">
-        <!-- Contenido principal omitido por brevedad -->
+    <!-- Contenido principal del propietario -->
+    <div id="main-content" class="hidden container mx-auto p-6">
+        <button id="backBtn" class="mb-4 text-sky-600 hover:underline">← Volver</button>
+        <h2 id="owner-title" class="text-2xl font-bold mb-2"></h2>
+        <p id="owner-debt" class="text-lg text-red-600 mb-4"></p>
+        <!-- Aquí puedes expandir con detalles adicionales: desglose, pagos, etc. -->
     </div>
 
     <script>
     document.addEventListener('DOMContentLoaded', () => {
         const API_INITIAL = '/.netlify/functions/initialData';
         const CACHE_KEY = 'initialData';
-        const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutos
+        const CACHE_TTL_MS = 30 * 60 * 1000;
         let allData = { propietarios: [], gastos: [], pagos: [] };
 
         async function fetchInitialData() {
             const raw = sessionStorage.getItem(CACHE_KEY);
             if (raw) {
                 const { ts, payload } = JSON.parse(raw);
-                if (Date.now() - ts < CACHE_TTL_MS) {
-                    return payload;
-                }
+                if (Date.now() - ts < CACHE_TTL_MS) return payload;
             }
-            // Intentar endpoint bundle
-            try {
-                const res = await fetch(API_INITIAL);
-                if (!res.ok) throw new Error('Bundle failure');
-                const data = await res.json();
-                sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), payload: data }));
-                return data;
-            } catch (bundleErr) {
-                console.warn('Fallo bundle, aplicando fallback individual', bundleErr);
-                // Fallback individual
-                const endpoints = [
-                    '/.netlify/functions/airtable/Propietarios',
-                    '/.netlify/functions/airtable/Gastos%20del%20Mes?view=Gastos%20Mensuales',
-                    '/.netlify/functions/airtable/Pagos'
-                ];
-                const [propRes, gastosRes, pagosRes] = await Promise.all(endpoints.map(u => fetch(u)));
-                if (!propRes.ok || !gastosRes.ok || !pagosRes.ok) {
-                    throw new Error('Error al cargar datos fallback');
-                }
-                const [propData, gastosData, pagosData] = await Promise.all([propRes.json(), gastosRes.json(), pagosRes.json()]);
-                const data = {
-                    propietarios: propData.records || [],
-                    gastos: gastosData.records || [],
-                    pagos: pagosData.records || []
-                };
-                sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), payload: data }));
-                return data;
-            }
+            const res = await fetch(API_INITIAL);
+            if (!res.ok) throw new Error('Error al cargar datos bundle');
+            const data = await res.json();
+            sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), payload: data }));
+            return data;
         }
 
-        function populateUserSelector(selectorId) {
-            const selector = document.getElementById(selectorId);
-            if (!selector) return;
+        function populateUserSelector() {
+            const selector = document.getElementById('welcomeUserSelector');
             selector.innerHTML = '<option value="">-- Seleccione --</option>';
             allData.propietarios.forEach(p => {
-                const o = document.createElement('option');
-                o.value = p.id;
-                o.textContent = `Casa ${p.Casa} - ${p.Propietario}`;
-                selector.appendChild(o);
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = `Casa ${p.Casa} - ${p.Propietario}`;
+                selector.appendChild(opt);
             });
         }
 
-        function displayPublicKPIs() {
-            if (!allData.propietarios.length) return;
-            const total = allData.propietarios.length;
-            const morosos = allData.propietarios.filter(p => (p['Deuda Restante'] || 0) > 0.01).length;
-            const solventes = total - morosos;
-            document.getElementById('kpi-public-solventes').textContent = `${solventes} de ${total}`;
-            document.getElementById('kpi-public-solvencia').textContent = `${((solventes/total)*100).toFixed(0)}%`;
-            document.getElementById('kpi-container-public').classList.remove('hidden');
-        }
-
-        async function initApp() {
-            try {
-                const data = await fetchInitialData();
+        function initApp() {
+            fetchInitialData()
+            .then(data => {
                 allData.propietarios = data.propietarios.map(r => ({ id: r.id, ...r.fields }));
-                allData.gastos = data.gastos;
-                allData.pagos = data.pagos;
-                allData.propietarios.sort((a,b) => (a.Casa||0) - (b.Casa||0));
-
-                populateUserSelector('welcomeUserSelector');
-                populateUserSelector('userSelector');
-                displayPublicKPIs();
-            } catch (err) {
-                console.error('InitApp error:', err);
+                allData.propietarios.sort((a,b)=> (a.Casa||0)-(b.Casa||0));
+                populateUserSelector();
+            })
+            .catch(err => {
+                console.error(err);
                 const sel = document.getElementById('welcomeUserSelector');
-                if (sel) sel.innerHTML = '<option>Error al cargar</option>';
-            }
+                sel.innerHTML = '<option>Error al cargar datos</option>';
+            });
         }
 
         document.getElementById('viewStatementBtn').addEventListener('click', () => {
-            const selValue = document.getElementById('welcomeUserSelector').value;
-            if (!selValue) return alert('Seleccione una casa.');
+            const selectedId = document.getElementById('welcomeUserSelector').value;
+            if (!selectedId) return alert('Seleccione una casa.');
+            const prop = allData.propietarios.find(p => p.id === selectedId);
+            if (!prop) return alert('Propietario no encontrado.');
+            document.getElementById('owner-title').textContent = `Casa ${prop.Casa} - ${prop.Propietario}`;
+            document.getElementById('owner-debt').textContent = `Deuda restante: $${(prop['Deuda Restante']||0).toFixed(2)}`;
             document.getElementById('welcome-screen').classList.add('hidden');
             document.getElementById('main-content').classList.remove('hidden');
-            renderPortalForUser(selValue);
         });
 
-        function renderPortalForUser(id) {
-            // Renderizar UI privada usando allData.gastos y allData.pagos
-        }
+        document.getElementById('backBtn').addEventListener('click', () => {
+            document.getElementById('main-content').classList.add('hidden');
+            document.getElementById('welcome-screen').classList.remove('hidden');
+        });
 
         initApp();
     });
