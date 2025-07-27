@@ -37,30 +37,56 @@
     </div>
 
     <div id="main-content" class="hidden">
-        <!-- Aquí va el contenido de la UI principal (header, selector id="userSelector", etc.) -->
+        <!-- Contenido principal omitido por brevedad -->
     </div>
 
     <script>
     document.addEventListener('DOMContentLoaded', () => {
         const API_INITIAL = '/.netlify/functions/initialData';
         const CACHE_KEY = 'initialData';
-        const CACHE_TTL_MS = 30 * 60 * 1000;
+        const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutos
         let allData = { propietarios: [], gastos: [], pagos: [] };
 
         async function fetchInitialData() {
             const raw = sessionStorage.getItem(CACHE_KEY);
             if (raw) {
                 const { ts, payload } = JSON.parse(raw);
-                if (Date.now() - ts < CACHE_TTL_MS) return payload;
+                if (Date.now() - ts < CACHE_TTL_MS) {
+                    return payload;
+                }
             }
-            const res = await fetch(API_INITIAL);
-            if (!res.ok) throw new Error('Error al obtener datos.');
-            const data = await res.json();
-            sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), payload: data }));
-            return data;
+            // Intentar endpoint bundle
+            try {
+                const res = await fetch(API_INITIAL);
+                if (!res.ok) throw new Error('Bundle failure');
+                const data = await res.json();
+                sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), payload: data }));
+                return data;
+            } catch (bundleErr) {
+                console.warn('Fallo bundle, aplicando fallback individual', bundleErr);
+                // Fallback individual
+                const endpoints = [
+                    '/.netlify/functions/airtable/Propietarios',
+                    '/.netlify/functions/airtable/Gastos%20del%20Mes?view=Gastos%20Mensuales',
+                    '/.netlify/functions/airtable/Pagos'
+                ];
+                const [propRes, gastosRes, pagosRes] = await Promise.all(endpoints.map(u => fetch(u)));
+                if (!propRes.ok || !gastosRes.ok || !pagosRes.ok) {
+                    throw new Error('Error al cargar datos fallback');
+                }
+                const [propData, gastosData, pagosData] = await Promise.all([propRes.json(), gastosRes.json(), pagosRes.json()]);
+                const data = {
+                    propietarios: propData.records || [],
+                    gastos: gastosData.records || [],
+                    pagos: pagosData.records || []
+                };
+                sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), payload: data }));
+                return data;
+            }
         }
 
-        function populateUserSelector(selector) {
+        function populateUserSelector(selectorId) {
+            const selector = document.getElementById(selectorId);
             if (!selector) return;
             selector.innerHTML = '<option value="">-- Seleccione --</option>';
             allData.propietarios.forEach(p => {
@@ -87,13 +113,13 @@
                 allData.propietarios = data.propietarios.map(r => ({ id: r.id, ...r.fields }));
                 allData.gastos = data.gastos;
                 allData.pagos = data.pagos;
-                allData.propietarios.sort((a,b)=>(a.Casa||0)-(b.Casa||0));
+                allData.propietarios.sort((a,b) => (a.Casa||0) - (b.Casa||0));
 
-                populateUserSelector(document.getElementById('welcomeUserSelector'));
-                populateUserSelector(document.getElementById('userSelector'));
+                populateUserSelector('welcomeUserSelector');
+                populateUserSelector('userSelector');
                 displayPublicKPIs();
             } catch (err) {
-                console.error(err);
+                console.error('InitApp error:', err);
                 const sel = document.getElementById('welcomeUserSelector');
                 if (sel) sel.innerHTML = '<option>Error al cargar</option>';
             }
@@ -108,7 +134,7 @@
         });
 
         function renderPortalForUser(id) {
-            // Lógica para mostrar datos privados usando allData.gastos y allData.pagos
+            // Renderizar UI privada usando allData.gastos y allData.pagos
         }
 
         initApp();
