@@ -17,13 +17,12 @@
 <body class="bg-slate-50 text-slate-800">
 
     <div id="welcome-screen" class="min-h-screen flex flex-col items-center justify-center p-4 text-center">
-        <!-- Logo y selector de casa -->
-        <img src="https://i.postimg.cc/WpyB1yTb/Logo_VLA.png" alt="Logo Villa Los Apamates" class="w-48 h-auto mb-6">
+        <img src="https://i.postimg.cc/WpyB1yTb/Logo_VLA.png" alt="Logo Villa" class="w-48 h-auto mb-6">
         <h1 class="text-4xl font-bold text-slate-900">Bienvenido a Villa Los Apamates</h1>
         <p class="text-lg text-slate-600 mt-2 mb-8">Su portal de gestión en línea.</p>
         <div class="w-full max-w-sm mx-auto bg-white p-6 rounded-2xl shadow-xl">
             <label for="welcomeUserSelector" class="block text-sm font-medium text-slate-700 mb-2">Seleccione su casa</label>
-            <select id="welcomeUserSelector" class="bg-slate-100 border border-slate-300 text-slate-900 text-sm rounded-lg block w-full p-2.5">
+            <select id="welcomeUserSelector" class="bg-slate-100 border border-slate-300 rounded-lg block w-full p-2.5">
                 <option value="">Cargando...</option>
             </select>
             <button id="viewStatementBtn" class="mt-4 w-full bg-sky-600 text-white font-semibold py-3 rounded-lg hover:bg-sky-700 transition-colors">Consultar Estado de Cuenta</button>
@@ -38,37 +37,31 @@
     </div>
 
     <div id="main-content" class="hidden">
-        <!-- Header y UI principal omitidos por brevedad -->
+        <!-- Aquí va el contenido de la UI principal (header, selector id="userSelector", etc.) -->
     </div>
 
     <script>
     document.addEventListener('DOMContentLoaded', () => {
         const API_INITIAL = '/.netlify/functions/initialData';
         const CACHE_KEY = 'initialData';
-        const CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
-        const TIPO_GASTO_COMUN = 'Gasto Común';
-        const TIPO_GASTO_ESPECIAL = 'Gasto Especial';
-        const TASA_RECARGO = 0.10;
-        const DIA_LIMITE_PAGO = 10;
-        const FECHA_ACTUAL = new Date(), DIA_ACTUAL = FECHA_ACTUAL.getDate();
+        const CACHE_TTL_MS = 30 * 60 * 1000;
         let allData = { propietarios: [], gastos: [], pagos: [] };
 
         async function fetchInitialData() {
             const raw = sessionStorage.getItem(CACHE_KEY);
             if (raw) {
                 const { ts, payload } = JSON.parse(raw);
-                if (Date.now() - ts < CACHE_TTL_MS) {
-                    return payload;
-                }
+                if (Date.now() - ts < CACHE_TTL_MS) return payload;
             }
             const res = await fetch(API_INITIAL);
-            if (!res.ok) throw new Error('No se pudo obtener datos.');
+            if (!res.ok) throw new Error('Error al obtener datos.');
             const data = await res.json();
             sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), payload: data }));
             return data;
         }
 
         function populateUserSelector(selector) {
+            if (!selector) return;
             selector.innerHTML = '<option value="">-- Seleccione --</option>';
             allData.propietarios.forEach(p => {
                 const o = document.createElement('option');
@@ -99,46 +92,24 @@
                 populateUserSelector(document.getElementById('welcomeUserSelector'));
                 populateUserSelector(document.getElementById('userSelector'));
                 displayPublicKPIs();
-                // Inicializar UI privada al escoger casa...
             } catch (err) {
                 console.error(err);
-                document.getElementById('welcomeUserSelector').innerHTML = '<option>Error al cargar</option>';
+                const sel = document.getElementById('welcomeUserSelector');
+                if (sel) sel.innerHTML = '<option>Error al cargar</option>';
             }
         }
 
         document.getElementById('viewStatementBtn').addEventListener('click', () => {
-            const sel = document.getElementById('welcomeUserSelector').value;
-            if (!sel) return alert('Seleccione una casa.');
+            const selValue = document.getElementById('welcomeUserSelector').value;
+            if (!selValue) return alert('Seleccione una casa.');
             document.getElementById('welcome-screen').classList.add('hidden');
             document.getElementById('main-content').classList.remove('hidden');
-            renderPortalForUser(sel);
+            renderPortalForUser(selValue);
         });
 
         function renderPortalForUser(id) {
-            const prop = allData.propietarios.find(p=>p.id===id);
-            // Resto de renderizado usando allData.gastos y allData.pagos
+            // Lógica para mostrar datos privados usando allData.gastos y allData.pagos
         }
-
-        // Lógica de reportar pago: un único POST a "Reportes de Pago"
-        document.getElementById('report-payment-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const amount = parseFloat(document.getElementById('report-amount').value);
-            const reference = document.getElementById('report-reference').value.trim();
-            const propId = document.getElementById('userSelector').value;
-            if (!propId || !amount || !reference) return alert('Complete todos los campos.');
-            try {
-                await fetch('/.netlify/functions/airtable/Reportes%20de%20Pago', {
-                    method: 'POST',
-                    headers: {'Content-Type':'application/json'},
-                    body: JSON.stringify({ records:[{ fields:{ 'Propietario que Reporta':[propId], 'Monto Reportado':amount, 'Referencia':reference, Estado:'Pendiente' }}] })
-                });
-                alert('Reporte enviado.');
-                // cerrar modal
-            } catch (err) {
-                console.error(err);
-                alert('Error al reportar.');
-            }
-        });
 
         initApp();
     });
