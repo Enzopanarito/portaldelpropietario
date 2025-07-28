@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portal Propietario - Villa Los Apamates</title>
+    <title>Portal del Propietario - Villa Los Apamates</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
@@ -12,11 +12,7 @@
         #welcome-screen { background-image: linear-gradient(to top, #f3e7e9 0%, #e3eeff 99%, #e3eeff 100%); }
         .spinner { border: 4px solid rgba(0, 0, 0, 0.1); width: 36px; height: 36px; border-radius: 50%; border-left-color: #0ea5e9; animation: spin 1s ease infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .toast {
-            visibility: hidden; min-width: 250px; background-color: #333; color: #fff; text-align: center;
-            border-radius: 8px; padding: 16px; position: fixed; z-index: 100; right: 30px; bottom: 30px;
-            font-size: 16px; opacity: 0; transition: all 0.5s ease-in-out;
-        }
+        .toast { visibility: hidden; min-width: 250px; background-color: #333; color: #fff; text-align: center; border-radius: 8px; padding: 16px; position: fixed; z-index: 100; right: 30px; bottom: 30px; font-size: 16px; opacity: 0; transition: all 0.5s ease-in-out; }
         .toast.show { visibility: visible; opacity: 1; }
         .toast.success { background-color: #28a745; }
         .toast.error { background-color: #dc3545; }
@@ -29,13 +25,13 @@
         <h1 class="text-4xl font-bold text-slate-900">Bienvenido a Villa Los Apamates</h1>
         <p class="text-lg text-slate-600 mt-2 mb-8">Su portal de gestión en línea.</p>
         <div class="w-full max-w-sm mx-auto bg-white p-6 rounded-2xl shadow-xl">
-             <label for="welcomeUserSelector" class="block text-sm font-medium text-slate-700 mb-2">Por favor, seleccione su casa para continuar</label>
-             <select id="welcomeUserSelector" class="bg-slate-100 border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-sky-500 focus:border-sky-500 block w-full p-2.5">
-                 <option>Cargando propietarios...</option>
-             </select>
-             <button id="viewStatementBtn" class="mt-4 w-full bg-sky-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-sky-700 transition-colors shadow-sm">
-                 Consultar Estado de Cuenta
-             </button>
+            <label for="welcomeUserSelector" class="block text-sm font-medium text-slate-700 mb-2">Por favor, seleccione su casa para continuar</label>
+            <select id="welcomeUserSelector" class="bg-slate-100 border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-sky-500 focus:border-sky-500 block w-full p-2.5">
+                <option>Cargando propietarios...</option>
+            </select>
+            <button id="viewStatementBtn" class="mt-4 w-full bg-sky-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-sky-700 transition-colors shadow-sm">
+                Consultar Estado de Cuenta
+            </button>
         </div>
         <div id="kpi-container-public" class="w-full max-w-sm mx-auto bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-xl mt-6 hidden">
             <h3 class="text-lg font-bold text-slate-800 mb-3 text-left border-b pb-2">📊 Estado General del Condominio</h3>
@@ -57,8 +53,7 @@
                     </div>
                 </div>
                 <div class="flex items-center gap-4">
-                    <select id="userSelector" class="bg-slate-100 border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-sky-500 focus:border-sky-500 block w-full p-2.5">
-                    </select>
+                    <select id="userSelector" class="bg-slate-100 border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-sky-500 focus:border-sky-500 block w-full p-2.5"></select>
                 </div>
             </div>
         </header>
@@ -104,358 +99,319 @@
         <footer class="text-center mt-12"><p class="text-sm text-slate-500">Sistema generado por Enzo Panarito para el Condominio Villa Los Apamates. © 2025</p></footer>
     </div>
     <div id="reportPaymentModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 transform transition-all"><div class="flex justify-between items-start mb-4"><h3 class="text-xl font-bold text-slate-900">Reportar Nuevo Pago</h3><button id="closeReportModalBtn" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button></div><form id="report-payment-form"><div class="space-y-4"><div><label for="report-amount" class="block text-sm font-medium text-slate-700">Monto del Pago ($)</label><input type="number" id="report-amount" step="0.01" class="mt-1 block w-full px-3 py-2 bg-slate-100 border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-sky-500 focus:border-sky-500" required placeholder="Ej: 125.50"></div><div><label for="report-reference" class="block text-sm font-medium text-slate-700">Número de Referencia o Confirmación</label><input type="text" id="report-reference" class="mt-1 block w-full px-3 py-2 bg-slate-100 border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-sky-500 focus:border-sky-500" required placeholder="Ej: 04121234567"></div></div><div class="mt-6 flex justify-end gap-3"><button type="button" id="cancelReportBtn" class="py-2 px-4 bg-slate-200 text-slate-800 font-semibold rounded-lg hover:bg-slate-300">Cancelar</button><button type="submit" id="submitReportBtn" class="py-2 px-4 bg-sky-600 text-white font-semibold rounded-lg hover:bg-sky-700">Enviar Reporte</button></div></form></div></div>
-    
     <div id="toast" class="toast"></div>
-
     <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        const AIRTABLE_TABLES = {
-            PROPIETARIOS: 'Propietarios',
-            GASTOS: 'Gastos del Mes',
-            PAGOS: 'Pagos',
-            REPORTES: 'Reportes de Pago',
-            CONFIG: 'ControlVersiones'
-        };
-        const TASA_RECARGO = 0.10, DIA_LIMITE_PAGO = 10;
-        const FECHA_ACTUAL = new Date(), DIA_ACTUAL = FECHA_ACTUAL.getDate();
-        let allData = { propietarios: [], gastos: [], pagos: [] };
+document.addEventListener('DOMContentLoaded', () => {
+    // Configuración de tablas y constantes
+    const AIRTABLE_TABLE_PROPIETARIOS = 'Propietarios';
+    const AIRTABLE_TABLE_GASTOS = 'Gastos del Mes';
+    const AIRTABLE_TABLE_PAGOS = 'Pagos';
+    const TIPO_GASTO_COMUN = 'Gasto Común';
+    const TIPO_GASTO_ESPECIAL = 'Gasto Especial';
+    const TASA_RECARGO = 0.10;
+    const DIA_LIMITE_PAGO = 10;
+    const FECHA_ACTUAL = new Date(), DIA_ACTUAL = FECHA_ACTUAL.getDate();
+    let allData = { propietarios: [], gastos: [], pagos: [] };
 
-        const CACHE_KEYS = {
-            PROPIETARIOS: 'vla_propietarios_cache',
-            DINAMICOS: 'vla_dynamic_cache'
-        };
-        const CACHE_DURATIONS = {
-            DINAMICOS_MIN: 5
-        };
+    // Toasts elegantes
+    function showToast(message, isError = false, duration = 4000) {
+        const toast = document.getElementById('toast');
+        toast.textContent = message;
+        toast.className = `toast show ${isError ? 'error' : 'success'}`;
+        setTimeout(() => {
+            toast.className = toast.className.replace('show', '');
+        }, duration);
+    }
 
-        const showToast = (message, isError = false, duration = 4000) => {
-            const toast = document.getElementById('toast');
-            toast.textContent = message;
-            toast.className = `toast show ${isError ? 'error' : 'success'}`;
-            setTimeout(() => {
-                toast.className = toast.className.replace('show', '');
-            }, duration);
-        };
-
-        async function airtableFetch(path, options = {}) {
-            const url = `/.netlify/functions/airtable${path}`;
+    // Fetch estándar
+    async function airtableFetch(path, options = {}) {
+        const url = `/.netlify/functions/airtable${path}`;
+        const response = await fetch(url, options);
+        if (!response.ok) {
+            let msg = response.statusText;
             try {
-                const response = await fetch(url, options);
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(`Error de Airtable: ${errorData.error?.message || response.statusText}`);
-                }
-                return response.json();
-            } catch (error) {
-                console.error("Error en la llamada a la función Netlify:", error);
-                throw error;
-            }
+                const errorData = await response.json();
+                msg = errorData.error?.message || msg;
+            } catch (e) {}
+            throw new Error(`Error de Airtable: ${msg}`);
         }
-        
-        async function fetchAndSetPropietarios(remoteVersion) {
-            console.log("API: Descargando lista de propietarios...");
-            const propietariosData = await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLES.PROPIETARIOS)}`);
-            const propietarios = (propietariosData.records || []).map(r => ({ id: r.id, ...r.fields })).sort((a, b) => (a.Casa || 0) - (b.Casa || 0));
-            localStorage.setItem(CACHE_KEYS.PROPIETARIOS, JSON.stringify({ version: remoteVersion, data: propietarios }));
-            console.log("CACHE: Nueva lista de propietarios guardada.");
-            return propietarios;
-        }
+        return response.json();
+    }
 
-        async function getPropietarios() {
-            console.log("CACHE: Verificando versión de propietarios...");
-            const versionData = await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLES.CONFIG)}?filterByFormula={Key}='propietarios'`);
-            const remoteVersion = versionData.records[0]?.fields.Version;
-
-            if (!remoteVersion) {
-                console.error("Error: No se encontró la versión para 'propietarios'. Cargando sin caché.");
-                return await fetchAndSetPropietarios('fallback');
-            }
-
-            const cachedString = localStorage.getItem(CACHE_KEYS.PROPIETARIOS);
-            if(cachedString) {
-                try {
-                    const cachedPropietarios = JSON.parse(cachedString);
-                    if (cachedPropietarios && cachedPropietarios.version === remoteVersion && Array.isArray(cachedPropietarios.data)) {
-                        console.log("CACHE: Usando lista de propietarios guardada (Versión " + remoteVersion + ").");
-                        return cachedPropietarios.data;
-                    }
-                } catch(e) {
-                    console.warn("CACHE: Caché de propietarios corrupta. Se recargarán los datos.");
-                }
-            }
-            
-            return await fetchAndSetPropietarios(remoteVersion);
-        }
-
-        async function getDynamicData() {
-            const cachedString = sessionStorage.getItem(CACHE_KEYS.DINAMICOS);
-            if (cachedString) {
-                try {
-                    const cachedDynamicData = JSON.parse(cachedString);
-                    if (cachedDynamicData && cachedDynamicData.timestamp && cachedDynamicData.data) {
-                         const ageInMinutes = (Date.now() - cachedDynamicData.timestamp) / 1000 / 60;
-                        if (ageInMinutes < CACHE_DURATIONS.DINAMICOS_MIN) {
-                            console.log("CACHE: Usando datos dinámicos (gastos/pagos) guardados.");
-                            return { gastos: cachedDynamicData.data.gastos, pagos: cachedDynamicData.data.pagos };
-                        }
-                    }
-                } catch(e) {
-                     console.warn("CACHE: Caché de datos dinámicos corrupta. Se recargarán los datos.");
-                }
-            }
-
-            console.log("API: Descargando datos dinámicos (gastos/pagos)...");
-            const [gastosData, pagosData] = await Promise.all([
-                airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLES.GASTOS)}?view=Gastos%20Mensuales`),
-                airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLES.PAGOS)}`)
+    // Lógica principal para cargar los datos
+    async function initApp() {
+        try {
+            const [propietariosData, gastosData, pagosData] = await Promise.all([
+                airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}`),
+                airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_GASTOS)}?view=Gastos%20Mensuales`),
+                airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PAGOS)}`)
             ]);
-            
-            const dynamicData = {
-                gastos: gastosData.records || [],
-                pagos: pagosData.records || []
-            };
-
-            sessionStorage.setItem(CACHE_KEYS.DINAMICOS, JSON.stringify({ timestamp: Date.now(), data: dynamicData }));
-            console.log("CACHE: Nuevos datos dinámicos guardados.");
-            return dynamicData;
-        }
-
-        async function initApp() {
-            try {
-                const [propietarios, dynamicData] = await Promise.all([
-                    getPropietarios(),
-                    getDynamicData()
-                ]);
-
-                allData = {
-                    propietarios: propietarios,
-                    gastos: dynamicData.gastos,
-                    pagos: dynamicData.pagos
-                };
-                
-                setupAndRender();
-            } catch (error) {
-                document.getElementById('welcomeUserSelector').innerHTML = `<option>Error al cargar datos</option>`;
-                console.error("Error fatal inicializando la app:", error);
-                alert("No se pudieron cargar los datos del condominio. Por favor, intente recargar la página.\n\nError: " + error.message);
-            }
-        }
-        
-        function setupAndRender() {
-            const welcomeUserSelector = document.getElementById('welcomeUserSelector');
-            const userSelector = document.getElementById('userSelector');
-            populateUserSelector(welcomeUserSelector);
-            populateUserSelector(userSelector);
+            allData.propietarios = (propietariosData.records || []).map(r => ({ id: r.id, ...r.fields }));
+            allData.gastos = gastosData.records || [];
+            allData.pagos = pagosData.records || [];
+            allData.propietarios.sort((a, b) => (a.Casa || 0) - (b.Casa || 0));
+            populateUserSelector(document.getElementById('welcomeUserSelector'));
+            populateUserSelector(document.getElementById('userSelector'));
             updateGlobalKPIs();
             displayPublicKPIs();
+        } catch (error) {
+            document.getElementById('welcomeUserSelector').innerHTML = `<option>Error al cargar datos</option>`;
+            showToast("Error al cargar datos. Recarga la página o contacta al admin.", true, 9000);
+            console.error("Error al cargar datos:", error);
         }
+    }
 
-        function populateUserSelector(selectorElement) {
-            selectorElement.innerHTML = '<option value="">-- Seleccione su casa --</option>';
-            allData.propietarios.forEach(p => {
-                const option = document.createElement('option');
-                option.value = p.id;
-                option.textContent = `Casa ${p.Casa} - ${p.Propietario}`;
-                selectorElement.appendChild(option);
-            });
-        }
-        
-        function renderPortalForUser(propertyId) {
-            const property = allData.propietarios.find(p => p.id === propertyId);
-            if (!property) return;
-            const currentDate = new Date();
-            const dateString = currentDate.toLocaleString('es-VE', { day: '2-digit', month: 'long', year: 'numeric' });
-            const monthYearString = currentDate.toLocaleString('es-VE', { month: 'long', year: 'numeric' });
-            document.getElementById('welcome-message').innerHTML = `
-                <h2 class="text-3xl font-bold text-slate-900">Bienvenido, ${property.Propietario}</h2>
-                <p class="text-lg text-slate-600">Este es el resumen de su estado de cuenta para la <span class="font-bold">Casa #${property.Casa}</span>.</p>
-                <p class="text-md text-slate-500 mt-2">Estado de Cuenta para: <span class="font-semibold">${dateString}</span></p>`;
-            const deudaRestante = property['Deuda Restante'] || 0;
-            document.getElementById('debt-summary').innerHTML = `
-                <div class="flex justify-between items-baseline text-3xl font-bold ${deudaRestante > 0.01 ? 'text-red-500' : 'text-green-600'}">
-                    <span>Deuda Total Actual:</span>
-                    <span>$${deudaRestante.toFixed(2)}</span>
-                </div>
-                <p class="text-xs text-slate-500 text-right">Este es su saldo total a la fecha de hoy.</p>`;
-            displayChargesBreakdown(property, monthYearString);
-            displayPaymentsHistory(property);
-            displayDiscountBanner();
-            displayBcvNotice();
-            displayPrivateMorososList();
-        }
-        
-        function displayChargesBreakdown(property, monthYearString) {
-            document.getElementById('expenses-breakdown-title').textContent = `Desglose de Cargos para ${monthYearString}`;
-            const breakdownDiv = document.getElementById('expenses-breakdown');
-            const deudaAnterior = property['Deuda Anterior'] || 0;
-            const totalPagado = property['Total Pagado'] || 0;
-            let totalCargosComunesPropietario = 0;
-            let tableHtml = `<table class="min-w-full text-sm"><thead class="border-b"><tr><th class="px-2 py-2 text-left font-semibold text-slate-600">Concepto</th><th class="px-2 py-2 text-right font-semibold text-slate-600">Costo Total</th><th class="px-2 py-2 text-right font-semibold text-slate-600">Su Parte</th></tr></thead><tbody class="divide-y divide-slate-200">`;
-            tableHtml += `<tr><td class="px-2 py-2 font-semibold" colspan="2">Deuda del Mes Anterior</td><td class="px-2 py-2 text-right font-semibold">$${deudaAnterior.toFixed(2)}</td></tr>`;
-            const factorAjuste = DIA_ACTUAL > DIA_LIMITE_PAGO ? (1 + TASA_RECARGO) : 1.0;
-            allData.gastos.forEach(gasto => {
-                const monto = gasto.fields.Monto || 0;
-                const concepto = gasto.fields.Concepto || 'Gasto sin descripción';
-                let suParte = 0;
-                if (gasto.fields['Tipo de Gasto'] === 'Gasto Común') {
-                    let cargoIndividualReal = monto * (property.Alicuota || 0);
-                    totalCargosComunesPropietario += cargoIndividualReal;
-                    suParte = cargoIndividualReal * factorAjuste;
-                } else if (gasto.fields['Tipo de Gasto'] === 'Gasto Especial') {
-                    const assignedOwners = gasto.fields.Propietarios || [];
-                    if (assignedOwners.includes(property.id)) {
-                        suParte = monto / (assignedOwners.length || 1);
-                    }
-                }
-                if (suParte > 0) {
-                    tableHtml += `<tr><td class="px-2 py-2 text-slate-700">${concepto}</td><td class="px-2 py-2 text-slate-500 text-right">$${monto.toFixed(2)}</td><td class="px-2 py-2 text-slate-700 text-right">$${suParte.toFixed(2)}</td></tr>`;
-                }
-            });
-            tableHtml += `</tbody><tfoot class="border-t-2 border-slate-300">`;
-            if (DIA_ACTUAL <= DIA_LIMITE_PAGO) {
-                const beneficio = totalCargosComunesPropietario * TASA_RECARGO;
-                tableHtml += `<tr><td class="px-2 pt-2 text-green-600 font-semibold" colspan="2">Beneficio Pronto Pago</td><td class="px-2 pt-2 text-right text-green-600 font-semibold">-$${beneficio.toFixed(2)}</td></tr>`;
-            }
-            if (totalPagado > 0) {
-                tableHtml += `<tr><td class="px-2 py-2 text-green-600 font-semibold" colspan="2">Total Pagado</td><td class="px-2 py-2 text-right text-green-600 font-semibold">-$${totalPagado.toFixed(2)}</td></tr>`;
-            }
-            tableHtml += `</tfoot></table>`;
-            breakdownDiv.innerHTML = tableHtml;
-        }
+    // KPIs Públicos
+    function displayPublicKPIs() {
+        const kpiContainer = document.getElementById('kpi-container-public');
+        if (allData.propietarios.length === 0) return;
+        const totalPropietarios = allData.propietarios.length;
+        const morosos = allData.propietarios.filter(p => p['Deuda Restante'] && p['Deuda Restante'] > 0.01).length;
+        const solventes = totalPropietarios - morosos;
+        const porcentajeSolvencia = totalPropietarios > 0 ? ((solventes / totalPropietarios) * 100).toFixed(0) : 0;
+        document.getElementById('kpi-public-solventes').textContent = `${solventes} de ${totalPropietarios}`;
+        document.getElementById('kpi-public-solvencia').textContent = `${porcentajeSolvencia}%`;
+        kpiContainer.classList.remove('hidden');
+    }
 
-        function displayPaymentsHistory(property) {
-            const tbody = document.getElementById('payments-history-body');
-            const ownerPayments = allData.pagos.filter(p => p.fields['Propietario que Paga'] && p.fields['Propietario que Paga'][0] === property.id);
-            if (ownerPayments.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="2" class="text-center p-4 text-slate-500">No hay pagos registrados.</td></tr>`;
-                return;
-            }
-            tbody.innerHTML = ownerPayments.sort((a, b) => new Date(b.fields['Fecha de Pago']) - new Date(a.fields['Fecha de Pago'])).map(p => `<tr><td class="px-4 py-3 text-sm">${new Date(p.fields['Fecha de Pago'] + 'T00:00:00').toLocaleDateString('es-VE')}</td><td class="px-4 py-3 text-sm text-right font-medium text-green-600">$${(p.fields['Monto Pagado'] || 0).toFixed(2)}</td></tr>`).join('');
-        }
-
-        function displayDiscountBanner() {
-            if (DIA_ACTUAL <= DIA_LIMITE_PAGO) {
-                document.getElementById('discount-banner-container').innerHTML = `<div class="bg-teal-100 border-l-4 border-teal-500 text-teal-800 p-4 rounded-r-lg shadow" role="alert"><p class="font-bold">¡Buenas Noticias!</p><p class="text-sm">Está a tiempo para disfrutar del descuento del ${TASA_RECARGO * 100}% por pronto pago en sus gastos comunes.</p></div>`;
-            } else { document.getElementById('discount-banner-container').innerHTML = ''; }
-        }
-
-        function displayBcvNotice() {
-            document.getElementById('bcv-notice-container').innerHTML = `<div class="bg-slate-100 border-l-4 border-sky-500 text-slate-700 p-4 rounded-r-lg" role="alert"><p class="font-bold">Nota sobre Pagos en Bolívares</p><p class="text-sm">Le recordamos que los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción.</p></div>`;
-        }
-
-        function updateGlobalKPIs() {
-            if (allData.propietarios.length === 0) return;
-            let deudaTotal = 0, morosos = 0;
-            allData.propietarios.forEach(p => {
-                const totalDeudaPropiedad = p['Deuda Restante'] || 0;
-                if (totalDeudaPropiedad > 0.01) {
-                    deudaTotal += totalDeudaPropiedad;
-                    morosos++;
-                }
-            });
-            const solventes = allData.propietarios.length - morosos;
-            document.getElementById('kpi-deuda-total').textContent = `$${deudaTotal.toFixed(2)}`;
-            document.getElementById('kpi-propietarios-mora').textContent = `${morosos} / ${allData.propietarios.length}`;
-            document.getElementById('kpi-solvencia').textContent = `${((solventes / allData.propietarios.length) * 100).toFixed(0)}%`;
-        }
-        
-        function displayPublicKPIs() {
-            const kpiContainer = document.getElementById('kpi-container-public');
-            if (allData.propietarios.length === 0) return;
-            const totalPropietarios = allData.propietarios.length;
-            const morosos = allData.propietarios.filter(p => p['Deuda Restante'] && p['Deuda Restante'] > 0.01).length;
-            const solventes = totalPropietarios - morosos;
-            const porcentajeSolvencia = totalPropietarios > 0 ? ((solventes / totalPropietarios) * 100).toFixed(0) : 0;
-            document.getElementById('kpi-public-solventes').textContent = `${solventes} de ${totalPropietarios}`;
-            document.getElementById('kpi-public-solvencia').textContent = `${porcentajeSolvencia}%`;
-            kpiContainer.classList.remove('hidden');
-        }
-
-        function displayPrivateMorososList() {
-            const morososContainer = document.getElementById('morosos-container-private');
-            const morososListDiv = document.getElementById('morosos-list-private');
-            const morosos = allData.propietarios.filter(p => p['Deuda Restante'] && p['Deuda Restante'] > 0.01);
-            morosos.sort((a, b) => (a.Casa || 0) - (b.Casa || 0));
-            if (morosos.length > 0) {
-                morososListDiv.innerHTML = morosos.map(moroso => `<div class="flex justify-between items-center py-1 border-b border-slate-100"><div><span class="font-semibold text-slate-700">Casa #${moroso.Casa||'N/A'}</span><span class="text-slate-500 ml-2">${moroso.Propietario||''}</span></div><span class="font-bold text-red-500">$${(moroso['Deuda Restante']||0).toFixed(2)}</span></div>`).join('');
-                morososContainer.classList.remove('hidden');
-            } else { morososContainer.classList.add('hidden'); }
-        }
-
-        // --- MANEJADORES DE EVENTOS ---
-        const welcomeUserSelector = document.getElementById('welcomeUserSelector');
-        const viewStatementBtn = document.getElementById('viewStatementBtn');
-        const userSelector = document.getElementById('userSelector');
-        
-        viewStatementBtn.addEventListener('click', () => {
-            const selectedUserId = welcomeUserSelector.value;
-            if (!selectedUserId) { showToast('Por favor, seleccione una casa para continuar.', true); return; }
-            userSelector.value = selectedUserId;
-            renderPortalForUser(selectedUserId);
-            document.getElementById('welcome-screen').classList.add('hidden');
-            document.getElementById('main-content').classList.remove('hidden');
-        });
-
-        userSelector.addEventListener('change', (e) => { renderPortalForUser(e.target.value); });
-        
-        document.getElementById('report-payment-btn').addEventListener('click', () => { document.getElementById('reportPaymentModal').classList.remove('hidden'); });
-        const hideReportModal = () => {
-            document.getElementById('reportPaymentModal').classList.add('hidden');
-            document.getElementById('report-payment-form').reset();
-        };
-        document.getElementById('closeReportModalBtn').addEventListener('click', hideReportModal);
-        document.getElementById('cancelReportBtn').addEventListener('click', hideReportModal);
-
-        document.getElementById('report-payment-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const amount = parseFloat(document.getElementById('report-amount').value);
-            const reference = document.getElementById('report-reference').value;
-            const selectedUserId = userSelector.value;
-            
-            if (!selectedUserId || isNaN(amount) || amount <= 0 || !reference.trim()) {
-                showToast('Por favor, complete todos los campos correctamente.', true);
-                return;
-            }
-            if (!confirm(`¿Está seguro de que desea reportar un pago por $${amount.toFixed(2)}?`)) { return; }
-            
-            const submitBtn = document.getElementById('submitReportBtn');
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
-            
-            try {
-                await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLES.REPORTES)}`, {
-                    method: 'POST', 
-                    body: JSON.stringify({ records: [{ 
-                        fields: { 
-                            'Propietario que Reporta': [selectedUserId], 
-                            'Monto Reportado': amount, 
-                            'Referencia': reference, 
-                            'Estado': 'Pendiente'
-                        } 
-                    }] })
-                });
-                hideReportModal();
-                showToast('¡Reporte exitoso! Su pago será verificado y aplicado en un plazo de 24 a 48 horas.', false, 7000);
-            } catch (error) {
-                console.error('Error reportando pago:', error);
-                showToast('Hubo un error al reportar el pago. Por favor, intente de nuevo.', true);
-            } finally {
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'Enviar Reporte';
+    // KPIs privados (admin)
+    function updateGlobalKPIs() {
+        if (allData.propietarios.length === 0) return;
+        let deudaTotal = 0, morosos = 0;
+        allData.propietarios.forEach(p => {
+            const totalDeudaPropiedad = p['Deuda Restante'] || 0;
+            if (totalDeudaPropiedad > 0.01) {
+                deudaTotal += totalDeudaPropiedad;
+                morosos++;
             }
         });
+        const solventes = allData.propietarios.length - morosos;
+        document.getElementById('kpi-deuda-total').textContent = `$${deudaTotal.toFixed(2)}`;
+        document.getElementById('kpi-propietarios-mora').textContent = `${morosos} / ${allData.propietarios.length}`;
+        document.getElementById('kpi-solvencia').textContent = `${((solventes / allData.propietarios.length) * 100).toFixed(0)}%`;
+    }
 
-        document.getElementById('share-morosos-btn').addEventListener('click', () => {
-            html2canvas(document.getElementById('morosos-container-private')).then(canvas => {
-                const link = document.createElement('a');
-                link.download = 'lista-de-morosos-VLA.png';
-                link.href = canvas.toDataURL('image/png');
-                link.click();
-            });
+    function displayPrivateMorososList() {
+        const morososContainer = document.getElementById('morosos-container-private');
+        const morososListDiv = document.getElementById('morosos-list-private');
+        const morosos = allData.propietarios.filter(p => p['Deuda Restante'] && p['Deuda Restante'] > 0.01);
+        morosos.sort((a, b) => (a.Casa || 0) - (b.Casa || 0));
+        if (morosos.length > 0) {
+            morososListDiv.innerHTML = morosos.map(moroso =>
+                `<div class="flex justify-between items-center py-1 border-b border-slate-100">
+                    <div>
+                        <span class="font-semibold text-slate-700">Casa #${moroso.Casa || 'N/A'}</span>
+                        <span class="text-slate-500 ml-2">${moroso.Propietario || ''}</span>
+                    </div>
+                    <span class="font-bold text-red-500">$${(moroso['Deuda Restante'] || 0).toFixed(2)}</span>
+                 </div>`
+            ).join('');
+            morososContainer.classList.remove('hidden');
+        } else {
+            morososContainer.classList.add('hidden');
+        }
+    }
+
+    function populateUserSelector(selectorElement) {
+        selectorElement.innerHTML = '<option value="">-- Seleccione su casa --</option>';
+        allData.propietarios.forEach(p => {
+            const option = document.createElement('option');
+            option.value = p.id;
+            option.textContent = `Casa ${p.Casa} - ${p.Propietario}`;
+            selectorElement.appendChild(option);
         });
+    }
 
-        initApp();
+    function renderPortalForUser(propertyId) {
+        const property = allData.propietarios.find(p => p.id === propertyId);
+        if (!property) return;
+        const currentDate = new Date();
+        const dateString = currentDate.toLocaleString('es-VE', { day: '2-digit', month: 'long', year: 'numeric' });
+        const monthYearString = currentDate.toLocaleString('es-VE', { month: 'long', year: 'numeric' });
+        document.getElementById('welcome-message').innerHTML = `
+            <h2 class="text-3xl font-bold text-slate-900">Bienvenido, ${property.Propietario}</h2>
+            <p class="text-lg text-slate-600">Este es el resumen de su estado de cuenta para la <span class="font-bold">Casa #${property.Casa}</span>.</p>
+            <p class="text-md text-slate-500 mt-2">Estado de Cuenta para: <span class="font-semibold">${dateString}</span></p>`;
+        const deudaRestante = property['Deuda Restante'] || 0;
+        document.getElementById('debt-summary').innerHTML = `
+            <div class="flex justify-between items-baseline text-3xl font-bold ${deudaRestante > 0.01 ? 'text-red-500' : 'text-green-600'}">
+                <span>Deuda Total Actual:</span>
+                <span>$${deudaRestante.toFixed(2)}</span>
+            </div>
+            <p class="text-xs text-slate-500 text-right">Este es su saldo total a la fecha de hoy.</p>`;
+        displayChargesBreakdown(property, monthYearString);
+        displayPaymentsHistory(property);
+        displayDiscountBanner();
+        displayBcvNotice();
+        displayPrivateMorososList();
+    }
+
+    function displayChargesBreakdown(property, monthYearString) {
+        document.getElementById('expenses-breakdown-title').textContent = `Desglose de Cargos para ${monthYearString}`;
+        const breakdownDiv = document.getElementById('expenses-breakdown');
+        const deudaAnterior = property['Deuda Anterior'] || 0;
+        const totalPagado = property['Total Pagado'] || 0;
+        let totalCargosComunesPropietario = 0;
+        let tableHtml = `<table class="min-w-full text-sm">
+            <thead class="border-b">
+                <tr>
+                    <th class="px-2 py-2 text-left font-semibold text-slate-600">Concepto</th>
+                    <th class="px-2 py-2 text-right font-semibold text-slate-600">Costo Total</th>
+                    <th class="px-2 py-2 text-right font-semibold text-slate-600">Su Parte</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-200">`;
+        tableHtml += `<tr><td class="px-2 py-2 font-semibold" colspan="2">Deuda del Mes Anterior</td><td class="px-2 py-2 text-right font-semibold">$${deudaAnterior.toFixed(2)}</td></tr>`;
+        const factorAjuste = DIA_ACTUAL > DIA_LIMITE_PAGO ? (1 + TASA_RECARGO) : 1.0;
+        allData.gastos.forEach(gasto => {
+            const monto = gasto.fields.Monto || 0;
+            const concepto = gasto.fields.Concepto || 'Gasto sin descripción';
+            let suParte = 0;
+            if (gasto.fields['Tipo de Gasto'] === TIPO_GASTO_COMUN) {
+                let cargoIndividualReal = monto * (property.Alicuota || 0);
+                totalCargosComunesPropietario += cargoIndividualReal;
+                suParte = cargoIndividualReal * factorAjuste;
+            } else if (gasto.fields['Tipo de Gasto'] === TIPO_GASTO_ESPECIAL) {
+                const assignedOwners = gasto.fields.Propietarios || [];
+                if (assignedOwners.includes(property.id)) {
+                    suParte = monto / (assignedOwners.length || 1);
+                }
+            }
+            if (suParte > 0) {
+                tableHtml += `<tr><td class="px-2 py-2 text-slate-700">${concepto}</td><td class="px-2 py-2 text-slate-500 text-right">$${monto.toFixed(2)}</td><td class="px-2 py-2 text-slate-700 text-right">$${suParte.toFixed(2)}</td></tr>`;
+            }
+        });
+        tableHtml += `</tbody>`;
+        let tfootHtml = `<tfoot class="border-t-2 border-slate-300">`;
+        if (DIA_ACTUAL <= DIA_LIMITE_PAGO) {
+            const beneficio = totalCargosComunesPropietario * TASA_RECARGO;
+            tfootHtml += `<tr><td class="px-2 pt-2 text-green-600 font-semibold" colspan="2">Beneficio Pronto Pago</td><td class="px-2 pt-2 text-right text-green-600 font-semibold">-$${beneficio.toFixed(2)}</td></tr>`;
+        }
+        if (totalPagado > 0) {
+            tfootHtml += `<tr><td class="px-2 py-2 text-green-600 font-semibold" colspan="2">Total Pagado</td><td class="px-2 py-2 text-right text-green-600 font-semibold">-$${totalPagado.toFixed(2)}</td></tr>`;
+        }
+        tfootHtml += `</tfoot>`;
+        tableHtml += tfootHtml + `</table>`;
+        breakdownDiv.innerHTML = tableHtml;
+    }
+
+    function displayPaymentsHistory(property) {
+        const tbody = document.getElementById('payments-history-body');
+        const ownerPayments = allData.pagos.filter(p => p.fields['Propietario que Paga'] && p.fields['Propietario que Paga'][0] === property.id);
+        if (ownerPayments.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="2" class="text-center p-4 text-slate-500">No hay pagos registrados.</td></tr>`;
+            return;
+        }
+        tbody.innerHTML = ownerPayments.sort((a, b) => new Date(b.fields['Fecha de Pago']) - new Date(a.fields['Fecha de Pago'])).map(p => `<tr><td class="px-4 py-3 text-sm">${new Date(p.fields['Fecha de Pago'] + 'T00:00:00').toLocaleDateString('es-VE')}</td><td class="px-4 py-3 text-sm text-right font-medium text-green-600">$${(p.fields['Monto Pagado'] || 0).toFixed(2)}</td></tr>`).join('');
+    }
+
+    function displayDiscountBanner() {
+        const discountBannerContainer = document.getElementById('discount-banner-container');
+        if (DIA_ACTUAL <= DIA_LIMITE_PAGO) {
+            discountBannerContainer.innerHTML = `<div class="bg-teal-100 border-l-4 border-teal-500 text-teal-800 p-4 rounded-r-lg shadow" role="alert"><p class="font-bold">¡Buenas Noticias!</p><p class="text-sm">Está a tiempo para disfrutar del descuento del ${TASA_RECARGO * 100}% por pronto pago en sus gastos comunes.</p></div>`;
+        } else {
+            discountBannerContainer.innerHTML = '';
+        }
+    }
+
+    function displayBcvNotice() {
+        document.getElementById('bcv-notice-container').innerHTML = `<div class="bg-slate-100 border-l-4 border-sky-500 text-slate-700 p-4 rounded-r-lg" role="alert"><p class="font-bold">Nota sobre Pagos en Bolívares</p><p class="text-sm">Le recordamos que los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción.</p></div>`;
+    }
+
+    // EVENTOS
+    const welcomeScreen = document.getElementById('welcome-screen');
+    const mainContent = document.getElementById('main-content');
+    const welcomeUserSelector = document.getElementById('welcomeUserSelector');
+    const viewStatementBtn = document.getElementById('viewStatementBtn');
+    const userSelector = document.getElementById('userSelector');
+
+    viewStatementBtn.addEventListener('click', () => {
+        const selectedUserId = welcomeUserSelector.value;
+        if (!selectedUserId) {
+            showToast('Por favor, seleccione una casa para continuar.', true);
+            return;
+        }
+        userSelector.value = selectedUserId;
+        renderPortalForUser(selectedUserId);
+        welcomeScreen.classList.add('hidden');
+        mainContent.classList.remove('hidden');
     });
+
+    userSelector.addEventListener('change', (e) => {
+        renderPortalForUser(e.target.value);
+    });
+
+    // Modal de reportar pago
+    const reportPaymentBtn = document.getElementById('report-payment-btn');
+    const reportPaymentModal = document.getElementById('reportPaymentModal');
+    const closeReportModalBtn = document.getElementById('closeReportModalBtn');
+    const cancelReportBtn = document.getElementById('cancelReportBtn');
+    const reportPaymentForm = document.getElementById('report-payment-form');
+    const submitReportBtn = document.getElementById('submitReportBtn');
+
+    reportPaymentBtn.addEventListener('click', () => {
+        reportPaymentModal.classList.remove('hidden');
+    });
+
+    const hideReportModal = () => {
+        reportPaymentModal.classList.add('hidden');
+        reportPaymentForm.reset();
+    };
+
+    closeReportModalBtn.addEventListener('click', hideReportModal);
+    cancelReportBtn.addEventListener('click', hideReportModal);
+
+    reportPaymentForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const amount = parseFloat(document.getElementById('report-amount').value);
+        const reference = document.getElementById('report-reference').value;
+        const selectedUserId = userSelector.value;
+        if (!selectedUserId || isNaN(amount) || amount <= 0 || !reference.trim()) {
+            showToast('Por favor, complete todos los campos correctamente.', true);
+            return;
+        }
+        if (!confirm(`¿Está seguro de que desea reportar un pago por $${amount.toFixed(2)}?`)) {
+            return;
+        }
+        submitReportBtn.disabled = true;
+        submitReportBtn.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
+        try {
+            await airtableFetch('/Reportes%20de%20Pago', {
+                method: 'POST',
+                body: JSON.stringify({
+                    records: [{
+                        fields: {
+                            'Propietario que Reporta': [selectedUserId],
+                            'Monto Reportado': amount,
+                            'Referencia': reference,
+                            'Estado': 'Pendiente'
+                        }
+                    }]
+                })
+            });
+            hideReportModal();
+            showToast('¡Reporte exitoso! Su pago será verificado y aplicado en un plazo de 24 a 48 horas.', false, 7000);
+        } catch (error) {
+            console.error('Error reportando pago:', error);
+            showToast('Hubo un error al reportar el pago. Por favor, intente de nuevo.', true);
+        } finally {
+            submitReportBtn.disabled = false;
+            submitReportBtn.textContent = 'Enviar Reporte';
+        }
+    });
+
+    document.getElementById('share-morosos-btn').addEventListener('click', () => {
+        const morososContainer = document.getElementById('morosos-container-private');
+        html2canvas(morososContainer).then(canvas => {
+            const link = document.createElement('a');
+            link.download = 'lista-de-morosos-VLA.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        });
+    });
+
+    initApp();
+});
     </script>
 </body>
 </html>
