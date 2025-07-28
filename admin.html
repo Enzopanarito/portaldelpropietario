@@ -93,6 +93,7 @@
                                 <p class="text-slate-600">Visualiza deudas, registra pagos y envía recordatorios.</p>
                             </div>
                             <div class="flex flex-col sm:flex-row gap-2">
+                                <button id="invalidate-propietarios-cache-btn" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors whitespace-nowrap text-center">🔄 Forzar Actualización de Propietarios</button>
                                 <button id="send-bulk-reminders-btn" class="bg-amber-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-amber-600 transition-colors whitespace-nowrap text-center">✉️ Enviar Recordatorio a Morosos</button>
                                 <button id="update-monthly-charges-btn" class="bg-sky-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-sky-700 transition-colors whitespace-nowrap text-center">🔄 Actualizar Cargos del Mes</button>
                             </div>
@@ -267,7 +268,7 @@
                 submitButton.textContent = 'Entrar';
             }
         }
-
+        
         function showMainContent() {
             document.getElementById('login-container').style.display = 'none';
             document.getElementById('main-content').style.display = 'block';
@@ -279,15 +280,21 @@
         const AIRTABLE_TABLE_GASTOS = 'Gastos del Mes';
         const AIRTABLE_TABLE_PAGOS = 'Pagos';
         const AIRTABLE_TABLE_REPORTE_PAGO = 'Reportes de Pago';
-        
-        let condominioData = [], gastosDelMes = [], solvencyChart, topDebtorsChart;
+        const AIRTABLE_TABLE_VERSIONES = 'ControlVersiones';
+
+        const CACHE_CONFIG = { GASTOS_TTL_MINUTES: 60 };
+
+        let condominioData = [], gastosDelMes = [], reportedPayments = [], solvencyChart, topDebtorsChart;
         let currentPropertyIdForAction = null;
 
         const TASA_RECARGO = 0.10, DIA_LIMITE_PAGO = 10;
         const FECHA_ACTUAL = new Date(), DIA_ACTUAL = FECHA_ACTUAL.getDate();
-
+        
         async function airtableFetch(path, options = {}) {
             const url = `/.netlify/functions/airtable${path}`;
+            if (options.method === 'PATCH' && options.body) {
+                options.headers = { ...options.headers, 'Content-Type': 'application/json' };
+            }
             const response = await fetch(url, options);
             if (!response.ok) {
                 const errorData = await response.json();
@@ -295,37 +302,158 @@
             }
             return response.json();
         }
-
+        
         const createAirtableRecord = (tableName, fields) => airtableFetch(`/${encodeURIComponent(tableName)}`, { method: 'POST', body: JSON.stringify({ records: [{ fields }] }) });
         const deleteAirtableRecord = (tableName, id) => airtableFetch(`/${encodeURIComponent(tableName)}/${id}`, { method: 'DELETE' });
         
-        async function initApp() {
+        function clearPropietariosCache() {
+            localStorage.removeItem('vla_propietarios_cache');
+            localStorage.removeItem('vla_propietarios_version');
+            console.log("CACHE: Caché de Propietarios eliminada.");
+        }
+        
+        async function fetchAndSetPropietarios(versionToSet) {
+            console.log("CACHE: Descargando de Airtable...");
+            const data = await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}`);
+            condominioData = (data.records || []).map(r => ({ id: r.id, ...r.fields }));
+            localStorage.setItem('vla_propietarios_cache', JSON.stringify(condominioData));
+            localStorage.setItem('vla_propietarios_version', String(versionToSet));
+        }
+
+        async function loadPropietarios() {
+            console.log("CACHE: Verificando Propietarios...");
             try {
-                const [propietariosData, gastosData, reportedPaymentsData] = await Promise.all([
-                    airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}`),
-                    airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_GASTOS)}?view=Gastos%20Mensuales`),
-                    airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}?view=Grid%20View`)
+                const versionRecords = await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_VERSIONES)}?filterByFormula={Key}='propietarios'`);
+                if (!versionRecords.records || versionRecords.records.length === 0) throw new Error("Registro de versión 'propietarios' no encontrado en Airtable.");
+                
+                const remoteVersion = versionRecords.records[0].fields.Version;
+                const localVersion = localStorage.getItem('vla_propietarios_version');
+                const cachedData = localStorage.getItem('vla_propietarios_cache');
+
+                if (cachedData && localVersion && parseInt(localVersion) === remoteVersion) {
+                    try {
+                        const parsedData = JSON.parse(cachedData);
+                        if (Array.isArray(parsedData)) {
+                            condominioData = parsedData;
+                            console.log(`CACHE: Usando caché local de Propietarios (Versión: ${localVersion}).`);
+                        } else {
+                            console.warn("CACHE: La caché de Propietarios está corrupta (no es un array). Se forzará la recarga.");
+                            await fetchAndSetPropietarios(remoteVersion);
+                        }
+                    } catch (e) {
+                        console.error("CACHE: Error al parsear la caché de Propietarios. Se forzará la recarga.", e);
+                        await fetchAndSetPropietarios(remoteVersion);
+                    }
+                } else {
+                    console.log(`CACHE: Caché de Propietarios inválida (Local: ${localVersion}, Remota: ${remoteVersion}).`);
+                    await fetchAndSetPropietarios(remoteVersion);
+                }
+            } catch (error) {
+                console.error('Error cargando propietarios:', error);
+                showToast('Error al cargar datos de propietarios.', true);
+                throw error;
+            }
+        }
+        
+        async function loadGastos() {
+            console.log("CACHE: Verificando Gastos...");
+            try {
+                const cachedData = sessionStorage.getItem('vla_gastos_cache');
+                const cacheTimestamp = sessionStorage.getItem('vla_gastos_timestamp');
+                const now = new Date().getTime();
+                const ttl = CACHE_CONFIG.GASTOS_TTL_MINUTES * 60 * 1000;
+
+                if (cachedData && cacheTimestamp && (now - parseInt(cacheTimestamp) < ttl)) {
+                    console.log("CACHE: Usando caché de sesión para Gastos.");
+                    gastosDelMes = JSON.parse(cachedData);
+                } else {
+                    console.log("CACHE: Caché de Gastos expirada o no existe. Descargando de Airtable...");
+                    const data = await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_GASTOS)}?view=Gastos%20Mensuales`);
+                    gastosDelMes = data.records || [];
+                    sessionStorage.setItem('vla_gastos_cache', JSON.stringify(gastosDelMes));
+                    sessionStorage.setItem('vla_gastos_timestamp', now.toString());
+                }
+            } catch (error) {
+                console.error('Error cargando gastos:', error);
+                showToast('Error al cargar datos de gastos.', true);
+                throw error;
+            }
+        }
+
+        async function loadReportes() {
+            console.log("REAL-TIME: Descargando Reportes de Pago...");
+            try {
+                const data = await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}?view=Grid%20View`);
+                reportedPayments = (data.records || []);
+            } catch (error) {
+                console.error('Error cargando reportes de pago:', error);
+                showToast('Error al cargar reportes de pago.', true);
+                throw error;
+            }
+        }
+        
+        async function initApp() {
+            const loadingSpinner = document.createElement('div');
+            loadingSpinner.innerHTML = '<div class="fixed inset-0 bg-white bg-opacity-75 flex items-center justify-center z-50"><div class="spinner"></div></div>';
+            document.body.appendChild(loadingSpinner);
+            try {
+                await Promise.all([
+                    loadPropietarios(),
+                    loadGastos(),
+                    loadReportes()
                 ]);
                 
-                gastosDelMes = gastosData.records || [];
-                condominioData = (propietariosData.records || []).map(r => ({ id: r.id, ...r.fields }));
                 condominioData.sort((a, b) => (a.Casa || 0) - (b.Casa || 0));
-                
-                const allReportedPayments = reportedPaymentsData.records || [];
-                const pendingPayments = allReportedPayments.filter(p => p.fields.Estado === 'Pendiente');
                 
                 setupUI();
                 updateDashboard();
                 populateTable(condominioData);
                 populateExpensesTable(gastosDelMes);
                 populateOwnerSelectorInExpenseForm();
-                populateReportedPayments(pendingPayments);
+                populateReportedPayments();
             } catch (error) {
                 console.error("Error fatal inicializando la app:", error);
                 alert(`Hubo un error crítico al cargar los datos: ${error.message}\n\nPor favor, revisa la consola para más detalles.`);
+            } finally {
+                if(document.body.contains(loadingSpinner)) {
+                    document.body.removeChild(loadingSpinner);
+                }
             }
         }
+        
+        async function handleInvalidatePropietariosCache(e) {
+            if (!confirm('¿Seguro que quieres forzar la actualización de propietarios? Esto invalidará la caché y recargará los datos.')) return;
+            
+            const button = e.currentTarget;
+            const originalText = button.innerHTML;
+            button.disabled = true;
+            button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
 
+            try {
+                const versionRecords = await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_VERSIONES)}?filterByFormula={Key}='propietarios'`);
+                if (!versionRecords.records || versionRecords.records.length === 0) throw new Error("Registro de versión no encontrado.");
+                
+                const recordId = versionRecords.records[0].id;
+                const currentVersion = versionRecords.records[0].fields.Version;
+
+                await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_VERSIONES)}/${recordId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ fields: { Version: currentVersion + 1 } })
+                });
+
+                clearPropietariosCache();
+                
+                showToast('✅ Caché invalidada. Recargando datos...');
+                await initApp();
+
+            } catch (error) {
+                showToast(`❌ Error al invalidar caché: ${error.message}`, true);
+            } finally {
+                button.disabled = false;
+                button.innerHTML = originalText;
+            }
+        }
+        
         function setupUI() { 
             document.getElementById('current-date-display').textContent = FECHA_ACTUAL.toLocaleDateString('es-VE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); 
         }
@@ -397,24 +525,39 @@
             ownerListDiv.innerHTML = condominioData.map(owner => `<div class="flex items-center"><input id="owner-${owner.id}" type="checkbox" value="${owner.id}" class="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500" checked><label for="owner-${owner.id}" class="ml-3 block text-sm">${owner.Propietario || `Casa ${owner.Casa}`}</label></div>`).join('');
         }
         
-        function populateReportedPayments(payments) {
+        function populateReportedPayments() {
             const tableBody = document.getElementById('reportedPaymentsTableBody');
             const badge = document.getElementById('pending-payments-badge');
+            const pendingPayments = reportedPayments.filter(p => p.fields.Estado === 'Pendiente');
+
             tableBody.innerHTML = '';
-            if (!payments || payments.length === 0) {
+            if (pendingPayments.length === 0) {
                 tableBody.innerHTML = `<tr><td colspan="4" class="text-center p-4 text-slate-500">No hay pagos pendientes por revisar.</td></tr>`;
                 badge.classList.add('hidden');
                 return;
             }
-            badge.textContent = payments.length;
+            badge.textContent = pendingPayments.length;
             badge.classList.remove('hidden');
-            payments.forEach(payment => {
+
+            pendingPayments.forEach(payment => {
                 const ownerLink = payment.fields['Propietario que Reporta'];
                 if (!ownerLink || ownerLink.length === 0) return;
+                
                 const owner = condominioData.find(o => o.id === ownerLink[0]);
                 const ownerName = owner ? `Casa ${owner.Casa} - ${owner.Propietario}` : 'Propietario no encontrado';
                 const row = tableBody.insertRow();
-                row.innerHTML = `<td class="px-4 py-3 text-sm text-slate-700">${ownerName}</td><td class="px-4 py-3 text-sm font-medium text-slate-900">$${(payment.fields['Monto Reportado'] || 0).toFixed(2)}</td><td class="px-4 py-3 text-sm text-slate-500">${payment.fields.Referencia || ''}</td><td class="px-4 py-3 space-x-2 whitespace-nowrap"><button data-id="${payment.id}" class="confirm-payment-btn py-1 px-3 text-xs font-semibold rounded-full bg-green-100 text-green-800 hover:bg-green-200">Confirmar</button><button data-id="${payment.id}" class="reject-payment-btn py-1 px-3 text-xs font-semibold rounded-full bg-red-100 text-red-800 hover:bg-red-200">Rechazar</button></td>`;
+                row.innerHTML = `
+                    <td class="px-4 py-3 text-sm text-slate-700">${ownerName}</td>
+                    <td class="px-4 py-3 text-sm font-medium text-slate-900">$${(payment.fields['Monto Reportado'] || 0).toFixed(2)}</td>
+                    <td class="px-4 py-3 text-sm text-slate-500">${payment.fields.Referencia || ''}</td>
+                    <td class="px-4 py-3 space-x-2 whitespace-nowrap">
+                        <button 
+                            data-id="${payment.id}" 
+                            class="confirm-payment-btn py-1 px-3 text-xs font-semibold rounded-full bg-green-100 text-green-800 hover:bg-green-200">Confirmar</button>
+                        <button 
+                            data-id="${payment.id}" 
+                            class="reject-payment-btn py-1 px-3 text-xs font-semibold rounded-full bg-red-100 text-red-800 hover:bg-red-200">Rechazar</button>
+                    </td>`;
             });
         }
         
@@ -542,6 +685,8 @@
         }
 
         function setupEventListeners() {
+            document.getElementById('invalidate-propietarios-cache-btn').addEventListener('click', handleInvalidatePropietariosCache);
+            
             document.querySelectorAll('.nav-button').forEach(button => {
                 button.addEventListener('click', (e) => {
                     document.querySelectorAll('.nav-button, .section-content').forEach(el => el.classList.remove('active'));
@@ -561,12 +706,8 @@
                 const target = e.target.closest('button');
                 if (!target) return;
                 const id = target.dataset.id;
-                if (!id) {
-                    console.error('No se encontró data-id en el botón:', target);
-                    return;
-                }
-                console.log('Botón clicado:', target.className, 'ID:', id);
-
+                if (!id) return;
+                
                 if (target.classList.contains('view-breakdown-btn')) {
                     showDebtModal(id);
                 } else if (target.classList.contains('send-reminder-btn')) {
@@ -588,18 +729,27 @@
                 try {
                     if (isConfirm) {
                         const reportedPayment = await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`);
+                        
                         await createAirtableRecord(AIRTABLE_TABLE_PAGOS, {
                             'Monto Pagado': reportedPayment.fields['Monto Reportado'],
                             'Fecha de Pago': new Date().toISOString().slice(0, 10),
                             'Propietario que Paga': reportedPayment.fields['Propietario que Reporta']
                         });
-                        await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`, { method: 'PATCH', body: JSON.stringify({ fields: { 'Estado': 'Confirmado' } }) });
-                        showToast('✅ Pago confirmado y aplicado.');
+                        
+                        await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`, {
+                            method: 'PATCH',
+                            body: JSON.stringify({ fields: { 'Estado': 'Confirmado' } })
+                        });
+                        
+                        showToast('✅ Pago confirmado. Actualizando datos...');
                     } else {
                         await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`, { method: 'PATCH', body: JSON.stringify({ fields: { 'Estado': 'Rechazado' } }) });
                         showToast('✔️ Pago rechazado con éxito.');
                     }
+                    
+                    clearPropietariosCache();
                     setTimeout(initApp, 1500);
+
                 } catch (error) {
                     showToast(`❌ Error: ${error.message}`, true);
                     button.disabled = false;
@@ -630,22 +780,28 @@
                 }
                 const isPartial = document.getElementById('tab-partial').classList.contains('active');
                 let paymentAmount = isPartial ? parseFloat(document.getElementById('partial-amount').value) : (p['Deuda Restante'] || 0);
+                
                 if (isPartial && (isNaN(paymentAmount) || paymentAmount <= 0)) {
-                    showToast('Ingrese un monto válido.', true);
                     document.getElementById('partial-amount').classList.add('input-error');
+                    showToast('Ingrese un monto válido.', true);
                     return;
                 }
+                
                 button.disabled = true;
                 button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
+                
                 try {
                     await createAirtableRecord(AIRTABLE_TABLE_PAGOS, { 
                         'Monto Pagado': paymentAmount, 
                         'Fecha de Pago': new Date().toISOString().slice(0, 10), 
                         'Propietario que Paga': [p.id] 
                     });
-                    showToast('✅ Pago registrado. Actualizando...');
+
+                    showToast('✅ Pago registrado. Actualizando datos...');
+                    clearPropietariosCache();
                     hideModal(document.getElementById('paymentModal'));
                     setTimeout(initApp, 1500);
+
                 } catch (error) {
                     showToast(`❌ Error al registrar pago: ${error.message}`, true);
                 } finally {
@@ -704,6 +860,7 @@
                         });
                     }
                     showToast('Cargos mensuales actualizados.');
+                    clearPropietariosCache();
                     setTimeout(initApp, 1500);
                 } catch (error) {
                     showToast(`Error al actualizar cargos: ${error.message}`, true);
@@ -738,6 +895,8 @@
                     showToast('Gasto registrado correctamente.');
                     document.getElementById('add-expense-form').reset();
                     document.querySelectorAll('#expense-owners-list input').forEach(input => input.checked = true);
+                    sessionStorage.removeItem('vla_gastos_cache');
+                    sessionStorage.removeItem('vla_gastos_timestamp');
                     setTimeout(initApp, 1500);
                 } catch (error) {
                     showToast(`Error al registrar gasto: ${error.message}`, true);
@@ -757,6 +916,8 @@
                 try {
                     await deleteAirtableRecord(AIRTABLE_TABLE_GASTOS, recordId);
                     showToast('Gasto eliminado correctamente.');
+                    sessionStorage.removeItem('vla_gastos_cache');
+                    sessionStorage.removeItem('vla_gastos_timestamp');
                     setTimeout(initApp, 1500);
                 } catch (error) {
                     showToast(`Error al eliminar gasto: ${error.message}`, true);
