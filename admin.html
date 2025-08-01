@@ -280,19 +280,12 @@
         const AIRTABLE_TABLE_GASTOS = 'Gastos del Mes';
         const AIRTABLE_TABLE_PAGOS = 'Pagos';
         const AIRTABLE_TABLE_REPORTE_PAGO = 'Reportes de Pago';
-        const AIRTABLE_TABLE_VERSIONES = 'ControlVersiones';
-
-        const CACHE_CONFIG = { GASTOS_TTL_MINUTES: 60 };
-
-        let condominioData = [], gastosDelMes = [], reportedPayments = [], solvencyChart, topDebtorsChart;
-        let currentPropertyIdForAction = null;
-
-        const TASA_RECARGO = 0.10, DIA_LIMITE_PAGO = 10;
-        const FECHA_ACTUAL = new Date(), DIA_ACTUAL = FECHA_ACTUAL.getDate();
+        
+        let condominioData = [], gastosDelMes = [], solvencyChart, topDebtorsChart;
         
         async function airtableFetch(path, options = {}) {
             const url = `/.netlify/functions/airtable${path}`;
-            if (options.method === 'PATCH' && options.body) {
+            if ((options.method === 'PATCH' || options.method === 'POST') && options.body) {
                 options.headers = { ...options.headers, 'Content-Type': 'application/json' };
             }
             const response = await fetch(url, options);
@@ -307,47 +300,13 @@
         const deleteAirtableRecord = (tableName, id) => airtableFetch(`/${encodeURIComponent(tableName)}/${id}`, { method: 'DELETE' });
         
         function clearPropietariosCache() {
-            localStorage.removeItem('vla_propietarios_cache');
-            localStorage.removeItem('vla_propietarios_version');
-            console.log("CACHE: Caché de Propietarios eliminada.");
+             console.log("Forzando recarga de datos...");
         }
         
-        async function fetchAndSetPropietarios(versionToSet) {
-            console.log("CACHE: Descargando de Airtable...");
-            const data = await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}`);
-            condominioData = (data.records || []).map(r => ({ id: r.id, ...r.fields }));
-            localStorage.setItem('vla_propietarios_cache', JSON.stringify(condominioData));
-            localStorage.setItem('vla_propietarios_version', String(versionToSet));
-        }
-
         async function loadPropietarios() {
-            console.log("CACHE: Verificando Propietarios...");
             try {
-                const versionRecords = await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_VERSIONES)}?filterByFormula={Key}='propietarios'`);
-                if (!versionRecords.records || versionRecords.records.length === 0) throw new Error("Registro de versión 'propietarios' no encontrado en Airtable.");
-                
-                const remoteVersion = versionRecords.records[0].fields.Version;
-                const localVersion = localStorage.getItem('vla_propietarios_version');
-                const cachedData = localStorage.getItem('vla_propietarios_cache');
-
-                if (cachedData && localVersion && parseInt(localVersion) === remoteVersion) {
-                    try {
-                        const parsedData = JSON.parse(cachedData);
-                        if (Array.isArray(parsedData)) {
-                            condominioData = parsedData;
-                            console.log(`CACHE: Usando caché local de Propietarios (Versión: ${localVersion}).`);
-                        } else {
-                            console.warn("CACHE: La caché de Propietarios está corrupta (no es un array). Se forzará la recarga.");
-                            await fetchAndSetPropietarios(remoteVersion);
-                        }
-                    } catch (e) {
-                        console.error("CACHE: Error al parsear la caché de Propietarios. Se forzará la recarga.", e);
-                        await fetchAndSetPropietarios(remoteVersion);
-                    }
-                } else {
-                    console.log(`CACHE: Caché de Propietarios inválida (Local: ${localVersion}, Remota: ${remoteVersion}).`);
-                    await fetchAndSetPropietarios(remoteVersion);
-                }
+                const data = await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}`);
+                condominioData = (data.records || []).map(r => ({ id: r.id, ...r.fields }));
             } catch (error) {
                 console.error('Error cargando propietarios:', error);
                 showToast('Error al cargar datos de propietarios.', true);
@@ -356,23 +315,9 @@
         }
         
         async function loadGastos() {
-            console.log("CACHE: Verificando Gastos...");
             try {
-                const cachedData = sessionStorage.getItem('vla_gastos_cache');
-                const cacheTimestamp = sessionStorage.getItem('vla_gastos_timestamp');
-                const now = new Date().getTime();
-                const ttl = CACHE_CONFIG.GASTOS_TTL_MINUTES * 60 * 1000;
-
-                if (cachedData && cacheTimestamp && (now - parseInt(cacheTimestamp) < ttl)) {
-                    console.log("CACHE: Usando caché de sesión para Gastos.");
-                    gastosDelMes = JSON.parse(cachedData);
-                } else {
-                    console.log("CACHE: Caché de Gastos expirada o no existe. Descargando de Airtable...");
-                    const data = await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_GASTOS)}?view=Gastos%20Mensuales`);
-                    gastosDelMes = data.records || [];
-                    sessionStorage.setItem('vla_gastos_cache', JSON.stringify(gastosDelMes));
-                    sessionStorage.setItem('vla_gastos_timestamp', now.toString());
-                }
+                const data = await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_GASTOS)}?view=Gastos%20Mensuales`);
+                gastosDelMes = data.records || [];
             } catch (error) {
                 console.error('Error cargando gastos:', error);
                 showToast('Error al cargar datos de gastos.', true);
@@ -381,10 +326,9 @@
         }
 
         async function loadReportes() {
-            console.log("REAL-TIME: Descargando Reportes de Pago...");
             try {
                 const data = await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}?view=Grid%20View`);
-                reportedPayments = (data.records || []);
+                return data.records || [];
             } catch (error) {
                 console.error('Error cargando reportes de pago:', error);
                 showToast('Error al cargar reportes de pago.', true);
@@ -397,20 +341,21 @@
             loadingSpinner.innerHTML = '<div class="fixed inset-0 bg-white bg-opacity-75 flex items-center justify-center z-50"><div class="spinner"></div></div>';
             document.body.appendChild(loadingSpinner);
             try {
-                await Promise.all([
+                const promiseResults = await Promise.all([
                     loadPropietarios(),
                     loadGastos(),
                     loadReportes()
                 ]);
                 
+                const reportedPaymentsData = promiseResults[2];
+                
                 condominioData.sort((a, b) => (a.Casa || 0) - (b.Casa || 0));
                 
-                setupUI();
                 updateDashboard();
                 populateTable(condominioData);
                 populateExpensesTable(gastosDelMes);
                 populateOwnerSelectorInExpenseForm();
-                populateReportedPayments();
+                populateReportedPayments(reportedPaymentsData);
             } catch (error) {
                 console.error("Error fatal inicializando la app:", error);
                 alert(`Hubo un error crítico al cargar los datos: ${error.message}\n\nPor favor, revisa la consola para más detalles.`);
@@ -421,75 +366,19 @@
             }
         }
         
-        async function handleInvalidatePropietariosCache(e) {
-            if (!confirm('¿Seguro que quieres forzar la actualización de propietarios? Esto invalidará la caché y recargará los datos.')) return;
-            
-            const button = e.currentTarget;
-            const originalText = button.innerHTML;
-            button.disabled = true;
-            button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
-
-            try {
-                const versionRecords = await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_VERSIONES)}?filterByFormula={Key}='propietarios'`);
-                if (!versionRecords.records || versionRecords.records.length === 0) throw new Error("Registro de versión no encontrado.");
-                
-                const recordId = versionRecords.records[0].id;
-                const currentVersion = versionRecords.records[0].fields.Version;
-
-                await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_VERSIONES)}/${recordId}`, {
-                    method: 'PATCH',
-                    body: JSON.stringify({ fields: { Version: currentVersion + 1 } })
-                });
-
-                clearPropietariosCache();
-                
-                showToast('✅ Caché invalidada. Recargando datos...');
-                await initApp();
-
-            } catch (error) {
-                showToast(`❌ Error al invalidar caché: ${error.message}`, true);
-            } finally {
-                button.disabled = false;
-                button.innerHTML = originalText;
-            }
-        }
-        
-        function setupUI() { 
-            document.getElementById('current-date-display').textContent = FECHA_ACTUAL.toLocaleDateString('es-VE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); 
-        }
-
-        function calculateCurrentMonthCharges(property) {
-            let cuotaComun = 0, cuotaEspecial = 0;
-            if (gastosDelMes && property) {
-                gastosDelMes.forEach(gasto => {
-                    const monto = gasto.fields.Monto || 0;
-                    const tipo = gasto.fields['Tipo de Gasto'];
-                    const assignedOwners = gasto.fields.Propietarios || [];
-                    if (assignedOwners.includes(property.id)) {
-                        if (tipo === 'Gasto Común') {
-                            cuotaComun += monto * (property.Alicuota || 0);
-                        } else if (tipo === 'Gasto Especial') {
-                            cuotaEspecial += monto / (assignedOwners.length || 1);
-                        }
-                    }
-                });
-            }
-            const beneficio = DIA_ACTUAL <= DIA_LIMITE_PAGO ? cuotaComun * TASA_RECARGO : 0;
-            return { cuotaComun, cuotaEspecial, beneficio };
-        }
-
         function updateDashboard() {
             let deudaTotal = 0, morosos = 0, totalACobrarMes = 0;
+            const totalPropietarios = condominioData.length;
+
             condominioData.forEach(p => {
                 const deudaRestante = p['Deuda Restante'] || 0;
                 if (deudaRestante > 0.01) { 
                     deudaTotal += deudaRestante; 
                     morosos++; 
                 }
-                const { cuotaComun, cuotaEspecial } = calculateCurrentMonthCharges(p);
-                totalACobrarMes += cuotaComun + cuotaEspecial;
+                totalACobrarMes += p['Cuota Base Mes'] || 0;
             });
-            const totalPropietarios = condominioData.length;
+            
             document.getElementById('kpi-deuda-total').textContent = `$${deudaTotal.toFixed(2)}`;
             document.getElementById('kpi-propietarios-mora').textContent = `${morosos} / ${totalPropietarios}`;
             document.getElementById('kpi-solvencia').textContent = totalPropietarios > 0 ? `${(((totalPropietarios - morosos) / totalPropietarios) * 100).toFixed(0)}%` : '0%';
@@ -505,7 +394,7 @@
                 return;
             }
             data.forEach(item => {
-                const isSolvent = (item['Deuda Restante'] || 0) < 0.01;
+                const isSolvent = (item['Deuda Restante'] || 0) <= 0.01;
                 let actionsHtml = `<button data-id="${item.id}" class="view-breakdown-btn font-semibold text-sky-600 hover:text-sky-800">Desglose</button>`;
                 if (!isSolvent) {
                     actionsHtml += ` <button data-id="${item.id}" class="send-reminder-btn font-semibold text-amber-600 hover:text-amber-800">Recordatorio</button> <button data-id="${item.id}" class="register-payment-btn font-semibold text-green-600 hover:text-green-800" title="Registrar Pago"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-cash-stack inline-block" viewBox="0 0 16 16"><path d="M1 3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1zm12 11a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1zM2 6.5a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11a.5.5 0 0 1-.5-.5m0 2a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11a.5.5 0 0 1-.5-.5m0 2a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11a.5.5 0 0 1-.5-.5m0 2a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11a.5.5 0 0 1-.5-.5"/><path d="M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2M1 2a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1z"/></svg></button>`;
@@ -525,10 +414,10 @@
             ownerListDiv.innerHTML = condominioData.map(owner => `<div class="flex items-center"><input id="owner-${owner.id}" type="checkbox" value="${owner.id}" class="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500" checked><label for="owner-${owner.id}" class="ml-3 block text-sm">${owner.Propietario || `Casa ${owner.Casa}`}</label></div>`).join('');
         }
         
-        function populateReportedPayments() {
+        function populateReportedPayments(reportedPaymentsData) {
             const tableBody = document.getElementById('reportedPaymentsTableBody');
             const badge = document.getElementById('pending-payments-badge');
-            const pendingPayments = reportedPayments.filter(p => p.fields.Estado === 'Pendiente');
+            const pendingPayments = reportedPaymentsData.filter(p => p.fields.Estado === 'Pendiente');
 
             tableBody.innerHTML = '';
             if (pendingPayments.length === 0) {
@@ -551,18 +440,16 @@
                     <td class="px-4 py-3 text-sm font-medium text-slate-900">$${(payment.fields['Monto Reportado'] || 0).toFixed(2)}</td>
                     <td class="px-4 py-3 text-sm text-slate-500">${payment.fields.Referencia || ''}</td>
                     <td class="px-4 py-3 space-x-2 whitespace-nowrap">
-                        <button 
-                            data-id="${payment.id}" 
-                            class="confirm-payment-btn py-1 px-3 text-xs font-semibold rounded-full bg-green-100 text-green-800 hover:bg-green-200">Confirmar</button>
-                        <button 
-                            data-id="${payment.id}" 
-                            class="reject-payment-btn py-1 px-3 text-xs font-semibold rounded-full bg-red-100 text-red-800 hover:bg-red-200">Rechazar</button>
+                        <button data-id="${payment.id}" data-owner-id="${owner?.id}" data-amount="${payment.fields['Monto Reportado']}" class="confirm-payment-btn py-1 px-3 text-xs font-semibold rounded-full bg-green-100 text-green-800 hover:bg-green-200">Confirmar</button>
+                        <button data-id="${payment.id}" class="reject-payment-btn py-1 px-3 text-xs font-semibold rounded-full bg-red-100 text-red-800 hover:bg-red-200">Rechazar</button>
                     </td>`;
             });
         }
         
         function createCharts(solventes, morosos) {
-            if (solvencyChart) solvencyChart.destroy();
+            if (solvencyChart) {
+                solvencyChart.destroy();
+            }
             solvencyChart = new Chart(document.getElementById('solvencyChart').getContext('2d'), { 
                 type: 'doughnut', 
                 data: { 
@@ -581,7 +468,10 @@
                     plugins: { legend: { position: 'bottom' } } 
                 } 
             });
-            if (topDebtorsChart) topDebtorsChart.destroy();
+            
+            if (topDebtorsChart) {
+                topDebtorsChart.destroy();
+            }
             const topDebtors = [...condominioData].filter(p => (p['Deuda Restante'] || 0) > 0.01).sort((a, b) => b['Deuda Restante'] - a['Deuda Restante']).slice(0, 5);
             topDebtorsChart = new Chart(document.getElementById('topDebtorsChart').getContext('2d'), { 
                 type: 'bar', 
@@ -604,56 +494,43 @@
         }
 
         function showModal(modal) {
-            ['debtModal', 'reminderModal', 'paymentModal'].forEach(modalId => {
-                const otherModal = document.getElementById(modalId);
-                if (otherModal !== modal) hideModal(otherModal);
-            });
             modal.classList.remove('hidden');
             const content = modal.querySelector('.transform');
-            if (content) {
-                setTimeout(() => content.classList.remove('scale-95', 'opacity-0'), 20);
-            }
+            setTimeout(() => content.classList.remove('scale-95', 'opacity-0'), 20);
         }
 
         function hideModal(modal) {
             if (!modal) return;
             const content = modal.querySelector('.transform');
-            if (content) {
-                content.classList.add('scale-95', 'opacity-0');
-                setTimeout(() => {
-                    modal.classList.add('hidden');
-                    content.classList.remove('scale-95', 'opacity-0');
-                }, 300);
-            } else {
-                modal.classList.add('hidden');
-            }
+            content.classList.add('scale-95', 'opacity-0');
+            setTimeout(() => modal.classList.add('hidden'), 300);
         }
 
         function showDebtModal(propertyId) {
             const p = condominioData.find(prop => prop.id === propertyId);
             if (!p) return;
-            const { cuotaComun, cuotaEspecial, beneficio } = calculateCurrentMonthCharges(p);
             document.getElementById('debtModal-subtitle').textContent = `Casa ${p.Casa} - ${p.Propietario}`;
-            let html = `<li class="flex justify-between"><span>Saldo anterior</span><span class="font-medium">$${(p['Deuda Anterior']||0).toFixed(2)}</span></li><li class="flex justify-between"><span>Cuota Común</span><span class="font-medium">$${cuotaComun.toFixed(2)}</span></li>`;
-            if (cuotaEspecial > 0) html += `<li class="flex justify-between"><span>Cargos Especiales</span><span class="font-medium">$${cuotaEspecial.toFixed(2)}</span></li>`;
-            if (beneficio > 0) html += `<li class="flex justify-between text-green-600"><span>(Beneficio Pronto Pago)</span><span class="font-medium">-$${beneficio.toFixed(2)}</span></li>`;
+            let html = `<li class="flex justify-between"><span>Deuda Anterior</span><span class="font-medium">$${(p['Deuda Anterior']||0).toFixed(2)}</span></li>`;
+            if((p['Cuota con Recargo'] || 0) > 0) html += `<li class="flex justify-between text-red-600"><span>Recargo por Mora</span><span class="font-medium">$${(p['Cuota con Recargo']||0).toFixed(2)}</span></li>`;
+            html += `<li class="flex justify-between"><span>Cargos del Mes (Cuota Base)</span><span class="font-medium">$${(p['Cuota Base Mes']||0).toFixed(2)}</span></li>`;
+            if((p['Monto Descuento'] || 0) > 0) html += `<li class="flex justify-between text-green-600"><span>Descuento Pronto Pago</span><span class="font-medium">-$${(p['Monto Descuento']||0).toFixed(2)}</span></li>`;
+            html += `<li class="flex justify-between border-t mt-2 pt-2"><span>Pagado este Mes</span><span class="font-medium">-$${(p['Total Pagado']||0).toFixed(2)}</span></li>`;
+            
             document.getElementById('debtModal-list').innerHTML = html;
             document.getElementById('debtModal-total').textContent = `$${(p['Deuda Restante']||0).toFixed(2)}`;
             showModal(document.getElementById('debtModal'));
         }
         
         function showReminderModal(propertyId) {
-            currentPropertyIdForAction = propertyId;
             const property = condominioData.find(p => p.id === propertyId);
             if (!property) return;
             const contentEl = document.getElementById('reminder-message-content');
-            const fechaActualStr = FECHA_ACTUAL.toLocaleDateString('es-VE');
+            const fechaActualStr = new Date().toLocaleDateString('es-VE');
             let discountMessage = '';
-            if (DIA_ACTUAL <= DIA_LIMITE_PAGO) {
-                const diasRestantes = DIA_LIMITE_PAGO - DIA_ACTUAL;
-                discountMessage = `\n⚠️ Tiene ${diasRestantes} día${diasRestantes === 1 ? '' : 's'} para aprovechar el descuento por pronto pago.`;
+            if ((property['Monto Descuento'] || 0) > 0) {
+                discountMessage = `\n\n⚠️ ¡Aprovecha! Tienes hasta el día 10 para pagar con un descuento de $${property['Monto Descuento'].toFixed(2)}.`;
             }
-            const message = `*Asunto: Recordatorio de Saldo Pendiente*\n\n📅 _Mensaje generado el ${fechaActualStr}._${discountMessage}\n\nEstimado/a *${property.Propietario}*,\n\nLe contactamos para informarle que su propiedad presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: $${(property['Deuda Restante'] || 0).toFixed(2)}*\n\nAgradecemos su pronta gestión.\n\nPara más información, visite nuestro portal:\nhttps://villalosapamates.netlify.app\n\n*Nota:* Pagos en Bs. se calculan a la tasa oficial del BCV del día.`;
+            const message = `*Asunto: Recordatorio de Saldo Pendiente*\n\n📅 _Mensaje generado el ${fechaActualStr}_.\n\nEstimado/a *${property.Propietario}*,\n\nLe contactamos para informarle que su propiedad presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: $${(property['Deuda Restante'] || 0).toFixed(2)}*${discountMessage}\n\nAgradecemos su pronta gestión.\n\nPara más información, visite nuestro portal:\nhttps://villalosapamates.netlify.app\n\n*Nota:* Pagos en Bs. se calculan a la tasa oficial del BCV del día.`;
             contentEl.textContent = message;
             showModal(document.getElementById('reminderModal'));
         }
@@ -661,11 +538,7 @@
         function showPaymentModal(id) {
             currentPropertyIdForAction = id;
             const p = condominioData.find(prop => prop.id === id);
-            if (!p) {
-                console.error('Propietario no encontrado:', id);
-                showToast('Propietario no encontrado.', true);
-                return;
-            }
+            if (!p) return;
             document.getElementById('payment-modal-info').innerHTML = `<p>Propietario: <span class="font-semibold">${p.Propietario || 'Sin Nombre'}</span></p><p>Deuda Actual: <span class="font-semibold">$${(p['Deuda Restante']||0).toFixed(2)}</span></p>`;
             document.getElementById('partial-amount').value = '';
             document.getElementById('partial-amount').classList.remove('input-error');
@@ -685,7 +558,11 @@
         }
 
         function setupEventListeners() {
-            document.getElementById('invalidate-propietarios-cache-btn').addEventListener('click', handleInvalidatePropietariosCache);
+            document.getElementById('invalidate-propietarios-cache-btn').addEventListener('click', () => {
+                if (!confirm('¿Seguro que quieres forzar la actualización de propietarios?')) return;
+                clearPropietariosCache();
+                initApp();
+            });
             
             document.querySelectorAll('.nav-button').forEach(button => {
                 button.addEventListener('click', (e) => {
@@ -722,28 +599,39 @@
                 if (!button) return;
                 const recordId = button.dataset.id;
                 const isConfirm = button.classList.contains('confirm-payment-btn');
-                if (!isConfirm && !confirm('¿Estás seguro de que deseas rechazar este pago?')) return;
                 
                 button.disabled = true;
                 button.innerHTML = '...';
+
                 try {
                     if (isConfirm) {
-                        const reportedPayment = await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`);
+                        const ownerId = button.dataset.ownerId;
+                        const amount = parseFloat(button.dataset.amount);
                         
-                        await createAirtableRecord(AIRTABLE_TABLE_PAGOS, {
-                            'Monto Pagado': reportedPayment.fields['Monto Reportado'],
-                            'Fecha de Pago': new Date().toISOString().slice(0, 10),
-                            'Propietario que Paga': reportedPayment.fields['Propietario que Reporta']
-                        });
-                        
-                        await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`, {
-                            method: 'PATCH',
-                            body: JSON.stringify({ fields: { 'Estado': 'Confirmado' } })
-                        });
-                        
-                        showToast('✅ Pago confirmado. Actualizando datos...');
+                        if (ownerId && amount > 0) {
+                             await createAirtableRecord(AIRTABLE_TABLE_PAGOS, {
+                                'Monto Pagado': amount,
+                                'Fecha de Pago': new Date().toISOString().slice(0, 10),
+                                'Propietario que Paga': [ownerId]
+                            });
+
+                            await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`, {
+                                method: 'PATCH', body: JSON.stringify({ fields: { 'Estado': 'Confirmado' } })
+                            });
+
+                            showToast('✅ Pago confirmado. Se reflejará en el próximo ciclo.');
+                        } else {
+                           throw new Error("No se pudo encontrar al propietario o el monto era inválido.");
+                        }
                     } else {
-                        await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`, { method: 'PATCH', body: JSON.stringify({ fields: { 'Estado': 'Rechazado' } }) });
+                        if (!confirm('¿Estás seguro de que deseas rechazar este pago?')) {
+                            button.disabled = false;
+                            button.innerHTML = 'Rechazar';
+                            return;
+                        }
+                        await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`, {
+                            method: 'PATCH', body: JSON.stringify({ fields: { 'Estado': 'Rechazado' } })
+                        });
                         showToast('✔️ Pago rechazado con éxito.');
                     }
                     
@@ -773,15 +661,13 @@
 
             document.getElementById('confirmPaymentBtn').addEventListener('click', async (e) => {
                 const button = e.currentTarget;
-                const p = condominioData.find(prop => prop.id === currentPropertyIdForAction);
-                if (!p) {
-                    showToast('Propietario no encontrado.', true);
-                    return;
-                }
+                const owner = condominioData.find(prop => prop.id === currentPropertyIdForAction);
+                if (!owner) return;
+
                 const isPartial = document.getElementById('tab-partial').classList.contains('active');
-                let paymentAmount = isPartial ? parseFloat(document.getElementById('partial-amount').value) : (p['Deuda Restante'] || 0);
+                let paymentAmount = isPartial ? parseFloat(document.getElementById('partial-amount').value) : (owner['Deuda Restante'] || 0);
                 
-                if (isPartial && (isNaN(paymentAmount) || paymentAmount <= 0)) {
+                if (isNaN(paymentAmount) || paymentAmount <= 0) {
                     document.getElementById('partial-amount').classList.add('input-error');
                     showToast('Ingrese un monto válido.', true);
                     return;
@@ -791,13 +677,13 @@
                 button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
                 
                 try {
-                    await createAirtableRecord(AIRTABLE_TABLE_PAGOS, { 
+                    await createAirtableRecord(AIRTABLE_TABLE_PAGOS, {
                         'Monto Pagado': paymentAmount, 
                         'Fecha de Pago': new Date().toISOString().slice(0, 10), 
-                        'Propietario que Paga': [p.id] 
+                        'Propietario que Paga': [owner.id]
                     });
 
-                    showToast('✅ Pago registrado. Actualizando datos...');
+                    showToast('✅ Pago registrado. Se reflejará en el próximo ciclo.');
                     clearPropietariosCache();
                     hideModal(document.getElementById('paymentModal'));
                     setTimeout(initApp, 1500);
@@ -828,48 +714,61 @@
                     showToast('No hay propietarios en mora.', true);
                     return;
                 }
-                const confirmMsg = `Se enviarán recordatorios a ${morosos.length} propietario${morosos.length > 1 ? 's' : ''} en mora. ¿Desea continuar?`;
-                if (!confirm(confirmMsg)) return;
+                if (!confirm(`Se enviarán recordatorios a ${morosos.length} propietario(s) en mora. ¿Desea continuar?`)) return;
+                
                 morosos.forEach(p => {
                     if (p.Telefono) {
-                        const fechaActualStr = FECHA_ACTUAL.toLocaleDateString('es-VE');
-                        let discountMessage = '';
-                        if (DIA_ACTUAL <= DIA_LIMITE_PAGO) {
-                            const diasRestantes = DIA_LIMITE_PAGO - DIA_ACTUAL;
-                            discountMessage = `\n⚠️ Tiene ${diasRestantes} día${diasRestantes === 1 ? '' : 's'} para aprovechar el descuento por pronto pago.`;
-                        }
-                        const message = `*Asunto: Recordatorio de Saldo Pendiente*\n\n📅 _Mensaje generado el ${fechaActualStr}._${discountMessage}\n\nEstimado/a *${p.Propietario}*,\n\nLe contactamos para informarle que su propiedad presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: $${(p['Deuda Restante'] || 0).toFixed(2)}*\n\nAgradecemos su pronta gestión.\n\nPara más información, visite nuestro portal:\nhttps://villalosapamates.netlify.app\n\n*Nota:* Pagos en Bs. se calculan a la tasa oficial del BCV del día.`;
-                        window.open(`https://api.whatsapp.com/send?phone=${p.Telefono.replace(/\s/g, '')}&text=${encodeURIComponent(message)}`, '_blank');
+                        currentPropertyIdForAction = p.id; 
+                        showReminderModal(p.id); 
+                        const msg = document.getElementById('reminder-message-content').textContent;
+                        window.open(`https://api.whatsapp.com/send?phone=${p.Telefono.replace(/\s/g, '')}&text=${encodeURIComponent(msg)}`, '_blank');
                     }
                 });
-                showToast('Recordatorios enviados a los propietarios en mora.');
+                hideModal(document.getElementById('reminderModal'));
+                showToast('Se han abierto las ventanas de WhatsApp para los recordatorios.');
             });
 
             document.getElementById('update-monthly-charges-btn').addEventListener('click', async (e) => {
-                if (!confirm('¿Estás seguro de que deseas actualizar los cargos del mes? Esto aplicará los gastos registrados a todos los propietarios.')) return;
+                if (!confirm('¿Estás seguro de que deseas hacer el CORTE DE MES? Esta acción guardará la deuda actual como "Deuda Anterior". Esta acción no se puede deshacer.')) return;
+                
                 const button = e.currentTarget;
                 button.disabled = true;
                 button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
+                
                 try {
+                    const updates = [];
                     for (const owner of condominioData) {
-                        const { cuotaComun, cuotaEspecial, beneficio } = calculateCurrentMonthCharges(owner);
-                        const newDebt = (owner['Deuda Restante'] || 0) + cuotaComun + cuotaEspecial - beneficio;
-                        await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}/${owner.id}`, {
-                            method: 'PATCH',
-                            body: JSON.stringify({ fields: { 'Deuda Restante': newDebt, 'Deuda Anterior': owner['Deuda Restante'] || 0 } })
+                        updates.push({
+                            id: owner.id,
+                            fields: {
+                                'Deuda Anterior': owner['Deuda Restante'] || 0
+                            }
                         });
                     }
-                    showToast('Cargos mensuales actualizados.');
+                    
+                    for (let i = 0; i < updates.length; i += 10) {
+                        const chunk = updates.slice(i, i + 10);
+                        await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}`, {
+                            method: 'PATCH',
+                            body: JSON.stringify({ records: chunk })
+                        });
+                    }
+
+                    showToast('✅ ¡Corte de mes realizado con éxito!');
+                    
+                    alert("Paso 1 completado. Ahora, como acordamos, ve a tu tabla 'Pagos' en Airtable y elimina los registros del mes anterior para reiniciar el contador de pagos.");
+
                     clearPropietariosCache();
-                    setTimeout(initApp, 1500);
+                    await initApp();
+
                 } catch (error) {
-                    showToast(`Error al actualizar cargos: ${error.message}`, true);
+                    showToast(`Error al realizar el corte de mes: ${error.message}`, true);
                 } finally {
                     button.disabled = false;
                     button.textContent = '🔄 Actualizar Cargos del Mes';
                 }
             });
-
+            
             document.getElementById('add-expense-form').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const concept = document.getElementById('expense-concept').value.trim();
@@ -895,9 +794,11 @@
                     showToast('Gasto registrado correctamente.');
                     document.getElementById('add-expense-form').reset();
                     document.querySelectorAll('#expense-owners-list input').forEach(input => input.checked = true);
-                    sessionStorage.removeItem('vla_gastos_cache');
-                    sessionStorage.removeItem('vla_gastos_timestamp');
-                    setTimeout(initApp, 1500);
+                    await loadGastos(); 
+                    populateExpensesTable(gastosDelMes);
+                    
+                    clearPropietariosCache();
+                    setTimeout(initApp, 500);
                 } catch (error) {
                     showToast(`Error al registrar gasto: ${error.message}`, true);
                 } finally {
@@ -916,11 +817,14 @@
                 try {
                     await deleteAirtableRecord(AIRTABLE_TABLE_GASTOS, recordId);
                     showToast('Gasto eliminado correctamente.');
-                    sessionStorage.removeItem('vla_gastos_cache');
-                    sessionStorage.removeItem('vla_gastos_timestamp');
-                    setTimeout(initApp, 1500);
+                    await loadGastos();
+                    populateExpensesTable(gastosDelMes);
+                    
+                    clearPropietariosCache();
+                    setTimeout(initApp, 500);
                 } catch (error) {
                     showToast(`Error al eliminar gasto: ${error.message}`, true);
+                } finally {
                     button.disabled = false;
                     button.innerHTML = '&times;';
                 }
