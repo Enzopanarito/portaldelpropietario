@@ -122,6 +122,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }, duration);
     }
 
+    function formatCurrency(value) {
+        let num = value || 0;
+        if (num < 0 && num > -0.005) {
+            num = 0;
+        }
+        return `$${num.toFixed(2)}`;
+    }
+
     async function airtableFetch(path, options = {}) {
         const url = `/.netlify/functions/airtable${path}`;
         const response = await fetch(url, options);
@@ -181,7 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
         const solventes = allData.propietarios.length - morosos;
-        document.getElementById('kpi-deuda-total').textContent = `$${deudaTotal.toFixed(2)}`;
+        document.getElementById('kpi-deuda-total').textContent = formatCurrency(deudaTotal);
         document.getElementById('kpi-propietarios-mora').textContent = `${morosos} / ${allData.propietarios.length}`;
         document.getElementById('kpi-solvencia').textContent = `${((solventes / allData.propietarios.length) * 100).toFixed(0)}%`;
     }
@@ -198,7 +206,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="font-semibold text-slate-700">Casa #${moroso.Casa || 'N/A'}</span>
                         <span class="text-slate-500 ml-2">${moroso.Propietario || ''}</span>
                     </div>
-                    <span class="font-bold text-red-500">$${(moroso['Deuda Restante'] || 0).toFixed(2)}</span>
+                    <span class="font-bold text-red-500">${formatCurrency(moroso['Deuda Restante'])}</span>
                  </div>`
             ).join('');
             morososContainer.classList.remove('hidden');
@@ -231,18 +239,16 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const deudaRestante = property['Deuda Restante'] || 0;
         
-        // --- INICIO DE LA MODIFICACIÓN ---
         const totalCargosDelMes = displayChargesBreakdown(property, monthYearString);
-        // --- FIN DE LA MODIFICACIÓN ---
 
         document.getElementById('debt-summary').innerHTML = `
             <div class="flex justify-between items-baseline text-3xl font-bold ${deudaRestante > 0.01 ? 'text-red-500' : 'text-green-600'}">
                 <span>Deuda Total Actual:</span>
-                <span>$${deudaRestante.toFixed(2)}</span>
+                <span>${formatCurrency(deudaRestante)}</span>
             </div>
             <div class="flex justify-between items-baseline text-lg mt-4 border-t pt-3">
                 <span class="text-slate-600" id="monthly-charge-label">Total Cargos (Mes Actual):</span>
-                <span id="kpi-monthly-charge" class="font-bold text-slate-800">$${totalCargosDelMes.toFixed(2)}</span>
+                <span id="kpi-monthly-charge" class="font-bold text-slate-800">${formatCurrency(totalCargosDelMes)}</span>
             </div>
             <p class="text-xs text-slate-500 text-right">Este es su saldo total a la fecha de hoy.</p>`;
 
@@ -271,7 +277,7 @@ document.addEventListener('DOMContentLoaded', () => {
             </thead>
             <tbody class="divide-y divide-slate-200">`;
         
-        tableHtml += `<tr><td class="px-2 py-2 font-semibold" colspan="2">Deuda del Mes Anterior</td><td class="px-2 py-2 text-right font-semibold">$${deudaAnterior.toFixed(2)}</td></tr>`;
+        tableHtml += `<tr><td class="px-2 py-2 font-semibold" colspan="2">Deuda del Mes Anterior</td><td class="px-2 py-2 text-right font-semibold">${formatCurrency(deudaAnterior)}</td></tr>`;
         
         allData.gastos.forEach(gasto => {
             const monto = gasto.fields.Monto || 0;
@@ -292,40 +298,35 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             if (suParte > 0) {
-                 tableHtml += `<tr><td class="px-2 py-2 text-slate-700">${concepto}</td><td class="px-2 py-2 text-slate-500 text-right">$${monto.toFixed(2)}</td><td class="px-2 py-2 text-slate-700 text-right">$${suParte.toFixed(2)}</td></tr>`;
+                 tableHtml += `<tr><td class="px-2 py-2 text-slate-700">${concepto}</td><td class="px-2 py-2 text-slate-500 text-right">${formatCurrency(monto)}</td><td class="px-2 py-2 text-slate-700 text-right">${formatCurrency(suParte)}</td></tr>`;
             }
         });
 
         tableHtml += `</tbody>`;
         
         let tfootHtml = `<tfoot class="border-t-2 border-slate-300">`;
-        let montoBeneficio = 0;
-        if (DIA_ACTUAL <= DIA_LIMITE_PAGO) {
-            montoBeneficio = totalCargosComunesPropietario * TASA_RECARGO;
-            if (montoBeneficio > 0) {
-                tfootHtml += `<tr><td class="px-2 pt-2 text-green-600 font-semibold" colspan="2">Beneficio Pronto Pago</td><td class="px-2 pt-2 text-right text-green-600 font-semibold">-$${montoBeneficio.toFixed(2)}</td></tr>`;
-            }
-        } else {
-             const montoRecargo = totalCargosComunesPropietario * TASA_RECARGO;
-             if (montoRecargo > 0) {
-                tfootHtml += `<tr><td class="px-2 pt-2 text-red-500 font-semibold" colspan="2">Recargo por Mora</td><td class="px-2 pt-2 text-right text-red-500 font-semibold">$${montoRecargo.toFixed(2)}</td></tr>`;
-             }
+        
+        // --- INICIO DE LA LÓGICA CORREGIDA ---
+        const isSolvent = (property['Deuda Restante'] || 0) <= 0.01;
+        const montoBeneficio = totalCargosComunesPropietario * TASA_RECARGO;
+
+        if ((DIA_ACTUAL <= DIA_LIMITE_PAGO || isSolvent) && montoBeneficio > 0) {
+            tfootHtml += `<tr><td class="px-2 pt-2 text-green-600 font-semibold" colspan="2">Beneficio Pronto Pago</td><td class="px-2 pt-2 text-right text-green-600 font-semibold">-${formatCurrency(montoBeneficio)}</td></tr>`;
         }
+        // --- FIN DE LA LÓGICA CORREGIDA ---
 
         if (totalPagado > 0) {
-            tfootHtml += `<tr><td class="px-2 py-2 text-green-600 font-semibold" colspan="2">Total Pagado</td><td class="px-2 py-2 text-right text-green-600 font-semibold">-$${totalPagado.toFixed(2)}</td></tr>`;
+            tfootHtml += `<tr><td class="px-2 py-2 text-green-600 font-semibold" colspan="2">Total Pagado</td><td class="px-2 py-2 text-right text-green-600 font-semibold">-${formatCurrency(totalPagado)}</td></tr>`;
         }
         tfootHtml += `</tfoot>`;
         tableHtml += tfootHtml + `</table>`;
         breakdownDiv.innerHTML = tableHtml;
 
-        // --- INICIO LÓGICA DE CÁLCULO PARA EL NUEVO INDICADOR ---
         let totalCargosDelMesParaKPI = totalCargosEspecialesPropietario + totalCargosComunesPropietario;
         if (DIA_ACTUAL > DIA_LIMITE_PAGO) {
-            totalCargosDelMesParaKPI += totalCargosComunesPropietario * TASA_RECARGO; // Suma el recargo
+            totalCargosDelMesParaKPI += totalCargosComunesPropietario * TASA_RECARGO;
         }
         return totalCargosDelMesParaKPI;
-        // --- FIN LÓGICA DE CÁLCULO ---
     }
 
     function displayPaymentsHistory(property) {
@@ -335,7 +336,7 @@ document.addEventListener('DOMContentLoaded', () => {
             tbody.innerHTML = `<tr><td colspan="2" class="text-center p-4 text-slate-500">No hay pagos registrados.</td></tr>`;
             return;
         }
-        tbody.innerHTML = ownerPayments.sort((a, b) => new Date(b.fields['Fecha de Pago']) - new Date(a.fields['Fecha de Pago'])).map(p => `<tr><td class="px-4 py-3 text-sm">${new Date(p.fields['Fecha de Pago'] + 'T00:00:00').toLocaleDateString('es-VE')}</td><td class="px-4 py-3 text-sm text-right font-medium text-green-600">$${(p.fields['Monto Pagado'] || 0).toFixed(2)}</td></tr>`).join('');
+        tbody.innerHTML = ownerPayments.sort((a, b) => new Date(b.fields['Fecha de Pago']) - new Date(a.fields['Fecha de Pago'])).map(p => `<tr><td class="px-4 py-3 text-sm">${new Date(p.fields['Fecha de Pago'] + 'T00:00:00').toLocaleDateString('es-VE')}</td><td class="px-4 py-3 text-sm text-right font-medium text-green-600">${formatCurrency(p.fields['Monto Pagado'])}</td></tr>`).join('');
     }
 
     function displayDiscountBanner() {
@@ -374,7 +375,6 @@ document.addEventListener('DOMContentLoaded', () => {
         renderPortalForUser(e.target.value);
     });
 
-    // Modal de reportar pago
     const reportPaymentBtn = document.getElementById('report-payment-btn');
     const reportPaymentModal = document.getElementById('reportPaymentModal');
     const closeReportModalBtn = document.getElementById('closeReportModalBtn');
@@ -403,7 +403,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast('Por favor, complete todos los campos correctamente.', true);
             return;
         }
-        if (!confirm(`¿Está seguro de que desea reportar un pago por $${amount.toFixed(2)}?`)) {
+        if (!confirm(`¿Está seguro de que desea reportar un pago por ${formatCurrency(amount)}?`)) {
             return;
         }
         submitReportBtn.disabled = true;
