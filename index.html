@@ -65,7 +65,7 @@
                     <div class="bg-white p-6 rounded-2xl shadow-lg">
                         <h3 class="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Su Estado de Cuenta Actual</h3>
                         <div id="debt-summary" class="space-y-3">
-                            </div>
+                        </div>
                         <button id="report-payment-btn" class="mt-6 w-full bg-teal-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-teal-700 transition-colors shadow-sm">Reportar un Pago</button>
                     </div>
                     <div class="bg-white p-6 rounded-2xl shadow-lg">
@@ -108,8 +108,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const AIRTABLE_TABLE_PAGOS = 'Pagos';
     const TIPO_GASTO_COMUN = 'Gasto Común';
     const TIPO_GASTO_ESPECIAL = 'Gasto Especial';
-    const TASA_RECARGO = 0.10;
-    const DIA_LIMITE_PAGO = 10;
+    const TASA_RECARGO = 0.10; // Se mantiene solo para el cálculo VISUAL del beneficio
+    
     let allData = { propietarios: [], gastos: [], pagos: [] };
 
     function showToast(message, isError = false, duration = 4000) {
@@ -129,7 +129,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return `$${num.toFixed(2)}`;
     }
     
-    // FUNCIÓN DE FECHA CORRECTA
     function getCaracasDateString() {
         const now = new Date();
         const options = { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit' };
@@ -245,22 +244,28 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const deudaRestante = property['Deuda Restante'] || 0;
         
-        // El desglose se mantiene como estaba en el original.
-        displayChargesBreakdown(property, monthYearString);
+        // --- CÁLCULO DEL TOTAL DE CARGOS RESTAURADO ---
+        const totalCargosDelMes = (property['Cuota Base Mes'] || 0) + (property['Total Gastos Especiales del Mes'] || 0) + (property['Recargo Aplicado'] || 0);
 
         document.getElementById('debt-summary').innerHTML = `
             <div class="flex justify-between items-baseline text-3xl font-bold ${deudaRestante > 0.01 ? 'text-red-500' : 'text-green-600'}">
                 <span>Deuda Total Actual:</span>
                 <span>${formatCurrency(deudaRestante)}</span>
-            </div>`;
+            </div>
+            <div class="flex justify-between items-baseline text-lg mt-4 border-t pt-3">
+                <span class="text-slate-600" id="monthly-charge-label">Total Cargos (Mes Actual):</span>
+                <span id="kpi-monthly-charge" class="font-bold text-slate-800">${formatCurrency(totalCargosDelMes)}</span>
+            </div>
+            <p class="text-xs text-slate-500 text-right">Este es su saldo total a la fecha de hoy.</p>`;
 
+        displayChargesBreakdown(property, monthYearString);
         displayPaymentsHistory(property);
         displayDiscountBanner();
         displayBcvNotice();
         displayPrivateMorososList();
     }
 
-    // --- DESGLOSE SIN MODIFICAR, EXCEPTO LA CONDICIÓN DEL BENEFICIO ---
+    // --- DESGLOSE CON LÓGICA ORIGINAL RESTAURADA Y CONDICIÓN DE BENEFICIO CORREGIDA ---
     function displayChargesBreakdown(property, monthYearString) {
         document.getElementById('expenses-breakdown-title').textContent = `Desglose de Cargos para ${monthYearString}`;
         const breakdownDiv = document.getElementById('expenses-breakdown');
@@ -309,8 +314,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         let tfootHtml = `<tfoot class="border-t-2 border-slate-300">`;
         
-        // ESTA ES LA ÚNICA LÍNEA MODIFICADA EN EL DESGLOSE
-        // Ahora la decisión de mostrar el beneficio depende del dato de Airtable, no de la fecha del día.
+        // LA DECISIÓN DE MOSTRAR EL BENEFICIO AHORA DEPENDE 100% DE AIRTABLE
         if ((property['Recargo Aplicado'] || 0) === 0 && totalCargosComunesPropietario > 0) {
             const montoBeneficio = totalCargosComunesPropietario * TASA_RECARGO;
             tfootHtml += `<tr><td class="px-2 pt-2 text-green-600 font-semibold" colspan="2">Beneficio Pronto Pago</td><td class="px-2 pt-2 text-right text-green-600 font-semibold">-${formatCurrency(montoBeneficio)}</td></tr>`;
@@ -337,7 +341,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function displayDiscountBanner() {
         const discountBannerContainer = document.getElementById('discount-banner-container');
         const DIA_ACTUAL = new Date().getDate();
-        if (DIA_ACTUAL <= DIA_LIMITE_PAGO) {
+        if (DIA_ACTUAL <= 10) {
             discountBannerContainer.innerHTML = `<div class="bg-teal-100 border-l-4 border-teal-500 text-teal-800 p-4 rounded-r-lg shadow" role="alert"><p class="font-bold">¡Buenas Noticias!</p><p class="text-sm">Está a tiempo para disfrutar del beneficio por pronto pago en sus gastos comunes.</p></div>`;
         } else {
             discountBannerContainer.innerHTML = '';
@@ -415,7 +419,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             'Monto Reportado': amount,
                             'Referencia': reference,
                             'Estado': 'Pendiente',
-                            'Fecha del Reporte': getCaracasDateString() // <-- FECHA CORREGIDA
+                            'Fecha del Reporte': getCaracasDateString()
                         }
                     }]
                 })
