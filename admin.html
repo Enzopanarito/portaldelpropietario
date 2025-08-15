@@ -98,7 +98,6 @@
                                 <button id="update-monthly-charges-btn" class="bg-sky-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-sky-700 transition-colors whitespace-nowrap text-center">🔄 Actualizar Cargos del Mes</button>
                             </div>
                         </div>
-                        <div id="date-info-banner" class="bg-amber-100 border-l-4 border-amber-500 text-amber-700 p-4 rounded-r-lg mb-6"><h4 class="font-bold">Información de Fecha</h4><p class="text-sm">Hoy es <span id="current-date-display" class="font-semibold"></span>. El beneficio por pronto pago aplica hasta el día 10 del mes en curso.</p></div>
                         <div class="mb-4"><input type="text" id="searchInput" placeholder="🔎 Buscar por nombre o número de casa..." class="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500"></div>
                         <div class="overflow-x-auto"><table id="debtorsTable" class="min-w-full bg-white divide-y divide-slate-200"><thead class="bg-slate-100"><tr><th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Casa</th><th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Propietario</th><th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Deuda Restante</th><th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Acciones</th></tr></thead><tbody id="debtorsTableBody"></tbody></table></div>
                     </div>
@@ -281,7 +280,7 @@
         const AIRTABLE_TABLE_PAGOS = 'Pagos';
         const AIRTABLE_TABLE_REPORTE_PAGO = 'Reportes de Pago';
         
-        let condominioData = [], gastosDelMes = [], solvencyChart, topDebtorsChart;
+        let condominioData = [], gastosDelMes = [], solvencyChart, topDebtorsChart, currentPropertyIdForAction;
         
         async function airtableFetch(path, options = {}) {
             const url = `/.netlify/functions/airtable${path}`;
@@ -291,12 +290,26 @@
             const response = await fetch(url, options);
             if (!response.ok) {
                 const errorData = await response.json();
-                throw new Error(errorData.error?.message || response.statusText);
+                throw new Error(errorData.error?.message || `Error ${response.status}: ${response.statusText}`);
             }
             return response.json();
         }
         
-        const createAirtableRecord = (tableName, fields) => airtableFetch(`/${encodeURIComponent(tableName)}`, { method: 'POST', body: JSON.stringify({ records: [{ fields }] }) });
+        // --- FUNCIÓN 1: CORRECCIÓN DE FECHA ---
+        function getCaracasDateString() {
+            const now = new Date();
+            const options = { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit' };
+            return new Intl.DateTimeFormat('en-CA', options).format(now);
+        }
+
+        // --- FUNCIÓN 2: NUEVA FUNCIÓN PARA CREAR MÚLTIPLES REGISTROS ---
+        const createAirtableRecords = (tableName, records) => {
+            return airtableFetch(`/${encodeURIComponent(tableName)}`, { 
+                method: 'POST', 
+                body: JSON.stringify({ records: records }) 
+            });
+        };
+        
         const deleteAirtableRecord = (tableName, id) => airtableFetch(`/${encodeURIComponent(tableName)}/${id}`, { method: 'DELETE' });
         
         function clearPropietariosCache() {
@@ -341,21 +354,16 @@
             loadingSpinner.innerHTML = '<div class="fixed inset-0 bg-white bg-opacity-75 flex items-center justify-center z-50"><div class="spinner"></div></div>';
             document.body.appendChild(loadingSpinner);
             try {
-                const promiseResults = await Promise.all([
+                await Promise.all([
                     loadPropietarios(),
                     loadGastos(),
-                    loadReportes()
+                    loadReportes().then(populateReportedPayments)
                 ]);
-                
-                const reportedPaymentsData = promiseResults[2];
-                
                 condominioData.sort((a, b) => (a.Casa || 0) - (b.Casa || 0));
-                
                 updateDashboard();
                 populateTable(condominioData);
                 populateExpensesTable(gastosDelMes);
                 populateOwnerSelectorInExpenseForm();
-                populateReportedPayments(reportedPaymentsData);
             } catch (error) {
                 console.error("Error fatal inicializando la app:", error);
                 alert(`Hubo un error crítico al cargar los datos: ${error.message}\n\nPor favor, revisa la consola para más detalles.`);
@@ -376,7 +384,7 @@
                     deudaTotal += deudaRestante; 
                     morosos++; 
                 }
-                totalACobrarMes += p['Cuota Base Mes'] || 0;
+                totalACobrarMes += (p['Cuota Base Mes'] || 0) + (p['Total Gastos Especiales del Mes'] || 0);
             });
             
             document.getElementById('kpi-deuda-total').textContent = `$${deudaTotal.toFixed(2)}`;
@@ -435,8 +443,7 @@
                 const owner = condominioData.find(o => o.id === ownerLink[0]);
                 const ownerName = owner ? `Casa ${owner.Casa} - ${owner.Propietario}` : 'Propietario no encontrado';
                 const row = tableBody.insertRow();
-                row.innerHTML = `
-                    <td class="px-4 py-3 text-sm text-slate-700">${ownerName}</td>
+                row.innerHTML = `<td class="px-4 py-3 text-sm text-slate-700">${ownerName}</td>
                     <td class="px-4 py-3 text-sm font-medium text-slate-900">$${(payment.fields['Monto Reportado'] || 0).toFixed(2)}</td>
                     <td class="px-4 py-3 text-sm text-slate-500">${payment.fields.Referencia || ''}</td>
                     <td class="px-4 py-3 space-x-2 whitespace-nowrap">
@@ -447,49 +454,19 @@
         }
         
         function createCharts(solventes, morosos) {
-            if (solvencyChart) {
-                solvencyChart.destroy();
-            }
+            if (solvencyChart) solvencyChart.destroy();
             solvencyChart = new Chart(document.getElementById('solvencyChart').getContext('2d'), { 
                 type: 'doughnut', 
-                data: { 
-                    labels: ['Solventes', 'En Mora'], 
-                    datasets: [{ 
-                        data: [solventes, morosos], 
-                        backgroundColor: ['#22c55e', '#ef4444'], 
-                        borderColor: '#ffffff', 
-                        borderWidth: 4 
-                    }] 
-                }, 
-                options: { 
-                    responsive: true, 
-                    maintainAspectRatio: false, 
-                    cutout: '70%', 
-                    plugins: { legend: { position: 'bottom' } } 
-                } 
+                data: { labels: ['Solventes', 'En Mora'], datasets: [{ data: [solventes, morosos], backgroundColor: ['#22c55e', '#ef4444'], borderColor: '#ffffff', borderWidth: 4 }] }, 
+                options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'bottom' } } } 
             });
             
-            if (topDebtorsChart) {
-                topDebtorsChart.destroy();
-            }
+            if (topDebtorsChart) topDebtorsChart.destroy();
             const topDebtors = [...condominioData].filter(p => (p['Deuda Restante'] || 0) > 0.01).sort((a, b) => b['Deuda Restante'] - a['Deuda Restante']).slice(0, 5);
             topDebtorsChart = new Chart(document.getElementById('topDebtorsChart').getContext('2d'), { 
                 type: 'bar', 
-                data: { 
-                    labels: topDebtors.map(d => `Casa ${d.Casa}`), 
-                    datasets: [{ 
-                        label: 'Deuda ($)', 
-                        data: topDebtors.map(d => d['Deuda Restante']), 
-                        backgroundColor: '#38bdf8', 
-                        borderRadius: 6 
-                    }] 
-                }, 
-                options: { 
-                    indexAxis: 'y', 
-                    responsive: true, 
-                    maintainAspectRatio: false, 
-                    plugins: { legend: { display: false } } 
-                } 
+                data: { labels: topDebtors.map(d => `Casa ${d.Casa}`), datasets: [{ label: 'Deuda ($)', data: topDebtors.map(d => d['Deuda Restante']), backgroundColor: '#38bdf8', borderRadius: 6 }] }, 
+                options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } 
             });
         }
 
@@ -510,27 +487,42 @@
             const p = condominioData.find(prop => prop.id === propertyId);
             if (!p) return;
             document.getElementById('debtModal-subtitle').textContent = `Casa ${p.Casa} - ${p.Propietario}`;
-            let html = `<li class="flex justify-between"><span>Deuda Anterior</span><span class="font-medium">$${(p['Deuda Anterior']||0).toFixed(2)}</span></li>`;
-            if((p['Cuota con Recargo'] || 0) > 0) html += `<li class="flex justify-between text-red-600"><span>Recargo por Mora</span><span class="font-medium">$${(p['Cuota con Recargo']||0).toFixed(2)}</span></li>`;
-            html += `<li class="flex justify-between"><span>Cargos del Mes (Cuota Base)</span><span class="font-medium">$${(p['Cuota Base Mes']||0).toFixed(2)}</span></li>`;
-            if((p['Monto Descuento'] || 0) > 0) html += `<li class="flex justify-between text-green-600"><span>Descuento Pronto Pago</span><span class="font-medium">-$${(p['Monto Descuento']||0).toFixed(2)}</span></li>`;
-            html += `<li class="flex justify-between border-t mt-2 pt-2"><span>Pagado este Mes</span><span class="font-medium">-$${(p['Total Pagado']||0).toFixed(2)}</span></li>`;
+
+            let html = `<li class="flex justify-between"><span>Deuda Anterior</span><span class="font-medium">$${(p['Deuda Anterior'] || 0).toFixed(2)}</span></li>`;
+            html += `<li class="flex justify-between"><span>Cargos Comunes del Mes</span><span class="font-medium">$${(p['Cuota Base Mes'] || 0).toFixed(2)}</span></li>`;
+            
+            const recargoAplicado = p['Recargo Aplicado'] || 0;
+            if (recargoAplicado > 0) {
+                html += `<li class="flex justify-between text-red-600"><span>Recargo Aplicado</span><span class="font-medium">$${recargoAplicado.toFixed(2)}</span></li>`;
+            }
+            const gastosEspeciales = p['Total Gastos Especiales del Mes'] || 0;
+            if (gastosEspeciales > 0) {
+                 html += `<li class="flex justify-between"><span>Total Gastos Especiales</span><span class="font-medium">$${gastosEspeciales.toFixed(2)}</span></li>`;
+            }
+
+            html += `<li class="flex justify-between border-t mt-2 pt-2"><span>Pagado este Mes</span><span class="font-medium">-$${(p['Total Pagado'] || 0).toFixed(2)}</span></li>`;
             
             document.getElementById('debtModal-list').innerHTML = html;
-            document.getElementById('debtModal-total').textContent = `$${(p['Deuda Restante']||0).toFixed(2)}`;
+            document.getElementById('debtModal-total').textContent = `$${(p['Deuda Restante'] || 0).toFixed(2)}`;
             showModal(document.getElementById('debtModal'));
         }
         
         function showReminderModal(propertyId) {
             const property = condominioData.find(p => p.id === propertyId);
             if (!property) return;
+            currentPropertyIdForAction = property.id;
             const contentEl = document.getElementById('reminder-message-content');
             const fechaActualStr = new Date().toLocaleDateString('es-VE');
-            let discountMessage = '';
-            if ((property['Monto Descuento'] || 0) > 0) {
-                discountMessage = `\n\n⚠️ ¡Aprovecha! Tienes hasta el día 10 para pagar con un descuento de $${property['Monto Descuento'].toFixed(2)}.`;
-            }
-            const message = `*Asunto: Recordatorio de Saldo Pendiente*\n\n📅 _Mensaje generado el ${fechaActualStr}_.\n\nEstimado/a *${property.Propietario}*,\n\nLe contactamos para informarle que su propiedad presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: $${(property['Deuda Restante'] || 0).toFixed(2)}*${discountMessage}\n\nAgradecemos su pronta gestión.\n\nPara más información, visite nuestro portal:\nhttps://villalosapamates.netlify.app\n\n*Nota:* Pagos en Bs. se calculan a la tasa oficial del BCV del día.`;
+            
+            const message = `*Asunto: Recordatorio de Saldo Pendiente*\n\n` +
+                          `📅 _Mensaje generado el ${fechaActualStr}_.\n\n` +
+                          `Estimado/a *${property.Propietario}*,\n\n` +
+                          `Le contactamos para informarle que su propiedad, *Casa ${property.Casa}*, presenta un saldo pendiente de:\n\n` +
+                          `*TOTAL A PAGAR: $${(property['Deuda Restante'] || 0).toFixed(2)}*\n\n` +
+                          `Agradecemos su pronta gestión.\n\n` +
+                          `Para más información, visite nuestro portal:\nhttps://villalosapamates.netlify.app\n\n` +
+                          `*Nota:* Pagos en Bs. se calculan a la tasa oficial del BCV del día.`;
+
             contentEl.textContent = message;
             showModal(document.getElementById('reminderModal'));
         }
@@ -589,7 +581,7 @@
                     showDebtModal(id);
                 } else if (target.classList.contains('send-reminder-btn')) {
                     showReminderModal(id);
-                } else if (target.classList.contains('register-payment-btn') || target.querySelector('.bi-cash-stack')) {
+                } else if (target.classList.contains('register-payment-btn')) {
                     showPaymentModal(id);
                 }
             });
@@ -609,22 +601,24 @@
                         const amount = parseFloat(button.dataset.amount);
                         
                         if (ownerId && amount > 0) {
-                             await createAirtableRecord(AIRTABLE_TABLE_PAGOS, {
-                                'Monto Pagado': amount,
-                                'Fecha de Pago': new Date().toISOString().slice(0, 10),
-                                'Propietario que Paga': [ownerId]
-                            });
+                             await createAirtableRecords(AIRTABLE_TABLE_PAGOS, [{
+                                fields: {
+                                    'Monto Pagado': amount,
+                                    'Fecha de Pago': getCaracasDateString(),
+                                    'Propietario que Paga': [ownerId]
+                                }
+                            }]);
 
                             await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`, {
                                 method: 'PATCH', body: JSON.stringify({ fields: { 'Estado': 'Confirmado' } })
                             });
 
-                            showToast('✅ Pago confirmado. Se reflejará en el próximo ciclo.');
+                            showToast('✅ Pago confirmado.');
                         } else {
-                           throw new Error("No se pudo encontrar al propietario o el monto era inválido.");
+                           throw new Error("Propietario o monto inválido.");
                         }
                     } else {
-                        if (!confirm('¿Estás seguro de que deseas rechazar este pago?')) {
+                        if (!confirm('¿Rechazar este pago?')) {
                             button.disabled = false;
                             button.innerHTML = 'Rechazar';
                             return;
@@ -632,7 +626,7 @@
                         await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`, {
                             method: 'PATCH', body: JSON.stringify({ fields: { 'Estado': 'Rechazado' } })
                         });
-                        showToast('✔️ Pago rechazado con éxito.');
+                        showToast('✔️ Pago rechazado.');
                     }
                     
                     clearPropietariosCache();
@@ -677,13 +671,15 @@
                 button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
                 
                 try {
-                    await createAirtableRecord(AIRTABLE_TABLE_PAGOS, {
-                        'Monto Pagado': paymentAmount, 
-                        'Fecha de Pago': new Date().toISOString().slice(0, 10), 
-                        'Propietario que Paga': [owner.id]
-                    });
+                    await createAirtableRecords(AIRTABLE_TABLE_PAGOS, [{
+                        fields: {
+                            'Monto Pagado': paymentAmount, 
+                            'Fecha de Pago': getCaracasDateString(),
+                            'Propietario que Paga': [owner.id]
+                        }
+                    }]);
 
-                    showToast('✅ Pago registrado. Se reflejará en el próximo ciclo.');
+                    showToast('✅ Pago registrado.');
                     clearPropietariosCache();
                     hideModal(document.getElementById('paymentModal'));
                     setTimeout(initApp, 1500);
@@ -718,45 +714,41 @@
                 
                 morosos.forEach(p => {
                     if (p.Telefono) {
-                        currentPropertyIdForAction = p.id; 
-                        showReminderModal(p.id); 
-                        const msg = document.getElementById('reminder-message-content').textContent;
-                        window.open(`https://api.whatsapp.com/send?phone=${p.Telefono.replace(/\s/g, '')}&text=${encodeURIComponent(msg)}`, '_blank');
+                         const fechaActualStr = new Date().toLocaleDateString('es-VE');
+                         const message = `*Asunto: Recordatorio de Saldo Pendiente*\n\n` +
+                                       `📅 _Mensaje generado el ${fechaActualStr}_.\n\n` +
+                                       `Estimado/a *${p.Propietario}*,\n\n` +
+                                       `Le contactamos para informarle que su propiedad, *Casa ${p.Casa}*, presenta un saldo pendiente de:\n\n` +
+                                       `*TOTAL A PAGAR: $${(p['Deuda Restante'] || 0).toFixed(2)}*\n\n` +
+                                       `Agradecemos su pronta gestión.`;
+                        window.open(`https://api.whatsapp.com/send?phone=${p.Telefono.replace(/\s/g, '')}&text=${encodeURIComponent(message)}`, '_blank');
                     }
                 });
-                hideModal(document.getElementById('reminderModal'));
                 showToast('Se han abierto las ventanas de WhatsApp para los recordatorios.');
             });
 
             document.getElementById('update-monthly-charges-btn').addEventListener('click', async (e) => {
-                if (!confirm('¿Estás seguro de que deseas hacer el CORTE DE MES? Esta acción guardará la deuda actual como "Deuda Anterior". Esta acción no se puede deshacer.')) return;
+                if (!confirm('¿Estás seguro de que deseas hacer el CORTE DE MES?')) return;
                 
                 const button = e.currentTarget;
                 button.disabled = true;
                 button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
                 
                 try {
-                    const updates = [];
-                    for (const owner of condominioData) {
-                        updates.push({
-                            id: owner.id,
-                            fields: {
-                                'Deuda Anterior': owner['Deuda Restante'] || 0
-                            }
-                        });
-                    }
+                    const updates = condominioData.map(owner => ({
+                        id: owner.id,
+                        fields: { 'Deuda Anterior': owner['Deuda Restante'] || 0 }
+                    }));
                     
                     for (let i = 0; i < updates.length; i += 10) {
-                        const chunk = updates.slice(i, i + 10);
                         await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PROPIETARIOS)}`, {
                             method: 'PATCH',
-                            body: JSON.stringify({ records: chunk })
+                            body: JSON.stringify({ records: updates.slice(i, i + 10) })
                         });
                     }
 
                     showToast('✅ ¡Corte de mes realizado con éxito!');
-                    
-                    alert("Paso 1 completado. Ahora, como acordamos, ve a tu tabla 'Pagos' en Airtable y elimina los registros del mes anterior para reiniciar el contador de pagos.");
+                    alert("Paso de corte completado. Ahora, archiva los pagos y gastos del mes anterior en Airtable.");
 
                     clearPropietariosCache();
                     await initApp();
@@ -769,38 +761,64 @@
                 }
             });
             
+            // --- FUNCIÓN 3: LÓGICA DE GASTOS CORREGIDA Y FINAL ---
             document.getElementById('add-expense-form').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const concept = document.getElementById('expense-concept').value.trim();
                 const amount = parseFloat(document.getElementById('expense-amount').value);
                 const type = document.getElementById('expense-type').value;
                 const frequency = document.getElementById('expense-frequency').value;
-                const selectedOwners = Array.from(document.querySelectorAll('#expense-owners-list input:checked')).map(input => input.value);
-                if (!concept || isNaN(amount) || amount <= 0 || selectedOwners.length === 0) {
-                    showToast('Por favor, completa todos los campos correctamente.', true);
-                    return;
-                }
+
                 const button = e.currentTarget.querySelector('button[type="submit"]');
                 button.disabled = true;
                 button.innerHTML = '<div class="spinner mx-auto" style="width: 20px; height: 20px; border-width: 2px;"></div>';
+
                 try {
-                    await createAirtableRecord(AIRTABLE_TABLE_GASTOS, {
-                        Concepto: concept,
-                        Monto: amount,
-                        'Tipo de Gasto': type,
-                        Frecuencia: frequency,
-                        Propietarios: selectedOwners
-                    });
-                    showToast('Gasto registrado correctamente.');
+                    if (type === 'Gasto Especial') {
+                        const selectedOwnersIds = Array.from(document.querySelectorAll('#expense-owners-list input:checked')).map(input => input.value);
+                        if (!concept || isNaN(amount) || amount <= 0 || selectedOwnersIds.length === 0) {
+                            throw new Error("Para Gasto Especial, complete todos los campos y seleccione propietarios.");
+                        }
+
+                        const amountPerOwner = amount / selectedOwnersIds.length;
+
+                        const newRecords = selectedOwnersIds.map(ownerId => {
+                            return {
+                                fields: {
+                                    'Concepto': `${concept} (Cargo Individual)`,
+                                    'Monto': amountPerOwner,
+                                    'Tipo de Gasto': type,
+                                    'Frecuencia': frequency,
+                                    'Propietarios': [ownerId]
+                                }
+                            };
+                        });
+                        
+                        for (let i = 0; i < newRecords.length; i += 10) {
+                            await createAirtableRecords('Gastos del Mes', newRecords.slice(i, i + 10));
+                        }
+                        
+                        showToast('✅ Gasto Especial procesado. Se crearon cargos individuales.');
+
+                    } else { // Lógica para Gasto Común
+                        const selectedOwners = Array.from(document.querySelectorAll('#expense-owners-list input:checked')).map(input => input.value);
+                        await createAirtableRecords('Gastos del Mes', [{
+                            fields: {
+                                Concepto: concept, Monto: amount, 'Tipo de Gasto': type,
+                                Frecuencia: frequency, Propietarios: selectedOwners
+                            }
+                        }]);
+                        showToast('Gasto Común registrado.');
+                    }
+                    
                     document.getElementById('add-expense-form').reset();
                     document.querySelectorAll('#expense-owners-list input').forEach(input => input.checked = true);
-                    await loadGastos(); 
-                    populateExpensesTable(gastosDelMes);
                     
                     clearPropietariosCache();
-                    setTimeout(initApp, 500);
+                    setTimeout(initApp, 1500);
+
                 } catch (error) {
-                    showToast(`Error al registrar gasto: ${error.message}`, true);
+                    showToast(`Error: ${error.message}`, true);
                 } finally {
                     button.disabled = false;
                     button.textContent = 'Añadir Gasto';

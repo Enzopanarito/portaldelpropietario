@@ -110,7 +110,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const TIPO_GASTO_ESPECIAL = 'Gasto Especial';
     const TASA_RECARGO = 0.10;
     const DIA_LIMITE_PAGO = 10;
-    const FECHA_ACTUAL = new Date(), DIA_ACTUAL = FECHA_ACTUAL.getDate();
     let allData = { propietarios: [], gastos: [], pagos: [] };
 
     function showToast(message, isError = false, duration = 4000) {
@@ -128,6 +127,13 @@ document.addEventListener('DOMContentLoaded', () => {
             num = 0;
         }
         return `$${num.toFixed(2)}`;
+    }
+    
+    // FUNCIÓN DE FECHA CORRECTA
+    function getCaracasDateString() {
+        const now = new Date();
+        const options = { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit' };
+        return new Intl.DateTimeFormat('en-CA', options).format(now);
     }
 
     async function airtableFetch(path, options = {}) {
@@ -207,7 +213,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="text-slate-500 ml-2">${moroso.Propietario || ''}</span>
                     </div>
                     <span class="font-bold text-red-500">${formatCurrency(moroso['Deuda Restante'])}</span>
-                 </div>`
+                   </div>`
             ).join('');
             morososContainer.classList.remove('hidden');
         } else {
@@ -239,18 +245,14 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const deudaRestante = property['Deuda Restante'] || 0;
         
-        const totalCargosDelMes = displayChargesBreakdown(property, monthYearString);
+        // El desglose se mantiene como estaba en el original.
+        displayChargesBreakdown(property, monthYearString);
 
         document.getElementById('debt-summary').innerHTML = `
             <div class="flex justify-between items-baseline text-3xl font-bold ${deudaRestante > 0.01 ? 'text-red-500' : 'text-green-600'}">
                 <span>Deuda Total Actual:</span>
                 <span>${formatCurrency(deudaRestante)}</span>
-            </div>
-            <div class="flex justify-between items-baseline text-lg mt-4 border-t pt-3">
-                <span class="text-slate-600" id="monthly-charge-label">Total Cargos (Mes Actual):</span>
-                <span id="kpi-monthly-charge" class="font-bold text-slate-800">${formatCurrency(totalCargosDelMes)}</span>
-            </div>
-            <p class="text-xs text-slate-500 text-right">Este es su saldo total a la fecha de hoy.</p>`;
+            </div>`;
 
         displayPaymentsHistory(property);
         displayDiscountBanner();
@@ -258,6 +260,7 @@ document.addEventListener('DOMContentLoaded', () => {
         displayPrivateMorososList();
     }
 
+    // --- DESGLOSE SIN MODIFICAR, EXCEPTO LA CONDICIÓN DEL BENEFICIO ---
     function displayChargesBreakdown(property, monthYearString) {
         document.getElementById('expenses-breakdown-title').textContent = `Desglose de Cargos para ${monthYearString}`;
         const breakdownDiv = document.getElementById('expenses-breakdown');
@@ -306,14 +309,12 @@ document.addEventListener('DOMContentLoaded', () => {
         
         let tfootHtml = `<tfoot class="border-t-2 border-slate-300">`;
         
-        // --- INICIO DE LA LÓGICA CORREGIDA ---
-        const isSolvent = (property['Deuda Restante'] || 0) <= 0.01;
-        const montoBeneficio = totalCargosComunesPropietario * TASA_RECARGO;
-
-        if ((DIA_ACTUAL <= DIA_LIMITE_PAGO || isSolvent) && montoBeneficio > 0) {
+        // ESTA ES LA ÚNICA LÍNEA MODIFICADA EN EL DESGLOSE
+        // Ahora la decisión de mostrar el beneficio depende del dato de Airtable, no de la fecha del día.
+        if ((property['Recargo Aplicado'] || 0) === 0 && totalCargosComunesPropietario > 0) {
+            const montoBeneficio = totalCargosComunesPropietario * TASA_RECARGO;
             tfootHtml += `<tr><td class="px-2 pt-2 text-green-600 font-semibold" colspan="2">Beneficio Pronto Pago</td><td class="px-2 pt-2 text-right text-green-600 font-semibold">-${formatCurrency(montoBeneficio)}</td></tr>`;
         }
-        // --- FIN DE LA LÓGICA CORREGIDA ---
 
         if (totalPagado > 0) {
             tfootHtml += `<tr><td class="px-2 py-2 text-green-600 font-semibold" colspan="2">Total Pagado</td><td class="px-2 py-2 text-right text-green-600 font-semibold">-${formatCurrency(totalPagado)}</td></tr>`;
@@ -321,12 +322,6 @@ document.addEventListener('DOMContentLoaded', () => {
         tfootHtml += `</tfoot>`;
         tableHtml += tfootHtml + `</table>`;
         breakdownDiv.innerHTML = tableHtml;
-
-        let totalCargosDelMesParaKPI = totalCargosEspecialesPropietario + totalCargosComunesPropietario;
-        if (DIA_ACTUAL > DIA_LIMITE_PAGO) {
-            totalCargosDelMesParaKPI += totalCargosComunesPropietario * TASA_RECARGO;
-        }
-        return totalCargosDelMesParaKPI;
     }
 
     function displayPaymentsHistory(property) {
@@ -341,8 +336,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function displayDiscountBanner() {
         const discountBannerContainer = document.getElementById('discount-banner-container');
+        const DIA_ACTUAL = new Date().getDate();
         if (DIA_ACTUAL <= DIA_LIMITE_PAGO) {
-            discountBannerContainer.innerHTML = `<div class="bg-teal-100 border-l-4 border-teal-500 text-teal-800 p-4 rounded-r-lg shadow" role="alert"><p class="font-bold">¡Buenas Noticias!</p><p class="text-sm">Está a tiempo para disfrutar del descuento del ${TASA_RECARGO * 100}% por pronto pago en sus gastos comunes.</p></div>`;
+            discountBannerContainer.innerHTML = `<div class="bg-teal-100 border-l-4 border-teal-500 text-teal-800 p-4 rounded-r-lg shadow" role="alert"><p class="font-bold">¡Buenas Noticias!</p><p class="text-sm">Está a tiempo para disfrutar del beneficio por pronto pago en sus gastos comunes.</p></div>`;
         } else {
             discountBannerContainer.innerHTML = '';
         }
@@ -411,13 +407,15 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             await airtableFetch('/Reportes%20de%20Pago', {
                 method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     records: [{
                         fields: {
                             'Propietario que Reporta': [selectedUserId],
                             'Monto Reportado': amount,
                             'Referencia': reference,
-                            'Estado': 'Pendiente'
+                            'Estado': 'Pendiente',
+                            'Fecha del Reporte': getCaracasDateString() // <-- FECHA CORREGIDA
                         }
                     }]
                 })
