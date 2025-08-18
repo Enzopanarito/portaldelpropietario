@@ -61,13 +61,13 @@
 
     <div id="welcome-theme-toggle-container" class="absolute top-4 right-4 z-10">
         <button id="theme-toggle-welcome" type="button" class="flex items-center text-slate-500 hover:bg-slate-200 focus:outline-none focus:ring-4 focus:ring-slate-200 rounded-lg text-sm p-2.5">
-            <span class="inline-flex items-center">
-                <span id="theme-toggle-moon-icon-welcome" class="hidden text-xl" aria-hidden="true">🌙</span>
-                <span id="theme-toggle-dark-text-welcome" class="hidden ml-2 font-semibold">Oscuro</span>
+            <span id="dark-theme-group-welcome" class="hidden items-center">
+                <span class="text-xl" aria-hidden="true">🌙</span>
+                <span class="ml-2 font-semibold hidden sm:inline">Oscuro</span>
             </span>
-            <span class="inline-flex items-center">
-                <span id="theme-toggle-sun-icon-welcome" class="hidden text-xl" aria-hidden="true">☀️</span>
-                <span id="theme-toggle-light-text-welcome" class="hidden ml-2 font-semibold">Claro</span>
+            <span id="light-theme-group-welcome" class="hidden items-center">
+                <span class="text-xl" aria-hidden="true">☀️</span>
+                <span class="ml-2 font-semibold hidden sm:inline">Claro</span>
             </span>
         </button>
     </div>
@@ -107,13 +107,13 @@
                 <div class="flex items-center gap-4">
                     <select id="userSelector" class="bg-slate-100 border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-sky-500 focus:border-sky-500 block w-full p-2.5"></select>
                     <button id="theme-toggle-main" type="button" class="flex items-center text-slate-500 hover:bg-slate-200 focus:outline-none focus:ring-4 focus:ring-slate-200 rounded-lg text-sm p-2.5">
-                        <span class="inline-flex items-center">
-                            <span id="theme-toggle-moon-icon-main" class="hidden text-xl" aria-hidden="true">🌙</span>
-                            <span id="theme-toggle-dark-text-main" class="hidden ml-2 font-semibold">Oscuro</span>
+                        <span id="dark-theme-group-main" class="hidden items-center">
+                            <span class="text-xl" aria-hidden="true">🌙</span>
+                            <span class="ml-2 font-semibold hidden sm:inline">Oscuro</span>
                         </span>
-                        <span class="inline-flex items-center">
-                            <span id="theme-toggle-sun-icon-main" class="hidden text-xl" aria-hidden="true">☀️</span>
-                            <span id="theme-toggle-light-text-main" class="hidden ml-2 font-semibold">Claro</span>
+                        <span id="light-theme-group-main" class="hidden items-center">
+                            <span class="text-xl" aria-hidden="true">☀️</span>
+                            <span class="ml-2 font-semibold hidden sm:inline">Claro</span>
                         </span>
                     </button>
                 </div>
@@ -520,40 +520,27 @@
                 document.getElementById('theme-toggle-welcome'),
                 document.getElementById('theme-toggle-main')
             ];
-            const sunIcons = [
-                document.getElementById('theme-toggle-sun-icon-welcome'),
-                document.getElementById('theme-toggle-sun-icon-main')
+            const lightThemeGroups = [
+                document.getElementById('light-theme-group-welcome'),
+                document.getElementById('light-theme-group-main')
             ];
-            const moonIcons = [
-                document.getElementById('theme-toggle-moon-icon-welcome'),
-                document.getElementById('theme-toggle-moon-icon-main')
-            ];
-            const lightTexts = [
-                document.getElementById('theme-toggle-light-text-welcome'),
-                document.getElementById('theme-toggle-light-text-main')
-            ];
-            const darkTexts = [
-                document.getElementById('theme-toggle-dark-text-welcome'),
-                document.getElementById('theme-toggle-dark-text-main')
+            const darkThemeGroups = [
+                document.getElementById('dark-theme-group-welcome'),
+                document.getElementById('dark-theme-group-main')
             ];
 
             const applyTheme = (theme) => {
                 if (theme === 'dark') {
                     document.documentElement.classList.add('dark');
-                    sunIcons.forEach(el => { if(el) el.classList.add('hidden'); });
-                    lightTexts.forEach(el => { if(el) el.classList.add('hidden'); });
-                    moonIcons.forEach(el => { if(el) el.classList.remove('hidden'); });
-                    darkTexts.forEach(el => { if(el) el.classList.remove('hidden'); });
+                    lightThemeGroups.forEach(el => el.classList.add('hidden'));
+                    darkThemeGroups.forEach(el => el.classList.remove('hidden'));
                 } else {
                     document.documentElement.classList.remove('dark');
-                    sunIcons.forEach(el => { if(el) el.classList.remove('hidden'); });
-                    lightTexts.forEach(el => { if(el) el.classList.remove('hidden'); });
-                    moonIcons.forEach(el => { if(el) el.classList.add('hidden'); });
-                    darkTexts.forEach(el => { if(el) el.classList.add('hidden'); });
+                    lightThemeGroups.forEach(el => el.classList.remove('hidden'));
+                    darkThemeGroups.forEach(el => el.classList.add('hidden'));
                 }
             };
 
-            // MODIFICADO: El tema claro es el predeterminado
             const initialTheme = localStorage.getItem('theme') || 'light';
             applyTheme(initialTheme);
             
