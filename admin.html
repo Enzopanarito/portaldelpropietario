@@ -353,17 +353,28 @@
             const loadingSpinner = document.createElement('div');
             loadingSpinner.innerHTML = '<div class="fixed inset-0 bg-white bg-opacity-75 flex items-center justify-center z-50"><div class="spinner"></div></div>';
             document.body.appendChild(loadingSpinner);
+            
+            // =================================================================
+            // =============== INICIO DEL BLOQUE CORREGIDO ===============
+            // =================================================================
             try {
-                await Promise.all([
+                // 1. Esperamos a que TODAS las peticiones terminen y guardamos los reportes en una variable.
+                const [_, __, reportes] = await Promise.all([
                     loadPropietarios(),
                     loadGastos(),
-                    loadReportes().then(populateReportedPayments)
+                    loadReportes()
                 ]);
+
+                // 2. Ahora que GARANTIZAMOS que todo ha cargado (incluyendo los propietarios)...
                 condominioData.sort((a, b) => (a.Casa || 0) - (b.Casa || 0));
                 updateDashboard();
                 populateTable(condominioData);
                 populateExpensesTable(gastosDelMes);
                 populateOwnerSelectorInExpenseForm();
+
+                // 3. ...Llamamos a la función para mostrar los pagos, pasándole los reportes que ya cargamos.
+                populateReportedPayments(reportes);
+
             } catch (error) {
                 console.error("Error fatal inicializando la app:", error);
                 alert(`Hubo un error crítico al cargar los datos: ${error.message}\n\nPor favor, revisa la consola para más detalles.`);
@@ -372,6 +383,9 @@
                     document.body.removeChild(loadingSpinner);
                 }
             }
+            // ===============================================================
+            // =============== FIN DEL BLOQUE CORREGIDO ===============
+            // ===============================================================
         }
         
         function updateDashboard() {
@@ -515,13 +529,13 @@
             const fechaActualStr = new Date().toLocaleDateString('es-VE');
             
             const message = `*Asunto: Recordatorio de Saldo Pendiente*\n\n` +
-                          `📅 _Mensaje generado el ${fechaActualStr}_.\n\n` +
-                          `Estimado/a *${property.Propietario}*,\n\n` +
-                          `Le contactamos para informarle que su propiedad, *Casa ${property.Casa}*, presenta un saldo pendiente de:\n\n` +
-                          `*TOTAL A PAGAR: $${(property['Deuda Restante'] || 0).toFixed(2)}*\n\n` +
-                          `Agradecemos su pronta gestión.\n\n` +
-                          `Para más información, visite nuestro portal:\nhttps://villalosapamates.netlify.app\n\n` +
-                          `*Nota:* Pagos en Bs. se calculan a la tasa oficial del BCV del día.`;
+                              `📅 _Mensaje generado el ${fechaActualStr}_.\n\n` +
+                              `Estimado/a *${property.Propietario}*,\n\n` +
+                              `Le contactamos para informarle que su propiedad, *Casa ${property.Casa}*, presenta un saldo pendiente de:\n\n` +
+                              `*TOTAL A PAGAR: $${(property['Deuda Restante'] || 0).toFixed(2)}*\n\n` +
+                              `Agradecemos su pronta gestión.\n\n` +
+                              `Para más información, visite nuestro portal:\nhttps://villalosapamates.netlify.app\n\n` +
+                              `*Nota:* Pagos en Bs. se calculan a la tasa oficial del BCV del día.`;
 
             contentEl.textContent = message;
             showModal(document.getElementById('reminderModal'));
@@ -602,12 +616,12 @@
                         
                         if (ownerId && amount > 0) {
                              await createAirtableRecords(AIRTABLE_TABLE_PAGOS, [{
-                                fields: {
-                                    'Monto Pagado': amount,
-                                    'Fecha de Pago': getCaracasDateString(),
-                                    'Propietario que Paga': [ownerId]
-                                }
-                            }]);
+                                 fields: {
+                                     'Monto Pagado': amount,
+                                     'Fecha de Pago': getCaracasDateString(),
+                                     'Propietario que Paga': [ownerId]
+                                 }
+                             }]);
 
                             await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`, {
                                 method: 'PATCH', body: JSON.stringify({ fields: { 'Estado': 'Confirmado' } })
