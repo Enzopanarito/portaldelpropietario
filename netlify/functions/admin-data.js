@@ -1,15 +1,16 @@
 // netlify/functions/admin-data.js
 // Endpoint admin optimizado y robusto.
 // Carga todo lo necesario para el panel en una sola llamada del navegador.
-// Importante: usa no-store para evitar que pagos rechazados/confirmados sigan apareciendo por cache del navegador.
+// Registra llamadas reales a Airtable para el contador interno del admin.
 
 let adminCache = null;
-const ADMIN_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutos, solo cache interna del servidor cuando no se fuerza actualización.
+const ADMIN_CACHE_TTL_MS = 2 * 60 * 1000;
 
 const TABLES = {
   propietarios: 'Propietarios',
   gastos: 'Gastos del Mes',
-  reportes: 'Reportes de Pago'
+  reportes: 'Reportes de Pago',
+  usage: 'ControlVersiones'
 };
 
 const NO_STORE_HEADERS = {
@@ -20,8 +21,27 @@ const NO_STORE_HEADERS = {
   'Surrogate-Control': 'no-store'
 };
 
+function currentMonthCaracas() {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit' }).formatToParts(new Date());
+  return parts.find(p => p.type === 'year').value + '-' + parts.find(p => p.type === 'month').value;
+}
+
 function buildUrl(baseId, tableName, query) {
   return 'https://api.airtable.com/v0/' + baseId + '/' + encodeURIComponent(tableName) + (query || '');
+}
+
+async function recordApiUsage(source, calls, token, baseId) {
+  if (!calls || calls < 1) return;
+  const key = 'API_USAGE|' + currentMonthCaracas() + '|' + source + '|' + Date.now() + '|' + Math.random().toString(36).slice(2, 8);
+  try {
+    await fetch(buildUrl(baseId, TABLES.usage), {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ records: [{ fields: { Key: key, Version: calls + 1 } }], typecast: true })
+    });
+  } catch (error) {
+    console.warn('No se pudo registrar contador API.', error.message);
+  }
 }
 
 function getAirtableError(data, tableName) {
@@ -30,7 +50,7 @@ function getAirtableError(data, tableName) {
   return 'Error cargando ' + tableName;
 }
 
-async function airtableGetAll(tableName, query, token, baseId) {
+async function airtableGetAll(tableName, query, token, baseId, counter) {
   var records = [];
   var offset = null;
   var safeQuery = query || '';
@@ -38,15 +58,10 @@ async function airtableGetAll(tableName, query, token, baseId) {
   do {
     var separator = safeQuery ? '&' : '?';
     var url = buildUrl(baseId, tableName, safeQuery + (offset ? separator + 'offset=' + encodeURIComponent(offset) : ''));
-    var response = await fetch(url, {
-      headers: { Authorization: 'Bearer ' + token }
-    });
-
+    counter.calls += 1;
+    var response = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
     var data = await response.json();
-    if (!response.ok) {
-      throw new Error(getAirtableError(data, tableName));
-    }
-
+    if (!response.ok) throw new Error(getAirtableError(data, tableName));
     records = records.concat(data.records || []);
     offset = data.offset;
   } while (offset);
@@ -54,12 +69,12 @@ async function airtableGetAll(tableName, query, token, baseId) {
   return records;
 }
 
-async function airtableGetAllWithFallback(tableName, preferredQuery, token, baseId) {
+async function airtableGetAllWithFallback(tableName, preferredQuery, token, baseId, counter) {
   try {
-    return await airtableGetAll(tableName, preferredQuery, token, baseId);
+    return await airtableGetAll(tableName, preferredQuery, token, baseId, counter);
   } catch (error) {
     console.warn('Fallo la vista preferida para ' + tableName + '. Cargando tabla completa.', error.message);
-    return await airtableGetAll(tableName, '', token, baseId);
+    return await airtableGetAll(tableName, '', token, baseId, counter);
   }
 }
 
@@ -75,66 +90,38 @@ exports.handler = async function(event) {
   var AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
 
   if (!AIRTABLE_API_TOKEN || !AIRTABLE_BASE_ID) {
-    return {
-      statusCode: 500,
-      headers: NO_STORE_HEADERS,
-      body: JSON.stringify({ message: 'Airtable no está configurado.' })
-    };
+    return { statusCode: 500, headers: NO_STORE_HEADERS, body: JSON.stringify({ message: 'Airtable no está configurado.' }) };
   }
 
   var params = event.queryStringParameters || {};
   var force = params.force === '1';
 
   if (!force && adminCache && adminCache.expiresAt > Date.now()) {
-    return {
-      statusCode: 200,
-      headers: Object.assign({}, NO_STORE_HEADERS, { 'X-Cache': 'HIT' }),
-      body: JSON.stringify(adminCache.payload)
-    };
+    return { statusCode: 200, headers: Object.assign({}, NO_STORE_HEADERS, { 'X-Cache': 'HIT', 'X-Airtable-Calls': '0' }), body: JSON.stringify(adminCache.payload) };
   }
 
-  try {
-    var propietarios = await airtableGetAll(TABLES.propietarios, '', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID);
-    var gastos = await airtableGetAllWithFallback(TABLES.gastos, '?view=Gastos%20Mensuales', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID);
+  var counter = { calls: 0 };
 
-    // Intento principal: traer solo pendientes desde Airtable.
-    // Si Airtable rechaza la fórmula por cualquier cambio de campo/vista, se carga la tabla completa y se filtra en servidor.
-    var reportes = await airtableGetAllWithFallback(
-      TABLES.reportes,
-      '?filterByFormula=' + encodeURIComponent("{Estado}='Pendiente'"),
-      AIRTABLE_API_TOKEN,
-      AIRTABLE_BASE_ID
-    );
+  try {
+    var propietarios = await airtableGetAll(TABLES.propietarios, '', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
+    var gastos = await airtableGetAllWithFallback(TABLES.gastos, '?view=Gastos%20Mensuales', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
+    var reportes = await airtableGetAllWithFallback(TABLES.reportes, '?filterByFormula=' + encodeURIComponent("{Estado}='Pendiente'"), AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
 
     reportes = onlyPendingReports(reportes);
 
     var payload = {
       generatedAt: new Date().toISOString(),
-      propietarios: propietarios
-        .map(function(r) { return Object.assign({ id: r.id }, r.fields || {}); })
-        .sort(function(a, b) { return (a.Casa || 0) - (b.Casa || 0); }),
+      propietarios: propietarios.map(function(r) { return Object.assign({ id: r.id }, r.fields || {}); }).sort(function(a, b) { return (a.Casa || 0) - (b.Casa || 0); }),
       gastos: gastos,
       reportes: reportes
     };
 
-    adminCache = {
-      payload: payload,
-      expiresAt: Date.now() + ADMIN_CACHE_TTL_MS
-    };
+    adminCache = { payload: payload, expiresAt: Date.now() + ADMIN_CACHE_TTL_MS };
+    await recordApiUsage('admin-data', counter.calls, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID);
 
-    return {
-      statusCode: 200,
-      headers: Object.assign({}, NO_STORE_HEADERS, { 'X-Cache': force ? 'BYPASS' : 'MISS' }),
-      body: JSON.stringify(payload)
-    };
+    return { statusCode: 200, headers: Object.assign({}, NO_STORE_HEADERS, { 'X-Cache': force ? 'BYPASS' : 'MISS', 'X-Airtable-Calls': String(counter.calls + 1) }), body: JSON.stringify(payload) };
   } catch (error) {
-    return {
-      statusCode: 500,
-      headers: NO_STORE_HEADERS,
-      body: JSON.stringify({
-        message: 'Error cargando datos administrativos.',
-        detail: error.message
-      })
-    };
+    await recordApiUsage('admin-data-error', counter.calls, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID);
+    return { statusCode: 500, headers: Object.assign({}, NO_STORE_HEADERS, { 'X-Airtable-Calls': String(counter.calls) }), body: JSON.stringify({ message: 'Error cargando datos administrativos.', detail: error.message }) };
   }
 };
