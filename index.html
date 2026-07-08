@@ -211,9 +211,15 @@
             const monthYearString = currentDate.toLocaleString('es-VE', { month: 'long', year: 'numeric' });
             const deudaRestante = property['Deuda Restante'] || 0;
             const totalCargosDelMes = (property['Cuota Base Mes'] || 0) + (property['Total Gastos Especiales del Mes'] || 0) + (property['Recargo Aplicado'] || 0);
+            const tieneSaldoAFavor = deudaRestante < -0.01;
+            const estaSolvente = Math.abs(deudaRestante) <= 0.01;
+            const resumenLabel = tieneSaldoAFavor ? 'Usted tiene un saldo a favor de:' : (estaSolvente ? 'Cuenta solvente:' : 'Deuda Total Actual:');
+            const resumenValor = tieneSaldoAFavor ? formatCurrency(Math.abs(deudaRestante)) : (estaSolvente ? '$0.00' : formatCurrency(deudaRestante));
+            const resumenClase = deudaRestante > 0.01 ? 'text-red-500' : 'text-green-600';
+            const resumenNota = tieneSaldoAFavor ? 'Este saldo a favor será tomado en cuenta automáticamente en sus próximos cargos.' : (estaSolvente ? 'No presenta deuda pendiente a la fecha de hoy.' : 'Este es su saldo total a la fecha de hoy.');
 
             document.getElementById('welcome-message').innerHTML = `<h2 class="text-3xl font-bold text-slate-900">Bienvenido, ${property.Propietario || ''}</h2><p class="text-lg text-slate-600">Este es el resumen de su estado de cuenta para la <span class="font-bold">Casa #${property.Casa}</span>.</p><p class="text-md text-slate-500 mt-2">Estado de Cuenta para: <span class="font-semibold">${dateString}</span></p>`;
-            document.getElementById('debt-summary').innerHTML = `<div class="flex justify-between items-baseline text-3xl font-bold ${deudaRestante > 0.01 ? 'text-red-500' : 'text-green-600'}"><span>Deuda Total Actual:</span><span>${formatCurrency(deudaRestante)}</span></div><div class="flex justify-between items-baseline text-lg mt-4 border-t pt-3"><span class="text-slate-600">Total Cargos (Mes Actual):</span><span class="font-bold text-slate-800">${formatCurrency(totalCargosDelMes)}</span></div><p class="text-xs text-slate-500 text-right">Este es su saldo total a la fecha de hoy.</p>`;
+            document.getElementById('debt-summary').innerHTML = `<div class="flex justify-between items-baseline text-3xl font-bold ${resumenClase}"><span>${resumenLabel}</span><span>${resumenValor}</span></div><div class="flex justify-between items-baseline text-lg mt-4 border-t pt-3"><span class="text-slate-600">Total Cargos (Mes Actual):</span><span class="font-bold text-slate-800">${formatCurrency(totalCargosDelMes)}</span></div><p class="text-xs text-slate-500 text-right">${resumenNota}</p>`;
 
             displayChargesBreakdown(property, monthYearString);
             displayPaymentsHistory(property);
