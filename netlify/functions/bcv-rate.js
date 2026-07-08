@@ -29,11 +29,24 @@ function getVenezuelaDateParts() {
 
 function parseNumber(value) {
   if (value === null || value === undefined) return null;
-  const normalized = String(value)
-    .replace(/[^0-9,.-]/g, '')
-    .replace(/\./g, '')
-    .replace(',', '.');
-  const num = Number(normalized);
+  if (typeof value === 'number') return Number.isFinite(value) && value > 0 ? value : null;
+
+  let raw = String(value).trim().replace(/[^0-9,.-]/g, '');
+  if (!raw) return null;
+
+  const hasComma = raw.includes(',');
+  const hasDot = raw.includes('.');
+
+  if (hasComma && hasDot) {
+    // Formato venezolano común: 123.456,78
+    raw = raw.replace(/\./g, '').replace(',', '.');
+  } else if (hasComma) {
+    // Formato: 123,45
+    raw = raw.replace(',', '.');
+  }
+  // Si solo tiene punto, se respeta como decimal: 123.45
+
+  const num = Number(raw);
   return Number.isFinite(num) && num > 0 ? num : null;
 }
 
