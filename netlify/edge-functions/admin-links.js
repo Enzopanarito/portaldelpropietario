@@ -4,17 +4,34 @@ export default async (request, context) => {
   if (!type.toLowerCase().includes('text/html')) return response;
 
   let html = await response.text();
-  const link = "<a href='/whatsapp.html' target='_self' class='bg-green-600 text-white px-4 py-2 rounded-full shadow font-semibold'>📲 WhatsApp</a>";
+  const whatsappLink = "<a href='/whatsapp.html' target='_self' class='bg-green-600 text-white px-4 py-2 rounded-full shadow font-semibold'>📲 WhatsApp</a>";
+  const securityLink = "<a href='/seguridad.html' target='_self' class='bg-amber-600 text-white px-4 py-2 rounded-full shadow font-semibold'>🔐 Seguridad</a>";
 
-  if (!html.includes('/whatsapp.html')) {
+  if (!html.includes('/whatsapp.html') || !html.includes('/seguridad.html')) {
     const auditSingle = "<a href='/auditoria.html' target='_blank' class='bg-indigo-600 text-white px-4 py-2 rounded-full shadow font-semibold'>📚 Auditoría</a>";
     const backupButton = "<button id='backup-btn' class='bg-slate-900 text-white px-4 py-2 rounded-full shadow font-semibold'>💾 Respaldo</button>";
-    if (html.includes(auditSingle)) html = html.replace(auditSingle, link + auditSingle);
-    else if (html.includes(backupButton)) html = html.replace(backupButton, link + backupButton);
-    else html = html.replace('</nav>', link + '</nav>');
+    const links = `${whatsappLink}${securityLink}`;
+    if (html.includes(auditSingle)) html = html.replace(auditSingle, links + auditSingle);
+    else if (html.includes(backupButton)) html = html.replace(backupButton, links + backupButton);
+    else html = html.replace('</nav>', links + '</nav>');
   }
 
   html = html.replace('renderAll();loadUsage();', 'renderAll();');
+
+  if (!html.includes('function safeSendReceipt(')) {
+    html = html.replace(
+      'function setupEvents(){',
+      `async function safeSendReceipt(payload){try{const r=await adminFetch('/.netlify/functions/send-receipt',{method:'POST',body:JSON.stringify(payload)});if(r&&r.email&&r.email.status==='Enviado')toast('Recibo enviado por correo.');else if(r&&r.email)toast('Recibo generado: '+r.email.status,false)}catch(e){console.warn('No se pudo generar recibo',e.message)}}\nfunction setupEvents(){`
+    );
+  }
+
+  const manualOld = "await adminFetch('/.netlify/functions/airtable/'+encodeURIComponent(TABLE_PAGOS),{method:'POST',body:JSON.stringify({records:[{fields}],typecast:true})});hidePay();toast('Pago registrado.');loadAll(true)";
+  const manualNew = "const payResp=await adminFetch('/.netlify/functions/airtable/'+encodeURIComponent(TABLE_PAGOS),{method:'POST',body:JSON.stringify({records:[{fields}],typecast:true})});const owner=owners.find(x=>x.id===currentOwnerId)||{};const paymentId=(payResp.records&&payResp.records[0]&&payResp.records[0].id)||'';await safeSendReceipt({ownerId:currentOwnerId,paymentId,ownerName:owner.Propietario,casa:owner.Casa,mode,amountUsd:usdEq,amountBs:mode==='Bs BCV'?amount:0,reference:'Pago manual admin'});hidePay();toast('Pago registrado.');loadAll(true)";
+  if (html.includes(manualOld)) html = html.replace(manualOld, manualNew);
+
+  const reportOld = "await adminFetch('/.netlify/functions/airtable/'+encodeURIComponent(TABLE_PAGOS),{method:'POST',body:JSON.stringify({records:[{fields}],typecast:true})});await adminFetch('/.netlify/functions/airtable/'+encodeURIComponent(TABLE_REPORTES)+'/'+id,{method:'PATCH',body:JSON.stringify({fields:{Estado:'Confirmado'}})});toast('Pago confirmado.')";
+  const reportNew = "const payResp=await adminFetch('/.netlify/functions/airtable/'+encodeURIComponent(TABLE_PAGOS),{method:'POST',body:JSON.stringify({records:[{fields}],typecast:true})});const owner=owners.find(x=>x.id===ownerId)||{};const paymentId=(payResp.records&&payResp.records[0]&&payResp.records[0].id)||'';await safeSendReceipt({ownerId,paymentId,ownerName:owner.Propietario,casa:owner.Casa,mode,amountUsd:usdEq,amountBs:mode==='Bs BCV'?Number(f['Monto Reportado Bs']||0):0,reference:f.Referencia||''});await adminFetch('/.netlify/functions/airtable/'+encodeURIComponent(TABLE_REPORTES)+'/'+id,{method:'PATCH',body:JSON.stringify({fields:{Estado:'Confirmado'}})});toast('Pago confirmado.')";
+  if (html.includes(reportOld)) html = html.replace(reportOld, reportNew);
 
   const headers = new Headers(response.headers);
   headers.delete('content-length');
