@@ -153,6 +153,10 @@
             return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
         }
 
+        function getCurrentMonthKey() {
+            return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit' }).format(new Date());
+        }
+
         async function initApp() {
             try {
                 const response = await fetch('/.netlify/functions/public-data');
@@ -217,10 +221,8 @@
             const resumenValor = tieneSaldoAFavor ? formatCurrency(Math.abs(deudaRestante)) : (estaSolvente ? '$0.00' : formatCurrency(deudaRestante));
             const resumenClase = deudaRestante > 0.01 ? 'text-red-500' : 'text-green-600';
             const resumenNota = tieneSaldoAFavor ? 'Este saldo a favor será tomado en cuenta automáticamente en sus próximos cargos.' : (estaSolvente ? 'No presenta deuda pendiente a la fecha de hoy.' : 'Este es su saldo total a la fecha de hoy.');
-
             document.getElementById('welcome-message').innerHTML = `<h2 class="text-3xl font-bold text-slate-900">Bienvenido, ${property.Propietario || ''}</h2><p class="text-lg text-slate-600">Este es el resumen de su estado de cuenta para la <span class="font-bold">Casa #${property.Casa}</span>.</p><p class="text-md text-slate-500 mt-2">Estado de Cuenta para: <span class="font-semibold">${dateString}</span></p>`;
             document.getElementById('debt-summary').innerHTML = `<div class="flex justify-between items-baseline text-3xl font-bold ${resumenClase}"><span>${resumenLabel}</span><span>${resumenValor}</span></div><div class="flex justify-between items-baseline text-lg mt-4 border-t pt-3"><span class="text-slate-600">Total Cargos (Mes Actual):</span><span class="font-bold text-slate-800">${formatCurrency(totalCargosDelMes)}</span></div><p class="text-xs text-slate-500 text-right">${resumenNota}</p>`;
-
             displayChargesBreakdown(property, monthYearString);
             displayPaymentsHistory(property);
             displayDiscountBanner();
@@ -235,7 +237,6 @@
             let totalCargosComunesPropietario = 0;
             let tableHtml = `<table class="min-w-full text-sm"><thead class="border-b"><tr><th class="px-2 py-2 text-left font-semibold text-slate-600">Concepto</th><th class="px-2 py-2 text-right font-semibold text-slate-600">Costo Total</th><th class="px-2 py-2 text-right font-semibold text-slate-600">Su Parte</th></tr></thead><tbody class="divide-y divide-slate-200">`;
             tableHtml += `<tr><td class="px-2 py-2 font-semibold" colspan="2">Deuda del Mes Anterior</td><td class="px-2 py-2 text-right font-semibold">${formatCurrency(deudaAnterior)}</td></tr>`;
-
             allData.gastos.forEach(gasto => {
                 const fields = gasto.fields || {};
                 const monto = fields.Monto || 0;
@@ -250,11 +251,8 @@
                 }
                 if (suParte > 0) tableHtml += `<tr><td class="px-2 py-2 text-slate-700">${concepto}</td><td class="px-2 py-2 text-slate-500 text-right">${formatCurrency(monto)}</td><td class="px-2 py-2 text-slate-700 text-right">${formatCurrency(suParte)}</td></tr>`;
             });
-
             tableHtml += `</tbody><tfoot class="border-t-2 border-slate-300">`;
-            if ((property['Recargo Aplicado'] || 0) === 0 && totalCargosComunesPropietario > 0) {
-                tableHtml += `<tr><td class="px-2 pt-2 text-green-600 font-semibold" colspan="2">Beneficio Pronto Pago</td><td class="px-2 pt-2 text-right text-green-600 font-semibold">-${formatCurrency(totalCargosComunesPropietario * TASA_RECARGO)}</td></tr>`;
-            }
+            if ((property['Recargo Aplicado'] || 0) === 0 && totalCargosComunesPropietario > 0) tableHtml += `<tr><td class="px-2 pt-2 text-green-600 font-semibold" colspan="2">Beneficio Pronto Pago</td><td class="px-2 pt-2 text-right text-green-600 font-semibold">-${formatCurrency(totalCargosComunesPropietario * TASA_RECARGO)}</td></tr>`;
             if (totalPagado > 0) tableHtml += `<tr><td class="px-2 py-2 text-green-600 font-semibold" colspan="2">Total Pagado</td><td class="px-2 py-2 text-right text-green-600 font-semibold">-${formatCurrency(totalPagado)}</td></tr>`;
             tableHtml += `</tfoot></table>`;
             document.getElementById('expenses-breakdown').innerHTML = tableHtml;
@@ -262,45 +260,28 @@
 
         function displayPaymentsHistory(property) {
             const tbody = document.getElementById('payments-history-body');
-            const ownerPayments = allData.pagos.filter(p => p.fields?.['Propietario que Paga']?.[0] === property.id);
-            if (!ownerPayments.length) { tbody.innerHTML = `<tr><td colspan="2" class="text-center p-4 text-slate-500">No hay pagos registrados.</td></tr>`; return; }
+            const currentMonth = getCurrentMonthKey();
+            const ownerPayments = allData.pagos.filter(p => {
+                const fields = p.fields || {};
+                const ownerId = fields['Propietario que Paga']?.[0];
+                const paymentMonth = String(fields['Fecha de Pago'] || '').slice(0, 7);
+                return ownerId === property.id && paymentMonth === currentMonth && fields['[x] Aplicado al Cierre'] !== true;
+            });
+            if (!ownerPayments.length) { tbody.innerHTML = `<tr><td colspan="2" class="text-center p-4 text-slate-500">No hay pagos activos registrados este mes.</td></tr>`; return; }
             tbody.innerHTML = ownerPayments.sort((a, b) => new Date(b.fields['Fecha de Pago']) - new Date(a.fields['Fecha de Pago'])).map(p => `<tr><td class="px-4 py-3 text-sm">${new Date((p.fields['Fecha de Pago'] || '') + 'T00:00:00').toLocaleDateString('es-VE')}</td><td class="px-4 py-3 text-sm text-right font-medium text-green-600">${formatCurrency(p.fields['Monto Pagado'])}</td></tr>`).join('');
         }
 
-        function displayDiscountBanner() {
-            document.getElementById('discount-banner-container').innerHTML = new Date().getDate() <= 10 ? `<div class="bg-teal-100 border-l-4 border-teal-500 text-teal-800 p-4 rounded-r-lg shadow"><p class="font-bold">¡Buenas Noticias!</p><p class="text-sm">Está a tiempo para disfrutar del beneficio por pronto pago en sus gastos comunes.</p></div>` : '';
-        }
-
-        function displayBcvNotice() {
-            document.getElementById('bcv-notice-container').innerHTML = `<div class="bg-slate-100 border-l-4 border-sky-500 text-slate-700 p-4 rounded-r-lg"><p class="font-bold">Nota sobre Pagos en Bolívares</p><p class="text-sm">Aunque el estado de cuenta está expresado en dólares, los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción.</p></div>`;
-        }
-
-        function displayPrivateMorososList() {
-            const container = document.getElementById('morosos-container-private');
-            const div = document.getElementById('morosos-list-private');
-            const morosos = allData.propietarios.filter(p => (p['Deuda Restante'] || 0) > 0.01).sort((a, b) => (a.Casa || 0) - (b.Casa || 0));
-            if (!morosos.length) { container.classList.add('hidden'); return; }
-            div.innerHTML = morosos.map(m => `<div class="flex justify-between items-center py-1 border-b border-slate-100"><div><span class="font-semibold text-slate-700">Casa #${m.Casa || 'N/A'}</span><span class="text-slate-500 ml-2">${m.Propietario || ''}</span></div><span class="font-bold text-red-500">${formatCurrency(m['Deuda Restante'])}</span></div>`).join('');
-            container.classList.remove('hidden');
-        }
+        function displayDiscountBanner() { document.getElementById('discount-banner-container').innerHTML = new Date().getDate() <= 10 ? `<div class="bg-teal-100 border-l-4 border-teal-500 text-teal-800 p-4 rounded-r-lg shadow"><p class="font-bold">¡Buenas Noticias!</p><p class="text-sm">Está a tiempo para disfrutar del beneficio por pronto pago en sus gastos comunes.</p></div>` : ''; }
+        function displayBcvNotice() { document.getElementById('bcv-notice-container').innerHTML = `<div class="bg-slate-100 border-l-4 border-sky-500 text-slate-700 p-4 rounded-r-lg"><p class="font-bold">Nota sobre Pagos en Bolívares</p><p class="text-sm">Aunque el estado de cuenta está expresado en dólares, los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción.</p></div>`; }
+        function displayPrivateMorososList() { const container = document.getElementById('morosos-container-private'); const div = document.getElementById('morosos-list-private'); const morosos = allData.propietarios.filter(p => (p['Deuda Restante'] || 0) > 0.01).sort((a, b) => (a.Casa || 0) - (b.Casa || 0)); if (!morosos.length) { container.classList.add('hidden'); return; } div.innerHTML = morosos.map(m => `<div class="flex justify-between items-center py-1 border-b border-slate-100"><div><span class="font-semibold text-slate-700">Casa #${m.Casa || 'N/A'}</span><span class="text-slate-500 ml-2">${m.Propietario || ''}</span></div><span class="font-bold text-red-500">${formatCurrency(m['Deuda Restante'])}</span></div>`).join(''); container.classList.remove('hidden'); }
 
         const welcomeScreen = document.getElementById('welcome-screen');
         const mainContent = document.getElementById('main-content');
         const welcomeUserSelector = document.getElementById('welcomeUserSelector');
         const userSelector = document.getElementById('userSelector');
         const welcomeThemeToggleContainer = document.getElementById('welcome-theme-toggle-container');
-
-        document.getElementById('viewStatementBtn').addEventListener('click', () => {
-            const selectedUserId = welcomeUserSelector.value;
-            if (!selectedUserId) { showToast('Por favor, seleccione una casa para continuar.', true); return; }
-            userSelector.value = selectedUserId;
-            renderPortalForUser(selectedUserId);
-            welcomeScreen.classList.add('hidden');
-            mainContent.classList.remove('hidden');
-            welcomeThemeToggleContainer?.classList.add('hidden');
-        });
+        document.getElementById('viewStatementBtn').addEventListener('click', () => { const selectedUserId = welcomeUserSelector.value; if (!selectedUserId) { showToast('Por favor, seleccione una casa para continuar.', true); return; } userSelector.value = selectedUserId; renderPortalForUser(selectedUserId); welcomeScreen.classList.add('hidden'); mainContent.classList.remove('hidden'); welcomeThemeToggleContainer?.classList.add('hidden'); });
         userSelector.addEventListener('change', e => renderPortalForUser(e.target.value));
-
         const reportPaymentModal = document.getElementById('reportPaymentModal');
         const reportPaymentForm = document.getElementById('report-payment-form');
         const submitReportBtn = document.getElementById('submitReportBtn');
@@ -308,7 +289,6 @@
         document.getElementById('report-payment-btn').addEventListener('click', () => reportPaymentModal.classList.remove('hidden'));
         document.getElementById('closeReportModalBtn').addEventListener('click', hideReportModal);
         document.getElementById('cancelReportBtn').addEventListener('click', hideReportModal);
-
         reportPaymentForm.addEventListener('submit', async e => {
             e.preventDefault();
             const amount = parseFloat(document.getElementById('report-amount').value);
@@ -319,37 +299,20 @@
             submitReportBtn.disabled = true;
             submitReportBtn.innerHTML = '<div class="spinner mx-auto" style="width:20px;height:20px;border-width:2px;"></div>';
             try {
-                await fetch('/.netlify/functions/airtable/Reportes%20de%20Pago', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ records: [{ fields: { 'Propietario que Reporta': [selectedUserId], 'Monto Reportado': amount, Referencia: reference, Estado: 'Pendiente', 'Fecha del Reporte': getCaracasDateString() } }] })
-                });
+                const response = await fetch('/.netlify/functions/airtable/Reportes%20de%20Pago', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ records: [{ fields: { 'Propietario que Reporta': [selectedUserId], 'Monto Reportado': amount, Referencia: reference, Estado: 'Pendiente', 'Fecha del Reporte': getCaracasDateString() } }] }) });
+                if (!response.ok) throw new Error('No se pudo guardar el reporte.');
                 hideReportModal();
                 showToast('¡Reporte exitoso! Su pago será verificado y aplicado en un plazo de 24 a 48 horas.', false, 7000);
-            } catch (error) {
-                console.error(error); showToast('Hubo un error al reportar el pago. Por favor, intente de nuevo.', true);
-            } finally {
-                submitReportBtn.disabled = false; submitReportBtn.textContent = 'Enviar Reporte';
-            }
+            } catch (error) { console.error(error); showToast('Hubo un error al reportar el pago. Por favor, intente de nuevo.', true); }
+            finally { submitReportBtn.disabled = false; submitReportBtn.textContent = 'Enviar Reporte'; }
         });
-
-        document.getElementById('share-morosos-btn').addEventListener('click', () => {
-            const morososContainer = document.getElementById('morosos-container-private');
-            html2canvas(morososContainer, { backgroundColor: document.documentElement.classList.contains('dark') ? '#0f172a' : '#ffffff' }).then(canvas => {
-                const link = document.createElement('a'); link.download = 'lista-de-morosos-VLA.png'; link.href = canvas.toDataURL('image/png'); link.click();
-            });
-        });
-
+        document.getElementById('share-morosos-btn').addEventListener('click', () => { const morososContainer = document.getElementById('morosos-container-private'); html2canvas(morososContainer, { backgroundColor: document.documentElement.classList.contains('dark') ? '#0f172a' : '#ffffff' }).then(canvas => { const link = document.createElement('a'); link.download = 'lista-de-morosos-VLA.png'; link.href = canvas.toDataURL('image/png'); link.click(); }); });
         const themeToggleBtns = [document.getElementById('theme-toggle-welcome'), document.getElementById('theme-toggle-main')];
         const lightGroups = [document.getElementById('light-theme-group-welcome'), document.getElementById('light-theme-group-main')];
         const darkGroups = [document.getElementById('dark-theme-group-welcome'), document.getElementById('dark-theme-group-main')];
-        function applyTheme(theme) {
-            document.documentElement.classList.toggle('dark', theme === 'dark');
-            lightGroups.forEach(el => el?.classList.toggle('hidden', theme === 'dark'));
-            darkGroups.forEach(el => el?.classList.toggle('hidden', theme !== 'dark'));
-        }
+        function applyTheme(theme) { document.documentElement.classList.toggle('dark', theme === 'dark'); lightGroups.forEach(el => el?.classList.toggle('hidden', theme === 'dark')); darkGroups.forEach(el => el?.classList.toggle('hidden', theme !== 'dark')); }
         applyTheme(localStorage.getItem('theme') || 'light');
         themeToggleBtns.forEach(btn => btn?.addEventListener('click', () => { const newTheme = document.documentElement.classList.contains('dark') ? 'light' : 'dark'; localStorage.setItem('theme', newTheme); applyTheme(newTheme); }));
-
         initApp();
     });
     </script>
