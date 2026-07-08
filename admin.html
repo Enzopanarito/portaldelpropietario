@@ -20,6 +20,23 @@
         @keyframes spin { to { transform: rotate(360deg); } }
         .toast { transition: opacity .5s, transform .5s; z-index: 9999; }
         .modal-backdrop { transition: opacity .3s ease; }
+        .api-bar { height: 10px; border-radius: 999px; background: #e2e8f0; overflow: hidden; }
+        .api-bar-fill { height: 100%; width: 0%; background: #0284c7; transition: width .3s ease; }
+        .dark body { background-color: #020617; color: #d1d5db; }
+        .dark .bg-white { background-color: #0f172a; }
+        .dark .bg-slate-50 { background-color: #1e293b; }
+        .dark .bg-slate-100 { background-color: #1e293b; }
+        .dark .bg-slate-200 { background-color: #334155; }
+        .dark .text-slate-900 { color: #f8fafc; }
+        .dark .text-slate-800 { color: #e2e8f0; }
+        .dark .text-slate-700 { color: #cbd5e1; }
+        .dark .text-slate-600 { color: #94a3b8; }
+        .dark .text-slate-500 { color: #94a3b8; }
+        .dark .border-slate-200, .dark .border-slate-300 { border-color: #334155; }
+        .dark input, .dark select, .dark textarea { background-color: #1e293b !important; color: #f8fafc !important; border-color: #475569 !important; }
+        .dark table thead, .dark .bg-slate-50.sticky, .dark thead.bg-slate-50 { background-color: #1e293b; }
+        .dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-color: #334155; }
+        .dark .api-bar { background: #334155; }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800">
@@ -37,8 +54,9 @@
     <div id="main-content" style="display:none;">
         <div class="container mx-auto p-4 sm:p-6 lg:p-8">
             <header class="text-center mb-8">
+                <div class="flex justify-center sm:justify-end mb-3"><button id="theme-toggle-admin" type="button" class="bg-slate-200 text-slate-800 font-semibold py-2 px-4 rounded-full hover:bg-slate-300">🌙 Modo oscuro</button></div>
                 <h1 class="text-3xl sm:text-4xl font-bold text-slate-900">Portal de Gestión: Villa Los Apamates</h1>
-                <p class="mt-2 text-lg text-slate-600">Panel optimizado con caché y eliminación múltiple.</p>
+                <p class="mt-2 text-lg text-slate-600">Panel optimizado con caché, eliminación múltiple y control de consumo API.</p>
                 <p id="data-status" class="text-xs text-slate-500 mt-2"></p>
             </header>
 
@@ -55,13 +73,14 @@
                     <div class="bg-white p-6 rounded-2xl shadow-lg">
                         <h2 class="text-2xl font-bold text-slate-900 mb-1">Resumen Financiero del Condominio</h2>
                         <p class="text-slate-600 mb-6">Vista general calculada desde la data cacheada del administrador.</p>
-                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 text-center mb-8">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 sm:gap-6 text-center mb-8">
                             <div class="bg-slate-100 p-4 rounded-xl"><p class="text-sm text-slate-500 font-medium">💰 Deuda Total</p><p id="kpi-deuda-total" class="text-3xl font-bold text-sky-600">$0.00</p></div>
                             <div class="bg-slate-100 p-4 rounded-xl"><p class="text-sm text-slate-500 font-medium">🏠 Propietarios en Mora</p><p id="kpi-propietarios-mora" class="text-3xl font-bold text-red-500">0 / 15</p></div>
                             <div class="bg-slate-100 p-4 rounded-xl"><p class="text-sm text-slate-500 font-medium">📈 % de Solvencia</p><p id="kpi-solvencia" class="text-3xl font-bold text-green-500">0%</p></div>
                             <div class="bg-slate-100 p-4 rounded-xl"><p class="text-sm text-slate-500 font-medium">💸 Total a Cobrar Mes</p><p id="kpi-cobrar-mes" class="text-3xl font-bold text-slate-800">$0.00</p></div>
+                            <div class="bg-slate-100 p-4 rounded-xl text-left"><p class="text-sm text-slate-500 font-medium text-center">🔌 API Airtable</p><p id="kpi-api-calls" class="text-3xl font-bold text-indigo-600 text-center">—</p><p id="kpi-api-remaining" class="text-xs text-slate-500 text-center mb-2">Cargando...</p><div class="api-bar"><div id="api-usage-bar" class="api-bar-fill"></div></div><p id="api-usage-note" class="text-[11px] text-slate-500 mt-2 text-center">Contador interno del portal</p></div>
                         </div>
-                        <div class="flex justify-center"><button id="force-refresh-btn" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">🔄 Actualizar desde Airtable</button></div>
+                        <div class="flex flex-wrap justify-center gap-3"><button id="force-refresh-btn" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">🔄 Actualizar desde Airtable</button><button id="refresh-api-usage-btn" class="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-indigo-700">🔌 Actualizar contador API</button></div>
                     </div>
                 </section>
 
@@ -91,10 +110,7 @@
                                 </form>
                             </div>
                             <div>
-                                <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-3 mb-4">
-                                    <h3 class="text-lg font-semibold text-slate-800">Gastos Registrados</h3>
-                                    <button id="delete-selected-expenses-btn" class="bg-red-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-red-700 disabled:bg-slate-300" disabled>🗑️ Eliminar seleccionados</button>
-                                </div>
+                                <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-3 mb-4"><h3 class="text-lg font-semibold text-slate-800">Gastos Registrados</h3><button id="delete-selected-expenses-btn" class="bg-red-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-red-700 disabled:bg-slate-300" disabled>🗑️ Eliminar seleccionados</button></div>
                                 <div class="overflow-y-auto max-h-96 border rounded-lg"><table class="min-w-full bg-white divide-y divide-slate-200"><thead class="bg-slate-50 sticky top-0"><tr><th class="px-4 py-3 text-left"><input type="checkbox" id="select-all-expenses"></th><th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Concepto</th><th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Monto</th><th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Tipo</th></tr></thead><tbody id="expensesTableBody" class="bg-white divide-y divide-slate-200"></tbody></table></div>
                             </div>
                         </div>
@@ -120,7 +136,9 @@
 
     <script>
     document.addEventListener('DOMContentLoaded', () => {
+        applyTheme(localStorage.getItem('vla-admin-theme') || 'light');
         document.getElementById('login-form').addEventListener('submit', handleLogin);
+        document.getElementById('theme-toggle-admin').addEventListener('click', toggleTheme);
         if (sessionStorage.getItem('vla-admin-auth') === 'true') showMainContent();
     });
 
@@ -130,164 +148,60 @@
     const AIRTABLE_TABLE_REPORTE_PAGO = 'Reportes de Pago';
     let condominioData = [], gastosDelMes = [], reportesDePago = [], currentPropertyIdForAction = null;
 
+    function applyTheme(theme) { document.documentElement.classList.toggle('dark', theme === 'dark'); const btn = document.getElementById('theme-toggle-admin'); if (btn) btn.textContent = theme === 'dark' ? '☀️ Modo claro' : '🌙 Modo oscuro'; }
+    function toggleTheme() { const next = document.documentElement.classList.contains('dark') ? 'light' : 'dark'; localStorage.setItem('vla-admin-theme', next); applyTheme(next); }
+
     async function handleLogin(e) {
         e.preventDefault();
         const passwordInput = document.getElementById('password');
         const errorDiv = document.getElementById('login-error');
         const submitButton = e.currentTarget.querySelector('button[type="submit"]');
         errorDiv.classList.add('hidden'); submitButton.disabled = true; submitButton.textContent = 'Validando...';
-        try {
-            const response = await fetch('/.netlify/functions/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passwordInput.value }) });
-            if (response.ok && (await response.json()).success) { sessionStorage.setItem('vla-admin-auth', 'true'); showMainContent(); }
-            else throw new Error('Contraseña incorrecta');
-        } catch (error) { errorDiv.textContent = error.message; errorDiv.classList.remove('hidden'); }
+        try { const response = await fetch('/.netlify/functions/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passwordInput.value }) }); if (response.ok && (await response.json()).success) { sessionStorage.setItem('vla-admin-auth', 'true'); showMainContent(); } else throw new Error('Contraseña incorrecta'); }
+        catch (error) { errorDiv.textContent = error.message; errorDiv.classList.remove('hidden'); }
         finally { submitButton.disabled = false; submitButton.textContent = 'Entrar'; }
     }
 
-    function showMainContent() {
-        document.getElementById('login-container').style.display = 'none';
-        document.getElementById('main-content').style.display = 'block';
-        setupEventListeners();
-        loadData(true);
-    }
-
+    function showMainContent() { document.getElementById('login-container').style.display = 'none'; document.getElementById('main-content').style.display = 'block'; setupEventListeners(); loadData(true); loadApiUsage(); }
     function formatCurrency(value) { return `$${Number(value || 0).toFixed(2)}`; }
     function getCaracasDateString() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); }
     function showToast(message, isError = false) { const toast = document.getElementById('toast'); toast.textContent = message; toast.className = `fixed bottom-5 right-5 text-white py-3 px-5 rounded-lg shadow-lg opacity-0 transform translate-y-10 toast ${isError ? 'bg-red-500' : 'bg-green-500'}`; toast.classList.remove('opacity-0','translate-y-10'); setTimeout(() => toast.classList.add('opacity-0','translate-y-10'), 4000); }
     function showModal(id) { document.getElementById(id).classList.remove('hidden'); }
     function hideModal(id) { document.getElementById(id).classList.add('hidden'); }
 
-    async function airtableFetch(path, options = {}) {
-        const response = await fetch(`/.netlify/functions/airtable${path}`, { headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data.error?.message || data.message || data.detail || `Error ${response.status}`);
-        return data;
-    }
+    async function airtableFetch(path, options = {}) { const response = await fetch(`/.netlify/functions/airtable${path}`, { headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error?.message || data.message || data.detail || `Error ${response.status}`); return data; }
 
-    async function loadData(force = false) {
-        const status = document.getElementById('data-status');
-        status.textContent = 'Cargando datos...';
+    async function loadApiUsage() {
         try {
-            const response = await fetch(`/.netlify/functions/admin-data${force ? '?force=1' : ''}`);
+            const response = await fetch('/.netlify/functions/api-usage');
             const data = await response.json();
-            if (!response.ok) throw new Error(data.message || data.detail || 'No se pudo cargar el admin.');
-            condominioData = data.propietarios || [];
-            gastosDelMes = data.gastos || [];
-            reportesDePago = data.reportes || [];
-            renderAll();
-            status.textContent = `Última carga: ${new Date(data.generatedAt || Date.now()).toLocaleString('es-VE')} · Cache: ${response.headers.get('X-Cache') || 'N/A'}`;
-        } catch (error) { console.error(error); showToast(`Error cargando datos: ${error.message}`, true); status.textContent = 'Error cargando datos.'; }
+            if (!response.ok) throw new Error(data.message || data.detail || 'Error cargando contador API.');
+            document.getElementById('kpi-api-calls').textContent = `${data.total || 0} / ${data.limit || 1000}`;
+            document.getElementById('kpi-api-remaining').textContent = `Restan ${data.remaining || 0} llamadas este mes`;
+            document.getElementById('api-usage-bar').style.width = `${data.percent || 0}%`;
+            document.getElementById('api-usage-note').textContent = `${data.percent || 0}% usado · ${data.events || 0} eventos registrados`;
+        } catch (error) {
+            document.getElementById('kpi-api-calls').textContent = 'Error';
+            document.getElementById('kpi-api-remaining').textContent = error.message;
+        }
     }
 
+    async function loadData(force = false) { const status = document.getElementById('data-status'); status.textContent = 'Cargando datos...'; try { const response = await fetch(`/.netlify/functions/admin-data${force ? '?force=1' : ''}`); const data = await response.json(); if (!response.ok) throw new Error(data.message || data.detail || 'No se pudo cargar el admin.'); condominioData = data.propietarios || []; gastosDelMes = data.gastos || []; reportesDePago = data.reportes || []; renderAll(); status.textContent = `Última carga: ${new Date(data.generatedAt || Date.now()).toLocaleString('es-VE')} · Cache: ${response.headers.get('X-Cache') || 'N/A'}`; loadApiUsage(); } catch (error) { console.error(error); showToast(`Error cargando datos: ${error.message}`, true); status.textContent = 'Error cargando datos.'; } }
     async function warmPublicCache() { try { await fetch('/.netlify/functions/public-data?force=1'); } catch (e) { console.warn('No se pudo refrescar cache pública', e); } }
-    async function refreshAfterWrite() { await warmPublicCache(); await loadData(true); }
-
+    async function refreshAfterWrite() { await warmPublicCache(); await loadData(true); await loadApiUsage(); }
     function renderAll() { updateDashboard(); populateTable(condominioData); populateExpensesTable(gastosDelMes); populateOwnerSelectorInExpenseForm(); populateReportedPayments(reportesDePago); }
-
-    function updateDashboard() {
-        let deudaTotal = 0, morosos = 0, totalACobrarMes = 0;
-        condominioData.forEach(p => { const deuda = p['Deuda Restante'] || 0; if (deuda > 0.01) { deudaTotal += deuda; morosos++; } totalACobrarMes += (p['Cuota Base Mes'] || 0) + (p['Total Gastos Especiales del Mes'] || 0); });
-        const total = condominioData.length;
-        document.getElementById('kpi-deuda-total').textContent = formatCurrency(deudaTotal);
-        document.getElementById('kpi-propietarios-mora').textContent = `${morosos} / ${total}`;
-        document.getElementById('kpi-solvencia').textContent = total ? `${(((total - morosos) / total) * 100).toFixed(0)}%` : '0%';
-        document.getElementById('kpi-cobrar-mes').textContent = formatCurrency(totalACobrarMes);
-    }
-
-    function populateTable(data) {
-        const tbody = document.getElementById('debtorsTableBody');
-        tbody.innerHTML = data.length ? data.map(item => {
-            const isSolvent = (item['Deuda Restante'] || 0) <= 0.01;
-            const actions = `<button data-id="${item.id}" class="view-breakdown-btn font-semibold text-sky-600 hover:text-sky-800">Desglose</button>${!isSolvent ? ` <button data-id="${item.id}" class="send-reminder-btn font-semibold text-amber-600 hover:text-amber-800">Recordatorio</button> <button data-id="${item.id}" class="register-payment-btn font-semibold text-green-600 hover:text-green-800">Registrar Pago</button>` : ''}`;
-            return `<tr><td class="px-4 py-3 whitespace-nowrap"><span class="font-semibold text-slate-900">${item.Casa || 'N/A'}</span></td><td class="px-4 py-3 whitespace-nowrap">${item.Propietario || 'Sin Nombre'}</td><td class="px-4 py-3 whitespace-nowrap font-medium ${isSolvent ? 'text-green-600' : 'text-red-600'}">${formatCurrency(item['Deuda Restante'])}</td><td class="px-4 py-3 whitespace-nowrap text-sm space-x-3">${actions}</td></tr>`;
-        }).join('') : `<tr><td colspan="4" class="text-center p-4 text-slate-500">No se encontraron propietarios.</td></tr>`;
-    }
-
-    function populateExpensesTable(data) {
-        const tbody = document.getElementById('expensesTableBody');
-        tbody.innerHTML = data.length ? data.map(item => `<tr><td class="px-4 py-3"><input type="checkbox" class="expense-checkbox" value="${item.id}"></td><td class="px-4 py-3 text-sm">${item.fields?.Concepto || 'Sin Concepto'}</td><td class="px-4 py-3 text-sm">${formatCurrency(item.fields?.Monto)}</td><td class="px-4 py-3 text-sm">${item.fields?.['Tipo de Gasto'] || 'N/A'}</td></tr>`).join('') : `<tr><td colspan="4" class="text-center p-4 text-slate-500">No hay gastos registrados.</td></tr>`;
-        updateDeleteSelectedButton();
-    }
-
-    function updateDeleteSelectedButton() {
-        const count = document.querySelectorAll('.expense-checkbox:checked').length;
-        const btn = document.getElementById('delete-selected-expenses-btn');
-        btn.disabled = count === 0;
-        btn.textContent = count ? `🗑️ Eliminar seleccionados (${count})` : '🗑️ Eliminar seleccionados';
-    }
-
-    function populateOwnerSelectorInExpenseForm() {
-        document.getElementById('expense-owners-list').innerHTML = condominioData.map(owner => `<div class="flex items-center"><input id="owner-${owner.id}" type="checkbox" value="${owner.id}" class="h-4 w-4 rounded border-gray-300 text-sky-600" checked><label for="owner-${owner.id}" class="ml-3 block text-sm">${owner.Propietario || `Casa ${owner.Casa}`}</label></div>`).join('');
-    }
-
-    function populateReportedPayments(reportedPaymentsData) {
-        const tbody = document.getElementById('reportedPaymentsTableBody');
-        const badge = document.getElementById('pending-payments-badge');
-        const pending = reportedPaymentsData.filter(p => p.fields?.Estado === 'Pendiente');
-        badge.textContent = pending.length; badge.classList.toggle('hidden', pending.length === 0);
-        tbody.innerHTML = pending.length ? pending.map(payment => {
-            const ownerId = payment.fields?.['Propietario que Reporta']?.[0];
-            const owner = condominioData.find(o => o.id === ownerId);
-            return `<tr><td class="px-4 py-3 text-sm text-slate-700">${owner ? `Casa ${owner.Casa} - ${owner.Propietario}` : 'Propietario no encontrado'}</td><td class="px-4 py-3 text-sm font-medium text-slate-900">${formatCurrency(payment.fields?.['Monto Reportado'])}</td><td class="px-4 py-3 text-sm text-slate-500">${payment.fields?.Referencia || ''}</td><td class="px-4 py-3 space-x-2 whitespace-nowrap"><button data-id="${payment.id}" data-owner-id="${ownerId || ''}" data-amount="${payment.fields?.['Monto Reportado'] || 0}" class="confirm-payment-btn py-1 px-3 text-xs font-semibold rounded-full bg-green-100 text-green-800 hover:bg-green-200">Confirmar</button><button data-id="${payment.id}" class="reject-payment-btn py-1 px-3 text-xs font-semibold rounded-full bg-red-100 text-red-800 hover:bg-red-200">Rechazar</button></td></tr>`;
-        }).join('') : `<tr><td colspan="4" class="text-center p-4 text-slate-500">No hay pagos pendientes por revisar.</td></tr>`;
-    }
-
-    function showDebtModal(id) {
-        const p = condominioData.find(prop => prop.id === id); if (!p) return;
-        document.getElementById('debtModal-subtitle').textContent = `Casa ${p.Casa} - ${p.Propietario}`;
-        let html = `<li class="flex justify-between"><span>Deuda Anterior</span><span class="font-medium">${formatCurrency(p['Deuda Anterior'])}</span></li>`;
-        html += `<li class="flex justify-between"><span>Cargos Comunes del Mes</span><span class="font-medium">${formatCurrency(p['Cuota Base Mes'])}</span></li>`;
-        if ((p['Recargo Aplicado'] || 0) > 0) html += `<li class="flex justify-between text-red-600"><span>Recargo Aplicado</span><span>${formatCurrency(p['Recargo Aplicado'])}</span></li>`;
-        if ((p['Total Gastos Especiales del Mes'] || 0) > 0) html += `<li class="flex justify-between"><span>Total Gastos Especiales</span><span>${formatCurrency(p['Total Gastos Especiales del Mes'])}</span></li>`;
-        html += `<li class="flex justify-between border-t mt-2 pt-2"><span>Pagado este Mes</span><span>-${formatCurrency(p['Total Pagado'])}</span></li>`;
-        document.getElementById('debtModal-list').innerHTML = html;
-        document.getElementById('debtModal-total').textContent = formatCurrency(p['Deuda Restante']);
-        showModal('debtModal');
-    }
-
-    function showReminderModal(id) {
-        const p = condominioData.find(prop => prop.id === id); if (!p) return;
-        currentPropertyIdForAction = id;
-        const fecha = new Date().toLocaleDateString('es-VE');
-        document.getElementById('reminder-message-content').textContent = `*Asunto: Recordatorio de Saldo Pendiente*\n\n📅 _Mensaje generado el ${fecha}_.\n\nEstimado/a *${p.Propietario}*,\n\nLe contactamos para informarle que su propiedad, *Casa ${p.Casa}*, presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: ${formatCurrency(p['Deuda Restante'])}*\n\nAgradecemos su pronta gestión.\n\nPara más información, visite nuestro portal:\nhttps://villalosapamates.netlify.app\n\n*Nota:* Pagos en Bs. se calculan a la tasa oficial del BCV del día.`;
-        showModal('reminderModal');
-    }
-
+    function updateDashboard() { let deudaTotal = 0, morosos = 0, totalACobrarMes = 0; condominioData.forEach(p => { const deuda = p['Deuda Restante'] || 0; if (deuda > 0.01) { deudaTotal += deuda; morosos++; } totalACobrarMes += (p['Cuota Base Mes'] || 0) + (p['Total Gastos Especiales del Mes'] || 0); }); const total = condominioData.length; document.getElementById('kpi-deuda-total').textContent = formatCurrency(deudaTotal); document.getElementById('kpi-propietarios-mora').textContent = `${morosos} / ${total}`; document.getElementById('kpi-solvencia').textContent = total ? `${(((total - morosos) / total) * 100).toFixed(0)}%` : '0%'; document.getElementById('kpi-cobrar-mes').textContent = formatCurrency(totalACobrarMes); }
+    function populateTable(data) { const tbody = document.getElementById('debtorsTableBody'); tbody.innerHTML = data.length ? data.map(item => { const isSolvent = (item['Deuda Restante'] || 0) <= 0.01; const actions = `<button data-id="${item.id}" class="view-breakdown-btn font-semibold text-sky-600 hover:text-sky-800">Desglose</button>${!isSolvent ? ` <button data-id="${item.id}" class="send-reminder-btn font-semibold text-amber-600 hover:text-amber-800">Recordatorio</button> <button data-id="${item.id}" class="register-payment-btn font-semibold text-green-600 hover:text-green-800">Registrar Pago</button>` : ''}`; return `<tr><td class="px-4 py-3 whitespace-nowrap"><span class="font-semibold text-slate-900">${item.Casa || 'N/A'}</span></td><td class="px-4 py-3 whitespace-nowrap">${item.Propietario || 'Sin Nombre'}</td><td class="px-4 py-3 whitespace-nowrap font-medium ${isSolvent ? 'text-green-600' : 'text-red-600'}">${formatCurrency(item['Deuda Restante'])}</td><td class="px-4 py-3 whitespace-nowrap text-sm space-x-3">${actions}</td></tr>`; }).join('') : `<tr><td colspan="4" class="text-center p-4 text-slate-500">No se encontraron propietarios.</td></tr>`; }
+    function populateExpensesTable(data) { const tbody = document.getElementById('expensesTableBody'); tbody.innerHTML = data.length ? data.map(item => `<tr><td class="px-4 py-3"><input type="checkbox" class="expense-checkbox" value="${item.id}"></td><td class="px-4 py-3 text-sm">${item.fields?.Concepto || 'Sin Concepto'}</td><td class="px-4 py-3 text-sm">${formatCurrency(item.fields?.Monto)}</td><td class="px-4 py-3 text-sm">${item.fields?.['Tipo de Gasto'] || 'N/A'}</td></tr>`).join('') : `<tr><td colspan="4" class="text-center p-4 text-slate-500">No hay gastos registrados.</td></tr>`; updateDeleteSelectedButton(); }
+    function updateDeleteSelectedButton() { const count = document.querySelectorAll('.expense-checkbox:checked').length; const btn = document.getElementById('delete-selected-expenses-btn'); btn.disabled = count === 0; btn.textContent = count ? `🗑️ Eliminar seleccionados (${count})` : '🗑️ Eliminar seleccionados'; }
+    function populateOwnerSelectorInExpenseForm() { document.getElementById('expense-owners-list').innerHTML = condominioData.map(owner => `<div class="flex items-center"><input id="owner-${owner.id}" type="checkbox" value="${owner.id}" class="h-4 w-4 rounded border-gray-300 text-sky-600" checked><label for="owner-${owner.id}" class="ml-3 block text-sm">${owner.Propietario || `Casa ${owner.Casa}`}</label></div>`).join(''); }
+    function populateReportedPayments(reportedPaymentsData) { const tbody = document.getElementById('reportedPaymentsTableBody'); const badge = document.getElementById('pending-payments-badge'); const pending = reportedPaymentsData.filter(p => p.fields?.Estado === 'Pendiente'); badge.textContent = pending.length; badge.classList.toggle('hidden', pending.length === 0); tbody.innerHTML = pending.length ? pending.map(payment => { const ownerId = payment.fields?.['Propietario que Reporta']?.[0]; const owner = condominioData.find(o => o.id === ownerId); return `<tr><td class="px-4 py-3 text-sm text-slate-700">${owner ? `Casa ${owner.Casa} - ${owner.Propietario}` : 'Propietario no encontrado'}</td><td class="px-4 py-3 text-sm font-medium text-slate-900">${formatCurrency(payment.fields?.['Monto Reportado'])}</td><td class="px-4 py-3 text-sm text-slate-500">${payment.fields?.Referencia || ''}</td><td class="px-4 py-3 space-x-2 whitespace-nowrap"><button data-id="${payment.id}" data-owner-id="${ownerId || ''}" data-amount="${payment.fields?.['Monto Reportado'] || 0}" class="confirm-payment-btn py-1 px-3 text-xs font-semibold rounded-full bg-green-100 text-green-800 hover:bg-green-200">Confirmar</button><button data-id="${payment.id}" class="reject-payment-btn py-1 px-3 text-xs font-semibold rounded-full bg-red-100 text-red-800 hover:bg-red-200">Rechazar</button></td></tr>`; }).join('') : `<tr><td colspan="4" class="text-center p-4 text-slate-500">No hay pagos pendientes por revisar.</td></tr>`; }
+    function showDebtModal(id) { const p = condominioData.find(prop => prop.id === id); if (!p) return; document.getElementById('debtModal-subtitle').textContent = `Casa ${p.Casa} - ${p.Propietario}`; let html = `<li class="flex justify-between"><span>Deuda Anterior</span><span class="font-medium">${formatCurrency(p['Deuda Anterior'])}</span></li>`; html += `<li class="flex justify-between"><span>Cargos Comunes del Mes</span><span class="font-medium">${formatCurrency(p['Cuota Base Mes'])}</span></li>`; if ((p['Recargo Aplicado'] || 0) > 0) html += `<li class="flex justify-between text-red-600"><span>Recargo Aplicado</span><span>${formatCurrency(p['Recargo Aplicado'])}</span></li>`; if ((p['Total Gastos Especiales del Mes'] || 0) > 0) html += `<li class="flex justify-between"><span>Total Gastos Especiales</span><span>${formatCurrency(p['Total Gastos Especiales del Mes'])}</span></li>`; html += `<li class="flex justify-between border-t mt-2 pt-2"><span>Pagado este Mes</span><span>-${formatCurrency(p['Total Pagado'])}</span></li>`; document.getElementById('debtModal-list').innerHTML = html; document.getElementById('debtModal-total').textContent = formatCurrency(p['Deuda Restante']); showModal('debtModal'); }
+    function showReminderModal(id) { const p = condominioData.find(prop => prop.id === id); if (!p) return; currentPropertyIdForAction = id; const fecha = new Date().toLocaleDateString('es-VE'); document.getElementById('reminder-message-content').textContent = `*Asunto: Recordatorio de Saldo Pendiente*\n\n📅 _Mensaje generado el ${fecha}_.\n\nEstimado/a *${p.Propietario}*,\n\nLe contactamos para informarle que su propiedad, *Casa ${p.Casa}*, presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: ${formatCurrency(p['Deuda Restante'])}*\n\nAgradecemos su pronta gestión.\n\nPara más información, visite nuestro portal:\nhttps://villalosapamates.netlify.app\n\n*Nota:* Pagos en Bs. se calculan a la tasa oficial del BCV del día.`; showModal('reminderModal'); }
     function normalizePhone(phone) { let cleaned = String(phone || '').replace(/\D/g, ''); if (cleaned.startsWith('0')) cleaned = '58' + cleaned.slice(1); return cleaned; }
+    function showPaymentModal(id) { currentPropertyIdForAction = id; const p = condominioData.find(prop => prop.id === id); if (!p) return; document.getElementById('payment-modal-info').innerHTML = `<p>Propietario: <span class="font-semibold">${p.Propietario || 'Sin Nombre'}</span></p><p>Deuda Actual: <span class="font-semibold">${formatCurrency(p['Deuda Restante'])}</span></p>`; document.getElementById('partial-amount').value = ''; document.getElementById('tab-total').click(); showModal('paymentModal'); }
 
-    function showPaymentModal(id) {
-        currentPropertyIdForAction = id;
-        const p = condominioData.find(prop => prop.id === id); if (!p) return;
-        document.getElementById('payment-modal-info').innerHTML = `<p>Propietario: <span class="font-semibold">${p.Propietario || 'Sin Nombre'}</span></p><p>Deuda Actual: <span class="font-semibold">${formatCurrency(p['Deuda Restante'])}</span></p>`;
-        document.getElementById('partial-amount').value = '';
-        document.getElementById('tab-total').click();
-        showModal('paymentModal');
-    }
-
-    function setupEventListeners() {
-        document.querySelectorAll('.nav-button').forEach(btn => btn.addEventListener('click', e => { document.querySelectorAll('.nav-button, .section-content').forEach(el => el.classList.remove('active')); e.currentTarget.classList.add('active'); document.getElementById(e.currentTarget.dataset.target).classList.add('active'); }));
-        document.getElementById('force-refresh-btn').addEventListener('click', () => loadData(true));
-        document.getElementById('searchInput').addEventListener('input', e => { const q = e.target.value.trim().toLowerCase(); populateTable(condominioData.filter(p => (p.Propietario || '').toLowerCase().includes(q) || String(p.Casa || '').includes(q))); });
-        document.getElementById('debtorsTableBody').addEventListener('click', e => { const btn = e.target.closest('button'); if (!btn) return; const id = btn.dataset.id; if (btn.classList.contains('view-breakdown-btn')) showDebtModal(id); if (btn.classList.contains('send-reminder-btn')) showReminderModal(id); if (btn.classList.contains('register-payment-btn')) showPaymentModal(id); });
-        ['closeDebtModalBtn','closeReminderModalBtn','cancelSendBtn','closePaymentModalBtn','cancelPaymentBtn'].forEach(id => document.getElementById(id).addEventListener('click', () => hideModal(id.includes('Debt') ? 'debtModal' : id.includes('Reminder') || id.includes('Send') ? 'reminderModal' : 'paymentModal')));
-        ['tab-total','tab-partial'].forEach(id => document.getElementById(id).addEventListener('click', e => { document.querySelectorAll('.payment-tab,.tab-content').forEach(el => el.classList.remove('active')); e.currentTarget.classList.add('active'); document.getElementById(e.currentTarget.id.replace('tab','content')).classList.add('active'); }));
-
-        document.getElementById('send-whatsapp-btn').addEventListener('click', () => { const p = condominioData.find(prop => prop.id === currentPropertyIdForAction); if (!p || !p.Telefono) { showToast('Propietario sin teléfono registrado.', true); return; } const msg = document.getElementById('reminder-message-content').textContent; window.open(`https://api.whatsapp.com/send?phone=${normalizePhone(p.Telefono)}&text=${encodeURIComponent(msg)}`, '_blank'); hideModal('reminderModal'); });
-        document.getElementById('send-bulk-reminders-btn').addEventListener('click', () => { const morosos = condominioData.filter(p => (p['Deuda Restante'] || 0) > 0.01); if (!morosos.length) { showToast('No hay propietarios en mora.', true); return; } if (!confirm(`Se prepararán recordatorios para ${morosos.length} propietario(s) en mora. ¿Desea continuar?`)) return; morosos.forEach(p => { if (!p.Telefono) return; const msg = `*Asunto: Recordatorio de Saldo Pendiente*\n\nEstimado/a *${p.Propietario}*,\n\nSu propiedad, *Casa ${p.Casa}*, presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: ${formatCurrency(p['Deuda Restante'])}*\n\nAgradecemos su pronta gestión.`; window.open(`https://api.whatsapp.com/send?phone=${normalizePhone(p.Telefono)}&text=${encodeURIComponent(msg)}`, '_blank'); }); showToast('Se prepararon las ventanas de WhatsApp disponibles.'); });
-
-        document.getElementById('reportedPaymentsTableBody').addEventListener('click', async e => { const btn = e.target.closest('button'); if (!btn) return; const recordId = btn.dataset.id; const isConfirm = btn.classList.contains('confirm-payment-btn'); btn.disabled = true; try { if (isConfirm) { const ownerId = btn.dataset.ownerId; const amount = parseFloat(btn.dataset.amount); if (!ownerId || !(amount > 0)) throw new Error('Propietario o monto inválido.'); await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PAGOS)}`, { method: 'POST', body: JSON.stringify({ records: [{ fields: { 'Monto Pagado': amount, 'Fecha de Pago': getCaracasDateString(), 'Propietario que Paga': [ownerId] } }] }) }); await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`, { method: 'PATCH', body: JSON.stringify({ fields: { Estado: 'Confirmado' } }) }); showToast('✅ Pago confirmado.'); } else { if (!confirm('¿Rechazar este pago?')) return; await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`, { method: 'PATCH', body: JSON.stringify({ fields: { Estado: 'Rechazado' } }) }); showToast('✔️ Pago rechazado.'); } await refreshAfterWrite(); } catch (error) { showToast(`❌ Error: ${error.message}`, true); } finally { btn.disabled = false; } });
-
-        document.getElementById('confirmPaymentBtn').addEventListener('click', async e => { const owner = condominioData.find(p => p.id === currentPropertyIdForAction); if (!owner) return; const isPartial = document.getElementById('tab-partial').classList.contains('active'); const amount = isPartial ? parseFloat(document.getElementById('partial-amount').value) : (owner['Deuda Restante'] || 0); if (!(amount > 0)) { showToast('Ingrese un monto válido.', true); return; } const btn = e.currentTarget; btn.disabled = true; try { await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PAGOS)}`, { method: 'POST', body: JSON.stringify({ records: [{ fields: { 'Monto Pagado': amount, 'Fecha de Pago': getCaracasDateString(), 'Propietario que Paga': [owner.id] } }] }) }); hideModal('paymentModal'); showToast('✅ Pago registrado.'); await refreshAfterWrite(); } catch (error) { showToast(`❌ Error al registrar pago: ${error.message}`, true); } finally { btn.disabled = false; } });
-
-        document.getElementById('add-expense-form').addEventListener('submit', async e => { e.preventDefault(); const concept = document.getElementById('expense-concept').value.trim(); const amount = parseFloat(document.getElementById('expense-amount').value); const type = document.getElementById('expense-type').value; const frequency = document.getElementById('expense-frequency').value; if (!concept || !(amount > 0)) { showToast('Complete concepto y monto correctamente.', true); return; } const btn = e.currentTarget.querySelector('button[type="submit"]'); btn.disabled = true; try { if (type === 'Gasto Especial') { const selected = Array.from(document.querySelectorAll('#expense-owners-list input:checked')).map(i => i.value); if (!selected.length) throw new Error('Debe seleccionar propietarios.'); const perOwner = amount / selected.length; const records = selected.map(ownerId => ({ fields: { Concepto: `${concept} (Cargo Individual)`, Monto: perOwner, 'Tipo de Gasto': type, Frecuencia: frequency, Propietarios: [ownerId] } })); for (let i = 0; i < records.length; i += 10) await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_GASTOS)}`, { method: 'POST', body: JSON.stringify({ records: records.slice(i, i + 10) }) }); showToast('✅ Gasto especial creado en lote.'); } else { const selected = Array.from(document.querySelectorAll('#expense-owners-list input:checked')).map(i => i.value); await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_GASTOS)}`, { method: 'POST', body: JSON.stringify({ records: [{ fields: { Concepto: concept, Monto: amount, 'Tipo de Gasto': type, Frecuencia: frequency, Propietarios: selected } }] }) }); showToast('✅ Gasto común registrado.'); } e.currentTarget.reset(); document.querySelectorAll('#expense-owners-list input').forEach(i => i.checked = true); await refreshAfterWrite(); } catch (error) { showToast(`Error: ${error.message}`, true); } finally { btn.disabled = false; } });
-
-        document.getElementById('expensesTableBody').addEventListener('change', e => { if (e.target.classList.contains('expense-checkbox')) updateDeleteSelectedButton(); });
-        document.getElementById('select-all-expenses').addEventListener('change', e => { document.querySelectorAll('.expense-checkbox').forEach(cb => cb.checked = e.target.checked); updateDeleteSelectedButton(); });
-        document.getElementById('delete-selected-expenses-btn').addEventListener('click', async () => { const ids = Array.from(document.querySelectorAll('.expense-checkbox:checked')).map(cb => cb.value); if (!ids.length) return; if (!confirm(`¿Eliminar ${ids.length} gasto(s) seleccionado(s)? Esta acción no se puede deshacer.`)) return; const btn = document.getElementById('delete-selected-expenses-btn'); btn.disabled = true; try { const response = await fetch('/.netlify/functions/batch-delete-records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tableName: AIRTABLE_TABLE_GASTOS, recordIds: ids }) }); const data = await response.json(); if (!response.ok) throw new Error(data.message || data.detail || 'No se pudo eliminar.'); showToast(`✅ Se eliminaron ${data.deletedCount || ids.length} gasto(s).`); document.getElementById('select-all-expenses').checked = false; await refreshAfterWrite(); } catch (error) { showToast(`Error eliminando gastos: ${error.message}`, true); } finally { btn.disabled = false; updateDeleteSelectedButton(); } });
-
-        document.getElementById('expense-type').addEventListener('change', e => { const isCommon = e.target.value === 'Gasto Común'; document.getElementById('expense-owners-container').style.display = isCommon ? 'none' : 'block'; if (isCommon) document.querySelectorAll('#expense-owners-list input').forEach(i => i.checked = true); });
-        document.getElementById('toggle-all-owners').addEventListener('click', e => { const allChecked = Array.from(document.querySelectorAll('#expense-owners-list input')).every(i => i.checked); document.querySelectorAll('#expense-owners-list input').forEach(i => i.checked = !allChecked); e.target.textContent = allChecked ? 'Seleccionar Todos' : 'Deseleccionar Todos'; });
-    }
+    function setupEventListeners() { if (window.__adminListenersReady) return; window.__adminListenersReady = true; document.querySelectorAll('.nav-button').forEach(btn => btn.addEventListener('click', e => { document.querySelectorAll('.nav-button, .section-content').forEach(el => el.classList.remove('active')); e.currentTarget.classList.add('active'); document.getElementById(e.currentTarget.dataset.target).classList.add('active'); })); document.getElementById('force-refresh-btn').addEventListener('click', () => { loadData(true); loadApiUsage(); }); document.getElementById('refresh-api-usage-btn').addEventListener('click', loadApiUsage); document.getElementById('searchInput').addEventListener('input', e => { const q = e.target.value.trim().toLowerCase(); populateTable(condominioData.filter(p => (p.Propietario || '').toLowerCase().includes(q) || String(p.Casa || '').includes(q))); }); document.getElementById('debtorsTableBody').addEventListener('click', e => { const btn = e.target.closest('button'); if (!btn) return; const id = btn.dataset.id; if (btn.classList.contains('view-breakdown-btn')) showDebtModal(id); if (btn.classList.contains('send-reminder-btn')) showReminderModal(id); if (btn.classList.contains('register-payment-btn')) showPaymentModal(id); }); ['closeDebtModalBtn','closeReminderModalBtn','cancelSendBtn','closePaymentModalBtn','cancelPaymentBtn'].forEach(id => document.getElementById(id).addEventListener('click', () => hideModal(id.includes('Debt') ? 'debtModal' : id.includes('Reminder') || id.includes('Send') ? 'reminderModal' : 'paymentModal'))); ['tab-total','tab-partial'].forEach(id => document.getElementById(id).addEventListener('click', e => { document.querySelectorAll('.payment-tab,.tab-content').forEach(el => el.classList.remove('active')); e.currentTarget.classList.add('active'); document.getElementById(e.currentTarget.id.replace('tab','content')).classList.add('active'); })); document.getElementById('send-whatsapp-btn').addEventListener('click', () => { const p = condominioData.find(prop => prop.id === currentPropertyIdForAction); if (!p || !p.Telefono) { showToast('Propietario sin teléfono registrado.', true); return; } const msg = document.getElementById('reminder-message-content').textContent; window.open(`https://api.whatsapp.com/send?phone=${normalizePhone(p.Telefono)}&text=${encodeURIComponent(msg)}`, '_blank'); hideModal('reminderModal'); }); document.getElementById('send-bulk-reminders-btn').addEventListener('click', () => { const morosos = condominioData.filter(p => (p['Deuda Restante'] || 0) > 0.01); if (!morosos.length) { showToast('No hay propietarios en mora.', true); return; } if (!confirm(`Se prepararán recordatorios para ${morosos.length} propietario(s) en mora. ¿Desea continuar?`)) return; morosos.forEach(p => { if (!p.Telefono) return; const msg = `*Asunto: Recordatorio de Saldo Pendiente*\n\nEstimado/a *${p.Propietario}*,\n\nSu propiedad, *Casa ${p.Casa}*, presenta un saldo pendiente de:\n\n*TOTAL A PAGAR: ${formatCurrency(p['Deuda Restante'])}*\n\nAgradecemos su pronta gestión.`; window.open(`https://api.whatsapp.com/send?phone=${normalizePhone(p.Telefono)}&text=${encodeURIComponent(msg)}`, '_blank'); }); showToast('Se prepararon las ventanas de WhatsApp disponibles.'); }); document.getElementById('reportedPaymentsTableBody').addEventListener('click', async e => { const btn = e.target.closest('button'); if (!btn) return; const recordId = btn.dataset.id; const isConfirm = btn.classList.contains('confirm-payment-btn'); btn.disabled = true; try { if (isConfirm) { const ownerId = btn.dataset.ownerId; const amount = parseFloat(btn.dataset.amount); if (!ownerId || !(amount > 0)) throw new Error('Propietario o monto inválido.'); await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PAGOS)}`, { method: 'POST', body: JSON.stringify({ records: [{ fields: { 'Monto Pagado': amount, 'Fecha de Pago': getCaracasDateString(), 'Propietario que Paga': [ownerId] } }] }) }); await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`, { method: 'PATCH', body: JSON.stringify({ fields: { Estado: 'Confirmado' } }) }); showToast('✅ Pago confirmado.'); } else { if (!confirm('¿Rechazar este pago?')) return; await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_REPORTE_PAGO)}/${recordId}`, { method: 'PATCH', body: JSON.stringify({ fields: { Estado: 'Rechazado' } }) }); showToast('✔️ Pago rechazado.'); } await refreshAfterWrite(); } catch (error) { showToast(`❌ Error: ${error.message}`, true); } finally { btn.disabled = false; } }); document.getElementById('confirmPaymentBtn').addEventListener('click', async e => { const owner = condominioData.find(p => p.id === currentPropertyIdForAction); if (!owner) return; const isPartial = document.getElementById('tab-partial').classList.contains('active'); const amount = isPartial ? parseFloat(document.getElementById('partial-amount').value) : (owner['Deuda Restante'] || 0); if (!(amount > 0)) { showToast('Ingrese un monto válido.', true); return; } const btn = e.currentTarget; btn.disabled = true; try { await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_PAGOS)}`, { method: 'POST', body: JSON.stringify({ records: [{ fields: { 'Monto Pagado': amount, 'Fecha de Pago': getCaracasDateString(), 'Propietario que Paga': [owner.id] } }] }) }); hideModal('paymentModal'); showToast('✅ Pago registrado.'); await refreshAfterWrite(); } catch (error) { showToast(`❌ Error al registrar pago: ${error.message}`, true); } finally { btn.disabled = false; } }); document.getElementById('add-expense-form').addEventListener('submit', async e => { e.preventDefault(); const concept = document.getElementById('expense-concept').value.trim(); const amount = parseFloat(document.getElementById('expense-amount').value); const type = document.getElementById('expense-type').value; const frequency = document.getElementById('expense-frequency').value; if (!concept || !(amount > 0)) { showToast('Complete concepto y monto correctamente.', true); return; } const btn = e.currentTarget.querySelector('button[type="submit"]'); btn.disabled = true; try { if (type === 'Gasto Especial') { const selected = Array.from(document.querySelectorAll('#expense-owners-list input:checked')).map(i => i.value); if (!selected.length) throw new Error('Debe seleccionar propietarios.'); const perOwner = amount / selected.length; const records = selected.map(ownerId => ({ fields: { Concepto: `${concept} (Cargo Individual)`, Monto: perOwner, 'Tipo de Gasto': type, Frecuencia: frequency, Propietarios: [ownerId] } })); for (let i = 0; i < records.length; i += 10) await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_GASTOS)}`, { method: 'POST', body: JSON.stringify({ records: records.slice(i, i + 10) }) }); showToast('✅ Gasto especial creado en lote.'); } else { const selected = Array.from(document.querySelectorAll('#expense-owners-list input:checked')).map(i => i.value); await airtableFetch(`/${encodeURIComponent(AIRTABLE_TABLE_GASTOS)}`, { method: 'POST', body: JSON.stringify({ records: [{ fields: { Concepto: concept, Monto: amount, 'Tipo de Gasto': type, Frecuencia: frequency, Propietarios: selected } }] }) }); showToast('✅ Gasto común registrado.'); } e.currentTarget.reset(); document.querySelectorAll('#expense-owners-list input').forEach(i => i.checked = true); await refreshAfterWrite(); } catch (error) { showToast(`Error: ${error.message}`, true); } finally { btn.disabled = false; } }); document.getElementById('expensesTableBody').addEventListener('change', e => { if (e.target.classList.contains('expense-checkbox')) updateDeleteSelectedButton(); }); document.getElementById('select-all-expenses').addEventListener('change', e => { document.querySelectorAll('.expense-checkbox').forEach(cb => cb.checked = e.target.checked); updateDeleteSelectedButton(); }); document.getElementById('delete-selected-expenses-btn').addEventListener('click', async () => { const ids = Array.from(document.querySelectorAll('.expense-checkbox:checked')).map(cb => cb.value); if (!ids.length) return; if (!confirm(`¿Eliminar ${ids.length} gasto(s) seleccionado(s)? Esta acción no se puede deshacer.`)) return; const btn = document.getElementById('delete-selected-expenses-btn'); btn.disabled = true; try { const response = await fetch('/.netlify/functions/batch-delete-records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tableName: AIRTABLE_TABLE_GASTOS, recordIds: ids }) }); const data = await response.json(); if (!response.ok) throw new Error(data.message || data.detail || 'No se pudo eliminar.'); showToast(`✅ Se eliminaron ${data.deletedCount || ids.length} gasto(s).`); document.getElementById('select-all-expenses').checked = false; await refreshAfterWrite(); } catch (error) { showToast(`Error eliminando gastos: ${error.message}`, true); } finally { btn.disabled = false; updateDeleteSelectedButton(); } }); document.getElementById('expense-type').addEventListener('change', e => { const isCommon = e.target.value === 'Gasto Común'; document.getElementById('expense-owners-container').style.display = isCommon ? 'none' : 'block'; if (isCommon) document.querySelectorAll('#expense-owners-list input').forEach(i => i.checked = true); }); document.getElementById('toggle-all-owners').addEventListener('click', e => { const allChecked = Array.from(document.querySelectorAll('#expense-owners-list input')).every(i => i.checked); document.querySelectorAll('#expense-owners-list input').forEach(i => i.checked = !allChecked); e.target.textContent = allChecked ? 'Seleccionar Todos' : 'Deseleccionar Todos'; }); }
     </script>
 </body>
 </html>
