@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Auditoría - Villa Los Apamates</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    .print-only { display: none; }
+    @media print {
+      body { background: #fff !important; color: #000 !important; }
+      .no-print { display: none !important; }
+      .print-only { display: block !important; }
+      .print-card { box-shadow: none !important; border: 1px solid #ddd !important; break-inside: avoid; }
+      table { page-break-inside: auto; }
+      tr { page-break-inside: avoid; page-break-after: auto; }
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+  <div id="login-container" class="min-h-screen flex items-center justify-center p-4 no-print">
+    <div class="w-full max-w-md bg-white shadow-2xl rounded-2xl p-6 sm:p-8">
+      <div class="text-center mb-6">
+        <h1 class="text-2xl font-bold text-slate-900">Auditoría VLA</h1>
+        <p class="text-slate-500 mt-1">Ingresa la contraseña de administrador</p>
+      </div>
+      <form id="login-form">
+        <input type="password" id="password" placeholder="Contraseña" class="mb-4 block w-full px-4 py-3 bg-slate-100 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-500">
+        <button type="submit" class="w-full py-3 px-4 bg-sky-600 text-white font-semibold rounded-lg hover:bg-sky-700">Entrar</button>
+      </form>
+      <div id="login-error" class="hidden mt-4 text-center text-sm font-medium text-red-600">Contraseña incorrecta.</div>
+    </div>
+  </div>
+
+  <div id="app" class="hidden">
+    <header class="bg-white shadow-sm no-print">
+      <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h1 class="text-2xl font-extrabold text-slate-900">📚 Auditoría / Historial</h1>
+          <p class="text-sm text-slate-500">Estados de cuenta auditables e imprimibles de Villa Los Apamates</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <a href="/admin.html" class="bg-slate-200 text-slate-800 font-semibold py-2 px-4 rounded-lg hover:bg-slate-300">← Volver al admin</a>
+          <button id="print-btn" class="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700">📄 Imprimir / Guardar PDF</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <section class="bg-white p-6 rounded-2xl shadow-lg mb-8 no-print">
+        <h2 class="text-xl font-bold text-slate-900 mb-4">Generar corte mensual de auditoría</h2>
+        <p class="text-sm text-slate-600 mb-4">Este botón crea una foto histórica del mes actual en la tabla existente <strong>Historial de Cargos</strong>. No modifica saldos, pagos ni cargos actuales.</p>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+          <div>
+            <label class="block text-sm font-medium text-slate-700">Mes a guardar</label>
+            <input id="snapshot-month" type="month" class="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md">
+          </div>
+          <button id="snapshot-btn" class="bg-sky-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-sky-700 md:col-span-1">📌 Generar corte</button>
+          <p id="snapshot-status" class="text-sm text-slate-500 md:col-span-2"></p>
+        </div>
+      </section>
+
+      <section class="bg-white p-6 rounded-2xl shadow-lg mb-8 no-print">
+        <h2 class="text-xl font-bold text-slate-900 mb-4">Consultar historial por propietario</h2>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+          <div class="md:col-span-2">
+            <label class="block text-sm font-medium text-slate-700">Propietario / Casa</label>
+            <select id="owner-selector" class="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md"><option>Cargando...</option></select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700">Meses</label>
+            <select id="months-count" class="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md">
+              <option value="6" selected>Últimos 6 meses</option>
+              <option value="12">Últimos 12 meses</option>
+            </select>
+          </div>
+          <button id="load-history-btn" class="bg-slate-800 text-white font-semibold py-2 px-4 rounded-lg hover:bg-slate-900">Consultar</button>
+        </div>
+      </section>
+
+      <section id="audit-report" class="bg-white p-6 rounded-2xl shadow-lg print-card hidden">
+        <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 border-b pb-4 mb-6">
+          <div>
+            <h2 class="text-2xl font-extrabold text-slate-900">Estado de Cuenta Auditable</h2>
+            <p class="text-sm text-slate-500">Condominio Villa Los Apamates</p>
+            <p id="report-generated" class="text-xs text-slate-500 mt-1"></p>
+          </div>
+          <div class="text-sm sm:text-right">
+            <p><strong>Propietario:</strong> <span id="report-owner-name"></span></p>
+            <p><strong>Casa:</strong> <span id="report-owner-house"></span></p>
+            <p><strong>Período:</strong> <span id="report-period"></span></p>
+          </div>
+        </div>
+
+        <div id="audit-warning" class="hidden bg-amber-50 border-l-4 border-amber-500 p-4 mb-6 text-sm text-amber-800"></div>
+
+        <h3 class="text-lg font-bold text-slate-900 mb-3">Resumen mensual</h3>
+        <div class="overflow-x-auto mb-8">
+          <table class="min-w-full text-sm border border-slate-200">
+            <thead class="bg-slate-100">
+              <tr>
+                <th class="p-2 text-left border">Mes</th>
+                <th class="p-2 text-right border">Saldo inicial</th>
+                <th class="p-2 text-right border">Cargos comunes</th>
+                <th class="p-2 text-right border">Especiales</th>
+                <th class="p-2 text-right border">Recargo</th>
+                <th class="p-2 text-right border">Pagos</th>
+                <th class="p-2 text-right border">Saldo final</th>
+                <th class="p-2 text-left border">Estado</th>
+              </tr>
+            </thead>
+            <tbody id="monthly-summary-body"></tbody>
+          </table>
+        </div>
+
+        <h3 class="text-lg font-bold text-slate-900 mb-3">Detalle de movimientos auditables</h3>
+        <div id="month-details" class="space-y-6"></div>
+
+        <h3 class="text-lg font-bold text-slate-900 mt-8 mb-3">Pagos registrados en el período</h3>
+        <div class="overflow-x-auto">
+          <table class="min-w-full text-sm border border-slate-200">
+            <thead class="bg-slate-100"><tr><th class="p-2 text-left border">Fecha</th><th class="p-2 text-left border">Mes</th><th class="p-2 text-right border">Monto</th><th class="p-2 text-left border">Método</th></tr></thead>
+            <tbody id="payments-body"></tbody>
+          </table>
+        </div>
+
+        <div class="mt-8 text-xs text-slate-500 border-t pt-4">
+          <p>Documento generado desde el sistema de gestión del Condominio Villa Los Apamates. Los saldos negativos representan saldo a favor del propietario.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="fixed bottom-5 right-5 bg-green-500 text-white py-3 px-5 rounded-lg shadow-lg opacity-0 transform translate-y-10 transition-all no-print"></div>
+
+<script>
+  const state = { owners: [], currentReport: null };
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    document.getElementById('snapshot-month').value = currentMonth;
+    document.getElementById('login-form').addEventListener('submit', handleLogin);
+    document.getElementById('snapshot-btn').addEventListener('click', generateSnapshot);
+    document.getElementById('load-history-btn').addEventListener('click', loadHistory);
+    document.getElementById('print-btn').addEventListener('click', () => window.print());
+
+    if (sessionStorage.getItem('vla-admin-auth') === 'true') showApp();
+  });
+
+  async function handleLogin(e) {
+    e.preventDefault();
+    const passwordInput = document.getElementById('password');
+    const errorDiv = document.getElementById('login-error');
+    const button = e.currentTarget.querySelector('button[type="submit"]');
+    errorDiv.classList.add('hidden');
+    button.disabled = true;
+    button.textContent = 'Validando...';
+
+    try {
+      const response = await fetch('/.netlify/functions/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: passwordInput.value })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error('Contraseña incorrecta.');
+      sessionStorage.setItem('vla-admin-auth', 'true');
+      showApp();
+    } catch (error) {
+      errorDiv.textContent = error.message;
+      errorDiv.classList.remove('hidden');
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Entrar';
+    }
+  }
+
+  async function showApp() {
+    document.getElementById('login-container').classList.add('hidden');
+    document.getElementById('app').classList.remove('hidden');
+    await loadOwners();
+  }
+
+  async function loadOwners() {
+    const selector = document.getElementById('owner-selector');
+    selector.innerHTML = '<option>Cargando propietarios...</option>';
+    try {
+      const response = await fetch('/.netlify/functions/public-data?force=1');
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Error cargando propietarios.');
+      state.owners = (data.propietarios || []).sort((a, b) => (a.Casa || 0) - (b.Casa || 0));
+      selector.innerHTML = '<option value="">-- Seleccione una casa --</option>' + state.owners.map(o => `<option value="${o.id}">Casa ${o.Casa} - ${o.Propietario}</option>`).join('');
+    } catch (error) {
+      selector.innerHTML = '<option>Error cargando propietarios</option>';
+      showToast(error.message, true);
+    }
+  }
+
+  async function generateSnapshot() {
+    const month = document.getElementById('snapshot-month').value;
+    const status = document.getElementById('snapshot-status');
+    const button = document.getElementById('snapshot-btn');
+    if (!month) return showToast('Seleccione un mes para generar el corte.', true);
+    if (!confirm(`¿Generar corte de auditoría para ${month}? Esto guardará una foto histórica de todas las casas.`)) return;
+
+    button.disabled = true;
+    button.textContent = 'Generando...';
+    status.textContent = 'Generando corte de auditoría...';
+
+    try {
+      const response = await fetch('/.netlify/functions/audit-snapshot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || data.message || 'Error generando corte.');
+      status.textContent = data.message || 'Corte generado correctamente.';
+      showToast(data.message || 'Corte generado correctamente.');
+    } catch (error) {
+      status.textContent = error.message;
+      showToast(error.message, true);
+    } finally {
+      button.disabled = false;
+      button.textContent = '📌 Generar corte';
+    }
+  }
+
+  async function loadHistory() {
+    const ownerId = document.getElementById('owner-selector').value;
+    const months = document.getElementById('months-count').value || '6';
+    if (!ownerId) return showToast('Seleccione una casa.', true);
+
+    const button = document.getElementById('load-history-btn');
+    button.disabled = true;
+    button.textContent = 'Consultando...';
+
+    try {
+      const response = await fetch(`/.netlify/functions/audit-history?ownerId=${encodeURIComponent(ownerId)}&months=${encodeURIComponent(months)}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || data.message || 'Error consultando historial.');
+      state.currentReport = data;
+      renderReport(data);
+      showToast('Historial cargado.');
+    } catch (error) {
+      showToast(error.message, true);
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Consultar';
+    }
+  }
+
+  function formatCurrency(value) {
+    if (value === null || value === undefined || value === '') return '—';
+    const num = Number(value || 0);
+    if (num < -0.01) return `$${Math.abs(num).toFixed(2)} a favor`;
+    return `$${num.toFixed(2)}`;
+  }
+
+  function formatSigned(value) {
+    if (value === null || value === undefined || value === '') return '—';
+    const num = Number(value || 0);
+    const sign = num < 0 ? '-' : '';
+    return `${sign}$${Math.abs(num).toFixed(2)}`;
+  }
+
+  function statusClass(status) {
+    if (status === 'Deuda') return 'text-red-600 font-bold';
+    if (status === 'Saldo a favor') return 'text-green-600 font-bold';
+    if (status === 'Solvente') return 'text-green-600 font-bold';
+    return 'text-amber-700 font-semibold';
+  }
+
+  function renderReport(data) {
+    const owner = data.owner || {};
+    const months = data.months || [];
+    const missing = months.filter(m => !m.hasSnapshot);
+    const available = months.filter(m => m.hasSnapshot);
+
+    document.getElementById('audit-report').classList.remove('hidden');
+    document.getElementById('report-owner-name').textContent = owner.Propietario || 'Sin nombre';
+    document.getElementById('report-owner-house').textContent = owner.Casa || 'N/A';
+    document.getElementById('report-period').textContent = months.length ? `${months[months.length - 1].month} a ${months[0].month}` : '—';
+    document.getElementById('report-generated').textContent = `Generado: ${new Date(data.generatedAt || Date.now()).toLocaleString('es-VE')}`;
+
+    const warning = document.getElementById('audit-warning');
+    if (missing.length) {
+      warning.classList.remove('hidden');
+      warning.innerHTML = `<strong>Nota:</strong> hay ${missing.length} mes(es) sin corte histórico registrado. Para que un mes sea auditable, primero debe generarse el corte mensual de auditoría.`;
+    } else {
+      warning.classList.add('hidden');
+      warning.textContent = '';
+    }
+
+    document.getElementById('monthly-summary-body').innerHTML = months.map(m => `
+      <tr>
+        <td class="p-2 border font-semibold">${m.month}</td>
+        <td class="p-2 border text-right">${formatCurrency(m.saldoInicial)}</td>
+        <td class="p-2 border text-right">${formatCurrency(m.cargosComunes)}</td>
+        <td class="p-2 border text-right">${formatCurrency(m.gastosEspeciales)}</td>
+        <td class="p-2 border text-right">${formatCurrency(m.recargo)}</td>
+        <td class="p-2 border text-right">${formatSigned(m.pagosConfirmados)}</td>
+        <td class="p-2 border text-right ${statusClass(m.estado)}">${formatCurrency(m.saldoFinal)}</td>
+        <td class="p-2 border ${statusClass(m.estado)}">${m.estado}</td>
+      </tr>
+    `).join('');
+
+    document.getElementById('month-details').innerHTML = months.map(m => `
+      <div class="border border-slate-200 rounded-xl p-4 print-card">
+        <div class="flex justify-between items-center mb-3">
+          <h4 class="font-bold text-slate-900">${m.month}</h4>
+          <span class="text-sm ${statusClass(m.estado)}">${m.estado}</span>
+        </div>
+        ${m.movements.length ? `<table class="min-w-full text-sm border"><thead class="bg-slate-50"><tr><th class="p-2 border text-left">Movimiento</th><th class="p-2 border text-left">Fecha</th><th class="p-2 border text-right">Monto</th></tr></thead><tbody>${m.movements.map(move => `<tr><td class="p-2 border">${cleanLabel(move.label)}</td><td class="p-2 border">${move.date || '—'}</td><td class="p-2 border text-right">${formatSigned(move.amount)}</td></tr>`).join('')}</tbody></table>` : `<p class="text-sm text-amber-700">Sin corte histórico registrado para este mes.</p>`}
+      </div>
+    `).join('');
+
+    const payments = data.payments || [];
+    document.getElementById('payments-body').innerHTML = payments.length ? payments.map(p => `
+      <tr><td class="p-2 border">${p.date || '—'}</td><td class="p-2 border">${p.month || '—'}</td><td class="p-2 border text-right">${formatCurrency(p.amount)}</td><td class="p-2 border">${p.method || '—'}</td></tr>
+    `).join('') : '<tr><td colspan="4" class="p-3 text-center text-slate-500 border">No hay pagos registrados en el período consultado.</td></tr>';
+
+    setTimeout(() => document.getElementById('audit-report').scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+  }
+
+  function cleanLabel(label) {
+    return String(label || '').replace(/\|.*$/, '').trim();
+  }
+
+  function showToast(message, isError = false) {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.className = `fixed bottom-5 right-5 text-white py-3 px-5 rounded-lg shadow-lg transform transition-all no-print ${isError ? 'bg-red-500' : 'bg-green-500'}`;
+    toast.classList.remove('opacity-0', 'translate-y-10');
+    setTimeout(() => toast.classList.add('opacity-0', 'translate-y-10'), 4000);
+  }
+</script>
+</body>
+</html>
