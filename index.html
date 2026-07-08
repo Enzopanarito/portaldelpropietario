@@ -86,6 +86,7 @@
                     <div class="bg-white p-6 rounded-2xl shadow-lg">
                         <h3 class="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Su Estado de Cuenta Actual</h3>
                         <div id="debt-summary" class="space-y-3"></div>
+                        <div id="bcv-rate-card" class="mt-5"></div>
                         <button id="report-payment-btn" class="mt-6 w-full bg-teal-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-teal-700 transition-colors shadow-sm">Reportar un Pago</button>
                     </div>
                     <div class="bg-white p-6 rounded-2xl shadow-lg">
@@ -134,7 +135,9 @@
         const TIPO_GASTO_COMUN = 'Gasto Común';
         const TIPO_GASTO_ESPECIAL = 'Gasto Especial';
         const TASA_RECARGO = 0.10;
+        const VENEZUELA_TZ = 'America/Caracas';
         let allData = { propietarios: [], gastos: [], pagos: [] };
+        let bcvData = null;
 
         function showToast(message, isError = false, duration = 4000) {
             const toast = document.getElementById('toast');
@@ -149,25 +152,51 @@
             return `$${num.toFixed(2)}`;
         }
 
+        function formatBs(value) {
+            let num = Number(value || 0);
+            if (!Number.isFinite(num)) num = 0;
+            return `Bs. ${num.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
+
+        function getVenezuelaParts() {
+            const parts = new Intl.DateTimeFormat('en-CA', { timeZone: VENEZUELA_TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(new Date());
+            return Object.fromEntries(parts.map(p => [p.type, p.value]));
+        }
+
         function getCaracasDateString() {
-            return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+            const p = getVenezuelaParts();
+            return `${p.year}-${p.month}-${p.day}`;
         }
 
         function getCurrentMonthKey() {
-            return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit' }).format(new Date());
+            const p = getVenezuelaParts();
+            return `${p.year}-${p.month}`;
+        }
+
+        function getVenezuelaDateLabel() {
+            return new Intl.DateTimeFormat('es-VE', { timeZone: VENEZUELA_TZ, day: '2-digit', month: 'long', year: 'numeric' }).format(new Date());
+        }
+
+        function getVenezuelaMonthLabel() {
+            return new Intl.DateTimeFormat('es-VE', { timeZone: VENEZUELA_TZ, month: 'long', year: 'numeric' }).format(new Date());
         }
 
         async function initApp() {
             try {
-                const response = await fetch('/.netlify/functions/public-data');
-                if (!response.ok) throw new Error('No se pudieron cargar los datos públicos.');
-                const data = await response.json();
+                const [publicResponse, bcvResponse] = await Promise.all([
+                    fetch('/.netlify/functions/public-data'),
+                    fetch('/.netlify/functions/bcv-rate')
+                ]);
+                if (!publicResponse.ok) throw new Error('No se pudieron cargar los datos públicos.');
+                const data = await publicResponse.json();
                 allData = { propietarios: data.propietarios || [], gastos: data.gastos || [], pagos: data.pagos || [] };
+                if (bcvResponse.ok) bcvData = await bcvResponse.json();
                 populateUserSelector(document.getElementById('welcomeUserSelector'));
                 populateUserSelector(document.getElementById('userSelector'));
                 updateGlobalKPIs();
                 displayPublicKPIs();
-                if (data.generatedAtCaracas) document.getElementById('cache-info-public').textContent = `Última actualización: ${data.generatedAtCaracas}`;
+                const updateLabel = bcvData?.venezuelaDateTimeLabel || data.generatedAtCaracas || getCaracasDateString();
+                document.getElementById('cache-info-public').textContent = `Fecha/hora del sistema: ${updateLabel} (Venezuela)`;
             } catch (error) {
                 document.getElementById('welcomeUserSelector').innerHTML = `<option>Error al cargar datos</option>`;
                 showToast('Error al cargar datos. Recarga la página o contacta al admin.', true, 9000);
@@ -210,9 +239,8 @@
         function renderPortalForUser(propertyId) {
             const property = allData.propietarios.find(p => p.id === propertyId);
             if (!property) return;
-            const currentDate = new Date();
-            const dateString = currentDate.toLocaleString('es-VE', { day: '2-digit', month: 'long', year: 'numeric' });
-            const monthYearString = currentDate.toLocaleString('es-VE', { month: 'long', year: 'numeric' });
+            const dateString = getVenezuelaDateLabel();
+            const monthYearString = getVenezuelaMonthLabel();
             const deudaRestante = property['Deuda Restante'] || 0;
             const totalCargosDelMes = (property['Cuota Base Mes'] || 0) + (property['Total Gastos Especiales del Mes'] || 0) + (property['Recargo Aplicado'] || 0);
             const tieneSaldoAFavor = deudaRestante < -0.01;
@@ -221,13 +249,26 @@
             const resumenValor = tieneSaldoAFavor ? formatCurrency(Math.abs(deudaRestante)) : (estaSolvente ? '$0.00' : formatCurrency(deudaRestante));
             const resumenClase = deudaRestante > 0.01 ? 'text-red-500' : 'text-green-600';
             const resumenNota = tieneSaldoAFavor ? 'Este saldo a favor será tomado en cuenta automáticamente en sus próximos cargos.' : (estaSolvente ? 'No presenta deuda pendiente a la fecha de hoy.' : 'Este es su saldo total a la fecha de hoy.');
-            document.getElementById('welcome-message').innerHTML = `<h2 class="text-3xl font-bold text-slate-900">Bienvenido, ${property.Propietario || ''}</h2><p class="text-lg text-slate-600">Este es el resumen de su estado de cuenta para la <span class="font-bold">Casa #${property.Casa}</span>.</p><p class="text-md text-slate-500 mt-2">Estado de Cuenta para: <span class="font-semibold">${dateString}</span></p>`;
+            document.getElementById('welcome-message').innerHTML = `<h2 class="text-3xl font-bold text-slate-900">Bienvenido, ${property.Propietario || ''}</h2><p class="text-lg text-slate-600">Este es el resumen de su estado de cuenta para la <span class="font-bold">Casa #${property.Casa}</span>.</p><p class="text-md text-slate-500 mt-2">Estado de Cuenta para: <span class="font-semibold">${dateString}</span> <span class="text-xs">(hora Venezuela)</span></p>`;
             document.getElementById('debt-summary').innerHTML = `<div class="flex justify-between items-baseline text-3xl font-bold ${resumenClase}"><span>${resumenLabel}</span><span>${resumenValor}</span></div><div class="flex justify-between items-baseline text-lg mt-4 border-t pt-3"><span class="text-slate-600">Total Cargos (Mes Actual):</span><span class="font-bold text-slate-800">${formatCurrency(totalCargosDelMes)}</span></div><p class="text-xs text-slate-500 text-right">${resumenNota}</p>`;
+            displayBcvRateCard(property);
             displayChargesBreakdown(property, monthYearString);
             displayPaymentsHistory(property);
             displayDiscountBanner();
             displayBcvNotice();
             displayPrivateMorososList();
+        }
+
+        function displayBcvRateCard(property) {
+            const container = document.getElementById('bcv-rate-card');
+            if (!bcvData || !bcvData.rate) {
+                container.innerHTML = `<div class="bg-amber-50 border-l-4 border-amber-500 text-amber-800 p-4 rounded-r-lg"><p class="font-bold">Tasa BCV no disponible</p><p class="text-sm">No se pudo actualizar la tasa automáticamente en este momento.</p></div>`;
+                return;
+            }
+            const deudaRestante = property['Deuda Restante'] || 0;
+            const montoDolaresParaBs = Math.max(0, deudaRestante);
+            const equivalenteBs = montoDolaresParaBs * Number(bcvData.rate || 0);
+            container.innerHTML = `<div class="bg-sky-50 border-l-4 border-sky-500 text-sky-900 p-4 rounded-r-lg"><div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2"><div><p class="font-bold">Tasa BCV del día: ${bcvData.rateFormatted || formatBs(bcvData.rate)}</p><p class="text-xs text-sky-700">Actualizada según fecha Venezuela: ${bcvData.venezuelaDate || getCaracasDateString()} · Fuente: ${bcvData.source || 'BCV'}</p></div><div class="sm:text-right"><p class="text-sm text-sky-700">Equivalente referencial en Bs.</p><p class="text-xl font-bold">${formatBs(equivalenteBs)}</p></div></div></div>`;
         }
 
         function displayChargesBreakdown(property, monthYearString) {
@@ -268,11 +309,11 @@
                 return ownerId === property.id && paymentMonth === currentMonth && fields['[x] Aplicado al Cierre'] !== true;
             });
             if (!ownerPayments.length) { tbody.innerHTML = `<tr><td colspan="2" class="text-center p-4 text-slate-500">No hay pagos activos registrados este mes.</td></tr>`; return; }
-            tbody.innerHTML = ownerPayments.sort((a, b) => new Date(b.fields['Fecha de Pago']) - new Date(a.fields['Fecha de Pago'])).map(p => `<tr><td class="px-4 py-3 text-sm">${new Date((p.fields['Fecha de Pago'] || '') + 'T00:00:00').toLocaleDateString('es-VE')}</td><td class="px-4 py-3 text-sm text-right font-medium text-green-600">${formatCurrency(p.fields['Monto Pagado'])}</td></tr>`).join('');
+            tbody.innerHTML = ownerPayments.sort((a, b) => new Date(b.fields['Fecha de Pago']) - new Date(a.fields['Fecha de Pago'])).map(p => `<tr><td class="px-4 py-3 text-sm">${new Date((p.fields['Fecha de Pago'] || '') + 'T00:00:00').toLocaleDateString('es-VE', { timeZone: VENEZUELA_TZ })}</td><td class="px-4 py-3 text-sm text-right font-medium text-green-600">${formatCurrency(p.fields['Monto Pagado'])}</td></tr>`).join('');
         }
 
-        function displayDiscountBanner() { document.getElementById('discount-banner-container').innerHTML = new Date().getDate() <= 10 ? `<div class="bg-teal-100 border-l-4 border-teal-500 text-teal-800 p-4 rounded-r-lg shadow"><p class="font-bold">¡Buenas Noticias!</p><p class="text-sm">Está a tiempo para disfrutar del beneficio por pronto pago en sus gastos comunes.</p></div>` : ''; }
-        function displayBcvNotice() { document.getElementById('bcv-notice-container').innerHTML = `<div class="bg-slate-100 border-l-4 border-sky-500 text-slate-700 p-4 rounded-r-lg"><p class="font-bold">Nota sobre Pagos en Bolívares</p><p class="text-sm">Aunque el estado de cuenta está expresado en dólares, los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción.</p></div>`; }
+        function displayDiscountBanner() { document.getElementById('discount-banner-container').innerHTML = Number(getVenezuelaParts().day) <= 10 ? `<div class="bg-teal-100 border-l-4 border-teal-500 text-teal-800 p-4 rounded-r-lg shadow"><p class="font-bold">¡Buenas Noticias!</p><p class="text-sm">Está a tiempo para disfrutar del beneficio por pronto pago en sus gastos comunes.</p></div>` : ''; }
+        function displayBcvNotice() { document.getElementById('bcv-notice-container').innerHTML = `<div class="bg-slate-100 border-l-4 border-sky-500 text-slate-700 p-4 rounded-r-lg"><p class="font-bold">Nota sobre Pagos en Bolívares</p><p class="text-sm">Aunque el estado de cuenta está expresado en dólares, los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción. La fecha y hora del portal se manejan con zona horaria de Venezuela.</p></div>`; }
         function displayPrivateMorososList() { const container = document.getElementById('morosos-container-private'); const div = document.getElementById('morosos-list-private'); const morosos = allData.propietarios.filter(p => (p['Deuda Restante'] || 0) > 0.01).sort((a, b) => (a.Casa || 0) - (b.Casa || 0)); if (!morosos.length) { container.classList.add('hidden'); return; } div.innerHTML = morosos.map(m => `<div class="flex justify-between items-center py-1 border-b border-slate-100"><div><span class="font-semibold text-slate-700">Casa #${m.Casa || 'N/A'}</span><span class="text-slate-500 ml-2">${m.Propietario || ''}</span></div><span class="font-bold text-red-500">${formatCurrency(m['Deuda Restante'])}</span></div>`).join(''); container.classList.remove('hidden'); }
 
         const welcomeScreen = document.getElementById('welcome-screen');
