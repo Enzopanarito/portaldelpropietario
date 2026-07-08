@@ -21,11 +21,7 @@ function nowCaracasLabel() {
 }
 
 function currentMonthCaracas() {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Caracas',
-    year: 'numeric',
-    month: '2-digit'
-  }).formatToParts(new Date());
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit' }).formatToParts(new Date());
   return `${parts.find(p => p.type === 'year').value}-${parts.find(p => p.type === 'month').value}`;
 }
 
@@ -40,10 +36,7 @@ async function recordApiUsage(source, calls, token, baseId) {
   try {
     await fetch(buildUrl(baseId, TABLES.usage), {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ records: [{ fields: { Key: key, Version: totalCallsIncludingLog } }], typecast: true })
     });
   } catch (error) {
@@ -59,15 +52,9 @@ async function airtableGetAll(tableName, query = '', token, baseId, counter) {
     const separator = query ? '&' : '?';
     const url = buildUrl(baseId, tableName, `${query}${offset ? `${separator}offset=${encodeURIComponent(offset)}` : ''}`);
     counter.calls += 1;
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error?.message || `Error cargando ${tableName}`);
-    }
-
+    if (!response.ok) throw new Error(data.error?.message || `Error cargando ${tableName}`);
     records = records.concat(data.records || []);
     offset = data.offset;
   } while (offset);
@@ -113,6 +100,7 @@ function compactPago(record) {
       'Monto Pagado': f['Monto Pagado'],
       'Fecha de Pago': f['Fecha de Pago'],
       'Propietario que Paga': f['Propietario que Paga'] || [],
+      '[x] Aplicado al Cierre': f['[x] Aplicado al Cierre'] === true,
     }
   };
 }
@@ -129,12 +117,7 @@ exports.handler = async function(event) {
   if (!force && publicCache && publicCache.expiresAt > Date.now()) {
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Cache': 'HIT',
-        'X-Airtable-Calls': '0',
-        'Cache-Control': 'public, max-age=300'
-      },
+      headers: { 'Content-Type': 'application/json', 'X-Cache': 'HIT', 'X-Airtable-Calls': '0', 'Cache-Control': 'public, max-age=300' },
       body: JSON.stringify(publicCache.payload)
     };
   }
@@ -156,21 +139,12 @@ exports.handler = async function(event) {
       pagos: pagos.map(compactPago),
     };
 
-    publicCache = {
-      payload,
-      expiresAt: Date.now() + PUBLIC_CACHE_TTL_MS,
-    };
-
+    publicCache = { payload, expiresAt: Date.now() + PUBLIC_CACHE_TTL_MS };
     await recordApiUsage('public-data', counter.calls, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID);
 
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Cache': 'MISS',
-        'X-Airtable-Calls': String(counter.calls + 1),
-        'Cache-Control': 'public, max-age=300'
-      },
+      headers: { 'Content-Type': 'application/json', 'X-Cache': 'MISS', 'X-Airtable-Calls': String(counter.calls + 1), 'Cache-Control': 'public, max-age=300' },
       body: JSON.stringify(payload)
     };
   } catch (error) {
