@@ -1,361 +1,228 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portal del Propietario - Villa Los Apamates</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        body { font-family: 'Inter', sans-serif; }
-        #welcome-screen { background-image: linear-gradient(to top, #f3e7e9 0%, #e3eeff 99%, #e3eeff 100%); }
-        .spinner { border: 4px solid rgba(0,0,0,.1); width: 36px; height: 36px; border-radius: 50%; border-left-color: #0ea5e9; animation: spin 1s ease infinite; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .toast { visibility: hidden; min-width: 250px; background-color: #333; color: #fff; text-align: center; border-radius: 8px; padding: 16px; position: fixed; z-index: 100; right: 30px; bottom: 30px; font-size: 16px; opacity: 0; transition: all .5s ease-in-out; }
-        .toast.show { visibility: visible; opacity: 1; }
-        .toast.success { background-color: #28a745; }
-        .toast.error { background-color: #dc3545; }
-        .dark body { background-color: #020617; color: #d1d5db; }
-        .dark #welcome-screen { background-image: linear-gradient(to top, #1e293b 0%, #0f172a 100%); }
-        .dark .bg-white { background-color: #0f172a; }
-        .dark .bg-slate-50 { background-color: #1e293b; }
-        .dark .bg-slate-100 { background-color: #334155; }
-        .dark .bg-slate-200 { background-color: #475569; }
-        .dark .text-slate-900 { color: #f8fafc; }
-        .dark .text-slate-800 { color: #e2e8f0; }
-        .dark .text-slate-700 { color: #cbd5e1; }
-        .dark .text-slate-600 { color: #94a3b8; }
-        .dark .text-slate-500 { color: #64748b; }
-        .dark .border-slate-200 { border-color: #334155; }
-        .dark .border-slate-300 { border-color: #475569; }
-        .dark .bg-white\/80 { background-color: rgba(15,23,42,.8); }
-        .dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-color: #334155; }
-        .dark .text-green-600, .dark .text-green-500 { color: #22c55e; }
-        .dark .text-red-500 { color: #ef4444; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portal del Propietario - Villa Los Apamates</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    #welcome-screen { background-image: linear-gradient(to top, #f3e7e9 0%, #e3eeff 100%); }
+    .toast { visibility:hidden; min-width:250px; background:#333; color:#fff; text-align:center; border-radius:8px; padding:16px; position:fixed; z-index:100; right:30px; bottom:30px; opacity:0; transition:all .4s ease; }
+    .toast.show { visibility:visible; opacity:1; }
+    .toast.success { background:#16a34a; }
+    .toast.error { background:#dc2626; }
+    .spinner { border:4px solid rgba(0,0,0,.1); width:28px; height:28px; border-radius:50%; border-left-color:#0ea5e9; animation:spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .dark body { background:#020617; color:#d1d5db; }
+    .dark #welcome-screen { background-image: linear-gradient(to top, #1e293b 0%, #0f172a 100%); }
+    .dark .bg-white { background:#0f172a; }
+    .dark .bg-slate-50 { background:#1e293b; }
+    .dark .bg-slate-100 { background:#334155; }
+    .dark .text-slate-900 { color:#f8fafc; }
+    .dark .text-slate-800 { color:#e2e8f0; }
+    .dark .text-slate-700 { color:#cbd5e1; }
+    .dark .text-slate-600, .dark .text-slate-500 { color:#94a3b8; }
+    .dark .border-slate-200, .dark .border-slate-300 { border-color:#334155; }
+    .dark input, .dark select { background:#1e293b!important; color:#f8fafc!important; border-color:#475569!important; }
+  </style>
 </head>
 <body class="bg-slate-50 text-slate-800">
-    <div id="welcome-theme-toggle-container" class="absolute top-4 right-4 z-10">
-        <button id="theme-toggle-welcome" type="button" class="flex items-center text-slate-500 hover:bg-slate-200 rounded-lg text-sm p-2.5">
-            <span id="dark-theme-group-welcome" class="hidden items-center"><span class="text-xl">🌙</span><span class="ml-2 font-semibold hidden sm:inline">Oscuro</span></span>
-            <span id="light-theme-group-welcome" class="hidden items-center"><span class="text-xl">☀️</span><span class="ml-2 font-semibold hidden sm:inline">Claro</span></span>
-        </button>
-    </div>
+  <div class="absolute top-4 right-4 z-10"><button id="theme-toggle-welcome" class="text-slate-500 hover:bg-slate-200 rounded-lg text-sm p-2.5">🌙 Oscuro</button></div>
 
-    <div id="welcome-screen" class="min-h-screen flex flex-col items-center justify-center p-4 text-center">
-        <img src="https://i.postimg.cc/WpyB1yTb/Logo_VLA.png" alt="Logo Villa Los Apamates" class="w-48 h-auto mb-6">
-        <h1 class="text-4xl font-bold text-slate-900">Bienvenido a Villa Los Apamates</h1>
-        <p class="text-lg text-slate-600 mt-2 mb-8">Su portal de gestión en línea.</p>
-        <div class="w-full max-w-sm mx-auto bg-white p-6 rounded-2xl shadow-xl">
-            <label for="welcomeUserSelector" class="block text-sm font-medium text-slate-700 mb-2">Por favor, seleccione su casa para continuar</label>
-            <select id="welcomeUserSelector" class="bg-slate-100 border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-sky-500 focus:border-sky-500 block w-full p-2.5"><option>Cargando propietarios...</option></select>
-            <button id="viewStatementBtn" class="mt-4 w-full bg-sky-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-sky-700 transition-colors shadow-sm">Consultar Estado de Cuenta</button>
-            <p id="cache-info-public" class="text-xs text-slate-500 mt-3"></p>
+  <div id="welcome-screen" class="min-h-screen flex flex-col items-center justify-center p-4 text-center">
+    <img src="https://i.postimg.cc/WpyB1yTb/Logo_VLA.png" alt="Logo Villa Los Apamates" class="w-48 h-auto mb-6">
+    <h1 class="text-4xl font-bold text-slate-900">Bienvenido a Villa Los Apamates</h1>
+    <p class="text-lg text-slate-600 mt-2 mb-8">Su portal de gestión en línea.</p>
+    <div class="w-full max-w-sm bg-white p-6 rounded-2xl shadow-xl">
+      <label for="welcomeUserSelector" class="block text-sm font-medium text-slate-700 mb-2">Seleccione su casa</label>
+      <select id="welcomeUserSelector" class="bg-slate-100 border border-slate-300 text-slate-900 text-sm rounded-lg block w-full p-2.5"><option>Cargando...</option></select>
+      <button id="viewStatementBtn" class="mt-4 w-full bg-sky-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-sky-700">Consultar Estado de Cuenta</button>
+      <p id="cache-info-public" class="text-xs text-slate-500 mt-3"></p>
+    </div>
+    <div id="kpi-container-public" class="w-full max-w-sm bg-white/80 p-6 rounded-2xl shadow-xl mt-6 hidden">
+      <h3 class="text-lg font-bold text-slate-800 mb-3 text-left border-b pb-2">📊 Estado General del Condominio</h3>
+      <div class="text-left text-sm space-y-3 mt-3">
+        <div class="flex justify-between"><span class="text-slate-600">Propietarios Solventes:</span><span id="kpi-public-solventes" class="font-bold text-green-600">...</span></div>
+        <div class="flex justify-between"><span class="text-slate-600">% de Solvencia:</span><span id="kpi-public-solvencia" class="font-bold text-green-600">...</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="main-content" class="hidden">
+    <header class="bg-white shadow-md">
+      <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+        <div class="flex items-center gap-3"><img src="https://i.postimg.cc/WpyB1yTb/Logo_VLA.png" class="w-12 h-auto"><div><h1 class="text-xl sm:text-2xl font-bold text-slate-900">Villa Los Apamates</h1><p class="text-sm text-slate-500">Portal del Propietario</p></div></div>
+        <div class="flex items-center gap-4"><select id="userSelector" class="bg-slate-100 border border-slate-300 text-slate-900 text-sm rounded-lg p-2.5"></select><button id="theme-toggle-main" class="text-slate-500 hover:bg-slate-200 rounded-lg text-sm p-2.5">🌙</button></div>
+      </div>
+    </header>
+    <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div id="welcome-message" class="mb-6"></div>
+      <div id="discount-banner-container" class="mb-8"></div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div class="md:col-span-2 space-y-8">
+          <div class="bg-white p-6 rounded-2xl shadow-lg">
+            <h3 class="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Su Estado de Cuenta Actual</h3>
+            <div id="debt-summary" class="space-y-4"></div>
+            <div id="bcv-rate-card" class="mt-5"></div>
+            <button id="report-payment-btn" class="mt-6 w-full bg-teal-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-teal-700">Reportar un Pago</button>
+          </div>
+          <div class="bg-white p-6 rounded-2xl shadow-lg">
+            <h3 id="expenses-breakdown-title" class="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Desglose de Cargos</h3>
+            <div id="expenses-breakdown" class="space-y-5"></div>
+          </div>
+          <div id="bcv-notice-container"></div>
         </div>
-        <div id="kpi-container-public" class="w-full max-w-sm mx-auto bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-xl mt-6 hidden">
-            <h3 class="text-lg font-bold text-slate-800 mb-3 text-left border-b pb-2">📊 Estado General del Condominio</h3>
-            <div class="text-left text-sm space-y-3 mt-3">
-                <div class="flex justify-between items-center"><span class="text-slate-600">Propietarios Solventes:</span><span id="kpi-public-solventes" class="font-bold text-green-600">...</span></div>
-                <div class="flex justify-between items-center"><span class="text-slate-600">% de Solvencia:</span><span id="kpi-public-solvencia" class="font-bold text-green-600">...</span></div>
-            </div>
+        <div class="md:col-span-1 space-y-8">
+          <div class="bg-white p-6 rounded-2xl shadow-lg space-y-4">
+            <h3 class="text-xl font-bold text-slate-800 mb-2 border-b pb-2">Resumen General</h3>
+            <div class="flex justify-between"><span class="text-slate-600 font-medium">💰 Deuda Total Ref.:</span><span id="kpi-deuda-total" class="font-bold text-lg text-sky-600">$0.00</span></div>
+            <div class="flex justify-between"><span class="text-slate-600 font-medium">🏠 En Mora:</span><span id="kpi-propietarios-mora" class="font-bold text-lg text-red-500">0 / 0</span></div>
+            <div class="flex justify-between"><span class="text-slate-600 font-medium">📈 Solvencia:</span><span id="kpi-solvencia" class="font-bold text-lg text-green-500">0%</span></div>
+          </div>
+          <div class="bg-white p-6 rounded-2xl shadow-lg">
+            <h3 class="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Historial de Pagos Activos</h3>
+            <div class="overflow-y-auto max-h-60"><table class="min-w-full"><thead class="bg-slate-50 sticky top-0"><tr><th class="px-4 py-2 text-left text-xs text-slate-500 uppercase">Fecha</th><th class="px-4 py-2 text-left text-xs text-slate-500 uppercase">Tipo</th><th class="px-4 py-2 text-right text-xs text-slate-500 uppercase">Monto</th></tr></thead><tbody id="payments-history-body" class="bg-white divide-y divide-slate-200"></tbody></table></div>
+          </div>
+          <div id="morosos-container-private" class="bg-white p-6 rounded-2xl shadow-lg hidden"><h3 class="text-lg font-bold text-slate-800 border-b pb-2 mb-3">Saldos Pendientes</h3><div id="morosos-list-private" class="space-y-1 text-sm"></div></div>
         </div>
-    </div>
+      </div>
+    </main>
+  </div>
 
-    <div id="main-content" class="hidden">
-        <header class="bg-white shadow-md">
-            <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-                <div class="flex items-center gap-3">
-                    <img src="https://i.postimg.cc/WpyB1yTb/Logo_VLA.png" alt="Logo Villa Los Apamates" class="w-12 h-auto">
-                    <div><h1 class="text-xl sm:text-2xl font-bold text-slate-900">Villa Los Apamates</h1><p class="text-sm text-slate-500">Portal del Propietario</p></div>
-                </div>
-                <div class="flex items-center gap-4">
-                    <select id="userSelector" class="bg-slate-100 border border-slate-300 text-slate-900 text-sm rounded-lg block w-full p-2.5"></select>
-                    <button id="theme-toggle-main" type="button" class="flex items-center text-slate-500 hover:bg-slate-200 rounded-lg text-sm p-2.5">
-                        <span id="dark-theme-group-main" class="hidden items-center"><span class="text-xl">🌙</span><span class="ml-2 font-semibold hidden sm:inline">Oscuro</span></span>
-                        <span id="light-theme-group-main" class="hidden items-center"><span class="text-xl">☀️</span><span class="ml-2 font-semibold hidden sm:inline">Claro</span></span>
-                    </button>
-                </div>
-            </div>
-        </header>
-        <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            <div id="welcome-message" class="mb-6"></div>
-            <div id="discount-banner-container" class="mb-8"></div>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div class="md:col-span-2 space-y-8">
-                    <div class="bg-white p-6 rounded-2xl shadow-lg">
-                        <h3 class="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Su Estado de Cuenta Actual</h3>
-                        <div id="debt-summary" class="space-y-3"></div>
-                        <div id="bcv-rate-card" class="mt-5"></div>
-                        <button id="report-payment-btn" class="mt-6 w-full bg-teal-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-teal-700 transition-colors shadow-sm">Reportar un Pago</button>
-                    </div>
-                    <div class="bg-white p-6 rounded-2xl shadow-lg">
-                        <h3 id="expenses-breakdown-title" class="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Desglose de Cargos del Mes Actual</h3>
-                        <div id="expenses-breakdown" class="space-y-2"></div>
-                    </div>
-                    <div id="bcv-notice-container"></div>
-                </div>
-                <div class="md:col-span-1 space-y-8">
-                    <div class="bg-white p-6 rounded-2xl shadow-lg space-y-4">
-                        <h3 class="text-xl font-bold text-slate-800 mb-2 border-b pb-2">Resumen General</h3>
-                        <div class="flex justify-between items-center"><span class="text-slate-600 font-medium">💰 Deuda Total:</span><span id="kpi-deuda-total" class="font-bold text-lg text-sky-600">$0.00</span></div>
-                        <div class="flex justify-between items-center"><span class="text-slate-600 font-medium">🏠 En Mora:</span><span id="kpi-propietarios-mora" class="font-bold text-lg text-red-500">0 / 0</span></div>
-                        <div class="flex justify-between items-center"><span class="text-slate-600 font-medium">📈 Solvencia:</span><span id="kpi-solvencia" class="font-bold text-lg text-green-500">0%</span></div>
-                    </div>
-                    <div class="bg-white p-6 rounded-2xl shadow-lg">
-                        <h3 class="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Historial de Pagos del Mes</h3>
-                        <div class="overflow-y-auto max-h-60"><table class="min-w-full"><thead class="bg-slate-50 sticky top-0"><tr><th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Fecha</th><th class="px-4 py-2 text-right text-xs font-medium text-slate-500 uppercase">Monto</th></tr></thead><tbody id="payments-history-body" class="bg-white divide-y divide-slate-200"></tbody></table></div>
-                    </div>
-                    <div id="morosos-container-private" class="bg-white p-6 rounded-2xl shadow-lg hidden">
-                        <div class="flex justify-between items-center border-b pb-2 mb-3"><h3 class="text-lg font-bold text-slate-800">Saldos Pendientes por Propietario</h3><button id="share-morosos-btn" title="Descargar como imagen" class="text-sky-600 hover:text-sky-800">📷</button></div>
-                        <div id="morosos-list-private" class="space-y-1 text-sm"></div>
-                    </div>
-                </div>
-            </div>
-        </main>
-        <footer class="text-center mt-12"><p class="text-sm text-slate-500">Sistema generado por Enzo Panarito para el Condominio Villa Los Apamates. © 2025</p></footer>
-    </div>
-
-    <div id="reportPaymentModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
-            <div class="flex justify-between items-start mb-4"><h3 class="text-xl font-bold text-slate-900">Reportar Nuevo Pago</h3><button id="closeReportModalBtn" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button></div>
-            <form id="report-payment-form">
-                <div class="space-y-4">
-                    <div><label for="report-amount" class="block text-sm font-medium text-slate-700">Monto del Pago ($)</label><input type="number" id="report-amount" step="0.01" class="mt-1 block w-full px-3 py-2 bg-slate-100 border border-slate-300 rounded-md" required placeholder="Ej: 125.50"></div>
-                    <div><label for="report-reference" class="block text-sm font-medium text-slate-700">Número de Referencia o Confirmación</label><input type="text" id="report-reference" class="mt-1 block w-full px-3 py-2 bg-slate-100 border border-slate-300 rounded-md" required placeholder="Ej: 04121234567"></div>
-                </div>
-                <div class="mt-6 flex justify-end gap-3"><button type="button" id="cancelReportBtn" class="py-2 px-4 bg-slate-200 text-slate-800 font-semibold rounded-lg hover:bg-slate-300">Cancelar</button><button type="submit" id="submitReportBtn" class="py-2 px-4 bg-sky-600 text-white font-semibold rounded-lg hover:bg-sky-700">Enviar Reporte</button></div>
-            </form>
+  <div id="reportPaymentModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+      <div class="flex justify-between items-start mb-4"><h3 class="text-xl font-bold text-slate-900">Reportar Nuevo Pago</h3><button id="closeReportModalBtn" class="text-slate-400 hover:text-slate-600 text-2xl">&times;</button></div>
+      <div id="report-debt-context" class="mb-4 text-sm"></div>
+      <form id="report-payment-form">
+        <div class="space-y-4">
+          <div><label for="report-payment-mode" class="block text-sm font-medium text-slate-700">¿Qué pago desea reportar?</label><select id="report-payment-mode" class="mt-1 block w-full px-3 py-2 bg-slate-100 border border-slate-300 rounded-md" required></select></div>
+          <div><label for="report-amount" id="report-amount-label" class="block text-sm font-medium text-slate-700">Monto</label><input type="number" id="report-amount" step="0.01" class="mt-1 block w-full px-3 py-2 bg-slate-100 border border-slate-300 rounded-md" required></div>
+          <div><label for="report-reference" class="block text-sm font-medium text-slate-700">Referencia o confirmación</label><input type="text" id="report-reference" class="mt-1 block w-full px-3 py-2 bg-slate-100 border border-slate-300 rounded-md" required></div>
+          <p id="report-equivalent-note" class="text-xs text-slate-500"></p>
         </div>
+        <div class="mt-6 flex justify-end gap-3"><button type="button" id="cancelReportBtn" class="py-2 px-4 bg-slate-200 text-slate-800 font-semibold rounded-lg">Cancelar</button><button type="submit" id="submitReportBtn" class="py-2 px-4 bg-sky-600 text-white font-semibold rounded-lg">Enviar Reporte</button></div>
+      </form>
     </div>
-    <div id="toast" class="toast"></div>
+  </div>
+  <div id="toast" class="toast"></div>
 
-    <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        const TIPO_GASTO_COMUN = 'Gasto Común';
-        const TIPO_GASTO_ESPECIAL = 'Gasto Especial';
-        const TASA_RECARGO = 0.10;
-        const VENEZUELA_TZ = 'America/Caracas';
-        let allData = { propietarios: [], gastos: [], pagos: [] };
-        let bcvData = null;
+  <script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const TIPO_GASTO_COMUN = 'Gasto Común';
+    const TIPO_GASTO_ESPECIAL = 'Gasto Especial';
+    const TASA_RECARGO = 0.10;
+    const VENEZUELA_TZ = 'America/Caracas';
+    let allData = { propietarios: [], gastos: [], pagos: [] };
+    let bcvData = null;
+    let currentBalances = null;
 
-        function showToast(message, isError = false, duration = 4000) {
-            const toast = document.getElementById('toast');
-            toast.textContent = message;
-            toast.className = `toast show ${isError ? 'error' : 'success'}`;
-            setTimeout(() => toast.className = toast.className.replace('show', ''), duration);
-        }
+    function showToast(message, isError = false, duration = 4500) { const toast = document.getElementById('toast'); toast.textContent = message; toast.className = `toast show ${isError ? 'error' : 'success'}`; setTimeout(() => toast.className = toast.className.replace('show', ''), duration); }
+    function money(n) { return Math.round(Number(n || 0) * 100) / 100; }
+    function formatCurrency(value) { return `$${money(value).toFixed(2)}`; }
+    function formatBs(value) { return `Bs. ${money(value).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
+    function rate() { return Number(bcvData?.rate || 0); }
+    function getVenezuelaParts() { const parts = new Intl.DateTimeFormat('en-CA', { timeZone: VENEZUELA_TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(new Date()); return Object.fromEntries(parts.map(p => [p.type, p.value])); }
+    function getCaracasDateString() { const p = getVenezuelaParts(); return `${p.year}-${p.month}-${p.day}`; }
+    function getCurrentMonthKey() { const p = getVenezuelaParts(); return `${p.year}-${p.month}`; }
+    function getVenezuelaDateLabel() { return new Intl.DateTimeFormat('es-VE', { timeZone: VENEZUELA_TZ, day: '2-digit', month: 'long', year: 'numeric' }).format(new Date()); }
+    function getVenezuelaMonthLabel() { return new Intl.DateTimeFormat('es-VE', { timeZone: VENEZUELA_TZ, month: 'long', year: 'numeric' }).format(new Date()); }
 
-        function formatCurrency(value) {
-            let num = Number(value || 0);
-            if (num < 0 && num > -0.005) num = 0;
-            return `$${num.toFixed(2)}`;
-        }
+    async function initApp() {
+      try {
+        const [publicResponse, bcvResponse] = await Promise.all([fetch('/.netlify/functions/public-data?force=1'), fetch('/.netlify/functions/bcv-rate')]);
+        if (!publicResponse.ok) throw new Error('No se pudieron cargar los datos públicos.');
+        const data = await publicResponse.json();
+        allData = { propietarios: data.propietarios || [], gastos: data.gastos || [], pagos: data.pagos || [] };
+        if (bcvResponse.ok) bcvData = await bcvResponse.json();
+        populateUserSelector(document.getElementById('welcomeUserSelector'));
+        populateUserSelector(document.getElementById('userSelector'));
+        updateGlobalKPIs(); displayPublicKPIs();
+        document.getElementById('cache-info-public').textContent = `Fecha/hora del sistema: ${bcvData?.venezuelaDateTimeLabel || data.generatedAtCaracas || getCaracasDateString()} (Venezuela)`;
+      } catch (error) { document.getElementById('welcomeUserSelector').innerHTML = `<option>Error al cargar datos</option>`; showToast('Error al cargar datos. Recarga la página o contacta al admin.', true, 9000); console.error(error); }
+    }
 
-        function formatBs(value) {
-            let num = Number(value || 0);
-            if (!Number.isFinite(num)) num = 0;
-            return `Bs. ${num.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        }
+    function populateUserSelector(sel) { sel.innerHTML = '<option value="">-- Seleccione su casa --</option>'; allData.propietarios.forEach(p => { const option = document.createElement('option'); option.value = p.id; option.textContent = `Casa ${p.Casa} - ${p.Propietario}`; sel.appendChild(option); }); }
 
-        function getVenezuelaParts() {
-            const parts = new Intl.DateTimeFormat('en-CA', { timeZone: VENEZUELA_TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(new Date());
-            return Object.fromEntries(parts.map(p => [p.type, p.value]));
-        }
+    function ownerShare(gasto, owner) {
+      const f = gasto.fields || {}; const monto = Number(f.Monto || 0); const owners = f.Propietarios || [];
+      if (f['Tipo de Gasto'] === TIPO_GASTO_COMUN) return monto * Number(owner.Alicuota || 0);
+      if (f['Tipo de Gasto'] === TIPO_GASTO_ESPECIAL && owners.includes(owner.id)) return monto / (owners.length || 1);
+      return 0;
+    }
 
-        function getCaracasDateString() {
-            const p = getVenezuelaParts();
-            return `${p.year}-${p.month}-${p.day}`;
-        }
+    function paymentUsdEquivalent(payment, mode) {
+      const f = payment.fields || {};
+      if (f['[x] Aplicado al Cierre'] === true) return 0;
+      if (mode === 'Bs BCV') return Number(f['Equivalente USD Aplicado'] || f['Monto Pagado'] || 0);
+      return Number(f['Equivalente USD Aplicado'] || f['Monto Pagado'] || 0);
+    }
 
-        function getCurrentMonthKey() {
-            const p = getVenezuelaParts();
-            return `${p.year}-${p.month}`;
-        }
+    function calculateBalances(owner) {
+      const splitExists = Math.abs(Number(owner['Deuda Anterior USD'] || 0)) > 0.001 || Math.abs(Number(owner['Deuda Anterior Bs Ref'] || 0)) > 0.001;
+      let previousUsd = Number(owner['Deuda Anterior USD'] || 0);
+      let previousBsRef = Number(owner['Deuda Anterior Bs Ref'] || 0);
+      if (!splitExists) previousBsRef += Number(owner['Deuda Anterior'] || 0);
+      const linesUsd = [], linesBs = [];
+      if (Math.abs(previousUsd) > 0.01) linesUsd.push({ concept: 'Deuda anterior pagadera en dólares', amount: previousUsd, type: 'Anterior' });
+      if (Math.abs(previousBsRef) > 0.01) linesBs.push({ concept: 'Deuda anterior pagadera en bolívares', amount: previousBsRef, type: 'Anterior' });
+      allData.gastos.forEach(g => { const share = ownerShare(g, owner); if (share <= 0) return; const mode = (g.fields?.['Forma de Pago'] || 'Bs BCV'); const line = { concept: g.fields?.Concepto || 'Gasto sin descripción', amount: share, type: g.fields?.['Tipo de Gasto'] || '' }; if (mode === 'USD') linesUsd.push(line); else linesBs.push(line); });
+      const activePayments = allData.pagos.filter(p => (p.fields?.['Propietario que Paga'] || [])[0] === owner.id && p.fields?.['[x] Aplicado al Cierre'] !== true);
+      const paidUsd = activePayments.filter(p => (p.fields?.['Forma de Pago'] || 'Bs BCV') === 'USD').reduce((s, p) => s + paymentUsdEquivalent(p, 'USD'), 0);
+      const paidBsRef = activePayments.filter(p => (p.fields?.['Forma de Pago'] || 'Bs BCV') !== 'USD').reduce((s, p) => s + paymentUsdEquivalent(p, 'Bs BCV'), 0);
+      const chargesUsd = linesUsd.reduce((s, l) => s + l.amount, 0);
+      const chargesBsRef = linesBs.reduce((s, l) => s + l.amount, 0);
+      const debtUsd = money(chargesUsd - paidUsd);
+      const debtBsRef = money(chargesBsRef - paidBsRef);
+      return { linesUsd, linesBs, chargesUsd, chargesBsRef, paidUsd, paidBsRef, debtUsd, debtBsRef, totalRef: money(debtUsd + debtBsRef), bsDue: money(Math.max(0, debtBsRef) * rate()), activePayments };
+    }
 
-        function getVenezuelaDateLabel() {
-            return new Intl.DateTimeFormat('es-VE', { timeZone: VENEZUELA_TZ, day: '2-digit', month: 'long', year: 'numeric' }).format(new Date());
-        }
+    function displayPublicKPIs() { const total = allData.propietarios.length; const morosos = allData.propietarios.filter(p => calculateBalances(p).totalRef > 0.01).length; document.getElementById('kpi-public-solventes').textContent = `${total - morosos} de ${total}`; document.getElementById('kpi-public-solvencia').textContent = `${total ? (((total - morosos) / total) * 100).toFixed(0) : 0}%`; document.getElementById('kpi-container-public').classList.remove('hidden'); }
+    function updateGlobalKPIs() { const total = allData.propietarios.length; let deudaTotal = 0, morosos = 0; allData.propietarios.forEach(p => { const b = calculateBalances(p); if (b.totalRef > 0.01) { deudaTotal += b.totalRef; morosos++; } }); document.getElementById('kpi-deuda-total').textContent = formatCurrency(deudaTotal); document.getElementById('kpi-propietarios-mora').textContent = `${morosos} / ${total}`; document.getElementById('kpi-solvencia').textContent = `${total ? (((total - morosos) / total) * 100).toFixed(0) : 0}%`; }
 
-        function getVenezuelaMonthLabel() {
-            return new Intl.DateTimeFormat('es-VE', { timeZone: VENEZUELA_TZ, month: 'long', year: 'numeric' }).format(new Date());
-        }
+    function renderPortalForUser(id) {
+      const owner = allData.propietarios.find(p => p.id === id); if (!owner) return;
+      currentBalances = calculateBalances(owner);
+      const b = currentBalances;
+      document.getElementById('welcome-message').innerHTML = `<h2 class="text-3xl font-bold text-slate-900">Bienvenido, ${owner.Propietario || ''}</h2><p class="text-lg text-slate-600">Estado de cuenta para <span class="font-bold">Casa #${owner.Casa}</span>.</p><p class="text-md text-slate-500 mt-2">Fecha: <span class="font-semibold">${getVenezuelaDateLabel()}</span> <span class="text-xs">(hora Venezuela)</span></p>`;
+      document.getElementById('debt-summary').innerHTML = `
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="bg-slate-100 p-4 rounded-xl"><p class="text-sm text-slate-500 font-semibold">Deuda pagadera en dólares</p><p class="text-3xl font-bold ${b.debtUsd > 0 ? 'text-red-500' : 'text-green-600'}">${formatCurrency(Math.max(0, b.debtUsd))}</p><p class="text-xs text-slate-500">Debe cancelarse exclusivamente en $.</p></div>
+          <div class="bg-slate-100 p-4 rounded-xl"><p class="text-sm text-slate-500 font-semibold">Deuda pagadera en Bs</p><p class="text-3xl font-bold ${b.debtBsRef > 0 ? 'text-red-500' : 'text-green-600'}">${formatCurrency(Math.max(0, b.debtBsRef))} ref.</p><p class="text-xl font-bold text-sky-700">${formatBs(b.bsDue)}</p><p class="text-xs text-slate-500">Calculado a tasa BCV del día.</p></div>
+        </div>
+        <div class="border-t pt-3 flex justify-between items-center"><span class="text-slate-600">Total referencia USD:</span><span class="font-bold text-2xl ${b.totalRef > 0 ? 'text-red-500' : 'text-green-600'}">${b.totalRef > 0 ? formatCurrency(b.totalRef) : 'Solvente / saldo a favor'}</span></div>`;
+      displayBcvRateCard(); displayChargesBreakdown(owner, getVenezuelaMonthLabel()); displayPaymentsHistory(); displayDiscountBanner(); displayBcvNotice(); displayPrivateMorososList(); setupReportModeOptions();
+    }
 
-        async function initApp() {
-            try {
-                const [publicResponse, bcvResponse] = await Promise.all([
-                    fetch('/.netlify/functions/public-data'),
-                    fetch('/.netlify/functions/bcv-rate')
-                ]);
-                if (!publicResponse.ok) throw new Error('No se pudieron cargar los datos públicos.');
-                const data = await publicResponse.json();
-                allData = { propietarios: data.propietarios || [], gastos: data.gastos || [], pagos: data.pagos || [] };
-                if (bcvResponse.ok) bcvData = await bcvResponse.json();
-                populateUserSelector(document.getElementById('welcomeUserSelector'));
-                populateUserSelector(document.getElementById('userSelector'));
-                updateGlobalKPIs();
-                displayPublicKPIs();
-                const updateLabel = bcvData?.venezuelaDateTimeLabel || data.generatedAtCaracas || getCaracasDateString();
-                document.getElementById('cache-info-public').textContent = `Fecha/hora del sistema: ${updateLabel} (Venezuela)`;
-            } catch (error) {
-                document.getElementById('welcomeUserSelector').innerHTML = `<option>Error al cargar datos</option>`;
-                showToast('Error al cargar datos. Recarga la página o contacta al admin.', true, 9000);
-                console.error(error);
-            }
-        }
+    function displayBcvRateCard() { const html = bcvData?.rate ? `<div class="bg-sky-50 border-l-4 border-sky-500 text-sky-900 p-4 rounded-r-lg"><p class="font-bold">Tasa BCV del día: ${bcvData.rateFormatted || formatBs(rate())}</p><p class="text-xs text-sky-700">Fecha Venezuela: ${bcvData.venezuelaDate || getCaracasDateString()} · Fuente: ${bcvData.source || 'BCV'}</p></div>` : `<div class="bg-amber-50 border-l-4 border-amber-500 text-amber-800 p-4 rounded-r-lg"><p class="font-bold">Tasa BCV no disponible</p><p class="text-sm">No se pudo actualizar la tasa automáticamente.</p></div>`; document.getElementById('bcv-rate-card').innerHTML = html; }
 
-        function populateUserSelector(selectorElement) {
-            selectorElement.innerHTML = '<option value="">-- Seleccione su casa --</option>';
-            allData.propietarios.forEach(p => {
-                const option = document.createElement('option');
-                option.value = p.id;
-                option.textContent = `Casa ${p.Casa} - ${p.Propietario}`;
-                selectorElement.appendChild(option);
-            });
-        }
+    function sectionTable(title, lines, paid, mode) { const subtotal = lines.reduce((s,l)=>s+l.amount,0); const rows = lines.map(l => `<tr><td class="px-2 py-2 text-slate-700">${l.concept}</td><td class="px-2 py-2 text-right">${formatCurrency(l.amount)}</td></tr>`).join('') || `<tr><td colspan="2" class="p-3 text-center text-slate-500">Sin cargos</td></tr>`; const bsExtra = mode === 'Bs BCV' && rate() ? `<p class="text-xs text-slate-500 mt-1">Equivalente saldo pendiente: ${formatBs(Math.max(0, subtotal - paid) * rate())}</p>` : ''; return `<div><h4 class="font-bold text-slate-800 mb-2">${title}</h4><table class="min-w-full text-sm"><tbody class="divide-y divide-slate-200">${rows}</tbody><tfoot class="border-t-2 border-slate-300"><tr><td class="px-2 py-2 font-semibold">Subtotal</td><td class="px-2 py-2 text-right font-semibold">${formatCurrency(subtotal)}</td></tr><tr><td class="px-2 py-2 text-green-600 font-semibold">Pagos aplicados</td><td class="px-2 py-2 text-right text-green-600 font-semibold">-${formatCurrency(paid)}</td></tr></tfoot></table>${bsExtra}</div>`; }
+    function displayChargesBreakdown(owner, monthLabel) { document.getElementById('expenses-breakdown-title').textContent = `Desglose de Cargos para ${monthLabel}`; const b = currentBalances || calculateBalances(owner); document.getElementById('expenses-breakdown').innerHTML = sectionTable('Cargos pagaderos en dólares', b.linesUsd, b.paidUsd, 'USD') + sectionTable('Cargos pagaderos en bolívares a tasa BCV', b.linesBs, b.paidBsRef, 'Bs BCV'); }
 
-        function displayPublicKPIs() {
-            if (allData.propietarios.length === 0) return;
-            const total = allData.propietarios.length;
-            const morosos = allData.propietarios.filter(p => (p['Deuda Restante'] || 0) > 0.01).length;
-            const solventes = total - morosos;
-            document.getElementById('kpi-public-solventes').textContent = `${solventes} de ${total}`;
-            document.getElementById('kpi-public-solvencia').textContent = `${total ? ((solventes / total) * 100).toFixed(0) : 0}%`;
-            document.getElementById('kpi-container-public').classList.remove('hidden');
-        }
+    function displayPaymentsHistory() { const tbody = document.getElementById('payments-history-body'); const payments = currentBalances?.activePayments || []; if (!payments.length) { tbody.innerHTML = `<tr><td colspan="3" class="text-center p-4 text-slate-500">No hay pagos activos registrados.</td></tr>`; return; } tbody.innerHTML = payments.sort((a,b)=>String(b.fields['Fecha de Pago']).localeCompare(String(a.fields['Fecha de Pago']))).map(p => { const f = p.fields || {}; const mode = f['Forma de Pago'] || 'Bs BCV'; const shown = mode === 'USD' ? formatCurrency(f['Monto Pagado']) : `${formatBs(f['Monto Pagado Bs'] || 0)} (${formatCurrency(f['Equivalente USD Aplicado'] || f['Monto Pagado'] || 0)} ref.)`; return `<tr><td class="px-4 py-3 text-sm">${f['Fecha de Pago'] || ''}</td><td class="px-4 py-3 text-sm">${mode}</td><td class="px-4 py-3 text-sm text-right font-medium text-green-600">${shown}</td></tr>`; }).join(''); }
+    function displayDiscountBanner() { document.getElementById('discount-banner-container').innerHTML = Number(getVenezuelaParts().day) <= 10 ? `<div class="bg-teal-100 border-l-4 border-teal-500 text-teal-800 p-4 rounded-r-lg shadow"><p class="font-bold">¡Buenas Noticias!</p><p class="text-sm">Está a tiempo para disfrutar del beneficio por pronto pago en sus gastos comunes.</p></div>` : ''; }
+    function displayBcvNotice() { document.getElementById('bcv-notice-container').innerHTML = `<div class="bg-slate-100 border-l-4 border-sky-500 text-slate-700 p-4 rounded-r-lg"><p class="font-bold">Nota sobre pagos</p><p class="text-sm">Los cargos pagaderos en Bs se expresan en dólares referenciales y se cancelan en bolívares a tasa BCV del día. Los cargos en USD deben cancelarse exclusivamente en dólares.</p></div>`; }
+    function displayPrivateMorososList() { const cont = document.getElementById('morosos-container-private'); const div = document.getElementById('morosos-list-private'); const morosos = allData.propietarios.map(p => ({...p, b: calculateBalances(p)})).filter(x => x.b.totalRef > 0.01).sort((a,b)=>a.Casa-b.Casa); if (!morosos.length) { cont.classList.add('hidden'); return; } div.innerHTML = morosos.map(m => `<div class="flex justify-between py-1 border-b border-slate-100"><span>Casa #${m.Casa} ${m.Propietario || ''}</span><span class="font-bold text-red-500">${formatCurrency(m.b.totalRef)}</span></div>`).join(''); cont.classList.remove('hidden'); }
 
-        function updateGlobalKPIs() {
-            let deudaTotal = 0, morosos = 0;
-            allData.propietarios.forEach(p => {
-                const deuda = p['Deuda Restante'] || 0;
-                if (deuda > 0.01) { deudaTotal += deuda; morosos++; }
-            });
-            const total = allData.propietarios.length;
-            document.getElementById('kpi-deuda-total').textContent = formatCurrency(deudaTotal);
-            document.getElementById('kpi-propietarios-mora').textContent = `${morosos} / ${total}`;
-            document.getElementById('kpi-solvencia').textContent = `${total ? (((total - morosos) / total) * 100).toFixed(0) : 0}%`;
-        }
+    function setupReportModeOptions() { const sel = document.getElementById('report-payment-mode'); if (!currentBalances) return; const b = currentBalances; const options = []; if (b.debtUsd > 0.01) options.push(`<option value="USD">Pago en dólares · pendiente ${formatCurrency(b.debtUsd)}</option>`); if (b.debtBsRef > 0.01) options.push(`<option value="Bs BCV">Pago en bolívares · ${formatCurrency(b.debtBsRef)} ref. / ${formatBs(b.bsDue)}</option>`); if (!options.length) options.push(`<option value="Bs BCV">Pago en bolívares</option>`, `<option value="USD">Pago en dólares</option>`); sel.innerHTML = options.join(''); updateReportLabels(); }
+    function updateReportLabels() { const mode = document.getElementById('report-payment-mode').value; const label = document.getElementById('report-amount-label'); const note = document.getElementById('report-equivalent-note'); if (mode === 'USD') { label.textContent = 'Monto pagado en dólares ($)'; note.textContent = 'Este pago se aplicará solo a cargos pagaderos en dólares.'; } else { label.textContent = 'Monto pagado en bolívares (Bs)'; note.textContent = rate() ? `Se calculará automáticamente el equivalente en USD a tasa BCV: ${bcvData.rateFormatted || formatBs(rate())}.` : 'No hay tasa BCV disponible; el admin deberá verificar el equivalente.'; } }
 
-        function renderPortalForUser(propertyId) {
-            const property = allData.propietarios.find(p => p.id === propertyId);
-            if (!property) return;
-            const dateString = getVenezuelaDateLabel();
-            const monthYearString = getVenezuelaMonthLabel();
-            const deudaRestante = property['Deuda Restante'] || 0;
-            const totalCargosDelMes = (property['Cuota Base Mes'] || 0) + (property['Total Gastos Especiales del Mes'] || 0) + (property['Recargo Aplicado'] || 0);
-            const tieneSaldoAFavor = deudaRestante < -0.01;
-            const estaSolvente = Math.abs(deudaRestante) <= 0.01;
-            const resumenLabel = tieneSaldoAFavor ? 'Usted tiene un saldo a favor de:' : (estaSolvente ? 'Cuenta solvente:' : 'Deuda Total Actual:');
-            const resumenValor = tieneSaldoAFavor ? formatCurrency(Math.abs(deudaRestante)) : (estaSolvente ? '$0.00' : formatCurrency(deudaRestante));
-            const resumenClase = deudaRestante > 0.01 ? 'text-red-500' : 'text-green-600';
-            const resumenNota = tieneSaldoAFavor ? 'Este saldo a favor será tomado en cuenta automáticamente en sus próximos cargos.' : (estaSolvente ? 'No presenta deuda pendiente a la fecha de hoy.' : 'Este es su saldo total a la fecha de hoy.');
-            document.getElementById('welcome-message').innerHTML = `<h2 class="text-3xl font-bold text-slate-900">Bienvenido, ${property.Propietario || ''}</h2><p class="text-lg text-slate-600">Este es el resumen de su estado de cuenta para la <span class="font-bold">Casa #${property.Casa}</span>.</p><p class="text-md text-slate-500 mt-2">Estado de Cuenta para: <span class="font-semibold">${dateString}</span> <span class="text-xs">(hora Venezuela)</span></p>`;
-            document.getElementById('debt-summary').innerHTML = `<div class="flex justify-between items-baseline text-3xl font-bold ${resumenClase}"><span>${resumenLabel}</span><span>${resumenValor}</span></div><div class="flex justify-between items-baseline text-lg mt-4 border-t pt-3"><span class="text-slate-600">Total Cargos (Mes Actual):</span><span class="font-bold text-slate-800">${formatCurrency(totalCargosDelMes)}</span></div><p class="text-xs text-slate-500 text-right">${resumenNota}</p>`;
-            displayBcvRateCard(property);
-            displayChargesBreakdown(property, monthYearString);
-            displayPaymentsHistory(property);
-            displayDiscountBanner();
-            displayBcvNotice();
-            displayPrivateMorososList();
-        }
+    const welcomeScreen = document.getElementById('welcome-screen'); const mainContent = document.getElementById('main-content'); const welcomeUserSelector = document.getElementById('welcomeUserSelector'); const userSelector = document.getElementById('userSelector');
+    document.getElementById('viewStatementBtn').addEventListener('click', () => { const id = welcomeUserSelector.value; if (!id) { showToast('Seleccione una casa.', true); return; } userSelector.value = id; renderPortalForUser(id); welcomeScreen.classList.add('hidden'); mainContent.classList.remove('hidden'); });
+    userSelector.addEventListener('change', e => renderPortalForUser(e.target.value));
+    document.getElementById('report-payment-mode').addEventListener('change', updateReportLabels);
 
-        function displayBcvRateCard(property) {
-            const container = document.getElementById('bcv-rate-card');
-            if (!bcvData || !bcvData.rate) {
-                container.innerHTML = `<div class="bg-amber-50 border-l-4 border-amber-500 text-amber-800 p-4 rounded-r-lg"><p class="font-bold">Tasa BCV no disponible</p><p class="text-sm">No se pudo actualizar la tasa automáticamente en este momento.</p></div>`;
-                return;
-            }
-            const deudaRestante = property['Deuda Restante'] || 0;
-            const montoDolaresParaBs = Math.max(0, deudaRestante);
-            const equivalenteBs = montoDolaresParaBs * Number(bcvData.rate || 0);
-            container.innerHTML = `<div class="bg-sky-50 border-l-4 border-sky-500 text-sky-900 p-4 rounded-r-lg"><div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2"><div><p class="font-bold">Tasa BCV del día: ${bcvData.rateFormatted || formatBs(bcvData.rate)}</p><p class="text-xs text-sky-700">Actualizada según fecha Venezuela: ${bcvData.venezuelaDate || getCaracasDateString()} · Fuente: ${bcvData.source || 'BCV'}</p></div><div class="sm:text-right"><p class="text-sm text-sky-700">Equivalente referencial en Bs.</p><p class="text-xl font-bold">${formatBs(equivalenteBs)}</p></div></div></div>`;
-        }
+    const modal = document.getElementById('reportPaymentModal'); const form = document.getElementById('report-payment-form'); const submitBtn = document.getElementById('submitReportBtn');
+    function hideReportModal() { modal.classList.add('hidden'); form.reset(); }
+    document.getElementById('report-payment-btn').addEventListener('click', () => { if (!userSelector.value) return; setupReportModeOptions(); document.getElementById('report-debt-context').innerHTML = currentBalances ? `<div class="bg-slate-100 p-3 rounded-lg">USD pendiente: <b>${formatCurrency(Math.max(0,currentBalances.debtUsd))}</b><br>Bs pendiente: <b>${formatCurrency(Math.max(0,currentBalances.debtBsRef))} ref.</b> / <b>${formatBs(currentBalances.bsDue)}</b></div>` : ''; modal.classList.remove('hidden'); });
+    document.getElementById('closeReportModalBtn').addEventListener('click', hideReportModal); document.getElementById('cancelReportBtn').addEventListener('click', hideReportModal);
+    form.addEventListener('submit', async e => { e.preventDefault(); const amount = Number(document.getElementById('report-amount').value); const reference = document.getElementById('report-reference').value.trim(); const mode = document.getElementById('report-payment-mode').value; const ownerId = userSelector.value; if (!ownerId || !(amount > 0) || !reference) { showToast('Complete los campos correctamente.', true); return; } const tasa = rate(); const usdEq = mode === 'Bs BCV' ? (tasa ? money(amount / tasa) : 0) : amount; const montoReportado = mode === 'USD' ? amount : usdEq; if (!confirm(`¿Reportar pago ${mode} por ${mode === 'USD' ? formatCurrency(amount) : formatBs(amount)}?`)) return; submitBtn.disabled = true; submitBtn.innerHTML = '<div class="spinner mx-auto"></div>'; try { const fields = { 'Propietario que Reporta': [ownerId], 'Monto Reportado': montoReportado, Referencia: reference, Estado: 'Pendiente', 'Fecha del Reporte': getCaracasDateString(), 'Forma de Pago Reportada': mode, 'Tasa BCV Reporte': mode === 'Bs BCV' ? tasa : null, 'Equivalente USD Reportado': usdEq }; if (mode === 'Bs BCV') fields['Monto Reportado Bs'] = amount; const res = await fetch('/.netlify/functions/airtable/Reportes%20de%20Pago', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ records: [{ fields }], typecast: true }) }); if (!res.ok) throw new Error('No se pudo guardar el reporte.'); hideReportModal(); showToast('¡Reporte exitoso! Será verificado por administración.', false, 7000); } catch(err) { console.error(err); showToast(err.message || 'Error al reportar pago.', true); } finally { submitBtn.disabled = false; submitBtn.textContent = 'Enviar Reporte'; } });
 
-        function displayChargesBreakdown(property, monthYearString) {
-            document.getElementById('expenses-breakdown-title').textContent = `Desglose de Cargos para ${monthYearString}`;
-            const deudaAnterior = property['Deuda Anterior'] || 0;
-            const totalPagado = property['Total Pagado'] || 0;
-            let totalCargosComunesPropietario = 0;
-            let tableHtml = `<table class="min-w-full text-sm"><thead class="border-b"><tr><th class="px-2 py-2 text-left font-semibold text-slate-600">Concepto</th><th class="px-2 py-2 text-right font-semibold text-slate-600">Costo Total</th><th class="px-2 py-2 text-right font-semibold text-slate-600">Su Parte</th></tr></thead><tbody class="divide-y divide-slate-200">`;
-            tableHtml += `<tr><td class="px-2 py-2 font-semibold" colspan="2">Deuda del Mes Anterior</td><td class="px-2 py-2 text-right font-semibold">${formatCurrency(deudaAnterior)}</td></tr>`;
-            allData.gastos.forEach(gasto => {
-                const fields = gasto.fields || {};
-                const monto = fields.Monto || 0;
-                const concepto = fields.Concepto || 'Gasto sin descripción';
-                let suParte = 0;
-                if (fields['Tipo de Gasto'] === TIPO_GASTO_COMUN) {
-                    suParte = monto * (property.Alicuota || 0);
-                    totalCargosComunesPropietario += suParte;
-                } else if (fields['Tipo de Gasto'] === TIPO_GASTO_ESPECIAL) {
-                    const owners = fields.Propietarios || [];
-                    if (owners.includes(property.id)) suParte = monto / (owners.length || 1);
-                }
-                if (suParte > 0) tableHtml += `<tr><td class="px-2 py-2 text-slate-700">${concepto}</td><td class="px-2 py-2 text-slate-500 text-right">${formatCurrency(monto)}</td><td class="px-2 py-2 text-slate-700 text-right">${formatCurrency(suParte)}</td></tr>`;
-            });
-            tableHtml += `</tbody><tfoot class="border-t-2 border-slate-300">`;
-            if ((property['Recargo Aplicado'] || 0) === 0 && totalCargosComunesPropietario > 0) tableHtml += `<tr><td class="px-2 pt-2 text-green-600 font-semibold" colspan="2">Beneficio Pronto Pago</td><td class="px-2 pt-2 text-right text-green-600 font-semibold">-${formatCurrency(totalCargosComunesPropietario * TASA_RECARGO)}</td></tr>`;
-            if (totalPagado > 0) tableHtml += `<tr><td class="px-2 py-2 text-green-600 font-semibold" colspan="2">Total Pagado</td><td class="px-2 py-2 text-right text-green-600 font-semibold">-${formatCurrency(totalPagado)}</td></tr>`;
-            tableHtml += `</tfoot></table>`;
-            document.getElementById('expenses-breakdown').innerHTML = tableHtml;
-        }
-
-        function displayPaymentsHistory(property) {
-            const tbody = document.getElementById('payments-history-body');
-            const currentMonth = getCurrentMonthKey();
-            const ownerPayments = allData.pagos.filter(p => {
-                const fields = p.fields || {};
-                const ownerId = fields['Propietario que Paga']?.[0];
-                const paymentMonth = String(fields['Fecha de Pago'] || '').slice(0, 7);
-                return ownerId === property.id && paymentMonth === currentMonth && fields['[x] Aplicado al Cierre'] !== true;
-            });
-            if (!ownerPayments.length) { tbody.innerHTML = `<tr><td colspan="2" class="text-center p-4 text-slate-500">No hay pagos activos registrados este mes.</td></tr>`; return; }
-            tbody.innerHTML = ownerPayments.sort((a, b) => new Date(b.fields['Fecha de Pago']) - new Date(a.fields['Fecha de Pago'])).map(p => `<tr><td class="px-4 py-3 text-sm">${new Date((p.fields['Fecha de Pago'] || '') + 'T00:00:00').toLocaleDateString('es-VE', { timeZone: VENEZUELA_TZ })}</td><td class="px-4 py-3 text-sm text-right font-medium text-green-600">${formatCurrency(p.fields['Monto Pagado'])}</td></tr>`).join('');
-        }
-
-        function displayDiscountBanner() { document.getElementById('discount-banner-container').innerHTML = Number(getVenezuelaParts().day) <= 10 ? `<div class="bg-teal-100 border-l-4 border-teal-500 text-teal-800 p-4 rounded-r-lg shadow"><p class="font-bold">¡Buenas Noticias!</p><p class="text-sm">Está a tiempo para disfrutar del beneficio por pronto pago en sus gastos comunes.</p></div>` : ''; }
-        function displayBcvNotice() { document.getElementById('bcv-notice-container').innerHTML = `<div class="bg-slate-100 border-l-4 border-sky-500 text-slate-700 p-4 rounded-r-lg"><p class="font-bold">Nota sobre Pagos en Bolívares</p><p class="text-sm">Aunque el estado de cuenta está expresado en dólares, los pagos efectuados en Bs. se calculan a la tasa oficial del BCV del día de la transacción. La fecha y hora del portal se manejan con zona horaria de Venezuela.</p></div>`; }
-        function displayPrivateMorososList() { const container = document.getElementById('morosos-container-private'); const div = document.getElementById('morosos-list-private'); const morosos = allData.propietarios.filter(p => (p['Deuda Restante'] || 0) > 0.01).sort((a, b) => (a.Casa || 0) - (b.Casa || 0)); if (!morosos.length) { container.classList.add('hidden'); return; } div.innerHTML = morosos.map(m => `<div class="flex justify-between items-center py-1 border-b border-slate-100"><div><span class="font-semibold text-slate-700">Casa #${m.Casa || 'N/A'}</span><span class="text-slate-500 ml-2">${m.Propietario || ''}</span></div><span class="font-bold text-red-500">${formatCurrency(m['Deuda Restante'])}</span></div>`).join(''); container.classList.remove('hidden'); }
-
-        const welcomeScreen = document.getElementById('welcome-screen');
-        const mainContent = document.getElementById('main-content');
-        const welcomeUserSelector = document.getElementById('welcomeUserSelector');
-        const userSelector = document.getElementById('userSelector');
-        const welcomeThemeToggleContainer = document.getElementById('welcome-theme-toggle-container');
-        document.getElementById('viewStatementBtn').addEventListener('click', () => { const selectedUserId = welcomeUserSelector.value; if (!selectedUserId) { showToast('Por favor, seleccione una casa para continuar.', true); return; } userSelector.value = selectedUserId; renderPortalForUser(selectedUserId); welcomeScreen.classList.add('hidden'); mainContent.classList.remove('hidden'); welcomeThemeToggleContainer?.classList.add('hidden'); });
-        userSelector.addEventListener('change', e => renderPortalForUser(e.target.value));
-        const reportPaymentModal = document.getElementById('reportPaymentModal');
-        const reportPaymentForm = document.getElementById('report-payment-form');
-        const submitReportBtn = document.getElementById('submitReportBtn');
-        const hideReportModal = () => { reportPaymentModal.classList.add('hidden'); reportPaymentForm.reset(); };
-        document.getElementById('report-payment-btn').addEventListener('click', () => reportPaymentModal.classList.remove('hidden'));
-        document.getElementById('closeReportModalBtn').addEventListener('click', hideReportModal);
-        document.getElementById('cancelReportBtn').addEventListener('click', hideReportModal);
-        reportPaymentForm.addEventListener('submit', async e => {
-            e.preventDefault();
-            const amount = parseFloat(document.getElementById('report-amount').value);
-            const reference = document.getElementById('report-reference').value;
-            const selectedUserId = userSelector.value;
-            if (!selectedUserId || isNaN(amount) || amount <= 0 || !reference.trim()) { showToast('Por favor, complete todos los campos correctamente.', true); return; }
-            if (!confirm(`¿Está seguro de que desea reportar un pago por ${formatCurrency(amount)}?`)) return;
-            submitReportBtn.disabled = true;
-            submitReportBtn.innerHTML = '<div class="spinner mx-auto" style="width:20px;height:20px;border-width:2px;"></div>';
-            try {
-                const response = await fetch('/.netlify/functions/airtable/Reportes%20de%20Pago', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ records: [{ fields: { 'Propietario que Reporta': [selectedUserId], 'Monto Reportado': amount, Referencia: reference, Estado: 'Pendiente', 'Fecha del Reporte': getCaracasDateString() } }] }) });
-                if (!response.ok) throw new Error('No se pudo guardar el reporte.');
-                hideReportModal();
-                showToast('¡Reporte exitoso! Su pago será verificado y aplicado en un plazo de 24 a 48 horas.', false, 7000);
-            } catch (error) { console.error(error); showToast('Hubo un error al reportar el pago. Por favor, intente de nuevo.', true); }
-            finally { submitReportBtn.disabled = false; submitReportBtn.textContent = 'Enviar Reporte'; }
-        });
-        document.getElementById('share-morosos-btn').addEventListener('click', () => { const morososContainer = document.getElementById('morosos-container-private'); html2canvas(morososContainer, { backgroundColor: document.documentElement.classList.contains('dark') ? '#0f172a' : '#ffffff' }).then(canvas => { const link = document.createElement('a'); link.download = 'lista-de-morosos-VLA.png'; link.href = canvas.toDataURL('image/png'); link.click(); }); });
-        const themeToggleBtns = [document.getElementById('theme-toggle-welcome'), document.getElementById('theme-toggle-main')];
-        const lightGroups = [document.getElementById('light-theme-group-welcome'), document.getElementById('light-theme-group-main')];
-        const darkGroups = [document.getElementById('dark-theme-group-welcome'), document.getElementById('dark-theme-group-main')];
-        function applyTheme(theme) { document.documentElement.classList.toggle('dark', theme === 'dark'); lightGroups.forEach(el => el?.classList.toggle('hidden', theme === 'dark')); darkGroups.forEach(el => el?.classList.toggle('hidden', theme !== 'dark')); }
-        applyTheme(localStorage.getItem('theme') || 'light');
-        themeToggleBtns.forEach(btn => btn?.addEventListener('click', () => { const newTheme = document.documentElement.classList.contains('dark') ? 'light' : 'dark'; localStorage.setItem('theme', newTheme); applyTheme(newTheme); }));
-        initApp();
-    });
-    </script>
+    function toggleTheme() { const next = document.documentElement.classList.contains('dark') ? 'light' : 'dark'; localStorage.setItem('theme', next); applyTheme(next); }
+    function applyTheme(theme) { document.documentElement.classList.toggle('dark', theme === 'dark'); document.getElementById('theme-toggle-welcome').textContent = theme === 'dark' ? '☀️ Claro' : '🌙 Oscuro'; document.getElementById('theme-toggle-main').textContent = theme === 'dark' ? '☀️' : '🌙'; }
+    document.getElementById('theme-toggle-welcome').addEventListener('click', toggleTheme); document.getElementById('theme-toggle-main').addEventListener('click', toggleTheme); applyTheme(localStorage.getItem('theme') || 'light'); initApp();
+  });
+  </script>
 </body>
 </html>
