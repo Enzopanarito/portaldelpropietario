@@ -1,15 +1,23 @@
 // netlify/functions/admin-data.js
 // Endpoint admin optimizado y robusto.
 // Carga todo lo necesario para el panel en una sola llamada del navegador.
-// Si una vista de Airtable falla o fue renombrada, intenta cargar la tabla completa como respaldo.
+// Importante: usa no-store para evitar que pagos rechazados/confirmados sigan apareciendo por cache del navegador.
 
 let adminCache = null;
-const ADMIN_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutos
+const ADMIN_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutos, solo cache interna del servidor cuando no se fuerza actualización.
 
 const TABLES = {
   propietarios: 'Propietarios',
   gastos: 'Gastos del Mes',
   reportes: 'Reportes de Pago'
+};
+
+const NO_STORE_HEADERS = {
+  'Content-Type': 'application/json',
+  'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+  'Pragma': 'no-cache',
+  'Expires': '0',
+  'Surrogate-Control': 'no-store'
 };
 
 function buildUrl(baseId, tableName, query) {
@@ -55,6 +63,13 @@ async function airtableGetAllWithFallback(tableName, preferredQuery, token, base
   }
 }
 
+function onlyPendingReports(records) {
+  return (records || []).filter(function(record) {
+    var estado = record && record.fields ? record.fields.Estado : null;
+    return String(estado || '').trim().toLowerCase() === 'pendiente';
+  });
+}
+
 exports.handler = async function(event) {
   var AIRTABLE_API_TOKEN = process.env.AIRTABLE_API_TOKEN;
   var AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
@@ -62,7 +77,7 @@ exports.handler = async function(event) {
   if (!AIRTABLE_API_TOKEN || !AIRTABLE_BASE_ID) {
     return {
       statusCode: 500,
-      headers: { 'Content-Type': 'application/json' },
+      headers: NO_STORE_HEADERS,
       body: JSON.stringify({ message: 'Airtable no está configurado.' })
     };
   }
@@ -73,11 +88,7 @@ exports.handler = async function(event) {
   if (!force && adminCache && adminCache.expiresAt > Date.now()) {
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Cache': 'HIT',
-        'Cache-Control': 'private, max-age=60'
-      },
+      headers: Object.assign({}, NO_STORE_HEADERS, { 'X-Cache': 'HIT' }),
       body: JSON.stringify(adminCache.payload)
     };
   }
@@ -85,7 +96,17 @@ exports.handler = async function(event) {
   try {
     var propietarios = await airtableGetAll(TABLES.propietarios, '', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID);
     var gastos = await airtableGetAllWithFallback(TABLES.gastos, '?view=Gastos%20Mensuales', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID);
-    var reportes = await airtableGetAllWithFallback(TABLES.reportes, '?view=Grid%20View', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID);
+
+    // Intento principal: traer solo pendientes desde Airtable.
+    // Si Airtable rechaza la fórmula por cualquier cambio de campo/vista, se carga la tabla completa y se filtra en servidor.
+    var reportes = await airtableGetAllWithFallback(
+      TABLES.reportes,
+      '?filterByFormula=' + encodeURIComponent("{Estado}='Pendiente'"),
+      AIRTABLE_API_TOKEN,
+      AIRTABLE_BASE_ID
+    );
+
+    reportes = onlyPendingReports(reportes);
 
     var payload = {
       generatedAt: new Date().toISOString(),
@@ -103,17 +124,13 @@ exports.handler = async function(event) {
 
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Cache': 'MISS',
-        'Cache-Control': 'private, max-age=60'
-      },
+      headers: Object.assign({}, NO_STORE_HEADERS, { 'X-Cache': force ? 'BYPASS' : 'MISS' }),
       body: JSON.stringify(payload)
     };
   } catch (error) {
     return {
       statusCode: 500,
-      headers: { 'Content-Type': 'application/json' },
+      headers: NO_STORE_HEADERS,
       body: JSON.stringify({
         message: 'Error cargando datos administrativos.',
         detail: error.message
