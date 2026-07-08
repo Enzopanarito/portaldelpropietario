@@ -70,6 +70,8 @@ function compactOwner(record) {
     Propietario: f.Propietario,
     Alicuota: f.Alicuota,
     'Deuda Anterior': f['Deuda Anterior'],
+    'Deuda Anterior USD': f['Deuda Anterior USD'] || 0,
+    'Deuda Anterior Bs Ref': f['Deuda Anterior Bs Ref'] || 0,
     'Cuota Base Mes': f['Cuota Base Mes'],
     'Total Gastos Especiales del Mes': f['Total Gastos Especiales del Mes'],
     'Recargo Aplicado': f['Recargo Aplicado'],
@@ -88,6 +90,7 @@ function compactGasto(record) {
       'Tipo de Gasto': f['Tipo de Gasto'],
       Frecuencia: f.Frecuencia,
       Propietarios: f.Propietarios || [],
+      'Forma de Pago': f['Forma de Pago'] || 'Bs BCV',
     }
   };
 }
@@ -101,6 +104,10 @@ function compactPago(record) {
       'Fecha de Pago': f['Fecha de Pago'],
       'Propietario que Paga': f['Propietario que Paga'] || [],
       '[x] Aplicado al Cierre': f['[x] Aplicado al Cierre'] === true,
+      'Forma de Pago': f['Forma de Pago'] || null,
+      'Monto Pagado Bs': f['Monto Pagado Bs'] || 0,
+      'Tasa BCV Aplicada': f['Tasa BCV Aplicada'] || 0,
+      'Equivalente USD Aplicado': f['Equivalente USD Aplicado'] || 0,
     }
   };
 }
