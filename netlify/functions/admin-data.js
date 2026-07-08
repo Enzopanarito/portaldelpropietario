@@ -1,6 +1,7 @@
 // netlify/functions/admin-data.js
-// Endpoint admin optimizado: carga todo lo necesario para el panel en una sola llamada del navegador.
-// Internamente usa cache corta para evitar recargas repetidas durante el trabajo administrativo.
+// Endpoint admin optimizado y robusto.
+// Carga todo lo necesario para el panel en una sola llamada del navegador.
+// Si una vista de Airtable falla o fue renombrada, intenta cargar la tabla completa como respaldo.
 
 let adminCache = null;
 const ADMIN_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutos
@@ -8,27 +9,34 @@ const ADMIN_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutos
 const TABLES = {
   propietarios: 'Propietarios',
   gastos: 'Gastos del Mes',
-  reportes: 'Reportes de Pago',
+  reportes: 'Reportes de Pago'
 };
 
-function buildUrl(baseId, tableName, query = '') {
-  return `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}${query}`;
+function buildUrl(baseId, tableName, query) {
+  return 'https://api.airtable.com/v0/' + baseId + '/' + encodeURIComponent(tableName) + (query || '');
 }
 
-async function airtableGetAll(tableName, query = '', token, baseId) {
-  let records = [];
-  let offset = null;
+function getAirtableError(data, tableName) {
+  if (data && data.error && data.error.message) return data.error.message;
+  if (data && data.message) return data.message;
+  return 'Error cargando ' + tableName;
+}
+
+async function airtableGetAll(tableName, query, token, baseId) {
+  var records = [];
+  var offset = null;
+  var safeQuery = query || '';
 
   do {
-    const separator = query ? '&' : '?';
-    const url = buildUrl(baseId, tableName, `${query}${offset ? `${separator}offset=${encodeURIComponent(offset)}` : ''}`);
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` }
+    var separator = safeQuery ? '&' : '?';
+    var url = buildUrl(baseId, tableName, safeQuery + (offset ? separator + 'offset=' + encodeURIComponent(offset) : ''));
+    var response = await fetch(url, {
+      headers: { Authorization: 'Bearer ' + token }
     });
 
-    const data = await response.json();
+    var data = await response.json();
     if (!response.ok) {
-      throw new Error(data.error?.message || `Error cargando ${tableName}`);
+      throw new Error(getAirtableError(data, tableName));
     }
 
     records = records.concat(data.records || []);
@@ -38,14 +46,29 @@ async function airtableGetAll(tableName, query = '', token, baseId) {
   return records;
 }
 
+async function airtableGetAllWithFallback(tableName, preferredQuery, token, baseId) {
+  try {
+    return await airtableGetAll(tableName, preferredQuery, token, baseId);
+  } catch (error) {
+    console.warn('Fallo la vista preferida para ' + tableName + '. Cargando tabla completa.', error.message);
+    return await airtableGetAll(tableName, '', token, baseId);
+  }
+}
+
 exports.handler = async function(event) {
-  const { AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID } = process.env;
+  var AIRTABLE_API_TOKEN = process.env.AIRTABLE_API_TOKEN;
+  var AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
 
   if (!AIRTABLE_API_TOKEN || !AIRTABLE_BASE_ID) {
-    return { statusCode: 500, body: JSON.stringify({ message: 'Airtable no está configurado.' }) };
+    return {
+      statusCode: 500,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'Airtable no está configurado.' })
+    };
   }
 
-  const force = event.queryStringParameters?.force === '1';
+  var params = event.queryStringParameters || {};
+  var force = params.force === '1';
 
   if (!force && adminCache && adminCache.expiresAt > Date.now()) {
     return {
@@ -60,22 +83,22 @@ exports.handler = async function(event) {
   }
 
   try {
-    const [propietarios, gastos, reportes] = await Promise.all([
-      airtableGetAll(TABLES.propietarios, '', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID),
-      airtableGetAll(TABLES.gastos, '?view=Gastos%20Mensuales', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID),
-      airtableGetAll(TABLES.reportes, '?view=Grid%20View', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID),
-    ]);
+    var propietarios = await airtableGetAll(TABLES.propietarios, '', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID);
+    var gastos = await airtableGetAllWithFallback(TABLES.gastos, '?view=Gastos%20Mensuales', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID);
+    var reportes = await airtableGetAllWithFallback(TABLES.reportes, '?view=Grid%20View', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID);
 
-    const payload = {
+    var payload = {
       generatedAt: new Date().toISOString(),
-      propietarios: propietarios.map(r => ({ id: r.id, ...r.fields })).sort((a, b) => (a.Casa || 0) - (b.Casa || 0)),
-      gastos,
-      reportes,
+      propietarios: propietarios
+        .map(function(r) { return Object.assign({ id: r.id }, r.fields || {}); })
+        .sort(function(a, b) { return (a.Casa || 0) - (b.Casa || 0); }),
+      gastos: gastos,
+      reportes: reportes
     };
 
     adminCache = {
-      payload,
-      expiresAt: Date.now() + ADMIN_CACHE_TTL_MS,
+      payload: payload,
+      expiresAt: Date.now() + ADMIN_CACHE_TTL_MS
     };
 
     return {
@@ -91,7 +114,10 @@ exports.handler = async function(event) {
     return {
       statusCode: 500,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: 'Error cargando datos administrativos.', detail: error.message })
+      body: JSON.stringify({
+        message: 'Error cargando datos administrativos.',
+        detail: error.message
+      })
     };
   }
 };
