@@ -1,19 +1,17 @@
 // netlify/functions/monthly-close.js
 // Cierre mensual seguro.
-// Copia la Deuda Restante actual de cada propietario hacia Deuda Anterior.
-// No elimina gastos ni pagos. Eso debe hacerse después del cierre, cuando ya se haya verificado el corte.
+// 1) Copia la Deuda Restante actual de cada propietario hacia Deuda Anterior.
+// 2) Después marca los pagos no cerrados como [x] Aplicado al Cierre.
+// Importante: los pagos se marcan DESPUÉS de copiar saldos para no alterar el cálculo antes del cierre.
 
 const TABLES = {
   propietarios: 'Propietarios',
+  pagos: 'Pagos',
   usage: 'ControlVersiones'
 };
 
 function currentMonthCaracas() {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Caracas',
-    year: 'numeric',
-    month: '2-digit'
-  }).formatToParts(new Date());
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit' }).formatToParts(new Date());
   return `${parts.find(p => p.type === 'year').value}-${parts.find(p => p.type === 'month').value}`;
 }
 
@@ -56,6 +54,7 @@ async function airtableGetAll(tableName, query, token, baseId, counter) {
 
 async function airtablePatchRecords(tableName, records, token, baseId, counter) {
   const updated = [];
+  if (!records.length) return updated;
 
   for (let i = 0; i < records.length; i += 10) {
     const batch = records.slice(i, i + 10);
@@ -76,6 +75,10 @@ async function airtablePatchRecords(tableName, records, token, baseId, counter) 
 function money(value) {
   const n = Number(value || 0);
   return Math.round(n * 100) / 100;
+}
+
+function isAppliedPayment(record) {
+  return record && record.fields && record.fields['[x] Aplicado al Cierre'] === true;
 }
 
 exports.handler = async function(event) {
@@ -103,7 +106,6 @@ exports.handler = async function(event) {
     }
 
     const propietarios = await airtableGetAll(TABLES.propietarios, '', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
-
     if (!propietarios.length) {
       return {
         statusCode: 400,
@@ -112,19 +114,27 @@ exports.handler = async function(event) {
       };
     }
 
-    const updates = propietarios.map(owner => ({
+    // Paso 1: congelar el saldo final actual como deuda anterior.
+    const ownerUpdates = propietarios.map(owner => ({
       id: owner.id,
-      fields: {
-        'Deuda Anterior': money(owner.fields?.['Deuda Restante'])
-      }
+      fields: { 'Deuda Anterior': money(owner.fields?.['Deuda Restante']) }
     }));
 
-    const updated = await airtablePatchRecords(TABLES.propietarios, updates, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
+    const updatedOwners = await airtablePatchRecords(TABLES.propietarios, ownerUpdates, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
+
+    // Paso 2: marcar pagos todavía no cerrados para que no sigan afectando el nuevo mes.
+    const pagos = await airtableGetAll(TABLES.pagos, '', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
+    const pendingPaymentsToClose = pagos
+      .filter(record => !isAppliedPayment(record))
+      .map(record => ({ id: record.id, fields: { '[x] Aplicado al Cierre': true } }));
+
+    const updatedPayments = await airtablePatchRecords(TABLES.pagos, pendingPaymentsToClose, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
+
     await recordApiUsage('monthly-close', counter.calls, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID);
 
-    const totalArrastrado = updates.reduce((sum, r) => sum + money(r.fields['Deuda Anterior']), 0);
-    const conDeuda = updates.filter(r => money(r.fields['Deuda Anterior']) > 0.01).length;
-    const conSaldoFavor = updates.filter(r => money(r.fields['Deuda Anterior']) < -0.01).length;
+    const totalArrastrado = ownerUpdates.reduce((sum, r) => sum + money(r.fields['Deuda Anterior']), 0);
+    const conDeuda = ownerUpdates.filter(r => money(r.fields['Deuda Anterior']) > 0.01).length;
+    const conSaldoFavor = ownerUpdates.filter(r => money(r.fields['Deuda Anterior']) < -0.01).length;
 
     return {
       statusCode: 200,
@@ -136,11 +146,12 @@ exports.handler = async function(event) {
       body: JSON.stringify({
         success: true,
         month: currentMonthCaracas(),
-        updatedCount: updated.length,
+        updatedCount: updatedOwners.length,
+        paymentsClosedCount: updatedPayments.length,
         totalArrastrado: money(totalArrastrado),
         conDeuda,
         conSaldoFavor,
-        message: 'Cierre de mes realizado correctamente. La Deuda Restante actual fue guardada como Deuda Anterior.'
+        message: 'Cierre de mes realizado correctamente. Se guardó Deuda Restante como Deuda Anterior y se marcaron los pagos como aplicados al cierre.'
       })
     };
   } catch (error) {
