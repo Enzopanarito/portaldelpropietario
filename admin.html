@@ -66,6 +66,8 @@
                 <button data-target="expenses" class="nav-button text-sm sm:text-base font-semibold py-2 px-4 rounded-full bg-white text-slate-700 shadow-sm hover:bg-slate-100">💸 Gastos</button>
                 <button data-target="reported-payments" class="nav-button relative text-sm sm:text-base font-semibold py-2 px-4 rounded-full bg-white text-slate-700 shadow-sm hover:bg-slate-100">🚨 Pagos Reportados <span id="pending-payments-badge" class="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center hidden">0</span></button>
                 <a href="https://villalosapamates.netlify.app/auditoria.html" target="_blank" rel="noopener noreferrer" class="text-sm sm:text-base font-semibold py-2 px-4 rounded-full bg-indigo-600 text-white shadow-sm hover:bg-indigo-700">📚 Auditoría</a>
+                <a href="https://airtable.com/app4nE4ReGRi2SuP2" target="_blank" rel="noopener noreferrer" class="text-sm sm:text-base font-semibold py-2 px-4 rounded-full bg-emerald-600 text-white shadow-sm hover:bg-emerald-700">🗂️ Airtable</a>
+                <a href="/.netlify/functions/airtable-backup" target="_blank" rel="noopener noreferrer" class="text-sm sm:text-base font-semibold py-2 px-4 rounded-full bg-slate-800 text-white shadow-sm hover:bg-slate-900">💾 Respaldo</a>
             </nav>
 
             <main>
@@ -161,34 +163,7 @@
     function hideModal(id) { document.getElementById(id).classList.add('hidden'); }
     async function airtableFetch(path, options = {}) { const response = await fetch(`/.netlify/functions/airtable${path}`, { headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error?.message || data.message || data.detail || `Error ${response.status}`); return data; }
 
-    async function runMonthlyClose() {
-        if (!condominioData.length) { showToast('Primero deben cargar los propietarios.', true); return; }
-        const month = currentMonthString();
-        const firstConfirm = confirm(`¿Deseas realizar el CIERRE DE MES ${month}?\n\nEsto copiará la Deuda Restante actual de cada propietario hacia Deuda Anterior para arrastrarla al nuevo mes. No elimina gastos ni pagos.`);
-        if (!firstConfirm) return;
-        const secondConfirm = confirm('Confirmación final:\n\nAntes del cierre se intentará guardar un corte de auditoría. Luego se actualizará Deuda Anterior. Después deberás eliminar/archivar los gastos del mes anterior y cargar los gastos del nuevo mes.\n\n¿Continuar?');
-        if (!secondConfirm) return;
-        const btn = document.getElementById('monthly-close-btn');
-        const oldText = btn.textContent;
-        btn.disabled = true;
-        btn.innerHTML = '<div class="spinner mx-auto" style="width:20px;height:20px;border-width:2px;"></div>';
-        try {
-            const snapshotResponse = await fetch('/.netlify/functions/audit-snapshot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ month }) });
-            const snapshotData = await snapshotResponse.json().catch(() => ({}));
-            if (!snapshotResponse.ok) throw new Error(snapshotData.detail || snapshotData.message || 'No se pudo guardar el corte de auditoría.');
-            const closeResponse = await fetch('/.netlify/functions/monthly-close', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmed: true }) });
-            const closeData = await closeResponse.json().catch(() => ({}));
-            if (!closeResponse.ok) throw new Error(closeData.detail || closeData.message || 'No se pudo realizar el cierre de mes.');
-            showToast('✅ Cierre de mes realizado correctamente.');
-            alert(`Cierre de mes completado.\n\nPropietarios actualizados: ${closeData.updatedCount || 0}\nCon deuda arrastrada: ${closeData.conDeuda || 0}\nCon saldo a favor: ${closeData.conSaldoFavor || 0}\n\nSiguiente paso: elimina o archiva los gastos del mes anterior y carga los gastos del nuevo mes.`);
-            await refreshAfterWrite();
-        } catch (error) {
-            showToast(`❌ Error cierre de mes: ${error.message}`, true);
-        } finally {
-            btn.disabled = false;
-            btn.textContent = oldText;
-        }
-    }
+    async function runMonthlyClose() { if (!condominioData.length) { showToast('Primero deben cargar los propietarios.', true); return; } const month = currentMonthString(); const firstConfirm = confirm(`¿Deseas realizar el CIERRE DE MES ${month}?\n\nEsto copiará la Deuda Restante actual de cada propietario hacia Deuda Anterior para arrastrarla al nuevo mes. Luego marcará los pagos como aplicados al cierre.`); if (!firstConfirm) return; const secondConfirm = confirm('Confirmación final:\n\nAntes del cierre se intentará guardar un corte de auditoría. Luego se actualizará Deuda Anterior y se marcarán los pagos como aplicados al cierre. Después deberás eliminar/archivar los gastos del mes anterior y cargar los gastos del nuevo mes.\n\n¿Continuar?'); if (!secondConfirm) return; const btn = document.getElementById('monthly-close-btn'); const oldText = btn.textContent; btn.disabled = true; btn.innerHTML = '<div class="spinner mx-auto" style="width:20px;height:20px;border-width:2px;"></div>'; try { const snapshotResponse = await fetch('/.netlify/functions/audit-snapshot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ month }) }); const snapshotData = await snapshotResponse.json().catch(() => ({})); if (!snapshotResponse.ok) throw new Error(snapshotData.detail || snapshotData.message || 'No se pudo guardar el corte de auditoría.'); const closeResponse = await fetch('/.netlify/functions/monthly-close', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmed: true }) }); const closeData = await closeResponse.json().catch(() => ({})); if (!closeResponse.ok) throw new Error(closeData.detail || closeData.message || 'No se pudo realizar el cierre de mes.'); showToast('✅ Cierre de mes realizado correctamente.'); alert(`Cierre de mes completado.\n\nPropietarios actualizados: ${closeData.updatedCount || 0}\nPagos marcados al cierre: ${closeData.paymentsClosedCount || 0}\nCon deuda arrastrada: ${closeData.conDeuda || 0}\nCon saldo a favor: ${closeData.conSaldoFavor || 0}\n\nSiguiente paso: elimina o archiva los gastos del mes anterior y carga los gastos del nuevo mes.`); await refreshAfterWrite(); } catch (error) { showToast(`❌ Error cierre de mes: ${error.message}`, true); } finally { btn.disabled = false; btn.textContent = oldText; } }
 
     async function loadApiUsage() { try { const response = await fetch('/.netlify/functions/api-usage'); const data = await response.json(); if (!response.ok) throw new Error(data.message || data.detail || 'Error cargando contador API.'); document.getElementById('kpi-api-calls').textContent = `${data.total || 0} / ${data.limit || 1000}`; document.getElementById('kpi-api-remaining').textContent = `Restan ${data.remaining || 0} llamadas este mes`; document.getElementById('api-usage-bar').style.width = `${data.percent || 0}%`; document.getElementById('api-usage-note').textContent = `${data.percent || 0}% usado · ${data.events || 0} eventos registrados`; } catch (error) { document.getElementById('kpi-api-calls').textContent = 'Error'; document.getElementById('kpi-api-remaining').textContent = error.message; } }
     async function loadData(force = false) { const status = document.getElementById('data-status'); status.textContent = 'Cargando datos...'; try { const response = await fetch(`/.netlify/functions/admin-data${force ? '?force=1' : ''}`); const data = await response.json(); if (!response.ok) throw new Error(data.message || data.detail || 'No se pudo cargar el admin.'); condominioData = data.propietarios || []; gastosDelMes = data.gastos || []; reportesDePago = data.reportes || []; renderAll(); status.textContent = `Última carga: ${new Date(data.generatedAt || Date.now()).toLocaleString('es-VE')} · Cache: ${response.headers.get('X-Cache') || 'N/A'}`; loadApiUsage(); } catch (error) { console.error(error); showToast(`Error cargando datos: ${error.message}`, true); status.textContent = 'Error cargando datos.'; } }
