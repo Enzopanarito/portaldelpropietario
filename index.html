@@ -9,7 +9,8 @@
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
     body { font-family: 'Inter', sans-serif; }
     #welcome-screen { background-image: linear-gradient(to top, #f3e7e9 0%, #e3eeff 100%); }
-    .toast { visibility:hidden; min-width:250px; background:#333; color:#fff; text-align:center; border-radius:8px; padding:16px; position:fixed; z-index:100; right:30px; bottom:30px; opacity:0; transition:all .4s ease; }
+    .toast { visibility:hidden; min-width:250px; background:#333; color:#fff; text-align:center; border-radius:8px; padding:16px; position:fixed; z-index:100; right:16px; left:16px; bottom:18px; opacity:0; transition:all .4s ease; }
+    @media (min-width:640px){ .toast{ left:auto; right:30px; bottom:30px; } }
     .toast.show { visibility:visible; opacity:1; }
     .toast.success { background:#16a34a; }
     .toast.error { background:#dc2626; }
@@ -24,75 +25,87 @@
     .dark .text-slate-800 { color:#e2e8f0; }
     .dark .text-slate-700 { color:#cbd5e1; }
     .dark .text-slate-600, .dark .text-slate-500 { color:#94a3b8; }
-    .dark .border-slate-200, .dark .border-slate-300 { border-color:#334155; }
+    .dark .border-slate-100, .dark .border-slate-200, .dark .border-slate-300 { border-color:#334155; }
     .dark input, .dark select { background:#1e293b!important; color:#f8fafc!important; border-color:#475569!important; }
+    .dark .bg-sky-50 { background:#082f49; }
+    .dark .bg-amber-50 { background:#451a03; }
+    .dark .text-sky-900, .dark .text-sky-700 { color:#bae6fd; }
+    .dark .text-amber-800 { color:#fde68a; }
   </style>
 </head>
 <body class="bg-slate-50 text-slate-800">
-  <div class="absolute top-4 right-4 z-10"><button id="theme-toggle-welcome" class="text-slate-500 hover:bg-slate-200 rounded-lg text-sm p-2.5">🌙 Oscuro</button></div>
+  <div id="welcome-theme-toggle-container" class="absolute top-4 right-4 z-10">
+    <button id="theme-toggle-welcome" class="text-slate-500 hover:bg-slate-200 rounded-lg text-sm p-2.5">🌙 Oscuro</button>
+  </div>
 
   <div id="welcome-screen" class="min-h-screen flex flex-col items-center justify-center p-4 text-center">
-    <img src="https://i.postimg.cc/WpyB1yTb/Logo_VLA.png" alt="Logo Villa Los Apamates" class="w-48 h-auto mb-6">
-    <h1 class="text-4xl font-bold text-slate-900">Bienvenido a Villa Los Apamates</h1>
-    <p class="text-lg text-slate-600 mt-2 mb-8">Su portal de gestión en línea.</p>
-    <div class="w-full max-w-sm bg-white p-6 rounded-2xl shadow-xl">
+    <img src="https://i.postimg.cc/WpyB1yTb/Logo_VLA.png" alt="Logo Villa Los Apamates" class="w-40 sm:w-48 h-auto mb-6">
+    <h1 class="text-3xl sm:text-4xl font-bold text-slate-900">Bienvenido a Villa Los Apamates</h1>
+    <p class="text-base sm:text-lg text-slate-600 mt-2 mb-8">Su portal de gestión en línea.</p>
+    <div class="w-full max-w-sm bg-white p-5 sm:p-6 rounded-2xl shadow-xl">
       <label for="welcomeUserSelector" class="block text-sm font-medium text-slate-700 mb-2">Seleccione su casa</label>
       <select id="welcomeUserSelector" class="bg-slate-100 border border-slate-300 text-slate-900 text-sm rounded-lg block w-full p-2.5"><option>Cargando...</option></select>
       <button id="viewStatementBtn" class="mt-4 w-full bg-sky-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-sky-700">Consultar Estado de Cuenta</button>
       <p id="cache-info-public" class="text-xs text-slate-500 mt-3"></p>
     </div>
-    <div id="kpi-container-public" class="w-full max-w-sm bg-white/80 p-6 rounded-2xl shadow-xl mt-6 hidden">
+    <div id="kpi-container-public" class="w-full max-w-sm bg-white/80 p-5 sm:p-6 rounded-2xl shadow-xl mt-6 hidden">
       <h3 class="text-lg font-bold text-slate-800 mb-3 text-left border-b pb-2">📊 Estado General del Condominio</h3>
       <div class="text-left text-sm space-y-3 mt-3">
-        <div class="flex justify-between"><span class="text-slate-600">Propietarios Solventes:</span><span id="kpi-public-solventes" class="font-bold text-green-600">...</span></div>
-        <div class="flex justify-between"><span class="text-slate-600">% de Solvencia:</span><span id="kpi-public-solvencia" class="font-bold text-green-600">...</span></div>
+        <div class="flex justify-between gap-3"><span class="text-slate-600">Propietarios Solventes:</span><span id="kpi-public-solventes" class="font-bold text-green-600">...</span></div>
+        <div class="flex justify-between gap-3"><span class="text-slate-600">% de Solvencia:</span><span id="kpi-public-solvencia" class="font-bold text-green-600">...</span></div>
       </div>
     </div>
   </div>
 
   <div id="main-content" class="hidden">
     <header class="bg-white shadow-md">
-      <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-        <div class="flex items-center gap-3"><img src="https://i.postimg.cc/WpyB1yTb/Logo_VLA.png" class="w-12 h-auto"><div><h1 class="text-xl sm:text-2xl font-bold text-slate-900">Villa Los Apamates</h1><p class="text-sm text-slate-500">Portal del Propietario</p></div></div>
-        <div class="flex items-center gap-4"><select id="userSelector" class="bg-slate-100 border border-slate-300 text-slate-900 text-sm rounded-lg p-2.5"></select><button id="theme-toggle-main" class="text-slate-500 hover:bg-slate-200 rounded-lg text-sm p-2.5">🌙</button></div>
+      <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4">
+        <div class="flex items-center gap-3">
+          <img src="https://i.postimg.cc/WpyB1yTb/Logo_VLA.png" class="w-11 sm:w-12 h-auto" alt="Logo Villa Los Apamates">
+          <div><h1 class="text-xl sm:text-2xl font-bold text-slate-900">Villa Los Apamates</h1><p class="text-sm text-slate-500">Portal del Propietario</p></div>
+        </div>
+        <div class="flex items-center gap-2 sm:gap-4">
+          <select id="userSelector" class="bg-slate-100 border border-slate-300 text-slate-900 text-sm rounded-lg p-2.5 flex-1 min-w-0"></select>
+          <button id="theme-toggle-main" class="text-slate-500 hover:bg-slate-200 rounded-lg text-sm p-2.5 shrink-0">🌙</button>
+        </div>
       </div>
     </header>
-    <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
       <div id="welcome-message" class="mb-6"></div>
       <div id="discount-banner-container" class="mb-8"></div>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-        <div class="md:col-span-2 space-y-8">
-          <div class="bg-white p-6 rounded-2xl shadow-lg">
-            <h3 class="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Su Estado de Cuenta Actual</h3>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8">
+        <div class="md:col-span-2 space-y-6 sm:space-y-8">
+          <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-lg">
+            <h3 class="text-lg sm:text-xl font-bold text-slate-800 mb-4 border-b pb-2">Su Estado de Cuenta Actual</h3>
             <div id="debt-summary" class="space-y-4"></div>
             <div id="bcv-rate-card" class="mt-5"></div>
             <button id="report-payment-btn" class="mt-6 w-full bg-teal-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-teal-700">Reportar un Pago</button>
           </div>
-          <div class="bg-white p-6 rounded-2xl shadow-lg">
-            <h3 id="expenses-breakdown-title" class="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Desglose de Cargos</h3>
+          <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-lg">
+            <h3 id="expenses-breakdown-title" class="text-lg sm:text-xl font-bold text-slate-800 mb-4 border-b pb-2">Desglose de Cargos</h3>
             <div id="expenses-breakdown" class="space-y-5"></div>
           </div>
           <div id="bcv-notice-container"></div>
         </div>
-        <div class="md:col-span-1 space-y-8">
-          <div class="bg-white p-6 rounded-2xl shadow-lg space-y-4">
-            <h3 class="text-xl font-bold text-slate-800 mb-2 border-b pb-2">Resumen General</h3>
-            <div class="flex justify-between"><span class="text-slate-600 font-medium">💰 Deuda Total Ref.:</span><span id="kpi-deuda-total" class="font-bold text-lg text-sky-600">$0.00</span></div>
-            <div class="flex justify-between"><span class="text-slate-600 font-medium">🏠 En Mora:</span><span id="kpi-propietarios-mora" class="font-bold text-lg text-red-500">0 / 0</span></div>
-            <div class="flex justify-between"><span class="text-slate-600 font-medium">📈 Solvencia:</span><span id="kpi-solvencia" class="font-bold text-lg text-green-500">0%</span></div>
+        <div class="md:col-span-1 space-y-6 sm:space-y-8">
+          <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-lg space-y-4">
+            <h3 class="text-lg sm:text-xl font-bold text-slate-800 mb-2 border-b pb-2">Resumen General</h3>
+            <div class="flex justify-between gap-3"><span class="text-slate-600 font-medium">💰 Deuda Total Ref.:</span><span id="kpi-deuda-total" class="font-bold text-lg text-sky-600">$0.00</span></div>
+            <div class="flex justify-between gap-3"><span class="text-slate-600 font-medium">🏠 En Mora:</span><span id="kpi-propietarios-mora" class="font-bold text-lg text-red-500">0 / 0</span></div>
+            <div class="flex justify-between gap-3"><span class="text-slate-600 font-medium">📈 Solvencia:</span><span id="kpi-solvencia" class="font-bold text-lg text-green-500">0%</span></div>
           </div>
-          <div class="bg-white p-6 rounded-2xl shadow-lg">
-            <h3 class="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Historial de Pagos Activos</h3>
-            <div class="overflow-y-auto max-h-60"><table class="min-w-full"><thead class="bg-slate-50 sticky top-0"><tr><th class="px-4 py-2 text-left text-xs text-slate-500 uppercase">Fecha</th><th class="px-4 py-2 text-left text-xs text-slate-500 uppercase">Tipo</th><th class="px-4 py-2 text-right text-xs text-slate-500 uppercase">Monto</th></tr></thead><tbody id="payments-history-body" class="bg-white divide-y divide-slate-200"></tbody></table></div>
+          <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-lg">
+            <h3 class="text-lg sm:text-xl font-bold text-slate-800 mb-4 border-b pb-2">Historial de Pagos Activos</h3>
+            <div class="overflow-x-auto overflow-y-auto max-h-60"><table class="min-w-full"><thead class="bg-slate-50 sticky top-0"><tr><th class="px-3 sm:px-4 py-2 text-left text-xs text-slate-500 uppercase">Fecha</th><th class="px-3 sm:px-4 py-2 text-left text-xs text-slate-500 uppercase">Tipo</th><th class="px-3 sm:px-4 py-2 text-right text-xs text-slate-500 uppercase">Monto</th></tr></thead><tbody id="payments-history-body" class="bg-white divide-y divide-slate-200"></tbody></table></div>
           </div>
-          <div id="morosos-container-private" class="bg-white p-6 rounded-2xl shadow-lg hidden"><h3 class="text-lg font-bold text-slate-800 border-b pb-2 mb-3">Saldos Pendientes</h3><div id="morosos-list-private" class="space-y-1 text-sm"></div></div>
+          <div id="morosos-container-private" class="bg-white p-4 sm:p-6 rounded-2xl shadow-lg hidden"><h3 class="text-lg font-bold text-slate-800 border-b pb-2 mb-3">Saldos Pendientes</h3><div id="morosos-list-private" class="space-y-1 text-sm"></div></div>
         </div>
       </div>
     </main>
   </div>
 
-  <div id="reportPaymentModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+  <div id="reportPaymentModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-3 sm:p-4 hidden">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5 sm:p-6 max-h-[92vh] overflow-y-auto">
       <div class="flex justify-between items-start mb-4"><h3 class="text-xl font-bold text-slate-900">Reportar Nuevo Pago</h3><button id="closeReportModalBtn" class="text-slate-400 hover:text-slate-600 text-2xl">&times;</button></div>
       <div id="report-debt-context" class="mb-4 text-sm"></div>
       <form id="report-payment-form">
@@ -102,7 +115,7 @@
           <div><label for="report-reference" class="block text-sm font-medium text-slate-700">Referencia o confirmación</label><input type="text" id="report-reference" class="mt-1 block w-full px-3 py-2 bg-slate-100 border border-slate-300 rounded-md" required></div>
           <p id="report-equivalent-note" class="text-xs text-slate-500"></p>
         </div>
-        <div class="mt-6 flex justify-end gap-3"><button type="button" id="cancelReportBtn" class="py-2 px-4 bg-slate-200 text-slate-800 font-semibold rounded-lg">Cancelar</button><button type="submit" id="submitReportBtn" class="py-2 px-4 bg-sky-600 text-white font-semibold rounded-lg">Enviar Reporte</button></div>
+        <div class="mt-6 flex flex-col sm:flex-row justify-end gap-3"><button type="button" id="cancelReportBtn" class="py-2 px-4 bg-slate-200 text-slate-800 font-semibold rounded-lg">Cancelar</button><button type="submit" id="submitReportBtn" class="py-2 px-4 bg-sky-600 text-white font-semibold rounded-lg">Enviar Reporte</button></div>
       </form>
     </div>
   </div>
@@ -112,7 +125,6 @@
   document.addEventListener('DOMContentLoaded', () => {
     const TIPO_GASTO_COMUN = 'Gasto Común';
     const TIPO_GASTO_ESPECIAL = 'Gasto Especial';
-    const TASA_RECARGO = 0.10;
     const VENEZUELA_TZ = 'America/Caracas';
     let allData = { propietarios: [], gastos: [], pagos: [] };
     let bcvData = null;
@@ -125,7 +137,6 @@
     function rate() { return Number(bcvData?.rate || 0); }
     function getVenezuelaParts() { const parts = new Intl.DateTimeFormat('en-CA', { timeZone: VENEZUELA_TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(new Date()); return Object.fromEntries(parts.map(p => [p.type, p.value])); }
     function getCaracasDateString() { const p = getVenezuelaParts(); return `${p.year}-${p.month}-${p.day}`; }
-    function getCurrentMonthKey() { const p = getVenezuelaParts(); return `${p.year}-${p.month}`; }
     function getVenezuelaDateLabel() { return new Intl.DateTimeFormat('es-VE', { timeZone: VENEZUELA_TZ, day: '2-digit', month: 'long', year: 'numeric' }).format(new Date()); }
     function getVenezuelaMonthLabel() { return new Intl.DateTimeFormat('es-VE', { timeZone: VENEZUELA_TZ, month: 'long', year: 'numeric' }).format(new Date()); }
 
@@ -152,10 +163,9 @@
       return 0;
     }
 
-    function paymentUsdEquivalent(payment, mode) {
+    function paymentUsdEquivalent(payment) {
       const f = payment.fields || {};
       if (f['[x] Aplicado al Cierre'] === true) return 0;
-      if (mode === 'Bs BCV') return Number(f['Equivalente USD Aplicado'] || f['Monto Pagado'] || 0);
       return Number(f['Equivalente USD Aplicado'] || f['Monto Pagado'] || 0);
     }
 
@@ -165,12 +175,18 @@
       let previousBsRef = Number(owner['Deuda Anterior Bs Ref'] || 0);
       if (!splitExists) previousBsRef += Number(owner['Deuda Anterior'] || 0);
       const linesUsd = [], linesBs = [];
-      if (Math.abs(previousUsd) > 0.01) linesUsd.push({ concept: 'Deuda anterior pagadera en dólares', amount: previousUsd, type: 'Anterior' });
-      if (Math.abs(previousBsRef) > 0.01) linesBs.push({ concept: 'Deuda anterior pagadera en bolívares', amount: previousBsRef, type: 'Anterior' });
-      allData.gastos.forEach(g => { const share = ownerShare(g, owner); if (share <= 0) return; const mode = (g.fields?.['Forma de Pago'] || 'Bs BCV'); const line = { concept: g.fields?.Concepto || 'Gasto sin descripción', amount: share, type: g.fields?.['Tipo de Gasto'] || '' }; if (mode === 'USD') linesUsd.push(line); else linesBs.push(line); });
+      if (Math.abs(previousUsd) > 0.01) linesUsd.push({ concept: 'Deuda anterior pagadera en dólares', totalAmount: previousUsd, amount: previousUsd, type: 'Anterior' });
+      if (Math.abs(previousBsRef) > 0.01) linesBs.push({ concept: 'Deuda anterior pagadera en bolívares', totalAmount: previousBsRef, amount: previousBsRef, type: 'Anterior' });
+      allData.gastos.forEach(g => {
+        const share = ownerShare(g, owner);
+        if (share <= 0) return;
+        const mode = (g.fields?.['Forma de Pago'] || 'Bs BCV');
+        const line = { concept: g.fields?.Concepto || 'Gasto sin descripción', totalAmount: Number(g.fields?.Monto || share), amount: share, type: g.fields?.['Tipo de Gasto'] || '' };
+        if (mode === 'USD') linesUsd.push(line); else linesBs.push(line);
+      });
       const activePayments = allData.pagos.filter(p => (p.fields?.['Propietario que Paga'] || [])[0] === owner.id && p.fields?.['[x] Aplicado al Cierre'] !== true);
-      const paidUsd = activePayments.filter(p => (p.fields?.['Forma de Pago'] || 'Bs BCV') === 'USD').reduce((s, p) => s + paymentUsdEquivalent(p, 'USD'), 0);
-      const paidBsRef = activePayments.filter(p => (p.fields?.['Forma de Pago'] || 'Bs BCV') !== 'USD').reduce((s, p) => s + paymentUsdEquivalent(p, 'Bs BCV'), 0);
+      const paidUsd = activePayments.filter(p => (p.fields?.['Forma de Pago'] || 'Bs BCV') === 'USD').reduce((s, p) => s + paymentUsdEquivalent(p), 0);
+      const paidBsRef = activePayments.filter(p => (p.fields?.['Forma de Pago'] || 'Bs BCV') !== 'USD').reduce((s, p) => s + paymentUsdEquivalent(p), 0);
       const chargesUsd = linesUsd.reduce((s, l) => s + l.amount, 0);
       const chargesBsRef = linesBs.reduce((s, l) => s + l.amount, 0);
       const debtUsd = money(chargesUsd - paidUsd);
@@ -185,31 +201,37 @@
       const owner = allData.propietarios.find(p => p.id === id); if (!owner) return;
       currentBalances = calculateBalances(owner);
       const b = currentBalances;
-      document.getElementById('welcome-message').innerHTML = `<h2 class="text-3xl font-bold text-slate-900">Bienvenido, ${owner.Propietario || ''}</h2><p class="text-lg text-slate-600">Estado de cuenta para <span class="font-bold">Casa #${owner.Casa}</span>.</p><p class="text-md text-slate-500 mt-2">Fecha: <span class="font-semibold">${getVenezuelaDateLabel()}</span> <span class="text-xs">(hora Venezuela)</span></p>`;
+      document.getElementById('welcome-message').innerHTML = `<h2 class="text-2xl sm:text-3xl font-bold text-slate-900">Bienvenido, ${owner.Propietario || ''}</h2><p class="text-base sm:text-lg text-slate-600">Estado de cuenta para <span class="font-bold">Casa #${owner.Casa}</span>.</p><p class="text-sm sm:text-md text-slate-500 mt-2">Fecha: <span class="font-semibold">${getVenezuelaDateLabel()}</span> <span class="text-xs">(hora Venezuela)</span></p>`;
       document.getElementById('debt-summary').innerHTML = `
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div class="bg-slate-100 p-4 rounded-xl"><p class="text-sm text-slate-500 font-semibold">Deuda pagadera en dólares</p><p class="text-3xl font-bold ${b.debtUsd > 0 ? 'text-red-500' : 'text-green-600'}">${formatCurrency(Math.max(0, b.debtUsd))}</p><p class="text-xs text-slate-500">Debe cancelarse exclusivamente en $.</p></div>
-          <div class="bg-slate-100 p-4 rounded-xl"><p class="text-sm text-slate-500 font-semibold">Deuda pagadera en Bs</p><p class="text-3xl font-bold ${b.debtBsRef > 0 ? 'text-red-500' : 'text-green-600'}">${formatCurrency(Math.max(0, b.debtBsRef))} ref.</p><p class="text-xl font-bold text-sky-700">${formatBs(b.bsDue)}</p><p class="text-xs text-slate-500">Calculado a tasa BCV del día.</p></div>
+          <div class="bg-slate-100 p-4 rounded-xl"><p class="text-sm text-slate-500 font-semibold">Deuda pagadera en dólares</p><p class="text-2xl sm:text-3xl font-bold ${b.debtUsd > 0 ? 'text-red-500' : 'text-green-600'}">${formatCurrency(Math.max(0, b.debtUsd))}</p><p class="text-xs text-slate-500">Debe cancelarse exclusivamente en $.</p></div>
+          <div class="bg-slate-100 p-4 rounded-xl"><p class="text-sm text-slate-500 font-semibold">Deuda pagadera en Bs</p><p class="text-2xl sm:text-3xl font-bold ${b.debtBsRef > 0 ? 'text-red-500' : 'text-green-600'}">${formatCurrency(Math.max(0, b.debtBsRef))} ref.</p><p class="text-lg sm:text-xl font-bold text-sky-700">${formatBs(b.bsDue)}</p><p class="text-xs text-slate-500">Calculado a tasa BCV del día.</p></div>
         </div>
-        <div class="border-t pt-3 flex justify-between items-center"><span class="text-slate-600">Total referencia USD:</span><span class="font-bold text-2xl ${b.totalRef > 0 ? 'text-red-500' : 'text-green-600'}">${b.totalRef > 0 ? formatCurrency(b.totalRef) : 'Solvente / saldo a favor'}</span></div>`;
+        <div class="border-t pt-3 flex flex-col sm:flex-row justify-between gap-2 sm:items-center"><span class="text-slate-600">Total referencia USD:</span><span class="font-bold text-xl sm:text-2xl ${b.totalRef > 0 ? 'text-red-500' : 'text-green-600'}">${b.totalRef > 0 ? formatCurrency(b.totalRef) : 'Solvente / saldo a favor'}</span></div>`;
       displayBcvRateCard(); displayChargesBreakdown(owner, getVenezuelaMonthLabel()); displayPaymentsHistory(); displayDiscountBanner(); displayBcvNotice(); displayPrivateMorososList(); setupReportModeOptions();
     }
 
     function displayBcvRateCard() { const html = bcvData?.rate ? `<div class="bg-sky-50 border-l-4 border-sky-500 text-sky-900 p-4 rounded-r-lg"><p class="font-bold">Tasa BCV del día: ${bcvData.rateFormatted || formatBs(rate())}</p><p class="text-xs text-sky-700">Fecha Venezuela: ${bcvData.venezuelaDate || getCaracasDateString()} · Fuente: ${bcvData.source || 'BCV'}</p></div>` : `<div class="bg-amber-50 border-l-4 border-amber-500 text-amber-800 p-4 rounded-r-lg"><p class="font-bold">Tasa BCV no disponible</p><p class="text-sm">No se pudo actualizar la tasa automáticamente.</p></div>`; document.getElementById('bcv-rate-card').innerHTML = html; }
 
-    function sectionTable(title, lines, paid, mode) { const subtotal = lines.reduce((s,l)=>s+l.amount,0); const rows = lines.map(l => `<tr><td class="px-2 py-2 text-slate-700">${l.concept}</td><td class="px-2 py-2 text-right">${formatCurrency(l.amount)}</td></tr>`).join('') || `<tr><td colspan="2" class="p-3 text-center text-slate-500">Sin cargos</td></tr>`; const bsExtra = mode === 'Bs BCV' && rate() ? `<p class="text-xs text-slate-500 mt-1">Equivalente saldo pendiente: ${formatBs(Math.max(0, subtotal - paid) * rate())}</p>` : ''; return `<div><h4 class="font-bold text-slate-800 mb-2">${title}</h4><table class="min-w-full text-sm"><tbody class="divide-y divide-slate-200">${rows}</tbody><tfoot class="border-t-2 border-slate-300"><tr><td class="px-2 py-2 font-semibold">Subtotal</td><td class="px-2 py-2 text-right font-semibold">${formatCurrency(subtotal)}</td></tr><tr><td class="px-2 py-2 text-green-600 font-semibold">Pagos aplicados</td><td class="px-2 py-2 text-right text-green-600 font-semibold">-${formatCurrency(paid)}</td></tr></tfoot></table>${bsExtra}</div>`; }
+    function sectionTable(title, lines, paid, mode) {
+      const subtotal = lines.reduce((s,l)=>s+l.amount,0);
+      const cardRows = lines.map(l => `<div class="sm:hidden border border-slate-200 rounded-xl p-3 space-y-2"><p class="font-semibold text-slate-800">${l.concept}</p><div class="grid grid-cols-2 gap-2 text-sm"><div><p class="text-xs text-slate-500 uppercase">Monto total</p><p class="font-semibold">${formatCurrency(l.totalAmount ?? l.amount)}</p></div><div class="text-right"><p class="text-xs text-slate-500 uppercase">Su parte</p><p class="font-bold text-slate-800">${formatCurrency(l.amount)}</p></div></div></div>`).join('') || `<div class="sm:hidden p-3 text-center text-slate-500">Sin cargos</div>`;
+      const tableRows = lines.map(l => `<tr><td class="px-3 py-2 text-slate-700">${l.concept}</td><td class="px-3 py-2 text-right text-slate-700">${formatCurrency(l.totalAmount ?? l.amount)}</td><td class="px-3 py-2 text-right font-semibold text-slate-800">${formatCurrency(l.amount)}</td></tr>`).join('') || `<tr><td colspan="3" class="p-3 text-center text-slate-500">Sin cargos</td></tr>`;
+      const bsExtra = mode === 'Bs BCV' && rate() ? `<p class="text-xs text-slate-500 mt-2">Equivalente saldo pendiente: ${formatBs(Math.max(0, subtotal - paid) * rate())}</p>` : '';
+      return `<div><h4 class="font-bold text-slate-800 mb-2">${title}</h4>${cardRows}<div class="hidden sm:block overflow-x-auto"><table class="min-w-full text-sm"><thead class="bg-slate-50"><tr><th class="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase">Concepto</th><th class="px-3 py-2 text-right text-xs font-semibold text-slate-500 uppercase">Monto total</th><th class="px-3 py-2 text-right text-xs font-semibold text-slate-500 uppercase">Su parte</th></tr></thead><tbody class="divide-y divide-slate-200">${tableRows}</tbody><tfoot class="border-t-2 border-slate-300"><tr><td class="px-3 py-2 font-semibold" colspan="2">Subtotal su parte</td><td class="px-3 py-2 text-right font-semibold">${formatCurrency(subtotal)}</td></tr><tr><td class="px-3 py-2 text-green-600 font-semibold" colspan="2">Pagos aplicados</td><td class="px-3 py-2 text-right text-green-600 font-semibold">-${formatCurrency(paid)}</td></tr></tfoot></table></div><div class="sm:hidden mt-3 border-t border-slate-200 pt-3 space-y-1 text-sm"><div class="flex justify-between"><span class="font-semibold">Subtotal su parte</span><span class="font-bold">${formatCurrency(subtotal)}</span></div><div class="flex justify-between text-green-600"><span class="font-semibold">Pagos aplicados</span><span class="font-bold">-${formatCurrency(paid)}</span></div></div>${bsExtra}</div>`;
+    }
     function displayChargesBreakdown(owner, monthLabel) { document.getElementById('expenses-breakdown-title').textContent = `Desglose de Cargos para ${monthLabel}`; const b = currentBalances || calculateBalances(owner); document.getElementById('expenses-breakdown').innerHTML = sectionTable('Cargos pagaderos en dólares', b.linesUsd, b.paidUsd, 'USD') + sectionTable('Cargos pagaderos en bolívares a tasa BCV', b.linesBs, b.paidBsRef, 'Bs BCV'); }
 
-    function displayPaymentsHistory() { const tbody = document.getElementById('payments-history-body'); const payments = currentBalances?.activePayments || []; if (!payments.length) { tbody.innerHTML = `<tr><td colspan="3" class="text-center p-4 text-slate-500">No hay pagos activos registrados.</td></tr>`; return; } tbody.innerHTML = payments.sort((a,b)=>String(b.fields['Fecha de Pago']).localeCompare(String(a.fields['Fecha de Pago']))).map(p => { const f = p.fields || {}; const mode = f['Forma de Pago'] || 'Bs BCV'; const shown = mode === 'USD' ? formatCurrency(f['Monto Pagado']) : `${formatBs(f['Monto Pagado Bs'] || 0)} (${formatCurrency(f['Equivalente USD Aplicado'] || f['Monto Pagado'] || 0)} ref.)`; return `<tr><td class="px-4 py-3 text-sm">${f['Fecha de Pago'] || ''}</td><td class="px-4 py-3 text-sm">${mode}</td><td class="px-4 py-3 text-sm text-right font-medium text-green-600">${shown}</td></tr>`; }).join(''); }
+    function displayPaymentsHistory() { const tbody = document.getElementById('payments-history-body'); const payments = currentBalances?.activePayments || []; if (!payments.length) { tbody.innerHTML = `<tr><td colspan="3" class="text-center p-4 text-slate-500">No hay pagos activos registrados.</td></tr>`; return; } tbody.innerHTML = payments.sort((a,b)=>String(b.fields['Fecha de Pago']).localeCompare(String(a.fields['Fecha de Pago']))).map(p => { const f = p.fields || {}; const mode = f['Forma de Pago'] || 'Bs BCV'; const shown = mode === 'USD' ? formatCurrency(f['Monto Pagado']) : `${formatBs(f['Monto Pagado Bs'] || 0)} (${formatCurrency(f['Equivalente USD Aplicado'] || f['Monto Pagado'] || 0)} ref.)`; return `<tr><td class="px-3 sm:px-4 py-3 text-sm whitespace-nowrap">${f['Fecha de Pago'] || ''}</td><td class="px-3 sm:px-4 py-3 text-sm whitespace-nowrap">${mode}</td><td class="px-3 sm:px-4 py-3 text-sm text-right font-medium text-green-600 whitespace-nowrap">${shown}</td></tr>`; }).join(''); }
     function displayDiscountBanner() { document.getElementById('discount-banner-container').innerHTML = Number(getVenezuelaParts().day) <= 10 ? `<div class="bg-teal-100 border-l-4 border-teal-500 text-teal-800 p-4 rounded-r-lg shadow"><p class="font-bold">¡Buenas Noticias!</p><p class="text-sm">Está a tiempo para disfrutar del beneficio por pronto pago en sus gastos comunes.</p></div>` : ''; }
     function displayBcvNotice() { document.getElementById('bcv-notice-container').innerHTML = `<div class="bg-slate-100 border-l-4 border-sky-500 text-slate-700 p-4 rounded-r-lg"><p class="font-bold">Nota sobre pagos</p><p class="text-sm">Los cargos pagaderos en Bs se expresan en dólares referenciales y se cancelan en bolívares a tasa BCV del día. Los cargos en USD deben cancelarse exclusivamente en dólares.</p></div>`; }
-    function displayPrivateMorososList() { const cont = document.getElementById('morosos-container-private'); const div = document.getElementById('morosos-list-private'); const morosos = allData.propietarios.map(p => ({...p, b: calculateBalances(p)})).filter(x => x.b.totalRef > 0.01).sort((a,b)=>a.Casa-b.Casa); if (!morosos.length) { cont.classList.add('hidden'); return; } div.innerHTML = morosos.map(m => `<div class="flex justify-between py-1 border-b border-slate-100"><span>Casa #${m.Casa} ${m.Propietario || ''}</span><span class="font-bold text-red-500">${formatCurrency(m.b.totalRef)}</span></div>`).join(''); cont.classList.remove('hidden'); }
+    function displayPrivateMorososList() { const cont = document.getElementById('morosos-container-private'); const div = document.getElementById('morosos-list-private'); const morosos = allData.propietarios.map(p => ({...p, b: calculateBalances(p)})).filter(x => x.b.totalRef > 0.01).sort((a,b)=>a.Casa-b.Casa); if (!morosos.length) { cont.classList.add('hidden'); return; } div.innerHTML = morosos.map(m => `<div class="flex justify-between gap-3 py-1 border-b border-slate-100"><span>Casa #${m.Casa} ${m.Propietario || ''}</span><span class="font-bold text-red-500 whitespace-nowrap">${formatCurrency(m.b.totalRef)}</span></div>`).join(''); cont.classList.remove('hidden'); }
 
     function setupReportModeOptions() { const sel = document.getElementById('report-payment-mode'); if (!currentBalances) return; const b = currentBalances; const options = []; if (b.debtUsd > 0.01) options.push(`<option value="USD">Pago en dólares · pendiente ${formatCurrency(b.debtUsd)}</option>`); if (b.debtBsRef > 0.01) options.push(`<option value="Bs BCV">Pago en bolívares · ${formatCurrency(b.debtBsRef)} ref. / ${formatBs(b.bsDue)}</option>`); if (!options.length) options.push(`<option value="Bs BCV">Pago en bolívares</option>`, `<option value="USD">Pago en dólares</option>`); sel.innerHTML = options.join(''); updateReportLabels(); }
     function updateReportLabels() { const mode = document.getElementById('report-payment-mode').value; const label = document.getElementById('report-amount-label'); const note = document.getElementById('report-equivalent-note'); if (mode === 'USD') { label.textContent = 'Monto pagado en dólares ($)'; note.textContent = 'Este pago se aplicará solo a cargos pagaderos en dólares.'; } else { label.textContent = 'Monto pagado en bolívares (Bs)'; note.textContent = rate() ? `Se calculará automáticamente el equivalente en USD a tasa BCV: ${bcvData.rateFormatted || formatBs(rate())}.` : 'No hay tasa BCV disponible; el admin deberá verificar el equivalente.'; } }
 
-    const welcomeScreen = document.getElementById('welcome-screen'); const mainContent = document.getElementById('main-content'); const welcomeUserSelector = document.getElementById('welcomeUserSelector'); const userSelector = document.getElementById('userSelector');
-    document.getElementById('viewStatementBtn').addEventListener('click', () => { const id = welcomeUserSelector.value; if (!id) { showToast('Seleccione una casa.', true); return; } userSelector.value = id; renderPortalForUser(id); welcomeScreen.classList.add('hidden'); mainContent.classList.remove('hidden'); });
+    const welcomeScreen = document.getElementById('welcome-screen'); const mainContent = document.getElementById('main-content'); const welcomeUserSelector = document.getElementById('welcomeUserSelector'); const userSelector = document.getElementById('userSelector'); const welcomeThemeContainer = document.getElementById('welcome-theme-toggle-container');
+    document.getElementById('viewStatementBtn').addEventListener('click', () => { const id = welcomeUserSelector.value; if (!id) { showToast('Seleccione una casa.', true); return; } userSelector.value = id; renderPortalForUser(id); welcomeScreen.classList.add('hidden'); mainContent.classList.remove('hidden'); welcomeThemeContainer.classList.add('hidden'); });
     userSelector.addEventListener('change', e => renderPortalForUser(e.target.value));
     document.getElementById('report-payment-mode').addEventListener('change', updateReportLabels);
 
