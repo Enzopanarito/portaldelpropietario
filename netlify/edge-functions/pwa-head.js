@@ -26,7 +26,7 @@ export default async (request, context) => {
       "const expired=money(Math.max(0,Number(o['Deuda Anterior USD']||0))+Math.max(0,Number(o['Deuda Anterior Bs Ref']||(!split?o['Deuda Anterior']:0)||0)));return{linesUsd,linesBs,paidUsd:money(paidUsd),paidBs:money(paidBs),debtUsd:money(debtUsd),debtBs:money(debtBs),total,saldoFavor,bsDue,active,expired,currentMonth:money(Math.max(0,total)-expired)}}",
       "let expired=money(Math.max(0,Number(o['Deuda Anterior USD']||0))+Math.max(0,Number(o['Deuda Anterior Bs Ref']||(!split?o['Deuda Anterior']:0)||0)));if(total<=0.01)expired=0;return{linesUsd,linesBs,paidUsd:money(paidUsd),paidBs:money(paidBs),debtUsd:money(debtUsd),debtBs:money(debtBs),total,saldoFavor,bsDue,active,expired,currentMonth:money(Math.max(0,total)-expired)}}"
     );
-    // Permitir adelantos aunque esté solvente.
+    // Permitir adelantos aunque esté solvente, sin cambiar el diseño general.
     html = html.replace(
       /function setupModes\(\)\{const sel=document\.getElementById\('payMode'\);const opts=\[\];if\(current\.debtUsd>0\.01\).*?sel\.innerHTML=opts\.join\(''\);updateLabels\(\)\}/,
       "function setupModes(){const sel=document.getElementById('payMode');const opts=[];if(current.debtUsd>0.01)opts.push(`<option value=\"USD\">Pago en dólares · pendiente ${usd(current.debtUsd)}</option>`);if(current.debtBs>0.01)opts.push(`<option value=\"Bs BCV\">Pago en bolívares · ${usd(current.debtBs)} ref. / ${bs(current.bsDue)}</option>`);opts.push('<option value=\"Bs BCV\">Adelanto en bolívares / saldo a favor</option>');opts.push('<option value=\"USD\">Adelanto en dólares / saldo a favor</option>');sel.innerHTML=opts.join('');updateLabels()}"
@@ -39,27 +39,61 @@ export default async (request, context) => {
   }
 
   const portalFixes = isOwnerPortal ? `
-<style id="vla-owner-fixes">
-  /* Correcciones de contraste y lectura */
-  #welcome .card{background:#ffffff!important;color:#0f172a!important;}
-  #welcome h1,#welcome label,#welcome .text-slate-900,#welcome .text-slate-800,#welcome .text-slate-700{color:#0f172a!important;}
-  #welcome p,#welcome .text-slate-500,#welcome .text-slate-600{color:#475569!important;}
-  #welcome select{background:#ffffff!important;color:#0f172a!important;border-color:#cbd5e1!important;}
-  .metric-white,.metric-white *{color:#0f172a!important;}
-  .metric-green,.metric-blue,.metric-gold{color:#ffffff!important;}
-  .metric-green p,.metric-blue p,.metric-gold p{color:rgba(255,255,255,.88)!important;}
-  .metric-green .text-4xl,.metric-blue .text-4xl,.metric-gold .text-4xl{color:#ffffff!important;}
-  #side-porton,#side-porton *{color:#ffffff!important;}
-  #summary .bg-slate-50,#breakdown .bg-white,#rate-card .bg-slate-50{background:#ffffff!important;color:#0f172a!important;border:1px solid #e2e8f0!important;}
-  #summary p,#breakdown span,#breakdown p,#rate-card span,#rate-card div,#global-summary,#payments-body,#morosos-list{color:#0f172a!important;}
-  #rate-card b,#summary b,#breakdown b,#global-summary b{color:#0f172a!important;}
-  .bg-green-50 p,.bg-green-50 span,.bg-sky-50 p,.bg-sky-50 span,.bg-amber-50 p,.bg-amber-50 span{color:#0f172a!important;}
-  .bg-green-50 b,.bg-sky-50 b,.bg-amber-50 b{color:#14532d!important;}
-  #modal .bg-slate-50,#modal .bg-white{background:#ffffff!important;color:#0f172a!important;}
-  #modal label,#modal p,#modal span,#modal b{color:#0f172a!important;}
-  #modal input,#modal select{background:#ffffff!important;color:#0f172a!important;border-color:#cbd5e1!important;}
-  html.dark #welcome .card,html.dark #modal .bg-white,html.dark #modal .bg-slate-50{background:#0f172a!important;color:#f8fafc!important;}
-  html.dark #welcome h1,html.dark #welcome label,html.dark #welcome p,html.dark #modal label,html.dark #modal p,html.dark #modal span,html.dark #modal b{color:#f8fafc!important;}
+<style id="vla-owner-dark-contrast-fix">
+  /* Solo modo oscuro: no alterar el diseño claro anterior */
+  html.dark #welcome .card,
+  html.dark #summary .bg-slate-50,
+  html.dark #rate-card .bg-slate-50,
+  html.dark #breakdown .bg-white,
+  html.dark #modal .bg-white,
+  html.dark #modal .bg-slate-50{
+    background:#0f172a!important;
+    color:#f8fafc!important;
+    border-color:#334155!important;
+  }
+  html.dark #welcome h1,
+  html.dark #welcome label,
+  html.dark #welcome p,
+  html.dark #system-date,
+  html.dark #summary p,
+  html.dark #summary b,
+  html.dark #rate-card div,
+  html.dark #rate-card span,
+  html.dark #rate-card b,
+  html.dark #breakdown h3,
+  html.dark #breakdown span,
+  html.dark #breakdown p,
+  html.dark #breakdown b,
+  html.dark #global-summary,
+  html.dark #global-summary span,
+  html.dark #global-summary b,
+  html.dark #payments-body,
+  html.dark #payments-body td,
+  html.dark #morosos-list,
+  html.dark #morosos-list span,
+  html.dark #modal label,
+  html.dark #modal p,
+  html.dark #modal span,
+  html.dark #modal b,
+  html.dark #modal h3{
+    color:#f8fafc!important;
+  }
+  html.dark #welcome select,
+  html.dark #userSelector,
+  html.dark #modal input,
+  html.dark #modal select{
+    background:#020617!important;
+    color:#f8fafc!important;
+    border-color:#475569!important;
+  }
+  html.dark .metric-white,
+  html.dark .metric-white *{
+    color:#f8fafc!important;
+  }
+  html.dark #side-porton,
+  html.dark #side-porton *{
+    color:#f8fafc!important;
+  }
 </style>` : '';
 
   const tags = `
