@@ -2,9 +2,11 @@
 // Registra pagos manuales desde el panel admin con validación fuerte y errores claros.
 // Regla contable VLA: el monto ingresado siempre es USD referencial. Si se paga en Bs BCV,
 // el sistema guarda el equivalente en bolívares multiplicando USD ref. x tasa BCV.
+// El recibo PDF/correo se genera desde backend inmediatamente después de crear el pago.
 
 const { requireAdmin } = require('./_auth');
 const { airtableCreateRecord, syncOwnerAccess, TABLES, money } = require('./_access_control');
+const { createAndSendReceipt } = require('./_receipt_service');
 
 const ALLOWED_MODES = new Set(['USD', 'Bs BCV']);
 function json(statusCode, body) {
@@ -59,6 +61,21 @@ exports.handler = async function(event) {
 
     const payment = await airtableCreateRecord(TABLES.pagos, fields);
 
+    let receipt = null;
+    try {
+      receipt = await createAndSendReceipt({
+        ownerId,
+        paymentId: payment && payment.id,
+        mode,
+        amountUsd: usdEq,
+        amountBs,
+        reference: body.reference || 'Pago manual admin',
+        concept: 'Pago manual registrado desde el panel administrativo'
+      });
+    } catch (error) {
+      receipt = { success: false, warning: error.message };
+    }
+
     let access = null;
     try {
       access = await syncOwnerAccess(ownerId, {
@@ -71,13 +88,16 @@ exports.handler = async function(event) {
 
     return json(200, {
       success: true,
-      message: 'Pago manual registrado correctamente.',
+      message: receipt && receipt.email && receipt.email.status === 'Enviado'
+        ? 'Pago manual registrado y recibo enviado por correo.'
+        : 'Pago manual registrado correctamente.',
       paymentId: payment && payment.id,
       amount: amountUsdRef,
       amountUsdRef,
       amountBs,
       mode,
       usdEq,
+      receipt,
       access
     });
   } catch (error) {
