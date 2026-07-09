@@ -1,7 +1,7 @@
 // netlify/functions/_receipt_service.js
 // Servicio compartido para crear recibos, generar PDF y enviar correo.
-// Se usa desde send-receipt, admin-manual-payment y process-payment-report para que el recibo
-// no dependa del navegador ni de una edge function.
+// Se usa desde send-receipt, admin-manual-payment, process-payment-report y resend-receipt.
+// Regla: el recibo SIEMPRE debe quedar registrado en Airtable aunque falle el SMTP o el PDF.
 
 const { sendMail } = require('./_mailer');
 const { buildReceiptPdf } = require('./_receipt_pdf');
@@ -24,6 +24,7 @@ function money(n){ return Math.round(Number(n || 0) * 100) / 100; }
 function usd(n){ return '$' + money(n).toFixed(2); }
 function bs(n){ return 'Bs. ' + money(n).toLocaleString('es-VE', { minimumFractionDigits:2, maximumFractionDigits:2 }); }
 function url(table, path=''){ return `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(table)}${path}`; }
+function firstNonEmpty(...values){ return values.find(v => String(v || '').trim()) || ''; }
 
 async function airtable(table, options={}, path=''){
   const res = await fetch(url(table, path), {
@@ -80,7 +81,7 @@ async function createAndSendReceipt(input = {}){
 
   const owner = await getOwner(input.ownerId);
   const f = owner?.fields || {};
-  const email = input.email || f.Email || f.Correo || '';
+  const email = firstNonEmpty(input.email, f.Email, f.Correo, f['MKJ Email']);
   const receiptNumber = input.receiptNumber || receiptNo();
   const payload = {
     receiptNumber,
@@ -96,15 +97,28 @@ async function createAndSendReceipt(input = {}){
 
   const html = buildHtml(payload);
   let emailResult = { sent:false, status: email ? 'Pendiente' : 'Sin correo', detail: email ? 'Pendiente de envío' : 'El propietario no tiene email registrado.' };
+  let pdfBuffer = null;
+
   if (email) {
-    const pdfBuffer = await buildReceiptPdf(payload);
-    const safeCasa = String(payload.casa || '').replace(/[^0-9A-Za-z_-]/g, '');
-    emailResult = await sendMail({
-      to: email,
-      subject: `Comprobante de pago ${receiptNumber} - Villa Los Apamates`,
-      html,
-      attachments: [{ filename:`${receiptNumber}-Casa-${safeCasa || 'NA'}.pdf`, content:pdfBuffer, contentType:'application/pdf' }]
-    });
+    try {
+      pdfBuffer = await buildReceiptPdf(payload);
+    } catch (error) {
+      emailResult = { sent:false, status:'Error PDF', detail:error.message };
+    }
+
+    if (pdfBuffer) {
+      try {
+        const safeCasa = String(payload.casa || '').replace(/[^0-9A-Za-z_-]/g, '');
+        emailResult = await sendMail({
+          to: email,
+          subject: `Comprobante de pago ${receiptNumber} - Villa Los Apamates`,
+          html,
+          attachments: [{ filename:`${receiptNumber}-Casa-${safeCasa || 'NA'}.pdf`, content:pdfBuffer, contentType:'application/pdf' }]
+        });
+      } catch (error) {
+        emailResult = { sent:false, status:'Error correo', detail:error.message };
+      }
+    }
   }
 
   const fields = {
