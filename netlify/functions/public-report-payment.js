@@ -2,6 +2,8 @@
 // Endpoint público limitado para que propietarios reporten pagos sin exponer el proxy genérico.
 // Al recibir un reporte suficiente para cubrir deuda vencida, habilita temporalmente el acceso cómodo.
 // También notifica al correo de la urbanización para recibir alerta inmediata en el teléfono.
+// Regla contable VLA: el monto reportado siempre es USD referencial. Si se selecciona Bs BCV,
+// el sistema guarda el equivalente en bolívares multiplicando USD ref. x tasa BCV.
 
 const { airtableCreateRecord, airtableGetRecord, syncOwnerAccess, TABLES, money } = require('./_access_control');
 const { sendMail } = require('./_mailer');
@@ -13,7 +15,7 @@ function validRecordId(id){return /^rec[A-Za-z0-9]{14}$/.test(String(id||''));}
 function fmtUsd(n){return '$'+money(n).toFixed(2)}
 function fmtBs(n){return 'Bs. '+money(n).toLocaleString('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2})}
 
-async function notifyAdminPaymentReport({ownerId, mode, amount, usdEq, reference, rate, reportId, access}) {
+async function notifyAdminPaymentReport({ownerId, mode, amount, usdEq, amountBs, reference, rate, reportId, access}) {
   // Prioridad: correo de la urbanización / correo remitente del sistema.
   // En Netlify, SMTP_USER actualmente corresponde al correo de Villa Los Apamates.
   const to = process.env.ADMIN_NOTIFY_EMAIL || process.env.SMTP_USER || process.env.ADMIN_RECOVERY_EMAIL;
@@ -24,13 +26,13 @@ async function notifyAdminPaymentReport({ownerId, mode, amount, usdEq, reference
   const f = owner && owner.fields ? owner.fields : {};
   const casa = f.Casa || '—';
   const propietario = f.Propietario || 'Propietario';
-  const originalAmount = mode === 'Bs BCV' ? fmtBs(amount) : fmtUsd(amount);
-  const rateText = mode === 'Bs BCV' && rate ? `<p><b>Tasa reportada:</b> ${money(rate).toFixed(2)}</p>` : '';
+  const originalAmount = mode === 'Bs BCV' ? `${fmtUsd(amount)} ref. / ${fmtBs(amountBs || 0)}` : fmtUsd(amount);
+  const rateText = mode === 'Bs BCV' && rate ? `<p><b>Tasa reportada:</b> ${money(rate).toFixed(2)} Bs/USD</p>` : '';
   const accessText = access && access.estado ? `${access.estado}${access.temporary ? ' temporal' : ''}` : (access && access.skipped ? access.reason : 'Sin información');
 
   return await sendMail({
     to,
-    subject: `🚨 Pago reportado - Casa ${casa} - ${originalAmount}`,
+    subject: `🚨 Pago reportado - Casa ${casa} - ${fmtUsd(usdEq)} ref.`,
     html: `
       <div style="font-family:Arial,sans-serif;color:#0f172a;line-height:1.5">
         <h2 style="margin:0 0 10px;color:#0f3d24">🚨 Nuevo pago reportado</h2>
@@ -63,15 +65,17 @@ exports.handler=async function(event){
     const ownerId=String(body.ownerId||'');
     const mode=String(body.mode||'');
     const reference=String(body.reference||'').trim().slice(0,120);
-    const amount=Number(body.amount||0);
+    const amount=money(Number(body.amount||0)); // USD referencial siempre
     const rate=Number(body.rate||0);
 
     if(!validRecordId(ownerId))return{statusCode:400,headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'Propietario inválido.'})};
     if(!ALLOWED_MODES.has(mode))return{statusCode:400,headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'Forma de pago inválida.'})};
-    if(!(amount>0))return{statusCode:400,headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'Monto inválido.'})};
+    if(!(amount>0))return{statusCode:400,headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'Monto inválido. Ingrese el monto en USD referencial.'})};
     if(!reference)return{statusCode:400,headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'Debe indicar referencia.'})};
+    if(mode==='Bs BCV'&&!(rate>0))return{statusCode:400,headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'No hay tasa BCV disponible para calcular los bolívares.'})};
 
-    const usdEq=mode==='Bs BCV'?(rate>0?money(amount/rate):0):money(amount);
+    const usdEq=amount;
+    const amountBs=mode==='Bs BCV'?money(amount*rate):0;
     const fields={
       'Propietario que Reporta':[ownerId],
       'Monto Reportado':usdEq,
@@ -82,7 +86,7 @@ exports.handler=async function(event){
       'Equivalente USD Reportado':usdEq
     };
     if(mode==='Bs BCV'){
-      fields['Monto Reportado Bs']=money(amount);
+      fields['Monto Reportado Bs']=amountBs;
       fields['Tasa BCV Reporte']=rate;
     }
 
@@ -100,12 +104,12 @@ exports.handler=async function(event){
 
     let adminNotification = null;
     try {
-      adminNotification = await notifyAdminPaymentReport({ownerId, mode, amount, usdEq, reference, rate, reportId: report&&report.id, access});
+      adminNotification = await notifyAdminPaymentReport({ownerId, mode, amount, usdEq, amountBs, reference, rate, reportId: report&&report.id, access});
     } catch (error) {
       adminNotification = { sent:false, status:'Error enviando notificación admin', detail:error.message };
     }
 
-    return{statusCode:200,headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:JSON.stringify({success:true,message:'Reporte recibido. Será verificado por administración.',reportId:report&&report.id,access,adminNotification})};
+    return{statusCode:200,headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:JSON.stringify({success:true,message:'Reporte recibido. Será verificado por administración.',reportId:report&&report.id,amountUsdRef:amount,amountBs,access,adminNotification})};
   }catch(error){
     return{statusCode:500,headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:JSON.stringify({message:'Error guardando reporte.',detail:error.message})};
   }
