@@ -1,3 +1,7 @@
 [[edge_functions]]
+function = "pwa-head"
+path = "/*"
+
+[[edge_functions]]
 function = "admin-links"
 path = "/admin*"
