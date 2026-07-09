@@ -22,10 +22,18 @@ export default async (request, context) => {
   const icon = `/.netlify/functions/app-icon?app=${app}`;
 
   if (isAdmin) {
-    // Reparar botón "Registrar pago" del admin: usar endpoint específico, protegido y con errores claros.
+    // Reparar pago manual admin: bloquear doble click, aclarar Bs vs USD y usar endpoint dedicado.
+    html = html.replace(
+      "function payNote(){document.getElementById('pay-note').textContent=document.getElementById('pay-mode').value==='USD'?'Se aplicará como pago exclusivamente en dólares.':`Se registrará en Bs y equivalente USD a tasa ${bcv&&bcv.rateFormatted?bcv.rateFormatted:bs(rate())}.`}",
+      "function payNote(){const mode=document.getElementById('pay-mode').value,amount=Number(document.getElementById('pay-amount').value||0),r=rate(),note=document.getElementById('pay-note');if(mode==='USD'){note.textContent='Ingrese el monto en dólares. Se descontará exactamente ese monto en USD.';return}const eq=(amount>0&&r>0)?money(amount/r):0;note.textContent=`Ingrese el monto REAL en bolívares, no el monto en dólares. Tasa ${bcv&&bcv.rateFormatted?bcv.rateFormatted:bs(r)}${amount>0?` · Equivale a ${usd(eq)} ref.`:''}`;}"
+    );
+    html = html.replace(
+      "document.getElementById('pay-mode').onchange=payNote;document.getElementById('pay-confirm').onclick=manualPay;",
+      "document.getElementById('pay-mode').onchange=payNote;document.getElementById('pay-amount').oninput=payNote;document.getElementById('pay-confirm').onclick=manualPay;"
+    );
     html = html.replace(
       /async function manualPay\(\)\{try\{const mode=document\.getElementById\('pay-mode'\)\.value,amount=Number\(document\.getElementById\('pay-amount'\)\.value\);.*?catch\(e\)\{toast\(e\.message,true\)\}\}/,
-      "async function manualPay(){const btn=document.getElementById('pay-confirm');try{const mode=document.getElementById('pay-mode').value,amount=Number(document.getElementById('pay-amount').value),owner=owners.find(x=>x.id===currentOwnerId);if(!currentOwnerId||!owner)throw new Error('Seleccione un propietario.');if(!(amount>0))throw new Error('Ingrese un monto válido.');if(mode==='Bs BCV'&&!(rate()>0))throw new Error('No hay tasa BCV disponible. Presione Actualizar e intente de nuevo.');btn.disabled=true;btn.textContent='Registrando...';const data=await adminFetch('/.netlify/functions/admin-manual-payment',{method:'POST',body:JSON.stringify({ownerId:currentOwnerId,mode,amount,rate:rate()})});hidePay();toast(data.message||'Pago registrado.');await loadAll(true)}catch(e){toast(e.message,true)}finally{btn.disabled=false;btn.textContent='Registrar'}}"
+      "async function manualPay(){if(window.vlaPayBusy)return;const btn=document.getElementById('pay-confirm');try{const mode=document.getElementById('pay-mode').value,amount=Number(document.getElementById('pay-amount').value),owner=owners.find(x=>x.id===currentOwnerId),r=rate();if(!currentOwnerId||!owner)throw new Error('Seleccione un propietario.');if(!(amount>0))throw new Error('Ingrese un monto válido.');if(mode==='Bs BCV'&&!(r>0))throw new Error('No hay tasa BCV disponible. Presione Actualizar e intente de nuevo.');if(mode==='Bs BCV'){const eq=money(amount/r);if(eq<1&&!confirm(`Ese monto en bolívares equivale solo a ${usd(eq)}. Si quería descontar dólares, seleccione USD o escriba el monto real en Bs. ¿Desea continuar?`))return}window.vlaPayBusy=true;btn.disabled=true;btn.textContent='Registrando...';const data=await adminFetch('/.netlify/functions/admin-manual-payment',{method:'POST',body:JSON.stringify({ownerId:currentOwnerId,mode,amount,rate:r})});hidePay();toast(data.message||'Pago registrado.');await loadAll(true)}catch(e){toast(e.message,true)}finally{window.vlaPayBusy=false;btn.disabled=false;btn.textContent='Registrar'}}"
     );
   }
 
