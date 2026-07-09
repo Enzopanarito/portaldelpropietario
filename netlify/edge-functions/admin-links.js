@@ -40,14 +40,6 @@ export default async (request, context) => {
 
   html = html.replace('renderAll();loadUsage();', 'renderAll();');
 
-  if (!html.includes('function safeSendReceipt(')) {
-    html = html.replace(
-      'function setupEvents(){',
-      `async function safeSendReceipt(payload){try{const r=await adminFetch('/.netlify/functions/send-receipt',{method:'POST',body:JSON.stringify(payload)});if(r&&r.email&&r.email.status==='Enviado')toast('Recibo enviado por correo.');else if(r&&r.email)toast('Recibo generado: '+r.email.status,false)}catch(e){console.warn('No se pudo generar recibo',e.message)}}
-function setupEvents(){`
-    );
-  }
-
   // Pago manual admin: el monto SIEMPRE es USD referencial; si es Bs, se calcula Bs = USD ref x BCV.
   html = html.replace(
     "function payNote(){document.getElementById('pay-note').textContent=document.getElementById('pay-mode').value==='USD'?'Se aplicará como pago exclusivamente en dólares.':`Se registrará en Bs y equivalente USD a tasa ${bcv&&bcv.rateFormatted?bcv.rateFormatted:bs(rate())}.`}",
@@ -60,11 +52,11 @@ function setupEvents(){`
 
   html = html.replace(
     /async function manualPay\(\)\{try\{const mode=document\.getElementById\('pay-mode'\)\.value,amount=Number\(document\.getElementById\('pay-amount'\)\.value\);.*?catch\(e\)\{toast\(e\.message,true\)\}\}/,
-    "async function manualPay(){if(window.vlaPayBusy)return;const btn=document.getElementById('pay-confirm');try{const mode=document.getElementById('pay-mode').value,amount=Number(document.getElementById('pay-amount').value),owner=owners.find(x=>x.id===currentOwnerId),r=rate();if(!currentOwnerId||!owner)throw new Error('Seleccione un propietario.');if(!(amount>0))throw new Error('Ingrese un monto válido en USD referencial.');if(mode==='Bs BCV'&&!(r>0))throw new Error('No hay tasa BCV disponible. Presione Actualizar e intente de nuevo.');window.vlaPayBusy=true;btn.disabled=true;btn.textContent='Registrando...';const processed=await adminFetch('/.netlify/functions/admin-manual-payment',{method:'POST',body:JSON.stringify({ownerId:currentOwnerId,mode,amount,rate:r})});if(processed.paymentId&&typeof safeSendReceipt==='function')await safeSendReceipt({ownerId:currentOwnerId,paymentId:processed.paymentId,ownerName:owner.Propietario,casa:owner.Casa,mode,amountUsd:processed.usdEq,amountBs:processed.amountBs||0,reference:'Pago manual admin'});hidePay();toast(processed.message||'Pago registrado.');await loadAll(true)}catch(e){toast(e.message,true)}finally{window.vlaPayBusy=false;btn.disabled=false;btn.textContent='Registrar'}}"
+    "async function manualPay(){if(window.vlaPayBusy)return;const btn=document.getElementById('pay-confirm');try{const mode=document.getElementById('pay-mode').value,amount=Number(document.getElementById('pay-amount').value),owner=owners.find(x=>x.id===currentOwnerId),r=rate();if(!currentOwnerId||!owner)throw new Error('Seleccione un propietario.');if(!(amount>0))throw new Error('Ingrese un monto válido en USD referencial.');if(mode==='Bs BCV'&&!(r>0))throw new Error('No hay tasa BCV disponible. Presione Actualizar e intente de nuevo.');window.vlaPayBusy=true;btn.disabled=true;btn.textContent='Registrando...';const processed=await adminFetch('/.netlify/functions/admin-manual-payment',{method:'POST',body:JSON.stringify({ownerId:currentOwnerId,mode,amount,rate:r})});hidePay();toast(processed.message||'Pago registrado.');await loadAll(true)}catch(e){toast(e.message,true)}finally{window.vlaPayBusy=false;btn.disabled=false;btn.textContent='Registrar'}}"
   );
 
   const reportOld = "await adminFetch('/.netlify/functions/airtable/'+encodeURIComponent(TABLE_PAGOS),{method:'POST',body:JSON.stringify({records:[{fields}],typecast:true})});await adminFetch('/.netlify/functions/airtable/'+encodeURIComponent(TABLE_REPORTES)+'/'+id,{method:'PATCH',body:JSON.stringify({fields:{Estado:'Confirmado'}})});toast('Pago confirmado.');";
-  const reportNew = "const processed=await adminFetch('/.netlify/functions/process-payment-report',{method:'POST',body:JSON.stringify({reportId:id,decision:'approve'})});const owner=owners.find(x=>x.id===ownerId)||{};const rp=processed.receiptPayload||{};if(rp.paymentId&&typeof safeSendReceipt==='function')await safeSendReceipt({ownerId:rp.ownerId,paymentId:rp.paymentId,ownerName:owner.Propietario,casa:owner.Casa,mode:rp.mode,amountUsd:rp.amountUsd,amountBs:rp.amountBs,reference:rp.reference||''});toast(processed.message||'Pago confirmado y acceso sincronizado.');";
+  const reportNew = "const processed=await adminFetch('/.netlify/functions/process-payment-report',{method:'POST',body:JSON.stringify({reportId:id,decision:'approve'})});toast(processed.message||'Pago confirmado, recibo enviado y acceso sincronizado.');";
   if (html.includes(reportOld)) html = html.replace(reportOld, reportNew);
 
   const rejectOld = "await adminFetch('/.netlify/functions/airtable/'+encodeURIComponent(TABLE_REPORTES)+'/'+id,{method:'PATCH',body:JSON.stringify({fields:{Estado:'Rechazado'}})});toast('Pago rechazado.')";
