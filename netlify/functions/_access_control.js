@@ -7,10 +7,14 @@ const { sendMail } = require('./_mailer');
 const TABLES = {
   propietarios: 'Propietarios',
   pagos: 'Pagos',
-  reportes: 'Reportes de Pago'
+  reportes: 'Reportes de Pago',
+  config: 'Configuración'
 };
 
 const TOLERANCE = 0.01;
+const ACCESS_MODE_FIELD = 'Modo Control Portón';
+const ACCESS_MODE_AUTO = 'Automático';
+const ACCESS_MODE_MANUAL = 'Manual';
 
 function json(statusCode, body) {
   return {
@@ -98,6 +102,27 @@ async function airtableCreateRecord(tableName, fields) {
   return (data.records || [])[0] || null;
 }
 
+function normalizeAccessMode(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'manual') return ACCESS_MODE_MANUAL;
+  return ACCESS_MODE_AUTO;
+}
+
+async function getAccessMode() {
+  const records = await airtableListAll(TABLES.config);
+  const record = records[0] || null;
+  const mode = normalizeAccessMode(record && record.fields ? record.fields[ACCESS_MODE_FIELD] : ACCESS_MODE_AUTO);
+  return { mode, recordId: record ? record.id : null };
+}
+
+async function setAccessMode(mode) {
+  const normalized = normalizeAccessMode(mode);
+  const current = await getAccessMode();
+  if (!current.recordId) throw new Error('No existe registro de Configuración para guardar el modo del portón.');
+  const updated = await airtablePatchRecord(TABLES.config, current.recordId, { [ACCESS_MODE_FIELD]: normalized });
+  return { mode: normalized, record: updated };
+}
+
 function extractCookie(setCookieHeaders) {
   const raw = Array.isArray(setCookieHeaders) ? setCookieHeaders.join(',') : String(setCookieHeaders || '');
   const match = raw.match(/access_token=[^;]+/);
@@ -151,11 +176,9 @@ function calculateExpiredAccessDebt(owner, pagos, reportes) {
   const initialBsRef = Number(f['Deuda Anterior Bs Ref'] || 0);
   const splitExists = Math.abs(initialUsd) > 0.001 || Math.abs(initialBsRef) > 0.001;
 
-  // En modo viejo, Deuda Anterior se interpreta como vencida pagadera en Bs Ref.
   let expiredUsd = Math.max(0, initialUsd);
   let expiredBsRef = Math.max(0, initialBsRef + (!splitExists ? Number(f['Deuda Anterior'] || 0) : 0));
 
-  // Pagos ya aplicados y no cerrados se aplican primero contra deuda vencida, según su moneda.
   (pagos || []).forEach(payment => {
     const pf = payment.fields || {};
     if (pf['[x] Aplicado al Cierre'] === true) return;
@@ -211,19 +234,13 @@ function limitationEmailHtml(owner, calc) {
   return `
   <div style="font-family:Arial,sans-serif;color:#0f172a;line-height:1.55">
     <p>Estimado(a) ${name},</p>
-
     <p>Reciba un cordial saludo.</p>
-
     <p>Por medio del presente le informamos que, de acuerdo con nuestros registros administrativos, su inmueble presenta una deuda vencida pendiente con el condominio Villas Los Apamates.</p>
-
-    <p>Por tal motivo, ha sido limitado temporalmente el acceso cómodo al portón eléctrico mediante control, aplicación o sistema automatizado.</p>
-
+    <p>Por tal motivo, el sistema administrativo ha limitado <b>automáticamente</b> el acceso cómodo al portón eléctrico mediante control, aplicación o sistema automatizado.</p>
     <p>Esta medida no impide el acceso a la urbanización, pero sí restringe el uso del sistema cómodo de apertura hasta tanto sea regularizada la situación administrativa.</p>
-
+    <p>Una vez reportado el pago correspondiente a la deuda vencida, el sistema podrá habilitar <b>automáticamente</b> el acceso cómodo mientras la administración verifica el pago. Si el pago es aprobado, la habilitación se mantendrá; si el pago es rechazado o no cubre la deuda vencida, el sistema podrá limitar nuevamente el acceso cómodo.</p>
     <p>Le agradecemos ponerse al día lo antes posible o reportar su pago a través del portal para que podamos validar la información y solventar la situación.</p>
-
     <p style="font-size:13px;color:#475569"><b>Referencia administrativa:</b> Casa ${f.Casa || ''}. Deuda vencida registrada: ${accessDebtText(calc)}.</p>
-
     <p>Atentamente,</p>
     <p><b>Administración<br>Villas Los Apamates</b></p>
   </div>`;
@@ -235,7 +252,7 @@ async function sendLimitationEmail(owner, calc) {
   if (!to) return { sent: false, status: 'Sin correo del propietario' };
   return await sendMail({
     to,
-    subject: 'Notificación de limitación de acceso cómodo al portón',
+    subject: 'Notificación automática de limitación de acceso cómodo al portón',
     html: limitationEmailHtml(owner, calc)
   });
 }
@@ -253,6 +270,11 @@ async function syncOwnerAccess(ownerId, options = {}, context = null) {
   const missing = requiredAccessEnv();
   if (missing.length) throw new Error('Faltan variables privadas: ' + missing.join(', '));
 
+  const modeInfo = await getAccessMode();
+  if (modeInfo.mode === ACCESS_MODE_MANUAL && options.ignoreMode !== true) {
+    return { ownerId, skipped: true, action: 'manual-mode', mode: ACCESS_MODE_MANUAL, reason: 'Control automático del portón en modo Manual. No se ejecutó sincronización automática.' };
+  }
+
   const ctx = context || await loadAccessContext();
   let owner = (ctx.owners || []).find(o => o.id === ownerId);
   if (!owner) owner = await airtableGetRecord(TABLES.propietarios, ownerId);
@@ -264,7 +286,7 @@ async function syncOwnerAccess(ownerId, options = {}, context = null) {
   const runMkj = options.runMkj !== false;
 
   if (!memberId) {
-    return { ownerId, casa: f.Casa, propietario: f.Propietario, skipped: true, reason: 'Sin MKJ User ID', calc };
+    return { ownerId, casa: f.Casa, propietario: f.Propietario, skipped: true, reason: 'Sin MKJ User ID', mode: modeInfo.mode, calc };
   }
 
   if (f['Excepción Acceso'] === true) {
@@ -273,7 +295,7 @@ async function syncOwnerAccess(ownerId, options = {}, context = null) {
       'Última Sync MKJ': nowCaracas(),
       'Motivo Limitación Acceso': 'Omitido por excepción manual de acceso.'
     });
-    return { ownerId, casa: f.Casa, propietario: f.Propietario, action: 'skip-exception', estado: 'Excepción Manual', calc, owner: patched };
+    return { ownerId, casa: f.Casa, propietario: f.Propietario, action: 'skip-exception', estado: 'Excepción Manual', mode: modeInfo.mode, calc, owner: patched };
   }
 
   let desiredAction = 'enable';
@@ -285,7 +307,7 @@ async function syncOwnerAccess(ownerId, options = {}, context = null) {
     desiredAction = 'enable';
     desiredStatus = 'Habilitado';
     temporary = true;
-    reason = `Habilitación temporal por reporte de pago pendiente suficiente para cubrir deuda vencida (${accessDebtText(calc)}).`;
+    reason = `Habilitación temporal automática por reporte de pago pendiente suficiente para cubrir deuda vencida (${accessDebtText(calc)}).`;
   } else if (calc.hasExpiredDebt) {
     desiredAction = 'disable';
     desiredStatus = 'Limitado';
@@ -318,6 +340,7 @@ async function syncOwnerAccess(ownerId, options = {}, context = null) {
     estado: desiredStatus,
     action: desiredAction,
     temporary,
+    mode: modeInfo.mode,
     reason,
     mkjStatus: mkjResult ? mkjResult.status : 'sin-cambio',
     email,
@@ -327,6 +350,21 @@ async function syncOwnerAccess(ownerId, options = {}, context = null) {
 }
 
 async function autoSyncAll(options = {}) {
+  const modeInfo = await getAccessMode();
+  if (modeInfo.mode === ACCESS_MODE_MANUAL && options.ignoreMode !== true) {
+    return {
+      success: true,
+      mode: ACCESS_MODE_MANUAL,
+      skipped: true,
+      total: 0,
+      limited: 0,
+      enabled: 0,
+      errors: 0,
+      message: 'Control automático del portón en modo Manual. No se ejecutó sincronización automática.',
+      results: []
+    };
+  }
+
   const ctx = await loadAccessContext();
   const results = [];
   for (const owner of ctx.owners.sort((a, b) => Number((a.fields || {}).Casa || 0) - Number((b.fields || {}).Casa || 0))) {
@@ -338,6 +376,7 @@ async function autoSyncAll(options = {}) {
   }
   return {
     success: true,
+    mode: modeInfo.mode,
     total: results.length,
     limited: results.filter(r => r.estado === 'Limitado').length,
     enabled: results.filter(r => r.estado === 'Habilitado').length,
@@ -355,11 +394,15 @@ module.exports = {
   airtableGetRecord,
   airtableCreateRecord,
   airtablePatchRecord,
+  getAccessMode,
+  setAccessMode,
   loadAccessContext,
   calculateExpiredAccessDebt,
   syncOwnerAccess,
   autoSyncAll,
   mkjLogin,
   mkjSetMemberStatus,
-  TABLES
+  TABLES,
+  ACCESS_MODE_AUTO,
+  ACCESS_MODE_MANUAL
 };
