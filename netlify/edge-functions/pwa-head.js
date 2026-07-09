@@ -75,6 +75,39 @@ export default async (request, context) => {
   html.dark #porton-pill .bg-red-100{background:#450a0a!important;color:#fecaca!important;border-color:#991b1b!important}
 </style>` : '';
 
+  const balanceCardFixes = isOwnerPortal && !html.includes('vla-balance-card-state-fix') ? `
+<style id="vla-balance-card-state-fix">
+  .metric-red{background:linear-gradient(135deg,#dc2626,#7f1d1d)!important}
+  .metric-green{background:linear-gradient(135deg,#0b7a34,#073b55)!important}
+</style>
+<script id="vla-balance-card-state-fix">
+(function(){
+  function parseMoney(text){
+    var raw=String(text||'').trim();
+    var negative=raw.indexOf('-')===0;
+    var n=Number(raw.replace(/[^0-9.]/g,''))||0;
+    return negative?-n:n;
+  }
+  function applyBalanceCardState(){
+    var total=document.getElementById('m-total');
+    if(!total)return;
+    var card=total.closest('.metric');
+    if(!card)return;
+    var value=parseMoney(total.textContent);
+    var hasDebt=value>0.01;
+    card.classList.remove('metric-green','metric-red');
+    card.classList.add(hasDebt?'metric-red':'metric-green');
+  }
+  function boot(){
+    applyBalanceCardState();
+    var total=document.getElementById('m-total');
+    if(total)new MutationObserver(applyBalanceCardState).observe(total,{childList:true,characterData:true,subtree:true});
+    document.addEventListener('change',function(e){if(e.target&&e.target.id==='userSelector')setTimeout(applyBalanceCardState,80);});
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
+</script>` : '';
+
   const tags = `
 <!-- VLA PWA icons/start -->
 <meta data-vla-pwa="1" name="application-name" content="${title}">
@@ -93,7 +126,7 @@ export default async (request, context) => {
 <script src="/pwa-register.js" defer></script>
 <!-- VLA PWA icons/end -->`;
 
-  const inject = (html.includes('data-vla-pwa="1"') ? '' : tags) + portalFixes;
+  const inject = (html.includes('data-vla-pwa="1"') ? '' : tags) + portalFixes + balanceCardFixes;
   if (inject) {
     if (html.includes('</head>')) html = html.replace('</head>', inject + '</head>');
     else html = inject + html;
