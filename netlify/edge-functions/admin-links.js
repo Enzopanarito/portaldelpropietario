@@ -6,6 +6,7 @@ export default async (request, context) => {
   let html = await response.text();
   const whatsappLink = "<a href='/whatsapp.html' target='_self' class='bg-green-600 text-white px-4 py-2 rounded-full shadow font-semibold'>📲 WhatsApp</a>";
   const securityLink = "<a href='/seguridad.html' target='_self' class='bg-amber-600 text-white px-4 py-2 rounded-full shadow font-semibold'>🔐 Seguridad</a>";
+  const portonLink = "<a href='/mkj-access.html' target='_blank' class='bg-cyan-700 text-white px-4 py-2 rounded-full shadow font-semibold'>🚪 Portón</a>";
   const auditCloseLink = "<a href='/cierre-auditoria.html' target='_blank' class='bg-red-600 text-white px-4 py-2 rounded-full shadow font-semibold'>🧹 Cierre Auditoría</a>";
 
   if (!html.includes('/seguridad.html?forgot=1')) {
@@ -15,10 +16,10 @@ export default async (request, context) => {
     );
   }
 
-  if (!html.includes('/whatsapp.html') || !html.includes('/seguridad.html') || !html.includes('/cierre-auditoria.html')) {
+  if (!html.includes('/whatsapp.html') || !html.includes('/seguridad.html') || !html.includes('/cierre-auditoria.html') || !html.includes('/mkj-access.html')) {
     const auditSingle = "<a href='/auditoria.html' target='_blank' class='bg-indigo-600 text-white px-4 py-2 rounded-full shadow font-semibold'>📚 Auditoría</a>";
     const backupButton = "<button id='backup-btn' class='bg-slate-900 text-white px-4 py-2 rounded-full shadow font-semibold'>💾 Respaldo</button>";
-    const links = `${whatsappLink}${securityLink}${auditCloseLink}`;
+    const links = `${whatsappLink}${securityLink}${portonLink}${auditCloseLink}`;
     if (html.includes(auditSingle)) html = html.replace(auditSingle, links + auditSingle);
     else if (html.includes(backupButton)) html = html.replace(backupButton, links + backupButton);
     else html = html.replace('</nav>', links + '</nav>');
