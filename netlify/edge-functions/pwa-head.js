@@ -21,6 +21,14 @@ export default async (request, context) => {
   const manifest = `/.netlify/functions/app-manifest?app=${app}`;
   const icon = `/.netlify/functions/app-icon?app=${app}`;
 
+  if (isAdmin) {
+    // Reparar botón "Registrar pago" del admin: usar endpoint específico, protegido y con errores claros.
+    html = html.replace(
+      /async function manualPay\(\)\{try\{const mode=document\.getElementById\('pay-mode'\)\.value,amount=Number\(document\.getElementById\('pay-amount'\)\.value\);.*?catch\(e\)\{toast\(e\.message,true\)\}\}/,
+      "async function manualPay(){const btn=document.getElementById('pay-confirm');try{const mode=document.getElementById('pay-mode').value,amount=Number(document.getElementById('pay-amount').value),owner=owners.find(x=>x.id===currentOwnerId);if(!currentOwnerId||!owner)throw new Error('Seleccione un propietario.');if(!(amount>0))throw new Error('Ingrese un monto válido.');if(mode==='Bs BCV'&&!(rate()>0))throw new Error('No hay tasa BCV disponible. Presione Actualizar e intente de nuevo.');btn.disabled=true;btn.textContent='Registrando...';const data=await adminFetch('/.netlify/functions/admin-manual-payment',{method:'POST',body:JSON.stringify({ownerId:currentOwnerId,mode,amount,rate:rate()})});hidePay();toast(data.message||'Pago registrado.');await loadAll(true)}catch(e){toast(e.message,true)}finally{btn.disabled=false;btn.textContent='Registrar'}}"
+    );
+  }
+
   if (isOwnerPortal) {
     // Fuente maestra: si Airtable dice Deuda Restante <= 0, no reconstruir saldos visuales viejos por moneda.
     html = html.replace(
@@ -60,6 +68,21 @@ export default async (request, context) => {
     background:#0f172a!important;
     color:#f8fafc!important;
     border-color:#334155!important;
+  }
+  html.dark .app-content header,
+  html.dark .mobile-bottom{
+    background:#020617!important;
+    color:#f8fafc!important;
+    border-color:#334155!important;
+  }
+  html.dark .app-content header h1,
+  html.dark #welcome-msg,
+  html.dark .mobile-bottom a,
+  html.dark .mobile-bottom button{
+    color:#f8fafc!important;
+  }
+  html.dark .mobile-bottom a.text-green-700{
+    color:#86efac!important;
   }
   html.dark #welcome h1,
   html.dark #welcome label,
