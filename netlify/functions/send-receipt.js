@@ -1,8 +1,9 @@
 // netlify/functions/send-receipt.js
-// Crea recibos de pago y, si hay proveedor configurado, los envía por correo.
+// Crea comprobantes de pago y, si hay proveedor configurado, los envía por correo con PDF adjunto.
 
 const { requireAdmin } = require('./_auth');
 const { sendMail } = require('./_mailer');
+const { buildReceiptPdf } = require('./_receipt_pdf');
 
 const TABLE_RECEIPTS = 'Recibos de Pago';
 const TABLE_OWNERS = 'Propietarios';
@@ -35,10 +36,10 @@ function buildHtml(payload){
   const ref=payload.reference||'N/A';
   return `
   <div style="font-family:Arial,sans-serif;max-width:680px;margin:auto;border:1px solid #e5e7eb;border-radius:12px;padding:24px;color:#111827">
-    <h2 style="margin:0 0 6px;color:#075985">Recibo de Pago</h2>
+    <h2 style="margin:0 0 6px;color:#075985">Comprobante de Pago</h2>
     <p style="margin:0 0 20px;color:#6b7280">Urbanización Villa Los Apamates</p>
     <table style="width:100%;border-collapse:collapse;font-size:14px">
-      <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb"><b>Recibo</b></td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${payload.receiptNumber}</td></tr>
+      <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb"><b>Comprobante</b></td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${payload.receiptNumber}</td></tr>
       <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb"><b>Casa</b></td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${casa}</td></tr>
       <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb"><b>Propietario</b></td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${owner}</td></tr>
       <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb"><b>Fecha</b></td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${date}</td></tr>
@@ -47,7 +48,7 @@ function buildHtml(payload){
       <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb"><b>Monto Bs.</b></td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${amountBs>0?bs(amountBs):'N/A'}</td></tr>
       <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb"><b>Referencia</b></td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${ref}</td></tr>
     </table>
-    <p style="font-size:12px;color:#6b7280;margin-top:20px">Este recibo confirma que el pago fue registrado en el sistema administrativo. Si observa alguna diferencia, por favor comuníquese con la administración.</p>
+    <p style="font-size:12px;color:#6b7280;margin-top:20px">Adjunto encontrará el comprobante en PDF tamaño carta para guardar o imprimir.</p>
   </div>`;
 }
 exports.handler=async function(event){
@@ -60,15 +61,19 @@ exports.handler=async function(event){
     const f=owner?.fields||{};
     const email=body.email||f.Email||f.Correo||'';
     const receiptNumber=receiptNo();
-    const payload={receiptNumber,ownerName:body.ownerName||f.Propietario||'',casa:body.casa||f.Casa||'',mode:body.mode||body.formaPago||'',date:body.date||caracasDate(),amountUsd:body.amountUsd||body.usdEq||0,amountBs:body.amountBs||0,reference:body.reference||body.referencia||''};
+    const payload={receiptNumber,ownerName:body.ownerName||f.Propietario||'',casa:body.casa||f.Casa||'',mode:body.mode||body.formaPago||'',date:body.date||caracasDate(),amountUsd:body.amountUsd||body.usdEq||0,amountBs:body.amountBs||0,reference:body.reference||body.referencia||'',concept:body.concept||'Pago registrado en el sistema administrativo'};
     const html=buildHtml(payload);
     let emailResult={sent:false,status:email?'Pendiente':'Sin correo',detail:email?'Pendiente de envío':'El propietario no tiene email registrado.'};
-    if(email)emailResult=await sendMail({to:email,subject:`Recibo de pago ${receiptNumber} - Villa Los Apamates`,html});
+    if(email){
+      const pdfBuffer=await buildReceiptPdf(payload);
+      const safeCasa=String(payload.casa||'').replace(/[^0-9A-Za-z_-]/g,'');
+      emailResult=await sendMail({to:email,subject:`Comprobante de pago ${receiptNumber} - Villa Los Apamates`,html,attachments:[{filename:`${receiptNumber}-Casa-${safeCasa||'NA'}.pdf`,content:pdfBuffer,contentType:'application/pdf'}]});
+    }
     const fields={'Nro Recibo':receiptNumber,'Casa':Number(payload.casa||0),'Fecha':payload.date,'Monto USD':money(payload.amountUsd),'Monto Bs':money(payload.amountBs),'Forma de Pago':payload.mode==='USD'?'USD':'Bs BCV','Referencia':payload.reference,'Correo':email||undefined,'Estado Email':emailResult.status,'HTML Recibo':html,'Log':emailResult.detail||''};
     if(body.ownerId)fields.Propietario=[body.ownerId];
     if(body.paymentId)fields.Pago=[body.paymentId];
     if(emailResult.sent)fields['Enviado En']=nowIso();
     const created=await airtable(TABLE_RECEIPTS,{method:'POST',body:JSON.stringify({records:[{fields}],typecast:true})});
     return json(200,{success:true,receipt:created.records?.[0],email:emailResult});
-  }catch(error){return json(500,{message:'Error generando recibo.',detail:error.message});}
+  }catch(error){return json(500,{message:'Error generando comprobante.',detail:error.message});}
 };
