@@ -41,7 +41,18 @@ def run_sender(job):
     proc=subprocess.run(cmd,cwd=str(ROOT),text=True,capture_output=True)
     out=(proc.stdout or '')+('\n'+proc.stderr if proc.stderr else '')
     return proc.returncode,out[-8000:],parse_summary(out)
+def run_scheduler_if_due(portal,token):
+    try:
+        res=api(portal,token,'scheduler-run')
+        count=int(res.get('createdCount',0))
+        if count:
+            print(f'Programación revisada: {count} orden(es) creada(s).')
+        return count
+    except Exception as e:
+        print('Advertencia: no pude revisar programaciones:',e)
+        return 0
 def process_once(portal,token,mac_name):
+    run_scheduler_if_due(portal,token)
     jobs=api(portal,token,'due-jobs').get('jobs',[])
     if not jobs:
         print('Sin órdenes pendientes.'); return 0
