@@ -16,8 +16,9 @@ const TABLES = {
 
 const FIELD_SETS = {
   propietarios: [
-    'Propietario', 'Casa', 'Telefono', 'Alicuota', 'Deuda Anterior', 'Deuda Anterior USD', 'Deuda Anterior Bs Ref',
-    'Deuda Restante', 'Total Pagado', 'Gasto del Mes', 'Cuota Base Mes', 'Recargo Aplicado', 'Monto a Pagar a Tiempo'
+    'Propietario', 'Casa', 'Telefono', 'Email', 'Alicuota', 'Deuda Anterior', 'Deuda Anterior USD', 'Deuda Anterior Bs Ref',
+    'Deuda Restante', 'Total Pagado', 'Gasto del Mes', 'Cuota Base Mes', 'Recargo Aplicado', 'Monto a Pagar a Tiempo',
+    'MKJ User ID', 'MKJ Email', 'Estado Acceso Portón', 'Excepción Acceso', 'Última Sync MKJ', 'Motivo Limitación Acceso'
   ],
   gastos: ['Concepto', 'Monto', 'Tipo de Gasto', 'Frecuencia', 'Propietarios', 'Forma de Pago'],
   pagos: [
