@@ -3,6 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "dependencies": {
-    "nodemailer": "^6.9.15"
+    "nodemailer": "^6.9.15",
+    "pdfkit": "^0.15.0"
   }
 }
