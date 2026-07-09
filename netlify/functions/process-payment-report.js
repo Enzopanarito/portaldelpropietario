@@ -1,6 +1,7 @@
 // netlify/functions/process-payment-report.js
 // Aprueba o rechaza reportes de pago y sincroniza automáticamente el acceso del portón.
 // Al aprobar, crea el pago y genera/envía el recibo PDF desde backend.
+// Protección: el endpoint es idempotente; un reporte ya Confirmado/Rechazado no crea pagos duplicados.
 
 const { requireAdmin } = require('./_auth');
 const { json, money, airtableGetRecord, airtableCreateRecord, airtablePatchRecord, syncOwnerAccess, TABLES } = require('./_access_control');
@@ -8,6 +9,7 @@ const { createAndSendReceipt } = require('./_receipt_service');
 
 function todayCaracasISO(){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Caracas',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
 function validRecordId(id){return /^rec[A-Za-z0-9]{14}$/.test(String(id||''));}
+function selectName(value){return value && typeof value === 'object' && value.name ? value.name : String(value || '');}
 
 exports.handler = async function(event) {
   const auth = requireAdmin(event);
@@ -28,6 +30,14 @@ exports.handler = async function(event) {
     const ownerId = (f['Propietario que Reporta'] || [])[0];
     if (!validRecordId(ownerId)) return json(400, { success:false, message:'El reporte no tiene propietario válido.' });
 
+    const currentStatus = selectName(f.Estado || 'Pendiente');
+    if (currentStatus === 'Confirmado') {
+      return json(200, { success:true, decision:'already-confirmed', message:'Este reporte ya estaba confirmado. No se creó otro pago.', report });
+    }
+    if (currentStatus === 'Rechazado') {
+      return json(200, { success:true, decision:'already-rejected', message:'Este reporte ya estaba rechazado. No se hizo ningún cambio.', report });
+    }
+
     if (decision === 'reject') {
       const patched = await airtablePatchRecord(TABLES.reportes, reportId, { Estado: 'Rechazado' });
       const access = await syncOwnerAccess(ownerId, {
@@ -37,7 +47,7 @@ exports.handler = async function(event) {
       return json(200, { success:true, decision, message:'Pago rechazado y acceso sincronizado.', report: patched, access });
     }
 
-    const mode = f['Forma de Pago Reportada'] || 'Bs BCV';
+    const mode = selectName(f['Forma de Pago Reportada'] || 'Bs BCV');
     const usdEq = money(Number(f['Equivalente USD Reportado'] || f['Monto Reportado'] || 0));
     const amountBs = mode === 'Bs BCV' ? money(Number(f['Monto Reportado Bs'] || 0)) : 0;
     if (!(usdEq > 0)) return json(400, { success:false, message:'El reporte no tiene monto válido.' });
