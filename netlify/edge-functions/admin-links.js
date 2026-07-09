@@ -43,12 +43,14 @@ export default async (request, context) => {
   if (!html.includes('function safeSendReceipt(')) {
     html = html.replace(
       'function setupEvents(){',
-      `async function safeSendReceipt(payload){try{const r=await adminFetch('/.netlify/functions/send-receipt',{method:'POST',body:JSON.stringify(payload)});if(r&&r.email&&r.email.status==='Enviado')toast('Recibo enviado por correo.');else if(r&&r.email)toast('Recibo generado: '+r.email.status,false)}catch(e){console.warn('No se pudo generar recibo',e.message)}}\nfunction setupEvents(){`
+      `async function safeSendReceipt(payload){try{const r=await adminFetch('/.netlify/functions/send-receipt',{method:'POST',body:JSON.stringify(payload)});if(r&&r.email&&r.email.status==='Enviado')toast('Recibo enviado por correo.');else if(r&&r.email)toast('Recibo generado: '+r.email.status,false)}catch(e){console.warn('No se pudo generar recibo',e.message)}}
+function setupEvents(){`
     );
   }
 
+  // Pago manual desde admin: usar endpoint dedicado y no depender de cadenas antiguas del proxy genérico.
   const manualOld = "await adminFetch('/.netlify/functions/airtable/'+encodeURIComponent(TABLE_PAGOS),{method:'POST',body:JSON.stringify({records:[{fields}],typecast:true})});hidePay();toast('Pago registrado.');loadAll(true)";
-  const manualNew = "const payResp=await adminFetch('/.netlify/functions/airtable/'+encodeURIComponent(TABLE_PAGOS),{method:'POST',body:JSON.stringify({records:[{fields}],typecast:true})});const owner=owners.find(x=>x.id===currentOwnerId)||{};const paymentId=(payResp.records&&payResp.records[0]&&payResp.records[0].id)||'';await safeSendReceipt({ownerId:currentOwnerId,paymentId,ownerName:owner.Propietario,casa:owner.Casa,mode,amountUsd:usdEq,amountBs:mode==='Bs BCV'?amount:0,reference:'Pago manual admin'});await adminFetch('/.netlify/functions/access-auto-sync',{method:'POST',body:JSON.stringify({ownerId:currentOwnerId,reason:'Pago manual registrado por administración.',sendEmail:true})});hidePay();toast('Pago registrado y acceso sincronizado.');loadAll(true)";
+  const manualNew = "const processed=await adminFetch('/.netlify/functions/admin-manual-payment',{method:'POST',body:JSON.stringify({ownerId:currentOwnerId,mode,amount,rate:rate()})});const owner=owners.find(x=>x.id===currentOwnerId)||{};if(processed.paymentId&&typeof safeSendReceipt==='function')await safeSendReceipt({ownerId:currentOwnerId,paymentId:processed.paymentId,ownerName:owner.Propietario,casa:owner.Casa,mode,amountUsd:processed.usdEq,amountBs:mode==='Bs BCV'?amount:0,reference:'Pago manual admin'});hidePay();toast(processed.message||'Pago registrado.');loadAll(true)";
   if (html.includes(manualOld)) html = html.replace(manualOld, manualNew);
 
   const reportOld = "await adminFetch('/.netlify/functions/airtable/'+encodeURIComponent(TABLE_PAGOS),{method:'POST',body:JSON.stringify({records:[{fields}],typecast:true})});await adminFetch('/.netlify/functions/airtable/'+encodeURIComponent(TABLE_REPORTES)+'/'+id,{method:'PATCH',body:JSON.stringify({fields:{Estado:'Confirmado'}})});toast('Pago confirmado.');";
