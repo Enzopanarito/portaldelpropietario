@@ -1,9 +1,10 @@
 // netlify/functions/system-health.js
 // Panel de salud protegido para revisar componentes críticos del sistema.
-// Monitorea finanzas, Airtable, BCV, correo y control de acceso MKJoules con bajo consumo de API.
+// Monitorea finanzas, Airtable, BCV, correo oficial y control de acceso MKJoules con bajo consumo de API.
 
 const { requireAdmin } = require('./_auth');
 const { calculateExpiredAccessDebt, getAccessMode } = require('./_access_control');
+const { OFFICIAL_EMAIL } = require('./_mailer');
 
 const TABLES = {
   propietarios: 'Propietarios',
@@ -42,6 +43,11 @@ async function getAll(tableName, token, baseId, counter, fields = []) {
 
 function money(n) { return Math.round(Number(n || 0) * 100) / 100; }
 function hasValue(v) { return String(v || '').trim().length > 0; }
+function normalizeEmail(value = '') {
+  const text = String(value || '').trim().toLowerCase();
+  const match = text.match(/<([^>]+)>/);
+  return (match ? match[1] : text).trim();
+}
 function statusCount(records, field) {
   return records.reduce((acc, r) => {
     const value = (r.fields || {})[field] || 'Sin configurar';
@@ -62,7 +68,7 @@ exports.handler = async function(event) {
 
   const {
     AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, ADMIN_PASSWORD,
-    SMTP_HOST, SMTP_USER, SMTP_SECRET,
+    SMTP_HOST, SMTP_USER, SMTP_SECRET, MAIL_FROM,
     MKJ_BASE_URL, MKJ_ORG_ID, MKJ_ADMIN_EMAIL, MKJ_ADMIN_PASSWORD
   } = process.env;
 
@@ -74,12 +80,16 @@ exports.handler = async function(event) {
   }
 
   try {
+    const smtpConfigured = isConfigured(SMTP_HOST, SMTP_USER, SMTP_SECRET);
+    const officialSender = smtpConfigured && (normalizeEmail(SMTP_USER) === OFFICIAL_EMAIL || normalizeEmail(MAIL_FROM) === OFFICIAL_EMAIL);
+
     add('Token administrativo', true, 'Sesión administrativa válida.');
     add('ADMIN_PASSWORD', !!ADMIN_PASSWORD, ADMIN_PASSWORD ? 'Configurada.' : 'No configurada.');
     add('Airtable', isConfigured(AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID), isConfigured(AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID) ? `Base conectada: ${AIRTABLE_BASE_ID}` : 'Faltan AIRTABLE_API_TOKEN o AIRTABLE_BASE_ID.');
-    add('Correo SMTP', isConfigured(SMTP_HOST, SMTP_USER, SMTP_SECRET), isConfigured(SMTP_HOST, SMTP_USER, SMTP_SECRET) ? `Configurado para enviar correos desde ${SMTP_USER}.` : 'Faltan variables SMTP. Las notificaciones no saldrán.', isConfigured(SMTP_HOST, SMTP_USER, SMTP_SECRET) ? 'ok' : 'warning');
+    add('Correo SMTP', smtpConfigured, smtpConfigured ? 'Variables SMTP configuradas.' : 'Faltan variables SMTP. Las notificaciones no saldrán.', smtpConfigured ? 'ok' : 'warning');
+    add('Remitente oficial', officialSender, officialSender ? `Bloqueado correctamente a ${OFFICIAL_EMAIL}.` : `El sistema solo debe enviar desde ${OFFICIAL_EMAIL}. Revise SMTP_USER o MAIL_FROM en Netlify.`, officialSender ? 'ok' : 'error');
     add('Variables MKJoules', isConfigured(MKJ_ADMIN_EMAIL, MKJ_ADMIN_PASSWORD, MKJ_ORG_ID), isConfigured(MKJ_ADMIN_EMAIL, MKJ_ADMIN_PASSWORD, MKJ_ORG_ID) ? `Configurado para org ${MKJ_ORG_ID}.` : 'Faltan variables MKJ. El portón no podrá sincronizarse.', isConfigured(MKJ_ADMIN_EMAIL, MKJ_ADMIN_PASSWORD, MKJ_ORG_ID) ? 'ok' : 'error');
-    add('URL MKJoules', hasValue(MKJ_BASE_URL) || true, MKJ_BASE_URL || 'Usando valor por defecto: https://cloud.mkjoules.com');
+    add('URL MKJoules', true, MKJ_BASE_URL || 'Usando valor por defecto: https://cloud.mkjoules.com');
 
     if (!AIRTABLE_API_TOKEN || !AIRTABLE_BASE_ID) {
       return { statusCode: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify({ ok: false, status: 'error', checks, generatedAt: new Date().toISOString(), apiUsage: counter }) };
@@ -103,7 +113,7 @@ exports.handler = async function(event) {
     let accessModeInfo;
     try {
       accessModeInfo = await getAccessMode();
-      counter.airtable += 1; // getAccessMode consulta Configuración una vez.
+      counter.airtable += 1;
       add('Modo Control Portón', true, accessModeInfo.mode === 'Automático' ? 'Automático activo.' : 'Manual activo: las sincronizaciones automáticas están pausadas.', accessModeInfo.mode === 'Automático' ? 'ok' : 'warning');
     } catch (error) {
       add('Modo Control Portón', false, error.message);
