@@ -1,8 +1,10 @@
 // netlify/functions/process-payment-report.js
 // Aprueba o rechaza reportes de pago y sincroniza automáticamente el acceso del portón.
+// Al aprobar, crea el pago y genera/envía el recibo PDF desde backend.
 
 const { requireAdmin } = require('./_auth');
 const { json, money, airtableGetRecord, airtableCreateRecord, airtablePatchRecord, syncOwnerAccess, TABLES } = require('./_access_control');
+const { createAndSendReceipt } = require('./_receipt_service');
 
 function todayCaracasISO(){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Caracas',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
 function validRecordId(id){return /^rec[A-Za-z0-9]{14}$/.test(String(id||''));}
@@ -37,6 +39,7 @@ exports.handler = async function(event) {
 
     const mode = f['Forma de Pago Reportada'] || 'Bs BCV';
     const usdEq = money(Number(f['Equivalente USD Reportado'] || f['Monto Reportado'] || 0));
+    const amountBs = mode === 'Bs BCV' ? money(Number(f['Monto Reportado Bs'] || 0)) : 0;
     if (!(usdEq > 0)) return json(400, { success:false, message:'El reporte no tiene monto válido.' });
 
     const paymentFields = {
@@ -47,11 +50,27 @@ exports.handler = async function(event) {
       'Equivalente USD Aplicado': usdEq
     };
     if (mode === 'Bs BCV') {
-      paymentFields['Monto Pagado Bs'] = money(Number(f['Monto Reportado Bs'] || 0));
+      paymentFields['Monto Pagado Bs'] = amountBs;
       paymentFields['Tasa BCV Aplicada'] = Number(f['Tasa BCV Reporte'] || 0);
     }
 
     const payment = await airtableCreateRecord(TABLES.pagos, paymentFields);
+
+    let receipt = null;
+    try {
+      receipt = await createAndSendReceipt({
+        ownerId,
+        paymentId: payment && payment.id,
+        mode,
+        amountUsd: usdEq,
+        amountBs,
+        reference: f.Referencia || '',
+        concept: 'Pago reportado por propietario y aprobado por administración'
+      });
+    } catch (error) {
+      receipt = { success:false, warning:error.message };
+    }
+
     const patched = await airtablePatchRecord(TABLES.reportes, reportId, { Estado: 'Confirmado' });
     const access = await syncOwnerAccess(ownerId, {
       reason: 'Pago aprobado. Sincronización automática de acceso cómodo.',
@@ -61,16 +80,19 @@ exports.handler = async function(event) {
     return json(200, {
       success:true,
       decision,
-      message:'Pago confirmado y acceso sincronizado.',
+      message: receipt && receipt.email && receipt.email.status === 'Enviado'
+        ? 'Pago confirmado, recibo enviado y acceso sincronizado.'
+        : 'Pago confirmado y acceso sincronizado.',
       report: patched,
       payment,
+      receipt,
       access,
       receiptPayload: {
         ownerId,
         paymentId: payment && payment.id,
         mode,
         amountUsd: usdEq,
-        amountBs: mode === 'Bs BCV' ? money(Number(f['Monto Reportado Bs'] || 0)) : 0,
+        amountBs,
         reference: f.Referencia || ''
       }
     });
