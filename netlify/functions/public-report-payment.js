@@ -1,7 +1,7 @@
 // netlify/functions/public-report-payment.js
 // Endpoint público limitado para que propietarios reporten pagos sin exponer el proxy genérico.
 // Al recibir un reporte suficiente para cubrir deuda vencida, habilita temporalmente el acceso cómodo.
-// También notifica al administrador por correo para recibir alerta inmediata en el teléfono.
+// También notifica al correo de la urbanización para recibir alerta inmediata en el teléfono.
 
 const { airtableCreateRecord, airtableGetRecord, syncOwnerAccess, TABLES, money } = require('./_access_control');
 const { sendMail } = require('./_mailer');
@@ -14,7 +14,9 @@ function fmtUsd(n){return '$'+money(n).toFixed(2)}
 function fmtBs(n){return 'Bs. '+money(n).toLocaleString('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2})}
 
 async function notifyAdminPaymentReport({ownerId, mode, amount, usdEq, reference, rate, reportId, access}) {
-  const to = process.env.ADMIN_RECOVERY_EMAIL || process.env.ADMIN_NOTIFY_EMAIL || process.env.SMTP_USER;
+  // Prioridad: correo de la urbanización / correo remitente del sistema.
+  // En Netlify, SMTP_USER actualmente corresponde al correo de Villa Los Apamates.
+  const to = process.env.ADMIN_NOTIFY_EMAIL || process.env.SMTP_USER || process.env.ADMIN_RECOVERY_EMAIL;
   if (!to) return { sent:false, status:'Sin correo administrador configurado' };
 
   let owner = null;
