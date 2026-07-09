@@ -3,5 +3,9 @@ function = "pwa-head"
 path = "/*"
 
 [[edge_functions]]
+function = "bcv-logo"
+path = "/*"
+
+[[edge_functions]]
 function = "admin-links"
 path = "/admin*"
