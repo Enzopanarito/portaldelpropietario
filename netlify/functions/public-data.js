@@ -1,6 +1,6 @@
 // netlify/functions/public-data.js
 // Endpoint público optimizado: agrupa datos del portal y usa cache en memoria.
-// Además registra llamadas reales a Airtable para el contador interno del admin.
+// No crea registros técnicos por cada consulta para no consumir el límite de Airtable.
 
 let publicCache = null;
 const PUBLIC_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutos
@@ -8,8 +8,7 @@ const PUBLIC_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutos
 const TABLES = {
   propietarios: 'Propietarios',
   gastos: 'Gastos del Mes',
-  pagos: 'Pagos',
-  usage: 'ControlVersiones'
+  pagos: 'Pagos'
 };
 
 function nowCaracasLabel() {
@@ -20,28 +19,8 @@ function nowCaracasLabel() {
   }).format(new Date());
 }
 
-function currentMonthCaracas() {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit' }).formatToParts(new Date());
-  return `${parts.find(p => p.type === 'year').value}-${parts.find(p => p.type === 'month').value}`;
-}
-
 function buildUrl(baseId, tableName, query = '') {
   return `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}${query}`;
-}
-
-async function recordApiUsage(source, calls, token, baseId) {
-  if (!calls || calls < 1) return;
-  const totalCallsIncludingLog = calls + 1;
-  const key = `API_USAGE|${currentMonthCaracas()}|${source}|${Date.now()}|${Math.random().toString(36).slice(2, 8)}`;
-  try {
-    await fetch(buildUrl(baseId, TABLES.usage), {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ records: [{ fields: { Key: key, Version: totalCallsIncludingLog } }], typecast: true })
-    });
-  } catch (error) {
-    console.warn('No se pudo registrar contador API.', error.message);
-  }
 }
 
 async function airtableGetAll(tableName, query = '', token, baseId, counter) {
@@ -147,15 +126,13 @@ exports.handler = async function(event) {
     };
 
     publicCache = { payload, expiresAt: Date.now() + PUBLIC_CACHE_TTL_MS };
-    await recordApiUsage('public-data', counter.calls, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID);
 
     return {
       statusCode: 200,
-      headers: { 'Content-Type': 'application/json', 'X-Cache': 'MISS', 'X-Airtable-Calls': String(counter.calls + 1), 'Cache-Control': 'public, max-age=300' },
+      headers: { 'Content-Type': 'application/json', 'X-Cache': 'MISS', 'X-Airtable-Calls': String(counter.calls), 'Cache-Control': 'public, max-age=300' },
       body: JSON.stringify(payload)
     };
   } catch (error) {
-    await recordApiUsage('public-data-error', counter.calls, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID);
     return {
       statusCode: 500,
       headers: { 'Content-Type': 'application/json', 'X-Airtable-Calls': String(counter.calls) },
