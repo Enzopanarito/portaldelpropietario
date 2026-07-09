@@ -56,6 +56,9 @@ function compactOwner(record) {
     'Recargo Aplicado': f['Recargo Aplicado'],
     'Total Pagado': f['Total Pagado'],
     'Deuda Restante': f['Deuda Restante'],
+    'Estado Acceso Portón': f['Estado Acceso Portón'] || 'Sin configurar',
+    'Motivo Limitación Acceso': f['Motivo Limitación Acceso'] || '',
+    'Última Sync MKJ': f['Última Sync MKJ'] || ''
   };
 }
 
