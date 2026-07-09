@@ -73,10 +73,12 @@ function normalizeJob(record) {
 }
 function normalizeSchedule(record) {
   const f = record.fields || {};
+  const day = Number(f['Día del Mes'] || 0);
   return {
     recordId: record.id,
     name: f.Nombre || '',
-    day: Number(f['Día del Mes'] || 0),
+    day,
+    frequency: day === 0 ? 'Diario' : 'Mensual',
     hour: f.Hora || '',
     mode: f.Modo || 'Simulación',
     active: !!f.Activo,
@@ -100,7 +102,7 @@ async function createJob(input = {}) {
     'Evitar Duplicados': input.avoidDuplicates !== false,
     'Forzar Envío': !!input.force,
     'Solicitado Por': input.requestedBy || 'Admin',
-    'Payload': JSON.stringify({ source: input.source || 'admin', scheduleId: input.scheduleId || null }, null, 2),
+    'Payload': JSON.stringify({ source: input.source || 'admin', scheduleId: input.scheduleId || null, frequency: input.frequency || null }, null, 2),
     'Log': `Orden creada ${new Date().toLocaleString('es-VE', { timeZone: 'America/Caracas' })}`
   };
   const data = await airtable(JOBS_TABLE, { method: 'POST', body: JSON.stringify({ records: [{ fields }], typecast: true }) });
@@ -126,13 +128,15 @@ async function updateJobByJobId(id, fields) {
   return normalizeJob(data.records[0]);
 }
 async function createSchedule(input = {}) {
+  const dayValue = Number(input.day ?? (input.frequency === 'Diario' ? 0 : 1));
+  const isDaily = dayValue === 0 || input.frequency === 'Diario';
   const fields = {
-    'Nombre': input.name || `Recordatorio día ${input.day || 1}`,
-    'Día del Mes': Number(input.day || 1),
+    'Nombre': input.name || (isDaily ? `Recordatorio diario ${input.hour || '09:00'}` : `Recordatorio día ${dayValue || 1}`),
+    'Día del Mes': isDaily ? 0 : (dayValue || 1),
     'Hora': input.hour || '09:00',
     'Modo': input.mode || 'Simulación',
     'Activo': input.active !== false,
-    'Notas': input.notes || ''
+    'Notas': input.notes || (isDaily ? 'Programación diaria automática. Día del Mes = 0 significa diario.' : '')
   };
   const data = await airtable(SCHEDULES_TABLE, { method: 'POST', body: JSON.stringify({ records: [{ fields }], typecast: true }) });
   return normalizeSchedule(data.records[0]);
@@ -145,12 +149,14 @@ async function runScheduler() {
   const schedules = await listSchedules();
   const created = [];
   for (const s of schedules) {
-    if (!s.active || s.day !== currentDay || !/^\d{2}:\d{2}$/.test(s.hour)) continue;
+    const isDaily = s.day === 0;
+    if (!s.active || !/^\d{2}:\d{2}$/.test(s.hour)) continue;
+    if (!isDaily && s.day !== currentDay) continue;
     const [hh, mm] = s.hour.split(':').map(Number);
     const target = hh * 60 + mm;
     if (currentMinute < target || currentMinute > target + 14) continue;
     if (s.lastRun && String(s.lastRun).slice(0, 10) === today) continue;
-    const job = await createJob({ mode: s.mode || 'Simulación', requestedBy: 'Programación automática', source: 'scheduler', scheduleId: s.recordId });
+    const job = await createJob({ mode: s.mode || 'Simulación', requestedBy: isDaily ? 'Programación diaria automática' : 'Programación automática', source: 'scheduler', scheduleId: s.recordId, frequency: isDaily ? 'Diario' : 'Mensual' });
     await airtable(SCHEDULES_TABLE, { method: 'PATCH', body: JSON.stringify({ records: [{ id: s.recordId, fields: { 'Última Ejecución': nowIso(), 'Último Job ID': job.jobId } }], typecast: true }) });
     created.push(job);
   }
