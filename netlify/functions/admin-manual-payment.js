@@ -1,5 +1,7 @@
 // netlify/functions/admin-manual-payment.js
 // Registra pagos manuales desde el panel admin con validación fuerte y errores claros.
+// Regla contable VLA: el monto ingresado siempre es USD referencial. Si se paga en Bs BCV,
+// el sistema guarda el equivalente en bolívares multiplicando USD ref. x tasa BCV.
 
 const { requireAdmin } = require('./_auth');
 const { airtableCreateRecord, syncOwnerAccess, TABLES, money } = require('./_access_control');
@@ -30,18 +32,18 @@ exports.handler = async function(event) {
     const body = JSON.parse(event.body || '{}');
     const ownerId = String(body.ownerId || '').trim();
     const mode = String(body.mode || '').trim();
-    const amount = Number(body.amount || 0);
+    const amountUsdRef = money(Number(body.amount || 0));
     const rate = Number(body.rate || 0);
 
     if (!validRecordId(ownerId)) return json(400, { message: 'Propietario inválido.' });
     if (!ALLOWED_MODES.has(mode)) return json(400, { message: 'Forma de pago inválida.' });
-    if (!(amount > 0)) return json(400, { message: 'Ingrese un monto válido.' });
+    if (!(amountUsdRef > 0)) return json(400, { message: 'Ingrese un monto válido en USD referencial.' });
     if (mode === 'Bs BCV' && !(rate > 0)) {
       return json(400, { message: 'No hay tasa BCV disponible. Actualice el admin e intente de nuevo.' });
     }
 
-    const usdEq = mode === 'Bs BCV' ? money(amount / rate) : money(amount);
-    if (!(usdEq > 0)) return json(400, { message: 'El equivalente USD calculado no es válido.' });
+    const usdEq = amountUsdRef;
+    const amountBs = mode === 'Bs BCV' ? money(amountUsdRef * rate) : 0;
 
     const fields = {
       'Propietario que Paga': [ownerId],
@@ -51,7 +53,7 @@ exports.handler = async function(event) {
       'Equivalente USD Aplicado': usdEq
     };
     if (mode === 'Bs BCV') {
-      fields['Monto Pagado Bs'] = money(amount);
+      fields['Monto Pagado Bs'] = amountBs;
       fields['Tasa BCV Aplicada'] = rate;
     }
 
@@ -71,7 +73,9 @@ exports.handler = async function(event) {
       success: true,
       message: 'Pago manual registrado correctamente.',
       paymentId: payment && payment.id,
-      amount,
+      amount: amountUsdRef,
+      amountUsdRef,
+      amountBs,
       mode,
       usdEq,
       access
