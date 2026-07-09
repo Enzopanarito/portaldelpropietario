@@ -2,6 +2,7 @@
 // Crea recibos de pago y, si hay proveedor configurado, los envía por correo.
 
 const { requireAdmin } = require('./_auth');
+const { sendMail } = require('./_mailer');
 
 const TABLE_RECEIPTS = 'Recibos de Pago';
 const TABLE_OWNERS = 'Propietarios';
@@ -49,15 +50,6 @@ function buildHtml(payload){
     <p style="font-size:12px;color:#6b7280;margin-top:20px">Este recibo confirma que el pago fue registrado en el sistema administrativo. Si observa alguna diferencia, por favor comuníquese con la administración.</p>
   </div>`;
 }
-async function sendWithResend(to,subject,html){
-  const apiKey=process.env.RESEND_API_KEY;
-  const from=process.env.MAIL_FROM||process.env.RECEIPTS_FROM_EMAIL;
-  if(!apiKey||!from)return {sent:false,status:'Proveedor no configurado',detail:'Faltan RESEND_API_KEY y/o MAIL_FROM en Netlify.'};
-  const res=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json'},body:JSON.stringify({from,to,subject,html})});
-  const data=await res.json().catch(()=>({}));
-  if(!res.ok)return {sent:false,status:'Error',detail:data.message||JSON.stringify(data)};
-  return {sent:true,status:'Enviado',detail:data.id||'Enviado'};
-}
 exports.handler=async function(event){
   const auth=requireAdmin(event); if(!auth.ok)return auth.response;
   if(event.httpMethod!=='POST')return json(405,{message:'Method Not Allowed'});
@@ -68,38 +60,15 @@ exports.handler=async function(event){
     const f=owner?.fields||{};
     const email=body.email||f.Email||f.Correo||'';
     const receiptNumber=receiptNo();
-    const payload={
-      receiptNumber,
-      ownerName:body.ownerName||f.Propietario||'',
-      casa:body.casa||f.Casa||'',
-      mode:body.mode||body.formaPago||'',
-      date:body.date||caracasDate(),
-      amountUsd:body.amountUsd||body.usdEq||0,
-      amountBs:body.amountBs||0,
-      reference:body.reference||body.referencia||'',
-    };
+    const payload={receiptNumber,ownerName:body.ownerName||f.Propietario||'',casa:body.casa||f.Casa||'',mode:body.mode||body.formaPago||'',date:body.date||caracasDate(),amountUsd:body.amountUsd||body.usdEq||0,amountBs:body.amountBs||0,reference:body.reference||body.referencia||''};
     const html=buildHtml(payload);
     let emailResult={sent:false,status:email?'Pendiente':'Sin correo',detail:email?'Pendiente de envío':'El propietario no tiene email registrado.'};
-    if(email)emailResult=await sendWithResend(email,`Recibo de pago ${receiptNumber} - Villa Los Apamates`,html);
-    const fields={
-      'Nro Recibo':receiptNumber,
-      'Casa':Number(payload.casa||0),
-      'Fecha':payload.date,
-      'Monto USD':money(payload.amountUsd),
-      'Monto Bs':money(payload.amountBs),
-      'Forma de Pago':payload.mode==='USD'?'USD':'Bs BCV',
-      'Referencia':payload.reference,
-      'Correo':email||undefined,
-      'Estado Email':emailResult.status,
-      'HTML Recibo':html,
-      'Log':emailResult.detail||'',
-    };
+    if(email)emailResult=await sendMail({to:email,subject:`Recibo de pago ${receiptNumber} - Villa Los Apamates`,html});
+    const fields={'Nro Recibo':receiptNumber,'Casa':Number(payload.casa||0),'Fecha':payload.date,'Monto USD':money(payload.amountUsd),'Monto Bs':money(payload.amountBs),'Forma de Pago':payload.mode==='USD'?'USD':'Bs BCV','Referencia':payload.reference,'Correo':email||undefined,'Estado Email':emailResult.status,'HTML Recibo':html,'Log':emailResult.detail||''};
     if(body.ownerId)fields.Propietario=[body.ownerId];
     if(body.paymentId)fields.Pago=[body.paymentId];
     if(emailResult.sent)fields['Enviado En']=nowIso();
     const created=await airtable(TABLE_RECEIPTS,{method:'POST',body:JSON.stringify({records:[{fields}],typecast:true})});
     return json(200,{success:true,receipt:created.records?.[0],email:emailResult});
-  }catch(error){
-    return json(500,{message:'Error generando recibo.',detail:error.message});
-  }
+  }catch(error){return json(500,{message:'Error generando recibo.',detail:error.message});}
 };
