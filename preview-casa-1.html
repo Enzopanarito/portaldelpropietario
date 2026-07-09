@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Preview Casa 1 - Portal VLA</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+body{font-family:Inter,sans-serif;background:radial-gradient(circle at 12% 8%,rgba(244,95,133,.20),transparent 28%),radial-gradient(circle at 90% 10%,rgba(20,83,45,.18),transparent 26%),linear-gradient(135deg,#fffaf0 0%,#f8fafc 50%,#eefcf3 100%)}
+.card{background:white;border:1px solid rgba(15,23,42,.07);box-shadow:0 18px 50px rgba(15,23,42,.08)}
+.glass{background:rgba(255,255,255,.78);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.6)}
+</style>
+</head>
+<body class="min-h-screen text-slate-900">
+<div class="max-w-7xl mx-auto px-4 py-5">
+<header class="glass rounded-[2rem] p-4 flex items-center justify-between sticky top-4 z-10">
+  <div class="flex items-center gap-3">
+    <img src="/.netlify/functions/app-icon?app=portal&size=180" class="w-12 h-12 rounded-2xl">
+    <div><h1 class="font-black tracking-tight">Villa Los Apamates</h1><p class="text-xs text-slate-500">Ejemplo visual · Casa 1 · Fernando Berbeci</p></div>
+  </div>
+  <a href="/preview-propietario.html" class="hidden sm:inline-block bg-slate-900 text-white px-4 py-2 rounded-full font-bold">Volver al preview</a>
+</header>
+
+<main class="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-8">
+<section class="lg:col-span-7 pt-8 lg:pt-12">
+  <span class="bg-white/70 text-green-800 border border-green-100 px-4 py-2 rounded-full text-sm font-bold">Así se vería al abrir el portal</span>
+  <h2 class="text-5xl sm:text-6xl font-black tracking-tight mt-5 leading-[.98]">Casa 1: estado de cuenta claro y moderno.</h2>
+  <p class="text-lg text-slate-600 mt-5 max-w-2xl">El propietario verá un resumen directo de su saldo, su desglose principal y el botón para reportar pago sin tener que buscar la información.</p>
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-8">
+    <div class="card rounded-3xl p-5"><p class="text-sm text-slate-500">Saldo total ref.</p><p class="text-3xl font-black">$317.33</p></div>
+    <div class="card rounded-3xl p-5"><p class="text-sm text-slate-500">Deuda vencida</p><p class="text-3xl font-black text-green-700">$0.00</p></div>
+    <div class="card rounded-3xl p-5"><p class="text-sm text-slate-500">Estado</p><p class="text-2xl font-black text-green-700">Al día vencido</p></div>
+  </div>
+  <div class="card rounded-[2rem] p-6 mt-6">
+    <h3 class="text-2xl font-black mb-4">Qué verá Fernando Berbeci</h3>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="bg-slate-50 rounded-3xl p-5"><p class="text-sm text-slate-500">Propietario</p><p class="text-xl font-black">Fernando Berbeci</p><p class="text-sm text-slate-500 mt-1">Casa 1</p></div>
+      <div class="bg-slate-50 rounded-3xl p-5"><p class="text-sm text-slate-500">Saldo actual</p><p class="text-xl font-black">$317.33</p><p class="text-xs text-slate-500 mt-1">Monto referencial visible en el resumen.</p></div>
+      <div class="bg-slate-50 rounded-3xl p-5"><p class="text-sm text-slate-500">Deuda anterior vencida</p><p class="text-xl font-black text-green-700">$0.00</p><p class="text-xs text-slate-500 mt-1">No aparece como vencido pendiente.</p></div>
+      <div class="bg-slate-50 rounded-3xl p-5"><p class="text-sm text-slate-500">Acción principal</p><p class="text-xl font-black text-pink-600">Reportar pago</p><p class="text-xs text-slate-500 mt-1">Botón visible, estilo app.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="lg:col-span-5">
+  <div class="bg-slate-950 rounded-[3rem] p-3 max-w-sm mx-auto shadow-2xl shadow-slate-400/40">
+    <div class="bg-white rounded-[2.4rem] overflow-hidden">
+      <div class="bg-gradient-to-br from-green-950 to-green-700 p-6 text-white">
+        <div class="flex justify-between items-start"><div><p class="text-white/70 text-sm">Casa seleccionada</p><p class="mt-2 bg-white/10 border border-white/20 rounded-2xl px-3 py-2 font-bold">Casa 1</p></div><img src="/.netlify/functions/app-icon?app=portal&size=180" class="w-14 h-14 rounded-2xl"></div>
+        <h3 class="text-2xl font-black mt-7">Fernando Berbeci</h3><p class="text-white/70">Portal del propietario</p>
+      </div>
+      <div class="p-5 space-y-4">
+        <div class="bg-slate-50 rounded-3xl p-5"><p class="text-sm text-slate-500">Saldo total ref.</p><p class="text-4xl font-black">$317.33</p><p class="text-xs text-slate-500 mt-1">Vencido $0.00 · Mes corriente $317.33</p></div>
+        <button class="w-full bg-pink-600 text-white py-4 rounded-2xl font-black shadow-lg shadow-pink-200">Reportar pago</button>
+        <div class="grid grid-cols-2 gap-3"><div class="bg-green-50 rounded-2xl p-4"><p class="text-xs text-green-700">Pronto pago</p><p class="font-black text-green-800">Activo</p></div><div class="bg-green-50 rounded-2xl p-4"><p class="text-xs text-green-700">Acceso</p><p class="font-black text-green-800">Normal</p></div></div>
+        <div class="rounded-2xl p-4 border border-slate-100"><p class="text-xs text-slate-500">Mensaje resumen</p><p class="font-bold text-sm mt-1">No tiene deuda vencida pendiente. Puede consultar su desglose y reportar pago cuando corresponda.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+</div>
+</body>
+</html>
