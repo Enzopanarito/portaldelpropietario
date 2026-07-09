@@ -30,6 +30,7 @@ export default async (request, context) => {
 <link rel="shortcut icon" type="image/svg+xml" href="${icon}&size=32">
 <link rel="apple-touch-icon" sizes="180x180" href="${icon}&size=180">
 <link rel="apple-touch-icon-precomposed" sizes="180x180" href="${icon}&size=180">
+<script src="/pwa-register.js" defer></script>
 <!-- VLA PWA icons/end -->`;
 
   if (html.includes('</head>')) html = html.replace('</head>', tags + '</head>');
