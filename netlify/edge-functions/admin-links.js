@@ -4,6 +4,17 @@ export default async (request, context) => {
   if (!type.toLowerCase().includes('text/html')) return response;
 
   let html = await response.text();
+
+  // El admin moderno ya trae sus botones, recibos y flujos integrados. No duplicar navegación.
+  if (html.includes('Panel de Administración') && html.includes('/preview-propietario-exacto.html') && html.includes('metric metric-green')) {
+    const headers = new Headers(response.headers);
+    headers.delete('content-length');
+    headers.delete('content-encoding');
+    headers.set('cache-control', 'no-store, no-cache, must-revalidate');
+    headers.set('content-type', 'text/html; charset=utf-8');
+    return new Response(html, { status: response.status, statusText: response.statusText, headers });
+  }
+
   const whatsappLink = "<a href='/whatsapp.html' target='_self' class='bg-green-600 text-white px-4 py-2 rounded-full shadow font-semibold'>📲 WhatsApp</a>";
   const securityLink = "<a href='/seguridad.html' target='_self' class='bg-amber-600 text-white px-4 py-2 rounded-full shadow font-semibold'>🔐 Seguridad</a>";
   const portonLink = "<a href='/mkj-access.html' target='_blank' class='bg-cyan-700 text-white px-4 py-2 rounded-full shadow font-semibold'>🚪 Portón</a>";
