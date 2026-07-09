@@ -1,5 +1,6 @@
 // netlify/functions/admin-data.js
 // Endpoint admin protegido, más rápido y resistente ante fallas parciales de Airtable.
+// No crea registros técnicos por cada consulta para no consumir el límite de Airtable.
 
 const { requireAdmin } = require('./_auth');
 let adminCache = null;
@@ -10,8 +11,7 @@ const TABLES = {
   propietarios: 'Propietarios',
   gastos: 'Gastos del Mes',
   pagos: 'Pagos',
-  reportes: 'Reportes de Pago',
-  usage: 'ControlVersiones'
+  reportes: 'Reportes de Pago'
 };
 
 const FIELD_SETS = {
@@ -38,10 +38,6 @@ const NO_STORE_HEADERS = {
   'Surrogate-Control': 'no-store'
 };
 
-function currentMonthCaracas() {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit' }).formatToParts(new Date());
-  return parts.find(p => p.type === 'year').value + '-' + parts.find(p => p.type === 'month').value;
-}
 function buildUrl(baseId, tableName, query) {
   return 'https://api.airtable.com/v0/' + baseId + '/' + encodeURIComponent(tableName) + (query || '');
 }
@@ -62,19 +58,6 @@ async function fetchWithTimeout(url, options) {
     return await fetch(url, Object.assign({}, options || {}, { signal: controller.signal }));
   } finally {
     clearTimeout(timer);
-  }
-}
-async function recordApiUsage(source, calls, token, baseId) {
-  if (!calls || calls < 1) return;
-  const key = 'API_USAGE|' + currentMonthCaracas() + '|' + source + '|' + Date.now() + '|' + Math.random().toString(36).slice(2, 8);
-  try {
-    await fetchWithTimeout(buildUrl(baseId, TABLES.usage), {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ records: [{ fields: { Key: key, Version: calls + 1 } }], typecast: true })
-    });
-  } catch (error) {
-    console.warn('No se pudo registrar contador API.', error.message);
   }
 }
 async function airtableGetAll(tableName, query, token, baseId, counter) {
@@ -159,7 +142,6 @@ exports.handler = async function(event) {
       return { statusCode: 200, headers: Object.assign({}, NO_STORE_HEADERS, { 'X-Cache': 'STALE', 'X-Airtable-Calls': String(counter.calls) }), body: JSON.stringify(stalePayload) };
     }
     if (requiredFailures.length) {
-      await recordApiUsage('admin-data-required-error', counter.calls, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID);
       return { statusCode: 503, headers: Object.assign({}, NO_STORE_HEADERS, { 'X-Airtable-Calls': String(counter.calls) }), body: JSON.stringify({ message: 'Airtable tardó o falló cargando datos base.', detail: requiredFailures.map(r => r.label + ': ' + r.error).join(' | ') }) };
     }
 
@@ -181,10 +163,8 @@ exports.handler = async function(event) {
     };
 
     adminCache = { payload, expiresAt: Date.now() + ADMIN_CACHE_TTL_MS };
-    await recordApiUsage(warnings.length ? 'admin-data-partial' : 'admin-data', counter.calls, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID);
-    return { statusCode: 200, headers: Object.assign({}, NO_STORE_HEADERS, { 'X-Cache': force ? 'BYPASS' : 'MISS', 'X-Airtable-Calls': String(counter.calls + 1) }), body: JSON.stringify(payload) };
+    return { statusCode: 200, headers: Object.assign({}, NO_STORE_HEADERS, { 'X-Cache': force ? 'BYPASS' : 'MISS', 'X-Airtable-Calls': String(counter.calls) }), body: JSON.stringify(payload) };
   } catch (error) {
-    await recordApiUsage('admin-data-error', counter.calls, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID);
     return { statusCode: 500, headers: Object.assign({}, NO_STORE_HEADERS, { 'X-Airtable-Calls': String(counter.calls) }), body: JSON.stringify({ message: 'Error cargando datos administrativos.', detail: error.message }) };
   }
 };
