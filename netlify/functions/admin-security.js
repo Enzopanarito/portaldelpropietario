@@ -3,6 +3,7 @@
 
 const crypto = require('crypto');
 const { requireAdmin } = require('./_auth');
+const { sendMail } = require('./_mailer');
 
 const TABLE = 'ControlVersiones';
 const CONFIG_PREFIX = 'ADMIN_AUTH_CONFIG|';
@@ -44,14 +45,8 @@ function verify(password,config){
   return process.env.ADMIN_PASSWORD && password===process.env.ADMIN_PASSWORD;
 }
 async function sendRecoveryEmail(email,link){
-  const apiKey=process.env.RESEND_API_KEY;
-  const from=process.env.MAIL_FROM||process.env.RECEIPTS_FROM_EMAIL;
-  if(!apiKey||!from)return {sent:false,detail:'Faltan RESEND_API_KEY y/o MAIL_FROM en Netlify.'};
   const html=`<p>Solicitaste recuperar la contraseña del Portal Admin de Villa Los Apamates.</p><p><a href="${link}">Haz clic aquí para crear una nueva contraseña</a></p><p>Este enlace expira en 15 minutos.</p>`;
-  const res=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json'},body:JSON.stringify({from,to:email,subject:'Recuperación de contraseña - Villa Los Apamates',html})});
-  const data=await res.json().catch(()=>({}));
-  if(!res.ok)return {sent:false,detail:data.message||JSON.stringify(data)};
-  return {sent:true,detail:data.id||'Enviado'};
+  return sendMail({to:email,subject:'Recuperación de contraseña - Villa Los Apamates',html});
 }
 exports.handler=async function(event){
   try{
