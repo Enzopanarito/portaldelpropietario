@@ -4,7 +4,12 @@ export default async (request, context) => {
   if (!type.toLowerCase().includes('text/html')) return response;
 
   let html = await response.text();
-  if (html.includes('data-vla-pwa="1"')) return response;
+  if (html.includes('data-vla-pwa="1"')) {
+    const headers = new Headers(response.headers);
+    headers.delete('content-length');
+    headers.delete('content-encoding');
+    return new Response(html, { status: response.status, statusText: response.statusText, headers });
+  }
 
   const url = new URL(request.url);
   const p = url.pathname.toLowerCase();
@@ -25,6 +30,11 @@ export default async (request, context) => {
     html = html.replace(
       "const expired=money(Math.max(0,Number(o['Deuda Anterior USD']||0))+Math.max(0,Number(o['Deuda Anterior Bs Ref']||(!split?o['Deuda Anterior']:0)||0)));return{linesUsd,linesBs,paidUsd:money(paidUsd),paidBs:money(paidBs),debtUsd:money(debtUsd),debtBs:money(debtBs),total,saldoFavor,bsDue,active,expired,currentMonth:money(Math.max(0,total)-expired)}}",
       "let expired=money(Math.max(0,Number(o['Deuda Anterior USD']||0))+Math.max(0,Number(o['Deuda Anterior Bs Ref']||(!split?o['Deuda Anterior']:0)||0)));if(total<=0.01)expired=0;return{linesUsd,linesBs,paidUsd:money(paidUsd),paidBs:money(paidBs),debtUsd:money(debtUsd),debtBs:money(debtBs),total,saldoFavor,bsDue,active,expired,currentMonth:money(Math.max(0,total)-expired)}}"
+    );
+    // En el desglose por moneda no mostrar saldos vencidos fantasmas cuando Deuda Restante ya fue saldada.
+    html = html.replace(
+      /function tableBlock\(title,lines,paid,mode\)\{const subtotal=money\(lines\.reduce\(\(s,l\)=>s\+l\.amount,0\)\),saldo=money\(subtotal-paid\);/,
+      "function tableBlock(title,lines,paid,mode){const subtotal=money(lines.reduce((s,l)=>s+l.amount,0));let saldo=money(subtotal-paid);if(current&&current.total<=0.01)saldo=0;"
     );
     // Permitir adelantos aunque esté solvente, sin cambiar el diseño general.
     html = html.replace(
@@ -85,6 +95,32 @@ export default async (request, context) => {
     background:#020617!important;
     color:#f8fafc!important;
     border-color:#475569!important;
+  }
+  html.dark #theme1,
+  html.dark #theme2{
+    background:#0f172a!important;
+    color:#f8fafc!important;
+    border-color:#334155!important;
+  }
+  html.dark #notas,
+  html.dark #discount .bg-green-50{
+    background:#052e16!important;
+    color:#dcfce7!important;
+    border-color:#166534!important;
+  }
+  html.dark #notas *,
+  html.dark #discount .bg-green-50 *{
+    color:#dcfce7!important;
+  }
+  html.dark #porton-pill .bg-green-100{
+    background:#052e16!important;
+    color:#bbf7d0!important;
+    border-color:#166534!important;
+  }
+  html.dark #porton-pill .bg-red-100{
+    background:#450a0a!important;
+    color:#fecaca!important;
+    border-color:#991b1b!important;
   }
   html.dark .metric-white,
   html.dark .metric-white *{
