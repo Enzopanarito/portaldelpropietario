@@ -92,6 +92,18 @@ async function begin(scope, key) {
   const operationId = `${Date.now().toString(36)}-${crypto.randomBytes(5).toString('hex')}`;
   const own = await create(scope, key, operationId);
   const after = await list(scope, key);
+
+  const completedDuringRace = after.find(item => item.state === 'DONE');
+  if (completedDuringRace) {
+    await setState(own, scope, key, 'ABORTED').catch(() => null);
+    return { ok: false, reason: 'done', marker: completedDuringRace };
+  }
+  const partialDuringRace = after.find(item => item.state === 'PARTIAL');
+  if (partialDuringRace) {
+    await setState(own, scope, key, 'ABORTED').catch(() => null);
+    return { ok: false, reason: 'partial', marker: partialDuringRace };
+  }
+
   const winner = firstByTime(after.filter(item => item.state === 'RUNNING'));
   if (!winner || winner.id !== own.id) {
     await setState(own, scope, key, 'ABORTED').catch(() => null);
