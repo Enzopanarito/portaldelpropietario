@@ -14,54 +14,55 @@ export default async (request, context) => {
   const manifest = `/.netlify/functions/app-manifest?app=${app}`;
   const icon = `/.netlify/functions/app-icon?app=${app}`;
 
-  // IMPORTANTE: los parches funcionales deben correr SIEMPRE, aunque los tags PWA ya existan.
-  // Antes había un return temprano con data-vla-pwa que podía saltarse correcciones de pagos/portal.
-
-  if (isAdmin) {
-    html = html.replace(
-      "function payNote(){document.getElementById('pay-note').textContent=document.getElementById('pay-mode').value==='USD'?'Se aplicará como pago exclusivamente en dólares.':`Se registrará en Bs y equivalente USD a tasa ${bcv&&bcv.rateFormatted?bcv.rateFormatted:bs(rate())}.`}",
-      "function payNote(){const mode=document.getElementById('pay-mode').value,amount=Number(document.getElementById('pay-amount').value||0),r=rate(),note=document.getElementById('pay-note');if(mode==='USD'){note.textContent='Ingrese el monto en USD referencial. Se aplicará como pago en dólares.';return}const bsEq=(amount>0&&r>0)?money(amount*r):0;note.textContent=`Ingrese el monto en USD referencial. Se registrará como pago en bolívares a tasa ${bcv&&bcv.rateFormatted?bcv.rateFormatted:bs(r)}${amount>0?` · Equivalente: ${bs(bsEq)}`:''}`;}"
-    );
-    html = html.replace(
-      "document.getElementById('pay-mode').onchange=payNote;document.getElementById('pay-confirm').onclick=manualPay;",
-      "document.getElementById('pay-mode').onchange=payNote;document.getElementById('pay-amount').oninput=payNote;document.getElementById('pay-confirm').onclick=manualPay;"
-    );
-    html = html.replace(
-      /async function manualPay\(\)\{try\{const mode=document\.getElementById\('pay-mode'\)\.value,amount=Number\(document\.getElementById\('pay-amount'\)\.value\);.*?catch\(e\)\{toast\(e\.message,true\)\}\}/,
-      "async function manualPay(){if(window.vlaPayBusy)return;const btn=document.getElementById('pay-confirm');try{const mode=document.getElementById('pay-mode').value,amount=Number(document.getElementById('pay-amount').value),owner=owners.find(x=>x.id===currentOwnerId),r=rate();if(!currentOwnerId||!owner)throw new Error('Seleccione un propietario.');if(!(amount>0))throw new Error('Ingrese un monto válido en USD referencial.');if(mode==='Bs BCV'&&!(r>0))throw new Error('No hay tasa BCV disponible. Presione Actualizar e intente de nuevo.');window.vlaPayBusy=true;btn.disabled=true;btn.textContent='Registrando...';const data=await adminFetch('/.netlify/functions/admin-manual-payment',{method:'POST',body:JSON.stringify({ownerId:currentOwnerId,mode,amount,rate:r,reference:'Pago manual admin'})});hidePay();toast(data.message||'Pago registrado.');await loadAll(true)}catch(e){toast(e.message,true)}finally{window.vlaPayBusy=false;btn.disabled=false;btn.textContent='Registrar'}}"
-    );
-  }
+  // IMPORTANTE:
+  // Esta Edge Function debe inyectar PWA y corregir solo detalles del portal propietario.
+  // El admin se mantiene en su diseño anterior funcional y sus parches viven en admin-links.js.
+  // No hacer return temprano por data-vla-pwa: los fixes del portal deben poder correr siempre.
 
   if (isOwnerPortal) {
+    // Fuente maestra: si Airtable dice Deuda Restante <= 0, no reconstruir saldos visuales viejos por moneda.
     html = html.replace(
       "if(o['Deuda Restante']!==undefined&&o['Deuda Restante']!==null&&!Number.isNaN(Number(o['Deuda Restante'])))total=money(o['Deuda Restante']);if(total>0.01&&money(Math.max(0,rawUsd)+Math.max(0,rawBs))>0.01)",
       "if(o['Deuda Restante']!==undefined&&o['Deuda Restante']!==null&&!Number.isNaN(Number(o['Deuda Restante'])))total=money(o['Deuda Restante']);if(total<=0.01){debtUsd=0;debtBs=0}else if(total>0.01&&money(Math.max(0,rawUsd)+Math.max(0,rawBs))>0.01)"
     );
+
     html = html.replace(
       "const expired=money(Math.max(0,Number(o['Deuda Anterior USD']||0))+Math.max(0,Number(o['Deuda Anterior Bs Ref']||(!split?o['Deuda Anterior']:0)||0)));return{linesUsd,linesBs,paidUsd:money(paidUsd),paidBs:money(paidBs),debtUsd:money(debtUsd),debtBs:money(debtBs),total,saldoFavor,bsDue,active,expired,currentMonth:money(Math.max(0,total)-expired)}}",
       "let expired=money(Math.max(0,Number(o['Deuda Anterior USD']||0))+Math.max(0,Number(o['Deuda Anterior Bs Ref']||(!split?o['Deuda Anterior']:0)||0)));if(total<=0.01)expired=0;return{linesUsd,linesBs,paidUsd:money(paidUsd),paidBs:money(paidBs),debtUsd:money(debtUsd),debtBs:money(debtBs),total,saldoFavor,bsDue,active,expired,currentMonth:money(Math.max(0,total)-expired)}}"
     );
+
+    // El desglose no debe mostrar cargos pendientes por moneda cuando el campo maestro Deuda Restante está en 0 o saldo a favor.
     html = html.replace(
       /function tableBlock\(title,lines,paid,mode\)\{const subtotal=money\(lines\.reduce\(\(s,l\)=>s\+l\.amount,0\)\),saldo=money\(subtotal-paid\);/,
       "function tableBlock(title,lines,paid,mode){const subtotal=money(lines.reduce((s,l)=>s+l.amount,0));let saldo=money(subtotal-paid);if(current&&current.total<=0.01)saldo=0;"
     );
+
+    // Permitir reportar pagos adelantados aunque la casa esté solvente.
     html = html.replace(
       /function setupModes\(\)\{const sel=document\.getElementById\('payMode'\);const opts=\[\];if\(current\.debtUsd>0\.01\).*?sel\.innerHTML=opts\.join\(''\);updateLabels\(\)\}/,
       "function setupModes(){const sel=document.getElementById('payMode');const opts=[];if(current.debtUsd>0.01)opts.push(`<option value=\"USD\">Pago en dólares · ${usd(current.debtUsd)} ref.</option>`);if(current.debtBs>0.01)opts.push(`<option value=\"Bs BCV\">Pago en Bs BCV · ${usd(current.debtBs)} ref. / ${bs(current.bsDue)}</option>`);opts.push('<option value=\"Bs BCV\">Adelanto en bolívares / saldo a favor</option>');opts.push('<option value=\"USD\">Adelanto en dólares / saldo a favor</option>');sel.innerHTML=opts.join('');updateLabels()}"
     );
+
+    // Regla contable uniforme: el usuario ingresa USD referencial; si selecciona Bs BCV, se calcula Bs = USD ref x tasa BCV.
     html = html.replace(
       "function updateLabels(){const m=document.getElementById('payMode').value;document.getElementById('amountLabel').textContent=m==='USD'?'Monto pagado en dólares ($)':m==='Bs BCV'?'Monto pagado en bolívares (Bs)':'Monto';document.getElementById('equivNote').textContent=m==='Bs BCV'&&rate()?`Se calculará equivalente a tasa ${money(rate()).toFixed(2)}.`:m==='USD'?'Este pago se aplicará solo a cargos en USD.':'Esta casa no presenta deuda activa.'}",
       "function updateLabels(){const m=document.getElementById('payMode').value,amount=Number(document.getElementById('payAmount').value||0),r=rate();document.getElementById('amountLabel').textContent='Monto USD referencial ($)';document.getElementById('equivNote').textContent=m==='Bs BCV'&&r?`Se reportará en bolívares a tasa ${money(r).toFixed(2)} Bs/USD${amount>0?` · Equivalente: ${bs(amount*r)}`:''}.`:m==='USD'?'Se reportará como pago en dólares por el mismo monto ref.':'Seleccione una forma de pago.'}"
     );
+
     html = html.replace(
       "document.getElementById('payMode').onchange=updateLabels;document.getElementById('reportForm').onsubmit=async e=>",
       "document.getElementById('payMode').onchange=updateLabels;document.getElementById('payAmount').oninput=updateLabels;document.getElementById('reportForm').onsubmit=async e=>"
     );
+
     html = html.replace(
       /function openReport\(\)\{if\(!currentOwner\)return;if\(current\.total<=0\.01\).*?classList\.add\('flex'\)\}/,
       "function openReport(){if(!currentOwner)return;setupModes();document.getElementById('report-context').innerHTML=`<div class=\"bg-slate-50 p-3 rounded-2xl\">Saldo actual ref.: <b>${usd(Math.max(0,current.total))}</b><br>USD pendiente: <b>${usd(Math.max(0,current.debtUsd))}</b><br>Bs pendiente: <b>${usd(Math.max(0,current.debtBs))}</b> / <b>${bs(current.bsDue)}</b>${current.saldoFavor?`<br>Saldo a favor actual: <b>${usd(current.saldoFavor)}</b>`:''}<br><span class=\"text-xs text-slate-500\">Ingrese siempre el monto en USD referencial. Si selecciona Bs BCV, el sistema calcula los bolívares automáticamente.</span></div>`;document.getElementById('modal').classList.remove('hidden');document.getElementById('modal').classList.add('flex')}"
     );
-    html = html.replace("if(!mode)throw new Error('No hay deuda activa para reportar.');", "if(!mode)throw new Error('Seleccione la forma de pago.');");
+
+    html = html.replace(
+      "if(!mode)throw new Error('No hay deuda activa para reportar.');",
+      "if(!mode)throw new Error('Seleccione la forma de pago.');"
+    );
   }
 
   const portalFixes = isOwnerPortal && !html.includes('vla-owner-dark-contrast-fix') ? `
