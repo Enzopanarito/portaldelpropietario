@@ -90,7 +90,7 @@ export default async (request, context) => {
       try{
         if(!mode)throw new Error('Seleccione la forma de pago.');
         if(!(amount>0)||!reference)throw new Error('Complete monto y referencia.');
-        if(!window.currentOwner||!currentOwner.id)throw new Error('Seleccione nuevamente su casa.');
+        if(typeof currentOwner==='undefined'||!currentOwner||!currentOwner.id)throw new Error('Seleccione nuevamente su casa.');
         var key=fingerprint(currentOwner.id,mode,amount,reference);
         var last=Number(localStorage.getItem(key)||0);
         if(last&&Date.now()-last<300000){
