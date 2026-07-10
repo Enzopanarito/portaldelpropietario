@@ -25,6 +25,7 @@ function usd(n){ return '$' + money(n).toFixed(2); }
 function bs(n){ return 'Bs. ' + money(n).toLocaleString('es-VE', { minimumFractionDigits:2, maximumFractionDigits:2 }); }
 function url(table, path=''){ return `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(table)}${path}`; }
 function firstNonEmpty(...values){ return values.find(v => String(v || '').trim()) || ''; }
+function byteSize(buffer){ return buffer && Buffer.isBuffer(buffer) ? buffer.length : 0; }
 
 async function airtable(table, options={}, path=''){
   const res = await fetch(url(table, path), {
@@ -98,28 +99,44 @@ async function createAndSendReceipt(input = {}){
   const html = buildHtml(payload);
   let emailResult = { sent:false, status: email ? 'Pendiente' : 'Sin correo', detail: email ? 'Pendiente de envío' : 'El propietario no tiene email registrado.' };
   let pdfBuffer = null;
+  let pdfStatus = 'No generado';
+  let attachmentStatus = 'No adjuntado';
+  let attachmentFile = '';
 
   if (email) {
     try {
       pdfBuffer = await buildReceiptPdf(payload);
+      pdfStatus = `PDF generado (${byteSize(pdfBuffer)} bytes)`;
     } catch (error) {
+      pdfStatus = `Error PDF: ${error.message}`;
       emailResult = { sent:false, status:'Error PDF', detail:error.message };
     }
 
     if (pdfBuffer) {
       try {
         const safeCasa = String(payload.casa || '').replace(/[^0-9A-Za-z_-]/g, '');
+        attachmentFile = `${receiptNumber}-Casa-${safeCasa || 'NA'}.pdf`;
         emailResult = await sendMail({
           to: email,
           subject: `Comprobante de pago ${receiptNumber} - Villa Los Apamates`,
           html,
-          attachments: [{ filename:`${receiptNumber}-Casa-${safeCasa || 'NA'}.pdf`, content:pdfBuffer, contentType:'application/pdf' }]
+          attachments: [{ filename:attachmentFile, content:pdfBuffer, contentType:'application/pdf' }]
         });
+        attachmentStatus = emailResult.sent ? `PDF adjuntado: ${attachmentFile}` : 'PDF preparado pero correo no enviado';
       } catch (error) {
         emailResult = { sent:false, status:'Error correo', detail:error.message };
+        attachmentStatus = `Error enviando adjunto: ${error.message}`;
       }
     }
   }
+
+  const auditLog = [
+    `Correo: ${email || 'Sin correo'}`,
+    pdfStatus,
+    attachmentStatus,
+    `SMTP: ${emailResult.status}`,
+    `Detalle: ${emailResult.detail || ''}`
+  ].join(' | ');
 
   const fields = {
     'Nro Recibo': receiptNumber,
@@ -132,14 +149,14 @@ async function createAndSendReceipt(input = {}){
     'Correo': email || undefined,
     'Estado Email': emailResult.status,
     'HTML Recibo': html,
-    'Log': emailResult.detail || ''
+    'Log': auditLog
   };
   if (input.ownerId) fields.Propietario = [input.ownerId];
   if (input.paymentId) fields.Pago = [input.paymentId];
   if (emailResult.sent) fields['Enviado En'] = nowIso();
 
   const created = await airtable(TABLE_RECEIPTS, { method:'POST', body:JSON.stringify({ records:[{ fields }], typecast:true }) });
-  return { success:true, receipt: created.records?.[0], email: emailResult, payload };
+  return { success:true, receipt: created.records?.[0], email: emailResult, payload, pdf: { status: pdfStatus, attachment: attachmentStatus, filename: attachmentFile || null } };
 }
 
 module.exports = { createAndSendReceipt, buildHtml, money, usd, bs };
