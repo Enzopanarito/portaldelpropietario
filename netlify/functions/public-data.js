@@ -1,9 +1,10 @@
 // netlify/functions/public-data.js
-// Endpoint público optimizado: agrupa datos del portal y usa cache en memoria.
+// Endpoint público optimizado: agrupa datos del portal con caché corta y controlable.
 // No crea registros técnicos por cada consulta para no consumir el límite de Airtable.
+// Datos financieros: prioridad a frescura. El portal debe pedir force=1 cuando el usuario abre/cambia de casa.
 
 let publicCache = null;
-const PUBLIC_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutos
+const PUBLIC_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutos: evita datos viejos sin disparar el consumo de Airtable.
 
 const TABLES = {
   propietarios: 'Propietarios',
@@ -21,6 +22,16 @@ function nowCaracasLabel() {
 
 function buildUrl(baseId, tableName, query = '') {
   return `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}${query}`;
+}
+
+function responseHeaders(counter, cacheState) {
+  return {
+    'Content-Type': 'application/json',
+    'X-Cache': cacheState,
+    'X-Airtable-Calls': String(counter || 0),
+    'Cache-Control': 'no-store, no-cache, must-revalidate',
+    'Pragma': 'no-cache'
+  };
 }
 
 async function airtableGetAll(tableName, query = '', token, baseId, counter) {
@@ -98,7 +109,7 @@ exports.handler = async function(event) {
   const { AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID } = process.env;
 
   if (!AIRTABLE_API_TOKEN || !AIRTABLE_BASE_ID) {
-    return { statusCode: 500, body: JSON.stringify({ message: 'Airtable no está configurado.' }) };
+    return { statusCode: 500, headers: responseHeaders(0, 'ERROR'), body: JSON.stringify({ message: 'Airtable no está configurado.' }) };
   }
 
   const force = event.queryStringParameters?.force === '1';
@@ -106,7 +117,7 @@ exports.handler = async function(event) {
   if (!force && publicCache && publicCache.expiresAt > Date.now()) {
     return {
       statusCode: 200,
-      headers: { 'Content-Type': 'application/json', 'X-Cache': 'HIT', 'X-Airtable-Calls': '0', 'Cache-Control': 'public, max-age=300' },
+      headers: responseHeaders(0, 'HIT'),
       body: JSON.stringify(publicCache.payload)
     };
   }
@@ -132,13 +143,13 @@ exports.handler = async function(event) {
 
     return {
       statusCode: 200,
-      headers: { 'Content-Type': 'application/json', 'X-Cache': 'MISS', 'X-Airtable-Calls': String(counter.calls), 'Cache-Control': 'public, max-age=300' },
+      headers: responseHeaders(counter.calls, 'MISS'),
       body: JSON.stringify(payload)
     };
   } catch (error) {
     return {
       statusCode: 500,
-      headers: { 'Content-Type': 'application/json', 'X-Airtable-Calls': String(counter.calls) },
+      headers: responseHeaders(counter.calls, 'ERROR'),
       body: JSON.stringify({ message: 'Error cargando datos públicos.', detail: error.message })
     };
   }
