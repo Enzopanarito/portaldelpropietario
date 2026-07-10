@@ -1,27 +1,26 @@
 // netlify/functions/audit-close.js
-// Cierre de auditoría seguro: consolida pagos antiguos en Deuda Anterior y luego permite eliminarlos.
-// Modo por defecto: simulación. Para ejecutar exige POST + confirmación explícita.
+// Cierre de auditoría en modo protegido.
+// La simulación permanece disponible, pero la ejecución destructiva está bloqueada
+// hasta sustituir la lógica antigua por una limpieza idempotente y verificable.
 
 const { requireAdmin } = require('./_auth');
 
 const TABLES = {
   propietarios: 'Propietarios',
   pagos: 'Pagos',
-  historial: 'Historial de Cargos',
-  cierres: 'Cierres de Auditoría'
+  historial: 'Historial de Cargos'
 };
 
 const OWNER_FIELDS = [
-  'Propietario', 'Casa', 'Deuda Anterior', 'Deuda Anterior USD', 'Deuda Restante',
-  'Cuota Base Mes', 'Total Gastos Especiales del Mes', 'Recargo Aplicado', 'Total Pagado'
+  'Propietario', 'Casa', 'Deuda Anterior', 'Deuda Anterior USD', 'Deuda Anterior Bs Ref',
+  'Deuda Restante', 'Cuota Base Mes', 'Total Gastos Especiales del Mes',
+  'Recargo Aplicado', 'Total Pagado'
 ];
 
 const PAYMENT_FIELDS = [
   'ID de Pago', 'Propietario que Paga', 'Monto Pagado', 'Fecha de Pago', 'Forma de Pago',
   'Monto Pagado Bs', 'Tasa BCV Aplicada', 'Equivalente USD Aplicado', '[x] Aplicado al Cierre'
 ];
-
-const CONFIRM_TEXT = 'BORRAR_PAGOS_CERRADOS';
 
 function json(statusCode, body, calls = 0) {
   return {
@@ -64,52 +63,6 @@ async function airtableGetAll(tableName, query, token, baseId, counter) {
   return records;
 }
 
-async function airtablePatchRecords(tableName, records, token, baseId, counter) {
-  const updated = [];
-  for (let i = 0; i < records.length; i += 10) {
-    const batch = records.slice(i, i + 10);
-    counter.calls += 1;
-    const res = await fetch(buildUrl(baseId, tableName), {
-      method: 'PATCH',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ records: batch, typecast: true })
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error?.message || data.message || `Error actualizando ${tableName}`);
-    updated.push(...(data.records || []));
-  }
-  return updated;
-}
-
-async function airtableDeleteRecords(tableName, ids, token, baseId, counter) {
-  const deleted = [];
-  for (let i = 0; i < ids.length; i += 10) {
-    const batch = ids.slice(i, i + 10);
-    const params = batch.map(id => 'records%5B%5D=' + encodeURIComponent(id)).join('&');
-    counter.calls += 1;
-    const res = await fetch(buildUrl(baseId, tableName, '?' + params), {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error?.message || data.message || `Error borrando ${tableName}`);
-    deleted.push(...(data.records || []));
-  }
-  return deleted;
-}
-
-async function airtableCreateRecord(tableName, fields, token, baseId, counter) {
-  counter.calls += 1;
-  const res = await fetch(buildUrl(baseId, tableName), {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ records: [{ fields }], typecast: true })
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error?.message || data.message || `Error creando registro en ${tableName}`);
-  return data.records?.[0] || null;
-}
-
 function todayCaracasISO() {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit'
@@ -118,6 +71,11 @@ function todayCaracasISO() {
 
 function monthCaracas() {
   return todayCaracasISO().slice(0, 7);
+}
+
+function normalizeMonth(value) {
+  const month = String(value || '').trim();
+  return /^\d{4}-(0[1-9]|1[0-2])$/.test(month) ? month : monthCaracas();
 }
 
 function cutoffISO(retentionDays) {
@@ -143,16 +101,8 @@ function paymentOwnerId(payment) {
 }
 
 function paymentAmount(payment) {
-  return money(payment.fields?.['Monto Pagado']);
-}
-
-function eligiblePayment(payment, cutoff) {
-  const f = payment.fields || {};
-  const date = String(f['Fecha de Pago'] || '').slice(0, 10);
-  if (!date || date > cutoff) return false;
-  if (!paymentOwnerId(payment)) return false;
-  if (paymentAmount(payment) <= 0) return false;
-  return true;
+  const fields = payment.fields || {};
+  return money(fields['Equivalente USD Aplicado'] || fields['Monto Pagado'] || 0);
 }
 
 function compactPayment(payment) {
@@ -161,11 +111,12 @@ function compactPayment(payment) {
     id: payment.id,
     pago: f['ID de Pago'] || '',
     fecha: f['Fecha de Pago'] || '',
-    montoUsdRef: money(f['Monto Pagado']),
+    montoUsdRef: paymentAmount(payment),
     forma: f['Forma de Pago'] || '',
     montoBs: money(f['Monto Pagado Bs']),
     tasaBcv: money(f['Tasa BCV Aplicada']),
-    equivalenteUsdAplicado: money(f['Equivalente USD Aplicado'])
+    equivalenteUsdAplicado: money(f['Equivalente USD Aplicado']),
+    aplicadoAlCierre: f['[x] Aplicado al Cierre'] === true
   };
 }
 
@@ -178,10 +129,19 @@ function buildPlan(owners, payments, retentionDays, cutoff, month, hasSnapshot) 
     const f = payment.fields || {};
     const date = String(f['Fecha de Pago'] || '').slice(0, 10);
     if (!date || date > cutoff) return;
+
     const ownerId = paymentOwnerId(payment);
     const amount = paymentAmount(payment);
-    if (!ownerId || !ownersById.has(ownerId) || amount <= 0) {
-      skipped.push({ id: payment.id, fecha: date || null, motivo: !ownerId ? 'sin propietario único' : amount <= 0 ? 'monto inválido' : 'propietario no encontrado' });
+    const alreadyClosed = f['[x] Aplicado al Cierre'] === true;
+
+    let reason = '';
+    if (!ownerId) reason = 'sin propietario único';
+    else if (!ownersById.has(ownerId)) reason = 'propietario no encontrado';
+    else if (!(amount > 0)) reason = 'monto inválido';
+    else if (!alreadyClosed) reason = 'pago aún no aplicado a un cierre mensual';
+
+    if (reason) {
+      skipped.push({ id: payment.id, fecha: date || null, motivo: reason });
       return;
     }
     eligible.push(payment);
@@ -196,33 +156,25 @@ function buildPlan(owners, payments, retentionDays, cutoff, month, hasSnapshot) 
     item.payments.push(payment);
   });
 
-  const ownerUpdates = [];
-  const ownerSummary = [];
+  const summary = [];
   byOwner.forEach((item, ownerId) => {
     const owner = ownersById.get(ownerId);
     const f = owner.fields || {};
     const currentDebt = money(f['Deuda Anterior']);
-    const newDebt = money(currentDebt - item.sum);
-    ownerUpdates.push({
-      id: ownerId,
-      fields: {
-        'Deuda Anterior': newDebt,
-        'Deuda Anterior USD': newDebt
-      }
-    });
-    ownerSummary.push({
+    summary.push({
       ownerId,
       casa: f.Casa,
       propietario: f.Propietario,
       deudaAnteriorAntes: currentDebt,
+      deudaAnteriorDespues: currentDebt,
       pagosAntiguosConsolidados: money(item.sum),
-      deudaAnteriorDespues: newDebt,
       pagosAEliminar: item.payments.length,
-      pagos: item.payments.map(compactPayment)
+      pagos: item.payments.map(compactPayment),
+      deudaSeModificaria: false
     });
   });
 
-  const totalAmount = money(eligible.reduce((sum, p) => sum + paymentAmount(p), 0));
+  const totalAmount = money(eligible.reduce((sum, payment) => sum + paymentAmount(payment), 0));
   return {
     generatedAt: new Date().toISOString(),
     fechaCaracas: todayCaracasISO(),
@@ -232,11 +184,11 @@ function buildPlan(owners, payments, retentionDays, cutoff, month, hasSnapshot) 
     cutoff,
     eligibleCount: eligible.length,
     skippedCount: skipped.length,
-    ownerCount: ownerSummary.length,
+    ownerCount: summary.length,
     totalAmount,
-    paymentsToDelete: eligible.map(p => p.id),
-    ownerUpdates,
-    summary: ownerSummary.sort((a, b) => Number(a.casa || 0) - Number(b.casa || 0)),
+    executionDisabled: true,
+    protectedMode: true,
+    summary: summary.sort((a, b) => Number(a.casa || 0) - Number(b.casa || 0)),
     skipped
   };
 }
@@ -247,16 +199,32 @@ exports.handler = async function(event) {
 
   const { AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID } = process.env;
   const counter = { calls: 0 };
-  if (!AIRTABLE_API_TOKEN || !AIRTABLE_BASE_ID) return json(500, { message: 'Airtable no está configurado.' });
+  if (!AIRTABLE_API_TOKEN || !AIRTABLE_BASE_ID) {
+    return json(500, { message: 'Airtable no está configurado.' }, counter.calls);
+  }
 
   let body = {};
   try { body = JSON.parse(event.body || '{}'); } catch (_) { body = {}; }
   const params = event.queryStringParameters || {};
   const execute = event.httpMethod === 'POST' && (body.execute === true || params.execute === '1');
-  const confirm = body.confirm || params.confirm || '';
   const retentionDays = parseRetentionDays(body.retentionDays || params.retentionDays || params.days);
-  const cutoff = body.cutoff || params.cutoff || cutoffISO(retentionDays);
-  const month = body.month || params.month || monthCaracas();
+  const cutoff = String(body.cutoff || params.cutoff || cutoffISO(retentionDays)).slice(0, 10);
+  const month = normalizeMonth(body.month || params.month);
+
+  if (execute) {
+    return json(423, {
+      success: false,
+      mode: 'Protegido',
+      protected: true,
+      executionDisabled: true,
+      month,
+      message: 'La ejecución del Cierre de Auditoría está temporalmente bloqueada para proteger los saldos. La simulación continúa disponible mientras se construye la nueva limpieza segura e idempotente.'
+    }, counter.calls);
+  }
+
+  if (!['GET', 'POST'].includes(event.httpMethod)) {
+    return json(405, { message: 'Method Not Allowed' }, counter.calls);
+  }
 
   try {
     const qOwners = withFields('', OWNER_FIELDS);
@@ -271,85 +239,20 @@ exports.handler = async function(event) {
 
     const hasSnapshot = snapshotRecords.length > 0;
     const plan = buildPlan(owners, payments, retentionDays, cutoff, month, hasSnapshot);
-
-    if (!execute) {
-      return json(200, {
-        success: true,
-        mode: 'Simulación',
-        message: hasSnapshot
-          ? `Simulación lista. Hay ${plan.eligibleCount} pagos antiguos elegibles para consolidar y borrar.`
-          : `Simulación lista, pero primero debe existir un corte de auditoría para ${month}.`,
-        requiredConfirm: CONFIRM_TEXT,
-        ...plan,
-        paymentsToDelete: undefined,
-        ownerUpdates: undefined
-      }, counter.calls);
-    }
-
-    if (confirm !== CONFIRM_TEXT) {
-      return json(400, { success: false, message: `Para ejecutar debe confirmar con: ${CONFIRM_TEXT}`, requiredConfirm: CONFIRM_TEXT }, counter.calls);
-    }
-    if (!hasSnapshot && body.allowWithoutSnapshot !== true) {
-      return json(409, {
-        success: false,
-        message: `No se borró nada. Primero genere el corte de auditoría del mes ${month} para dejar respaldo antes de eliminar pagos.`,
-        month,
-        requiredStep: 'Generar corte de auditoría mensual'
-      }, counter.calls);
-    }
-
-    if (plan.eligibleCount === 0) {
-      return json(200, { success: true, mode: 'Ejecutado', message: 'No había pagos antiguos elegibles para borrar.', ...plan }, counter.calls);
-    }
-
-    await airtablePatchRecords(TABLES.propietarios, plan.ownerUpdates, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
-    const deleted = await airtableDeleteRecords(TABLES.pagos, plan.paymentsToDelete, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
-
-    const logSummary = {
-      month,
-      cutoff,
-      retentionDays,
-      deletedCount: deleted.length,
-      totalAmount: plan.totalAmount,
-      owners: plan.summary,
-      skipped: plan.skipped
-    };
-
-    await airtableCreateRecord(TABLES.cierres, {
-      'Cierre': `CIERRE-${todayCaracasISO()}-${Date.now().toString().slice(-6)}`,
-      'Fecha Cierre': new Date().toISOString(),
-      'Fecha Corte': cutoff,
-      'Retención Días': retentionDays,
-      'Pagos Eliminados': deleted.length,
-      'Monto Eliminado USD': plan.totalAmount,
-      'Resumen JSON': JSON.stringify(logSummary),
-      'Ejecutado Por': 'Portal Admin',
-      'Estado': 'Ejecutado'
-    }, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
-
     return json(200, {
       success: true,
-      mode: 'Ejecutado',
-      message: `Cierre ejecutado. Se consolidaron y eliminaron ${deleted.length} pagos antiguos.`,
-      deletedCount: deleted.length,
-      ...plan,
-      paymentsToDelete: undefined,
-      ownerUpdates: undefined
+      mode: 'Simulación protegida',
+      message: hasSnapshot
+        ? `Diagnóstico listo. Se identificaron ${plan.eligibleCount} pagos antiguos ya aplicados a cierres. No se modificó ni borró ningún registro.`
+        : `Diagnóstico listo, pero no existe un corte de auditoría para ${month}. No se modificó ni borró ningún registro.`,
+      ...plan
     }, counter.calls);
   } catch (error) {
-    try {
-      await airtableCreateRecord(TABLES.cierres, {
-        'Cierre': `ERROR-${todayCaracasISO()}-${Date.now().toString().slice(-6)}`,
-        'Fecha Cierre': new Date().toISOString(),
-        'Fecha Corte': cutoff,
-        'Retención Días': retentionDays,
-        'Pagos Eliminados': 0,
-        'Monto Eliminado USD': 0,
-        'Resumen JSON': JSON.stringify({ error: error.message, month, cutoff }),
-        'Ejecutado Por': 'Portal Admin',
-        'Estado': 'Error'
-      }, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
-    } catch (_) {}
-    return json(500, { success: false, message: 'Error ejecutando cierre de auditoría.', detail: error.message }, counter.calls);
+    return json(500, {
+      success: false,
+      protected: true,
+      message: 'Error generando la simulación protegida del cierre de auditoría.',
+      detail: error.message
+    }, counter.calls);
   }
 };
