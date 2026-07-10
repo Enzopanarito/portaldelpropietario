@@ -5,6 +5,45 @@ export default async (request, context) => {
 
   let html = await response.text();
 
+  const adminVisualSkin = `
+<style id="vla-admin-visual-refresh-v1">
+  body{background:radial-gradient(circle at top left,#e0f2fe 0,#f8fafc 34%,#eef2ff 100%)!important}
+  #app .container{max-width:1380px!important}
+  #app header{background:linear-gradient(135deg,rgba(15,23,42,.96),rgba(2,132,199,.86))!important;color:#fff!important;border:1px solid rgba(255,255,255,.18)!important;border-radius:28px!important;padding:28px 24px!important;box-shadow:0 24px 70px rgba(15,23,42,.22)!important;position:relative!important;overflow:hidden!important}
+  #app header:before{content:'';position:absolute;inset:-120px -80px auto auto;width:260px;height:260px;border-radius:999px;background:rgba(255,255,255,.12);pointer-events:none}
+  #app header h1,#app header p{color:#fff!important;position:relative!important}
+  #theme-btn{background:rgba(255,255,255,.14)!important;color:#fff!important;border:1px solid rgba(255,255,255,.25)!important;backdrop-filter:blur(10px)!important}
+  #app nav{background:rgba(255,255,255,.78)!important;border:1px solid rgba(148,163,184,.28)!important;box-shadow:0 18px 44px rgba(15,23,42,.10)!important;border-radius:28px!important;padding:14px!important;backdrop-filter:blur(16px)!important}
+  #app nav a,#app nav button.nav,#backup-btn{transition:transform .18s ease,box-shadow .18s ease,filter .18s ease!important;border:1px solid rgba(255,255,255,.45)!important}
+  #app nav a:hover,#app nav button.nav:hover,#backup-btn:hover{transform:translateY(-1px)!important;box-shadow:0 14px 28px rgba(15,23,42,.16)!important;filter:saturate(1.06)!important}
+  #app nav button.nav:not(.active){background:#fff!important;color:#334155!important}
+  #app nav button.nav.active{background:linear-gradient(135deg,#0284c7,#0f766e)!important;color:#fff!important;box-shadow:0 14px 30px rgba(2,132,199,.28)!important}
+  .section>.bg-white,#pay-modal .bg-white,#close-modal .bg-white{border:1px solid rgba(148,163,184,.24)!important;border-radius:28px!important;box-shadow:0 24px 70px rgba(15,23,42,.10)!important}
+  .section h2,.section h3{letter-spacing:-.025em!important}
+  #dashboard .grid>div{background:linear-gradient(180deg,#fff,#f8fafc)!important;border:1px solid rgba(148,163,184,.22)!important;border-radius:22px!important;box-shadow:0 12px 32px rgba(15,23,42,.07)!important}
+  input,select,textarea{border-radius:14px!important;border-color:#cbd5e1!important;outline:none!important;transition:border-color .15s ease,box-shadow .15s ease!important}
+  input:focus,select:focus,textarea:focus{border-color:#0284c7!important;box-shadow:0 0 0 4px rgba(2,132,199,.14)!important}
+  table{border-collapse:separate!important;border-spacing:0!important}
+  thead th:first-child{border-top-left-radius:14px!important}
+  thead th:last-child{border-top-right-radius:14px!important}
+  tbody tr{transition:background .14s ease!important}
+  tbody tr:hover{background:#f8fafc!important}
+  .health-ok,.health-warning,.health-error{border-radius:999px!important;font-weight:700!important;padding:4px 10px!important}
+  button:not(#theme-btn),a.bg-indigo-600,a.bg-emerald-600,a.bg-green-600,a.bg-amber-600,a.bg-cyan-700,a.bg-red-600{box-shadow:0 10px 24px rgba(15,23,42,.12)!important}
+  #login .bg-white{border:1px solid rgba(148,163,184,.24)!important;border-radius:28px!important;box-shadow:0 28px 80px rgba(15,23,42,.18)!important}
+  #toast{border-radius:18px!important;box-shadow:0 20px 50px rgba(15,23,42,.22)!important}
+  html.dark body{background:radial-gradient(circle at top left,#0f172a 0,#020617 50%,#111827 100%)!important}
+  html.dark #app header{background:linear-gradient(135deg,#020617,#075985)!important;border-color:#334155!important}
+  html.dark #app nav{background:rgba(15,23,42,.84)!important;border-color:#334155!important}
+  html.dark #app nav button.nav:not(.active){background:#0f172a!important;color:#e5e7eb!important;border-color:#334155!important}
+  html.dark #dashboard .grid>div{background:linear-gradient(180deg,#0f172a,#111827)!important;border-color:#334155!important}
+  html.dark tbody tr:hover{background:#111827!important}
+</style>`;
+  if (!html.includes('vla-admin-visual-refresh-v1')) {
+    if (html.includes('</head>')) html = html.replace('</head>', adminVisualSkin + '</head>');
+    else html = adminVisualSkin + html;
+  }
+
   const whatsappLink = "<a href='/whatsapp.html' target='_self' class='bg-green-600 text-white px-4 py-2 rounded-full shadow font-semibold'>📲 WhatsApp</a>";
   const securityLink = "<a href='/seguridad.html' target='_self' class='bg-amber-600 text-white px-4 py-2 rounded-full shadow font-semibold'>🔐 Seguridad</a>";
   const portonLink = "<a href='/mkj-access.html' target='_blank' class='bg-cyan-700 text-white px-4 py-2 rounded-full shadow font-semibold'>🚪 Portón</a>";
