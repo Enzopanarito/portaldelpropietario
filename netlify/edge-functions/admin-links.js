@@ -33,6 +33,11 @@ export default async (request, context) => {
   button:not(#theme-btn){box-shadow:0 8px 20px rgba(15,23,42,.08)!important}
   #login .bg-white{border:1px solid rgba(148,163,184,.24)!important;border-radius:28px!important;box-shadow:0 28px 80px rgba(15,23,42,.18)!important}
   #toast{border-radius:18px!important;box-shadow:0 20px 50px rgba(15,23,42,.22)!important}
+  .vla-admin-signature{margin:42px auto 10px;text-align:center;color:#64748b;font-size:12px;letter-spacing:.02em}
+  .vla-admin-signature .vla-signature-card{display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:12px 18px;border:1px solid rgba(15,23,42,.08);border-radius:999px;background:rgba(255,255,255,.78);box-shadow:0 12px 32px rgba(15,23,42,.06);backdrop-filter:blur(14px)}
+  .vla-admin-signature .vla-signature-mark{width:7px;height:7px;border-radius:999px;background:linear-gradient(135deg,#0f172a,#075985);box-shadow:0 0 0 4px rgba(2,132,199,.10)}
+  .vla-admin-signature strong{color:#0f172a;font-weight:900}
+  .vla-admin-signature .vla-signature-seal{color:#075985;font-weight:900;text-transform:uppercase;letter-spacing:.08em;font-size:10px}
   html.dark body{background:radial-gradient(circle at top left,#0f172a 0,#020617 50%,#111827 100%)!important}
   html.dark #app header{background:linear-gradient(135deg,#020617,#075985)!important;border-color:#334155!important}
   html.dark #app nav{background:rgba(15,23,42,.84)!important;border-color:#334155!important}
@@ -40,6 +45,10 @@ export default async (request, context) => {
   html.dark #app nav a:hover,html.dark #app nav button.nav:hover,html.dark #backup-btn:hover{border-color:#0ea5e9!important;filter:saturate(1.1) brightness(1.08)!important}
   html.dark #dashboard .grid>div{background:linear-gradient(180deg,#0f172a,#111827)!important;border-color:#334155!important}
   html.dark tbody tr:hover{background:#111827!important}
+  html.dark .vla-admin-signature{color:#cbd5e1!important}
+  html.dark .vla-admin-signature .vla-signature-card{background:rgba(15,23,42,.82)!important;border-color:#334155!important;box-shadow:0 12px 32px rgba(0,0,0,.28)!important}
+  html.dark .vla-admin-signature strong{color:#f8fafc!important}
+  html.dark .vla-admin-signature .vla-signature-seal{color:#93c5fd!important}
 </style>`;
   if (!html.includes('vla-admin-visual-refresh-v1')) {
     if (html.includes('</head>')) html = html.replace('</head>', adminVisualSkin + '</head>');
@@ -47,6 +56,10 @@ export default async (request, context) => {
   }
 
   html = html.replace('📊 Dashboard', '🏠 HOME');
+  html = html.replace(
+    /<footer class='text-center mt-10 text-sm text-slate-500'>.*?<\/footer>/,
+    `<footer class="vla-admin-signature" id="vla-admin-digital-signature" aria-label="Firma digital del sistema"><div class="vla-signature-card"><span class="vla-signature-mark" aria-hidden="true"></span><span>Sistema generado por <strong>Enzo Panarito</strong> para <strong>Villa Los Apamates</strong> · 2025</span><span class="vla-signature-seal">Digital System</span></div></footer>`
+  );
 
   const whatsappLink = "<a href='/whatsapp.html' target='_self' class='bg-green-600 text-white px-4 py-2 rounded-full shadow font-semibold'>📲 WhatsApp</a>";
   const securityLink = "<a href='/seguridad.html' target='_self' class='bg-amber-600 text-white px-4 py-2 rounded-full shadow font-semibold'>🔐 Seguridad</a>";
