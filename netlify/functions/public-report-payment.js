@@ -8,6 +8,7 @@
 
 const { airtableCreateRecord, airtableGetRecord, syncOwnerAccess, TABLES, money } = require('./_access_control');
 const { sendMail } = require('./_mailer');
+const { sanitizeReference, escapeHtml, cleanPlainText, safeDisplayText } = require('./_security_utils');
 
 const ALLOWED_MODES = new Set(['USD', 'Bs BCV']);
 const DUPLICATE_WINDOW_MS = 5 * 60 * 1000;
@@ -15,11 +16,11 @@ const DUPLICATE_WINDOW_MS = 5 * 60 * 1000;
 function todayCaracasISO(){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Caracas',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
 function nowCaracasLabel(){return new Intl.DateTimeFormat('es-VE',{timeZone:'America/Caracas',dateStyle:'medium',timeStyle:'short'}).format(new Date());}
 function validRecordId(id){return /^rec[A-Za-z0-9]{14}$/.test(String(id||''));}
-function fmtUsd(n){return '$'+money(n).toFixed(2)}
-function fmtBs(n){return 'Bs. '+money(n).toLocaleString('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2})}
+function fmtUsd(n){return '$'+money(n).toFixed(2);}
+function fmtBs(n){return 'Bs. '+money(n).toLocaleString('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function normalizeReference(value){return String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().replace(/\s+/g,' ').toLowerCase();}
-function json(statusCode,body){return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store, no-cache, must-revalidate'},body:JSON.stringify(body)}}
-function airtableUrl(tableName,query=''){return `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}${query}`}
+function json(statusCode,body){return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store, no-cache, must-revalidate'},body:JSON.stringify(body)};}
+function airtableUrl(tableName,query=''){return `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}${query}`;}
 
 async function loadRecentReports(){
   let records=[];
@@ -57,30 +58,33 @@ async function notifyAdminPaymentReport({ownerId, mode, amount, usdEq, amountBs,
   let owner = null;
   try { owner = await airtableGetRecord(TABLES.propietarios, ownerId); } catch (_) { owner = null; }
   const f = owner && owner.fields ? owner.fields : {};
-  const casa = f.Casa || '—';
-  const propietario = f.Propietario || 'Propietario';
+  const casaRaw = cleanPlainText(f.Casa || '—', 30);
+  const ownerRaw = cleanPlainText(f.Propietario || 'Propietario', 160);
+  const referenceRaw = sanitizeReference(reference) || 'N/A';
+  const accessRaw = access && access.estado
+    ? `${cleanPlainText(access.estado, 40)}${access.temporary ? ' temporal' : ''}`
+    : (access && access.skipped ? cleanPlainText(access.reason, 300) : 'Sin información');
   const originalAmount = mode === 'Bs BCV' ? `${fmtUsd(amount)} ref. / ${fmtBs(amountBs || 0)}` : fmtUsd(amount);
   const rateText = mode === 'Bs BCV' && rate ? `<p><b>Tasa reportada:</b> ${money(rate).toFixed(2)} Bs/USD</p>` : '';
-  const accessText = access && access.estado ? `${access.estado}${access.temporary ? ' temporal' : ''}` : (access && access.skipped ? access.reason : 'Sin información');
 
   return await sendMail({
     to,
-    subject: `🚨 Pago reportado - Casa ${casa} - ${fmtUsd(usdEq)} ref.`,
+    subject: `🚨 Pago reportado - Casa ${casaRaw} - ${fmtUsd(usdEq)} ref.`,
     html: `
       <div style="font-family:Arial,sans-serif;color:#0f172a;line-height:1.5">
         <h2 style="margin:0 0 10px;color:#0f3d24">🚨 Nuevo pago reportado</h2>
         <p>Se acaba de recibir un reporte de pago en el portal de propietarios.</p>
         <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:14px;margin:14px 0">
-          <p><b>Casa:</b> ${casa}</p>
-          <p><b>Propietario:</b> ${propietario}</p>
-          <p><b>Forma de pago:</b> ${mode}</p>
-          <p><b>Monto reportado:</b> ${originalAmount}</p>
-          <p><b>Equivalente USD aplicado:</b> ${fmtUsd(usdEq)}</p>
+          <p><b>Casa:</b> ${escapeHtml(casaRaw)}</p>
+          <p><b>Propietario:</b> ${escapeHtml(ownerRaw)}</p>
+          <p><b>Forma de pago:</b> ${escapeHtml(mode)}</p>
+          <p><b>Monto reportado:</b> ${escapeHtml(originalAmount)}</p>
+          <p><b>Equivalente USD aplicado:</b> ${escapeHtml(fmtUsd(usdEq))}</p>
           ${rateText}
-          <p><b>Referencia:</b> ${reference}</p>
-          <p><b>Fecha:</b> ${nowCaracasLabel()}</p>
-          <p><b>Reporte:</b> ${reportId || '—'}</p>
-          <p><b>Estado portón:</b> ${accessText}</p>
+          <p><b>Referencia:</b> ${escapeHtml(referenceRaw)}</p>
+          <p><b>Fecha:</b> ${escapeHtml(nowCaracasLabel())}</p>
+          <p><b>Reporte:</b> ${escapeHtml(reportId || '—')}</p>
+          <p><b>Estado portón:</b> ${escapeHtml(accessRaw)}</p>
         </div>
         <p>Entra al panel administrativo para aprobar o rechazar el pago.</p>
         <p><a href="https://villalosapamates.netlify.app/admin.html" style="display:inline-block;background:#0f3d24;color:white;text-decoration:none;padding:12px 18px;border-radius:12px;font-weight:bold">Abrir Admin VLA</a></p>
@@ -95,9 +99,9 @@ exports.handler=async function(event){
 
   try{
     const body=JSON.parse(event.body||'{}');
-    const ownerId=String(body.ownerId||'');
-    const mode=String(body.mode||'');
-    const reference=String(body.reference||'').trim().slice(0,120);
+    const ownerId=String(body.ownerId||'').trim();
+    const mode=String(body.mode||'').trim();
+    const reference=sanitizeReference(body.reference);
     const amount=money(Number(body.amount||0));
     const rate=Number(body.rate||0);
 
@@ -142,14 +146,14 @@ exports.handler=async function(event){
         sendEmail: false
       });
     } catch (error) {
-      access = { error: error.message };
+      access = { error: safeDisplayText(error.message, 500) };
     }
 
     let adminNotification = null;
     try {
       adminNotification = await notifyAdminPaymentReport({ownerId, mode, amount, usdEq, amountBs, reference, rate, reportId: report&&report.id, access});
     } catch (error) {
-      adminNotification = { sent:false, status:'Error enviando notificación admin', detail:error.message };
+      adminNotification = { sent:false, status:'Error enviando notificación admin', detail:safeDisplayText(error.message,500) };
     }
 
     return json(200,{
@@ -162,6 +166,6 @@ exports.handler=async function(event){
       adminNotification
     });
   }catch(error){
-    return json(500,{message:'Error guardando reporte.',detail:error.message});
+    return json(500,{message:'Error guardando reporte.',detail:safeDisplayText(error.message,500)});
   }
 };
