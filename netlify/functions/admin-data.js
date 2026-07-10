@@ -1,8 +1,11 @@
 // netlify/functions/admin-data.js
 // Endpoint admin protegido, más rápido y resistente ante fallas parciales de Airtable.
 // No crea registros técnicos por cada consulta para no consumir el límite de Airtable.
+// Seguridad: los textos se escapan antes de ser insertados por las vistas administrativas.
 
 const { requireAdmin } = require('./_auth');
+const { deepEscapeStrings, safeDisplayText } = require('./_security_utils');
+
 let adminCache = null;
 const ADMIN_CACHE_TTL_MS = 2 * 60 * 1000;
 const AIRTABLE_TIMEOUT_MS = 9500;
@@ -81,7 +84,7 @@ async function airtableGetAllWithFallback(tableName, preferredQuery, fallbackQue
   try {
     return await airtableGetAll(tableName, preferredQuery, token, baseId, counter);
   } catch (error) {
-    console.warn('Fallo consulta preferida para ' + tableName + '. Intentando fallback.', error.message);
+    console.warn('Fallo consulta preferida para ' + tableName + '. Intentando fallback.', safeDisplayText(error.message, 300));
     return await airtableGetAll(tableName, fallbackQuery || '', token, baseId, counter);
   }
 }
@@ -90,8 +93,8 @@ async function safeLoad(label, loader, required) {
     const records = await loader();
     return { label, ok: true, records: records || [], error: null, required: !!required };
   } catch (error) {
-    console.error('Fallo cargando ' + label + ':', error.message);
-    return { label, ok: false, records: [], error: error.message, required: !!required };
+    console.error('Fallo cargando ' + label + ':', safeDisplayText(error.message, 300));
+    return { label, ok: false, records: [], error: safeDisplayText(error.message, 500), required: !!required };
   }
 }
 function onlyPendingReports(records) {
@@ -138,12 +141,12 @@ exports.handler = async function(event) {
     if (requiredFailures.length && adminCache && adminCache.payload) {
       const stalePayload = Object.assign({}, adminCache.payload, {
         stale: true,
-        warnings: requiredFailures.map(r => ({ table: r.label, detail: r.error }))
+        warnings: requiredFailures.map(r => ({ table: safeDisplayText(r.label, 80), detail: safeDisplayText(r.error, 500) }))
       });
       return { statusCode: 200, headers: Object.assign({}, NO_STORE_HEADERS, { 'X-Cache': 'STALE', 'X-Airtable-Calls': String(counter.calls) }), body: JSON.stringify(stalePayload) };
     }
     if (requiredFailures.length) {
-      return { statusCode: 503, headers: Object.assign({}, NO_STORE_HEADERS, { 'X-Airtable-Calls': String(counter.calls) }), body: JSON.stringify({ message: 'Airtable tardó o falló cargando datos base.', detail: requiredFailures.map(r => r.label + ': ' + r.error).join(' | ') }) };
+      return { statusCode: 503, headers: Object.assign({}, NO_STORE_HEADERS, { 'X-Airtable-Calls': String(counter.calls) }), body: JSON.stringify({ message: 'Airtable tardó o falló cargando datos base.', detail: requiredFailures.map(r => safeDisplayText(r.label + ': ' + r.error, 500)).join(' | ') }) };
     }
 
     var propietarios = (byLabel.propietarios.records || []).map(flattenOwner).sort((a, b) => (Number(a.Casa || 0)) - (Number(b.Casa || 0)));
@@ -152,7 +155,7 @@ exports.handler = async function(event) {
     var reportes = onlyPendingReports(byLabel.reportes.records || []);
     var warnings = results.filter(r => !r.ok).map(r => ({ table: r.label, detail: r.error }));
 
-    var payload = {
+    var payload = deepEscapeStrings({
       generatedAt: new Date().toISOString(),
       generatedAtCaracas: new Intl.DateTimeFormat('es-VE', { timeZone: 'America/Caracas', dateStyle: 'medium', timeStyle: 'short' }).format(new Date()),
       propietarios,
@@ -161,11 +164,11 @@ exports.handler = async function(event) {
       reportes,
       warnings,
       partial: warnings.length > 0
-    };
+    });
 
     adminCache = { payload, expiresAt: Date.now() + ADMIN_CACHE_TTL_MS };
     return { statusCode: 200, headers: Object.assign({}, NO_STORE_HEADERS, { 'X-Cache': force ? 'BYPASS' : 'MISS', 'X-Airtable-Calls': String(counter.calls) }), body: JSON.stringify(payload) };
   } catch (error) {
-    return { statusCode: 500, headers: Object.assign({}, NO_STORE_HEADERS, { 'X-Airtable-Calls': String(counter.calls) }), body: JSON.stringify({ message: 'Error cargando datos administrativos.', detail: error.message }) };
+    return { statusCode: 500, headers: Object.assign({}, NO_STORE_HEADERS, { 'X-Airtable-Calls': String(counter.calls) }), body: JSON.stringify({ message: 'Error cargando datos administrativos.', detail: safeDisplayText(error.message, 500) }) };
   }
 };
