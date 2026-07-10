@@ -1,6 +1,6 @@
 // netlify/functions/system-health.js
 // Panel de salud protegido para revisar componentes críticos del sistema.
-// Monitorea finanzas, Airtable, BCV, correo oficial y control de acceso MKJoules con bajo consumo de API.
+// Monitorea finanzas, Airtable, BCV, correo oficial, recibos, WhatsApp y control de acceso MKJoules.
 
 const { requireAdmin } = require('./_auth');
 const { calculateExpiredAccessDebt, getAccessMode } = require('./_access_control');
@@ -11,6 +11,9 @@ const TABLES = {
   gastos: 'Gastos del Mes',
   pagos: 'Pagos',
   reportes: 'Reportes de Pago',
+  recibos: 'Recibos de Pago',
+  whatsappJobs: 'WhatsApp Jobs',
+  whatsappSchedules: 'WhatsApp Programaciones',
   config: 'Configuración'
 };
 
@@ -24,13 +27,17 @@ function fieldsQuery(fields) {
   return params.toString() ? '?' + params.toString() : '';
 }
 
-async function getAll(tableName, token, baseId, counter, fields = []) {
+async function getAll(tableName, token, baseId, counter, fields = [], extraQuery = '') {
   let records = [];
   let offset = null;
   const baseQuery = fieldsQuery(fields);
+  const fixedExtra = extraQuery ? (extraQuery.startsWith('?') ? extraQuery.slice(1) : extraQuery) : '';
   do {
-    const sep = baseQuery ? '&' : '?';
-    const url = buildUrl(baseId, tableName, `${baseQuery}${offset ? `${sep}offset=${encodeURIComponent(offset)}` : ''}`);
+    const params = [];
+    if (baseQuery) params.push(baseQuery.slice(1));
+    if (fixedExtra) params.push(fixedExtra);
+    if (offset) params.push(`offset=${encodeURIComponent(offset)}`);
+    const url = buildUrl(baseId, tableName, params.length ? `?${params.join('&')}` : '');
     counter.airtable += 1;
     const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     const data = await response.json().catch(() => ({}));
@@ -48,9 +55,10 @@ function normalizeEmail(value = '') {
   const match = text.match(/<([^>]+)>/);
   return (match ? match[1] : text).trim();
 }
+function selectName(value) { return value && typeof value === 'object' && value.name ? value.name : String(value || ''); }
 function statusCount(records, field) {
   return records.reduce((acc, r) => {
-    const value = (r.fields || {})[field] || 'Sin configurar';
+    const value = selectName((r.fields || {})[field] || 'Sin configurar');
     acc[value] = (acc[value] || 0) + 1;
     return acc;
   }, {});
@@ -60,6 +68,9 @@ function countMissing(records, field) {
 }
 function isConfigured(...values) {
   return values.every(v => hasValue(v));
+}
+function latestByField(records, field) {
+  return [...records].sort((a, b) => String((b.fields || {})[field] || '').localeCompare(String((a.fields || {})[field] || '')))[0] || null;
 }
 
 exports.handler = async function(event) {
@@ -95,14 +106,17 @@ exports.handler = async function(event) {
       return { statusCode: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify({ ok: false, status: 'error', checks, generatedAt: new Date().toISOString(), apiUsage: counter }) };
     }
 
-    const [propietarios, gastos, pagos, reportes] = await Promise.all([
+    const [propietarios, gastos, pagos, reportes, recibos, whatsappJobs, whatsappSchedules] = await Promise.all([
       getAll(TABLES.propietarios, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Propietario', 'Casa', 'Email', 'Deuda Anterior', 'Deuda Anterior USD', 'Deuda Anterior Bs Ref', 'Deuda Restante', 'MKJ User ID', 'MKJ Email', 'Estado Acceso Portón', 'Excepción Acceso', 'Última Sync MKJ', 'Motivo Limitación Acceso']),
       getAll(TABLES.gastos, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Concepto', 'Monto', 'Tipo de Gasto', 'Forma de Pago', 'Propietarios']),
       getAll(TABLES.pagos, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Propietario que Paga', 'Forma de Pago', 'Monto Pagado', 'Equivalente USD Aplicado', '[x] Aplicado al Cierre']),
-      getAll(TABLES.reportes, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Propietario que Reporta', 'Estado', 'Forma de Pago Reportada', 'Monto Reportado', 'Equivalente USD Reportado'])
+      getAll(TABLES.reportes, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Propietario que Reporta', 'Estado', 'Forma de Pago Reportada', 'Monto Reportado', 'Equivalente USD Reportado']),
+      getAll(TABLES.recibos, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Nro Recibo', 'Fecha', 'Estado Email', 'Correo', 'Log', 'Enviado En']),
+      getAll(TABLES.whatsappJobs, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Job ID', 'Estado', 'Creado En', 'Finalizado En', 'Enviados', 'Simulados', 'Errores', 'Log']),
+      getAll(TABLES.whatsappSchedules, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Nombre', 'Activo', 'Hora', 'Día del Mes', 'Modo', 'Última Ejecución', 'Último Job ID'])
     ]);
 
-    add('Tablas principales Airtable', true, `Propietarios: ${propietarios.length}; Gastos: ${gastos.length}; Pagos: ${pagos.length}; Reportes: ${reportes.length}.`);
+    add('Tablas principales Airtable', true, `Propietarios: ${propietarios.length}; Gastos: ${gastos.length}; Pagos: ${pagos.length}; Reportes: ${reportes.length}; Recibos: ${recibos.length}.`);
 
     const legacyCount = gastos.filter(g => String((g.fields || {}).Concepto || '').toLowerCase().includes('(cargo individual)')).length;
     add('Modo contable', true, legacyCount > 0 ? `Transición activa: ${legacyCount} cargo(s) individual(es) legacy.` : 'Modo doble moneda limpio.', legacyCount > 0 ? 'warning' : 'ok');
@@ -134,8 +148,23 @@ exports.handler = async function(event) {
     const totalExpired = money(expired.reduce((sum, x) => sum + x.calc.expiredTotal, 0));
     add('Deuda vencida para control de acceso', true, `Propietarios con deuda vencida: ${withExpiredDebt}. Total vencido ref.: $${totalExpired.toFixed(2)}. Reportes pendientes suficientes: ${pendingCovered}.`, withExpiredDebt ? 'warning' : 'ok');
 
-    const pendingReports = reportes.filter(r => (r.fields || {}).Estado === 'Pendiente').length;
+    const pendingReports = reportes.filter(r => selectName((r.fields || {}).Estado) === 'Pendiente').length;
     add('Reportes pendientes y portón', true, pendingReports ? `${pendingReports} reporte(s) pendiente(s). El sistema habilita temporalmente solo si cubren toda la deuda vencida.` : 'No hay reportes pendientes.', pendingReports ? 'warning' : 'ok');
+
+    const receiptErrors = recibos.filter(r => {
+      const status = selectName((r.fields || {})['Estado Email']);
+      return status && status !== 'Enviado';
+    });
+    const recentReceipts = recibos.slice(-20);
+    const missingPdfAudit = recentReceipts.filter(r => selectName((r.fields || {})['Estado Email']) === 'Enviado' && !String((r.fields || {}).Log || '').includes('PDF adjuntado')).length;
+    const lastReceipt = latestByField(recibos, 'Enviado En') || latestByField(recibos, 'Fecha');
+    add('Recibos y PDF por correo', receiptErrors.length === 0 && missingPdfAudit === 0, receiptErrors.length ? `${receiptErrors.length} recibo(s) con error de email/PDF.` : missingPdfAudit ? `${missingPdfAudit} recibo(s) enviados recientes no tienen auditoría explícita de PDF adjunto.` : 'Recibos recientes con auditoría de correo/PDF correcta.', receiptErrors.length ? 'error' : missingPdfAudit ? 'warning' : 'ok', { ultimo: lastReceipt ? (lastReceipt.fields || {})['Nro Recibo'] : null });
+
+    const activeSchedules = whatsappSchedules.filter(r => !!(r.fields || {}).Activo).length;
+    const pendingJobs = whatsappJobs.filter(r => selectName((r.fields || {}).Estado) === 'Pendiente').length;
+    const errorJobs = whatsappJobs.filter(r => Number((r.fields || {}).Errores || 0) > 0 || selectName((r.fields || {}).Estado) === 'Error').length;
+    const lastJob = latestByField(whatsappJobs, 'Creado En') || latestByField(whatsappJobs, 'Finalizado En');
+    add('WhatsApp local agent', true, `Programaciones activas: ${activeSchedules}; Jobs pendientes: ${pendingJobs}; Jobs con errores: ${errorJobs}; Último job: ${lastJob ? ((lastJob.fields || {})['Job ID'] || 'sin ID') : 'ninguno'}.`, pendingJobs || errorJobs ? 'warning' : 'ok');
 
     add('Botón Portón en admin', true, 'Disponible en el panel Admin como 🚪 Portón; abre el selector Automático/Manual, Auto Sync y botones Habilitar/Limitar.');
     add('Botón Auto Sync', true, 'Disponible dentro del módulo Portón. En modo Manual queda bloqueado para evitar ejecuciones accidentales.');
@@ -143,13 +172,13 @@ exports.handler = async function(event) {
 
     try {
       counter.external += 1;
-      const bcv = await fetch(`${event.headers['x-forwarded-proto'] || 'https'}://${event.headers.host}/.netlify/functions/bcv-rate`).then(r => r.json());
-      add('Tasa BCV', !!bcv.rate, bcv.rate ? (bcv.rateFormatted || String(bcv.rate)) : 'No disponible.', bcv.rate ? 'ok' : 'warning');
+      const bcv = await fetch(`${event.headers['x-forwarded-proto'] || 'https'}://${event.headers.host}/.netlify/functions/bcv-rate?force=1`).then(r => r.json());
+      add('Tasa BCV', !!bcv.rate, bcv.rate ? `${bcv.rateFormatted || String(bcv.rate)} · fuente: ${bcv.source || 'N/A'}` : 'No disponible.', bcv.rate ? 'ok' : 'warning');
     } catch (error) {
       add('Tasa BCV', false, error.message, 'warning');
     }
 
-    add('Uso de API en Salud', true, `Lectura optimizada: ${counter.airtable} llamada(s) a Airtable y ${counter.external} llamada(s) externa(s). No se prueba login MKJ automáticamente.`);
+    add('Uso de API en Salud', true, `Lectura ampliada: ${counter.airtable} llamada(s) a Airtable y ${counter.external} llamada(s) externa(s). No se prueba login MKJ automáticamente.`);
 
     const hasError = checks.some(c => c.severity === 'error');
     const hasWarning = checks.some(c => c.severity === 'warning');
