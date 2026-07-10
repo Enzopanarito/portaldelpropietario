@@ -72,6 +72,11 @@ function isConfigured(...values) {
 function latestByField(records, field) {
   return [...records].sort((a, b) => String((b.fields || {})[field] || '').localeCompare(String((a.fields || {})[field] || '')))[0] || null;
 }
+function newestRecords(records, limit = 20) {
+  return [...records]
+    .sort((a, b) => String(b.createdTime || (b.fields || {})['Enviado En'] || (b.fields || {}).Fecha || '').localeCompare(String(a.createdTime || (a.fields || {})['Enviado En'] || (a.fields || {}).Fecha || '')))
+    .slice(0, limit);
+}
 
 exports.handler = async function(event) {
   const auth = requireAdmin(event);
@@ -155,10 +160,26 @@ exports.handler = async function(event) {
       const status = selectName((r.fields || {})['Estado Email']);
       return status && status !== 'Enviado';
     });
-    const recentReceipts = recibos.slice(-20);
-    const missingPdfAudit = recentReceipts.filter(r => selectName((r.fields || {})['Estado Email']) === 'Enviado' && !String((r.fields || {}).Log || '').includes('PDF adjuntado')).length;
+    const recentReceipts = newestRecords(recibos, 20);
+    const sentRecentReceipts = recentReceipts.filter(r => selectName((r.fields || {})['Estado Email']) === 'Enviado');
+    const legacyReceiptAudit = sentRecentReceipts.filter(r => {
+      const log = String((r.fields || {}).Log || '');
+      return log && !log.includes('PDF generado') && !log.includes('PDF adjuntado');
+    }).length;
+    const suspiciousPdfAudit = sentRecentReceipts.filter(r => {
+      const log = String((r.fields || {}).Log || '');
+      return log.includes('PDF generado') && !log.includes('PDF adjuntado');
+    }).length;
     const lastReceipt = latestByField(recibos, 'Enviado En') || latestByField(recibos, 'Fecha');
-    add('Recibos y PDF por correo', receiptErrors.length === 0 && missingPdfAudit === 0, receiptErrors.length ? `${receiptErrors.length} recibo(s) con error de email/PDF.` : missingPdfAudit ? `${missingPdfAudit} recibo(s) enviados recientes no tienen auditoría explícita de PDF adjunto.` : 'Recibos recientes con auditoría de correo/PDF correcta.', receiptErrors.length ? 'error' : missingPdfAudit ? 'warning' : 'ok', { ultimo: lastReceipt ? (lastReceipt.fields || {})['Nro Recibo'] : null });
+    const receiptOk = receiptErrors.length === 0 && suspiciousPdfAudit === 0;
+    const receiptDetail = receiptErrors.length
+      ? `${receiptErrors.length} recibo(s) con error de email/PDF.`
+      : suspiciousPdfAudit
+        ? `${suspiciousPdfAudit} recibo(s) nuevos generaron PDF pero no registran adjunto.`
+        : legacyReceiptAudit
+          ? `Sin errores detectados. ${legacyReceiptAudit} recibo(s) enviados recientes son anteriores a la auditoría nueva de PDF adjunto.`
+          : 'Recibos recientes con auditoría de correo/PDF correcta.';
+    add('Recibos y PDF por correo', receiptOk, receiptDetail, receiptErrors.length ? 'error' : suspiciousPdfAudit ? 'warning' : 'ok', { ultimo: lastReceipt ? (lastReceipt.fields || {})['Nro Recibo'] : null, legacyAuditCount: legacyReceiptAudit });
 
     const activeSchedules = whatsappSchedules.filter(r => !!(r.fields || {}).Activo).length;
     const pendingJobs = whatsappJobs.filter(r => selectName((r.fields || {}).Estado) === 'Pendiente').length;
