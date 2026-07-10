@@ -3,5 +3,13 @@ function = "pwa-head"
 path = "/*"
 
 [[edge_functions]]
+function = "owner-signature"
+path = "/"
+
+[[edge_functions]]
+function = "owner-signature"
+path = "/index.html"
+
+[[edge_functions]]
 function = "admin-links"
 path = "/admin*"
