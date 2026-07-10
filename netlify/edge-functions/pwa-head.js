@@ -15,7 +15,7 @@ export default async (request, context) => {
   const icon = `/.netlify/functions/app-icon?app=${app}`;
 
   // IMPORTANTE:
-  // Esta Edge Function debe inyectar PWA y corregir solo detalles del portal propietario.
+  // Esta Edge Function inyecta PWA y corrige solo detalles visuales/funcionales del portal propietario.
   // El admin se mantiene en su diseño anterior funcional y sus parches viven en admin-links.js.
   // No hacer return temprano por data-vla-pwa: los fixes del portal deben poder correr siempre.
 
@@ -109,6 +109,28 @@ export default async (request, context) => {
 })();
 </script>` : '';
 
+  const bcvLogoFixes = isOwnerPortal && !html.includes('vla-bcv-official-logo-fix') ? `
+<style id="vla-bcv-official-logo-fix">
+  .bcv-badge{background:#ffffff!important;border:1px solid #d7ead7!important;box-shadow:inset 0 0 0 4px rgba(255,255,255,.75),0 10px 24px rgba(15,23,42,.08)!important;overflow:hidden!important;padding:6px!important}
+  .bcv-badge img{width:100%!important;height:100%!important;object-fit:contain!important;display:block!important}
+  html.dark .bcv-badge{background:#f8fafc!important;border-color:#334155!important}
+</style>
+<script id="vla-bcv-official-logo-fix">
+(function(){
+  var src='https://upload.wikimedia.org/wikipedia/commons/0/02/Banco_Central_de_Venezuela_logo.svg';
+  function apply(){
+    document.querySelectorAll('.bcv-badge').forEach(function(el){
+      if(el.dataset.bcvLogoApplied==='1')return;
+      el.dataset.bcvLogoApplied='1';
+      el.setAttribute('aria-label','Banco Central de Venezuela');
+      el.innerHTML='<img src="'+src+'" alt="BCV" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.textContent=\'BCV\';this.remove();">';
+    });
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',apply);else apply();
+  new MutationObserver(apply).observe(document.documentElement,{childList:true,subtree:true});
+})();
+</script>` : '';
+
   const tags = `
 <!-- VLA PWA icons/start -->
 <meta data-vla-pwa="1" name="application-name" content="${title}">
@@ -127,7 +149,7 @@ export default async (request, context) => {
 <script src="/pwa-register.js" defer></script>
 <!-- VLA PWA icons/end -->`;
 
-  const inject = (html.includes('data-vla-pwa="1"') ? '' : tags) + portalFixes + balanceCardFixes;
+  const inject = (html.includes('data-vla-pwa="1"') ? '' : tags) + portalFixes + balanceCardFixes + bcvLogoFixes;
   if (inject) {
     if (html.includes('</head>')) html = html.replace('</head>', inject + '</head>');
     else html = inject + html;
