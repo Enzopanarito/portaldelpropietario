@@ -4,7 +4,9 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    branches:
+      - main
+      - hardening-stage-1-2026-07-10
 
 permissions:
   contents: read
