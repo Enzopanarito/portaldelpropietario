@@ -4,20 +4,53 @@
 // También notifica al correo de la urbanización para recibir alerta inmediata en el teléfono.
 // Regla contable VLA: el monto reportado siempre es USD referencial. Si se selecciona Bs BCV,
 // el sistema guarda el equivalente en bolívares multiplicando USD ref. x tasa BCV.
+// Protección: bloquea durante 5 minutos reportes duplicados de la misma casa, monto, forma y referencia.
 
 const { airtableCreateRecord, airtableGetRecord, syncOwnerAccess, TABLES, money } = require('./_access_control');
 const { sendMail } = require('./_mailer');
 
 const ALLOWED_MODES = new Set(['USD', 'Bs BCV']);
+const DUPLICATE_WINDOW_MS = 5 * 60 * 1000;
+
 function todayCaracasISO(){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Caracas',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
 function nowCaracasLabel(){return new Intl.DateTimeFormat('es-VE',{timeZone:'America/Caracas',dateStyle:'medium',timeStyle:'short'}).format(new Date());}
 function validRecordId(id){return /^rec[A-Za-z0-9]{14}$/.test(String(id||''));}
 function fmtUsd(n){return '$'+money(n).toFixed(2)}
 function fmtBs(n){return 'Bs. '+money(n).toLocaleString('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2})}
+function normalizeReference(value){return String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().replace(/\s+/g,' ').toLowerCase();}
+function json(statusCode,body){return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store, no-cache, must-revalidate'},body:JSON.stringify(body)}}
+function airtableUrl(tableName,query=''){return `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}${query}`}
+
+async function loadRecentReports(){
+  let records=[];
+  let offset=null;
+  do{
+    const query='?pageSize=100'+(offset?`&offset=${encodeURIComponent(offset)}`:'');
+    const response=await fetch(airtableUrl(TABLES.reportes,query),{headers:{Authorization:`Bearer ${process.env.AIRTABLE_API_TOKEN}`}});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(data.error?.message||data.message||'Error verificando reportes recientes.');
+    records=records.concat(data.records||[]);
+    offset=data.offset;
+  }while(offset);
+  return records;
+}
+
+async function findRecentDuplicate({ownerId,mode,amount,reference}){
+  const normalizedReference=normalizeReference(reference);
+  const cutoff=Date.now()-DUPLICATE_WINDOW_MS;
+  const reports=await loadRecentReports();
+  return reports.find(report=>{
+    const fields=report.fields||{};
+    const owners=fields['Propietario que Reporta']||[];
+    const createdAt=Date.parse(report.createdTime||'');
+    const reportMode=String(fields['Forma de Pago Reportada']||'');
+    const reportAmount=money(Number(fields['Equivalente USD Reportado']||fields['Monto Reportado']||0));
+    const reportReference=normalizeReference(fields.Referencia||'');
+    return Array.isArray(owners)&&owners.includes(ownerId)&&reportMode===mode&&Math.abs(reportAmount-amount)<=0.01&&reportReference===normalizedReference&&Number.isFinite(createdAt)&&createdAt>=cutoff;
+  })||null;
+}
 
 async function notifyAdminPaymentReport({ownerId, mode, amount, usdEq, amountBs, reference, rate, reportId, access}) {
-  // Prioridad: correo de la urbanización / correo remitente del sistema.
-  // En Netlify, SMTP_USER actualmente corresponde al correo de Villa Los Apamates.
   const to = process.env.ADMIN_NOTIFY_EMAIL || process.env.SMTP_USER || process.env.ADMIN_RECOVERY_EMAIL;
   if (!to) return { sent:false, status:'Sin correo administrador configurado' };
 
@@ -57,22 +90,32 @@ async function notifyAdminPaymentReport({ownerId, mode, amount, usdEq, amountBs,
 
 exports.handler=async function(event){
   const {AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID}=process.env;
-  if(event.httpMethod!=='POST')return{statusCode:405,headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'Method Not Allowed'})};
-  if(!AIRTABLE_API_TOKEN||!AIRTABLE_BASE_ID)return{statusCode:500,headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'Airtable no está configurado.'})};
+  if(event.httpMethod!=='POST')return json(405,{message:'Method Not Allowed'});
+  if(!AIRTABLE_API_TOKEN||!AIRTABLE_BASE_ID)return json(500,{message:'Airtable no está configurado.'});
 
   try{
     const body=JSON.parse(event.body||'{}');
     const ownerId=String(body.ownerId||'');
     const mode=String(body.mode||'');
     const reference=String(body.reference||'').trim().slice(0,120);
-    const amount=money(Number(body.amount||0)); // USD referencial siempre
+    const amount=money(Number(body.amount||0));
     const rate=Number(body.rate||0);
 
-    if(!validRecordId(ownerId))return{statusCode:400,headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'Propietario inválido.'})};
-    if(!ALLOWED_MODES.has(mode))return{statusCode:400,headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'Forma de pago inválida.'})};
-    if(!(amount>0))return{statusCode:400,headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'Monto inválido. Ingrese el monto en USD referencial.'})};
-    if(!reference)return{statusCode:400,headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'Debe indicar referencia.'})};
-    if(mode==='Bs BCV'&&!(rate>0))return{statusCode:400,headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'No hay tasa BCV disponible para calcular los bolívares.'})};
+    if(!validRecordId(ownerId))return json(400,{message:'Propietario inválido.'});
+    if(!ALLOWED_MODES.has(mode))return json(400,{message:'Forma de pago inválida.'});
+    if(!(amount>0))return json(400,{message:'Monto inválido. Ingrese el monto en USD referencial.'});
+    if(!reference)return json(400,{message:'Debe indicar referencia.'});
+    if(mode==='Bs BCV'&&!(rate>0))return json(400,{message:'No hay tasa BCV disponible para calcular los bolívares.'});
+
+    const duplicate=await findRecentDuplicate({ownerId,mode,amount,reference});
+    if(duplicate){
+      return json(409,{
+        success:false,
+        duplicate:true,
+        retryAfterSeconds:300,
+        message:'Este pago ya fue reportado recientemente. La administración se encuentra verificándolo. Espere al menos 5 minutos antes de intentar nuevamente.'
+      });
+    }
 
     const usdEq=amount;
     const amountBs=mode==='Bs BCV'?money(amount*rate):0;
@@ -109,8 +152,16 @@ exports.handler=async function(event){
       adminNotification = { sent:false, status:'Error enviando notificación admin', detail:error.message };
     }
 
-    return{statusCode:200,headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:JSON.stringify({success:true,message:'Reporte recibido. Será verificado por administración.',reportId:report&&report.id,amountUsdRef:amount,amountBs,access,adminNotification})};
+    return json(200,{
+      success:true,
+      message:'Pago reportado correctamente. La administración verificará la información en un plazo no mayor de 72 horas.',
+      reportId:report&&report.id,
+      amountUsdRef:amount,
+      amountBs,
+      access,
+      adminNotification
+    });
   }catch(error){
-    return{statusCode:500,headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:JSON.stringify({message:'Error guardando reporte.',detail:error.message})};
+    return json(500,{message:'Error guardando reporte.',detail:error.message});
   }
 };
