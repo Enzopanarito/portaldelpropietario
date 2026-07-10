@@ -2,9 +2,12 @@
 // Endpoint público optimizado: agrupa datos del portal con caché corta y controlable.
 // No crea registros técnicos por cada consulta para no consumir el límite de Airtable.
 // Datos financieros: prioridad a frescura. El portal debe pedir force=1 cuando el usuario abre/cambia de casa.
+// Seguridad: los textos se escapan antes de llegar a vistas construidas con innerHTML.
+
+const { deepEscapeStrings } = require('./_security_utils');
 
 let publicCache = null;
-const PUBLIC_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutos: evita datos viejos sin disparar el consumo de Airtable.
+const PUBLIC_CACHE_TTL_MS = 2 * 60 * 1000;
 
 const TABLES = {
   propietarios: 'Propietarios',
@@ -37,7 +40,6 @@ function responseHeaders(counter, cacheState) {
 async function airtableGetAll(tableName, query = '', token, baseId, counter) {
   let records = [];
   let offset = null;
-
   do {
     const separator = query ? '&' : '?';
     const url = buildUrl(baseId, tableName, `${query}${offset ? `${separator}offset=${encodeURIComponent(offset)}` : ''}`);
@@ -48,7 +50,6 @@ async function airtableGetAll(tableName, query = '', token, baseId, counter) {
     records = records.concat(data.records || []);
     offset = data.offset;
   } while (offset);
-
   return records;
 }
 
@@ -83,7 +84,7 @@ function compactGasto(record) {
       'Tipo de Gasto': f['Tipo de Gasto'],
       Frecuencia: f.Frecuencia,
       Propietarios: f.Propietarios || [],
-      'Forma de Pago': f['Forma de Pago'] || 'Bs BCV',
+      'Forma de Pago': f['Forma de Pago'] || 'Bs BCV'
     }
   };
 }
@@ -100,20 +101,18 @@ function compactPago(record) {
       'Forma de Pago': f['Forma de Pago'] || null,
       'Monto Pagado Bs': f['Monto Pagado Bs'] || 0,
       'Tasa BCV Aplicada': f['Tasa BCV Aplicada'] || 0,
-      'Equivalente USD Aplicado': f['Equivalente USD Aplicado'] || 0,
+      'Equivalente USD Aplicado': f['Equivalente USD Aplicado'] || 0
     }
   };
 }
 
 exports.handler = async function(event) {
   const { AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID } = process.env;
-
   if (!AIRTABLE_API_TOKEN || !AIRTABLE_BASE_ID) {
     return { statusCode: 500, headers: responseHeaders(0, 'ERROR'), body: JSON.stringify({ message: 'Airtable no está configurado.' }) };
   }
 
   const force = event.queryStringParameters?.force === '1';
-
   if (!force && publicCache && publicCache.expiresAt > Date.now()) {
     return {
       statusCode: 200,
@@ -123,24 +122,22 @@ exports.handler = async function(event) {
   }
 
   const counter = { calls: 0 };
-
   try {
     const [propietarios, gastos, pagos] = await Promise.all([
       airtableGetAll(TABLES.propietarios, '', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter),
       airtableGetAll(TABLES.gastos, '?view=Gastos%20Mensuales', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter),
-      airtableGetAll(TABLES.pagos, '', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter),
+      airtableGetAll(TABLES.pagos, '', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter)
     ]);
 
-    const payload = {
+    const payload = deepEscapeStrings({
       generatedAt: new Date().toISOString(),
       generatedAtCaracas: nowCaracasLabel(),
       propietarios: propietarios.map(compactOwner).sort((a, b) => (a.Casa || 0) - (b.Casa || 0)),
       gastos: gastos.map(compactGasto),
-      pagos: pagos.map(compactPago),
-    };
+      pagos: pagos.map(compactPago)
+    });
 
     publicCache = { payload, expiresAt: Date.now() + PUBLIC_CACHE_TTL_MS };
-
     return {
       statusCode: 200,
       headers: responseHeaders(counter.calls, 'MISS'),
@@ -150,7 +147,7 @@ exports.handler = async function(event) {
     return {
       statusCode: 500,
       headers: responseHeaders(counter.calls, 'ERROR'),
-      body: JSON.stringify({ message: 'Error cargando datos públicos.', detail: error.message })
+      body: JSON.stringify({ message: 'Error cargando datos públicos.', detail: String(error.message || '').slice(0, 500) })
     };
   }
 };
