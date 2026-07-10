@@ -67,7 +67,60 @@ export default async (request, context) => {
     <span>Sistema generado por <strong>Enzo Panarito</strong> para <strong>Villa Los Apamates</strong> · 2025</span>
     <span class="vla-signature-seal">Digital System</span>
   </div>
-</footer>`;
+</footer>
+<script id="vla-payment-report-submit-guard">
+(function(){
+  function normalizeReference(value){
+    return String(value||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().replace(/\\s+/g,' ').toLowerCase();
+  }
+  function fingerprint(ownerId,mode,amount,reference){
+    return ['vla-report',ownerId,mode,Number(amount||0).toFixed(2),normalizeReference(reference)].join('|');
+  }
+  function install(){
+    var form=document.getElementById('reportForm');
+    var button=document.getElementById('submitReport');
+    if(!form||!button||form.dataset.vlaGuardInstalled==='1')return;
+    form.dataset.vlaGuardInstalled='1';
+    form.onsubmit=async function(event){
+      event.preventDefault();
+      if(window.vlaReportBusy)return;
+      var mode=document.getElementById('payMode').value;
+      var amount=Number(document.getElementById('payAmount').value);
+      var reference=document.getElementById('payRef').value.trim();
+      try{
+        if(!mode)throw new Error('Seleccione la forma de pago.');
+        if(!(amount>0)||!reference)throw new Error('Complete monto y referencia.');
+        if(!window.currentOwner||!currentOwner.id)throw new Error('Seleccione nuevamente su casa.');
+        var key=fingerprint(currentOwner.id,mode,amount,reference);
+        var last=Number(localStorage.getItem(key)||0);
+        if(last&&Date.now()-last<300000){
+          throw new Error('Este pago ya fue reportado recientemente. La administración se encuentra verificándolo. Espere al menos 5 minutos antes de intentar nuevamente.');
+        }
+        window.vlaReportBusy=true;
+        button.disabled=true;
+        button.textContent='Enviando reporte...';
+        var response=await fetch('/.netlify/functions/public-report-payment',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({ownerId:currentOwner.id,mode:mode,amount:amount,reference:reference,rate:rate(),date:caracasDate()})
+        });
+        var data=await response.json().catch(function(){return{}});
+        if(!response.ok)throw new Error(data.detail||data.message||'Error reportando pago.');
+        localStorage.setItem(key,String(Date.now()));
+        hideModal();
+        toast(data.message||'Pago reportado correctamente. La administración verificará la información en un plazo no mayor de 72 horas.',false);
+      }catch(error){
+        toast(error.message||'Error reportando pago.',true);
+      }finally{
+        window.vlaReportBusy=false;
+        button.disabled=false;
+        button.textContent='Enviar Reporte';
+      }
+    };
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install);else install();
+})();
+</script>`;
 
   if (html.includes('</body>')) html = html.replace('</body>', signature + '</body>');
   else html += signature;
