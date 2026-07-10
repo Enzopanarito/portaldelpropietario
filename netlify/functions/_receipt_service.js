@@ -5,6 +5,7 @@
 
 const { sendMail } = require('./_mailer');
 const { buildReceiptPdf } = require('./_receipt_pdf');
+const { escapeHtml, cleanPlainText, sanitizeReference, safeDisplayText } = require('./_security_utils');
 
 const TABLE_RECEIPTS = 'Recibos de Pago';
 const TABLE_OWNERS = 'Propietarios';
@@ -52,25 +53,26 @@ async function getOwner(ownerId){
 }
 
 function buildHtml(payload){
-  const owner = payload.ownerName || 'Propietario';
-  const casa = payload.casa || '';
-  const mode = payload.mode || '';
-  const date = payload.date || caracasDate();
+  const owner = escapeHtml(cleanPlainText(payload.ownerName || 'Propietario', 180));
+  const casa = escapeHtml(cleanPlainText(payload.casa || '', 30));
+  const mode = escapeHtml(cleanPlainText(payload.mode || '', 40));
+  const date = escapeHtml(cleanPlainText(payload.date || caracasDate(), 30));
+  const number = escapeHtml(cleanPlainText(payload.receiptNumber || '', 80));
   const amountUsd = money(payload.amountUsd || 0);
   const amountBs = money(payload.amountBs || 0);
-  const ref = payload.reference || 'N/A';
+  const ref = escapeHtml(sanitizeReference(payload.reference) || 'N/A');
   return `
   <div style="font-family:Arial,sans-serif;max-width:680px;margin:auto;border:1px solid #e5e7eb;border-radius:12px;padding:24px;color:#111827">
     <h2 style="margin:0 0 6px;color:#075985">Comprobante de Pago</h2>
     <p style="margin:0 0 20px;color:#6b7280">Urbanización Villa Los Apamates</p>
     <table style="width:100%;border-collapse:collapse;font-size:14px">
-      <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb"><b>Comprobante</b></td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${payload.receiptNumber}</td></tr>
+      <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb"><b>Comprobante</b></td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${number}</td></tr>
       <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb"><b>Casa</b></td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${casa}</td></tr>
       <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb"><b>Propietario</b></td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${owner}</td></tr>
       <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb"><b>Fecha</b></td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${date}</td></tr>
       <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb"><b>Forma de pago</b></td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${mode}</td></tr>
-      <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb"><b>Monto USD Ref.</b></td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${usd(amountUsd)}</td></tr>
-      <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb"><b>Monto Bs.</b></td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${amountBs > 0 ? bs(amountBs) : 'N/A'}</td></tr>
+      <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb"><b>Monto USD Ref.</b></td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${escapeHtml(usd(amountUsd))}</td></tr>
+      <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb"><b>Monto Bs.</b></td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${amountBs > 0 ? escapeHtml(bs(amountBs)) : 'N/A'}</td></tr>
       <tr><td style="padding:8px;border-bottom:1px solid #e5e7eb"><b>Referencia</b></td><td style="padding:8px;border-bottom:1px solid #e5e7eb">${ref}</td></tr>
     </table>
     <p style="font-size:12px;color:#6b7280;margin-top:20px">Adjunto encontrará el comprobante en PDF tamaño carta para guardar o imprimir.</p>
@@ -82,18 +84,18 @@ async function createAndSendReceipt(input = {}){
 
   const owner = await getOwner(input.ownerId);
   const f = owner?.fields || {};
-  const email = firstNonEmpty(input.email, f.Email, f.Correo, f['MKJ Email']);
-  const receiptNumber = input.receiptNumber || receiptNo();
+  const email = cleanPlainText(firstNonEmpty(input.email, f.Email, f.Correo, f['MKJ Email']), 254);
+  const receiptNumber = cleanPlainText(input.receiptNumber || receiptNo(), 80);
   const payload = {
     receiptNumber,
-    ownerName: input.ownerName || f.Propietario || '',
-    casa: input.casa || f.Casa || '',
-    mode: input.mode || input.formaPago || '',
-    date: input.date || caracasDate(),
+    ownerName: cleanPlainText(input.ownerName || f.Propietario || '', 180),
+    casa: cleanPlainText(input.casa || f.Casa || '', 30),
+    mode: cleanPlainText(input.mode || input.formaPago || '', 40),
+    date: cleanPlainText(input.date || caracasDate(), 30),
     amountUsd: input.amountUsd || input.usdEq || 0,
     amountBs: input.amountBs || 0,
-    reference: input.reference || input.referencia || '',
-    concept: input.concept || 'Pago registrado en el sistema administrativo'
+    reference: sanitizeReference(input.reference || input.referencia || ''),
+    concept: cleanPlainText(input.concept || 'Pago registrado en el sistema administrativo', 240)
   };
 
   const html = buildHtml(payload);
@@ -108,8 +110,8 @@ async function createAndSendReceipt(input = {}){
       pdfBuffer = await buildReceiptPdf(payload);
       pdfStatus = `PDF generado (${byteSize(pdfBuffer)} bytes)`;
     } catch (error) {
-      pdfStatus = `Error PDF: ${error.message}`;
-      emailResult = { sent:false, status:'Error PDF', detail:error.message };
+      pdfStatus = `Error PDF: ${safeDisplayText(error.message, 500)}`;
+      emailResult = { sent:false, status:'Error PDF', detail:safeDisplayText(error.message, 500) };
     }
 
     if (pdfBuffer) {
@@ -124,8 +126,8 @@ async function createAndSendReceipt(input = {}){
         });
         attachmentStatus = emailResult.sent ? `PDF adjuntado: ${attachmentFile}` : 'PDF preparado pero correo no enviado';
       } catch (error) {
-        emailResult = { sent:false, status:'Error correo', detail:error.message };
-        attachmentStatus = `Error enviando adjunto: ${error.message}`;
+        emailResult = { sent:false, status:'Error correo', detail:safeDisplayText(error.message, 500) };
+        attachmentStatus = `Error enviando adjunto: ${safeDisplayText(error.message, 500)}`;
       }
     }
   }
@@ -134,8 +136,8 @@ async function createAndSendReceipt(input = {}){
     `Correo: ${email || 'Sin correo'}`,
     pdfStatus,
     attachmentStatus,
-    `SMTP: ${emailResult.status}`,
-    `Detalle: ${emailResult.detail || ''}`
+    `SMTP: ${cleanPlainText(emailResult.status, 100)}`,
+    `Detalle: ${cleanPlainText(emailResult.detail || '', 500)}`
   ].join(' | ');
 
   const fields = {
@@ -147,7 +149,7 @@ async function createAndSendReceipt(input = {}){
     'Forma de Pago': payload.mode === 'USD' ? 'USD' : 'Bs BCV',
     'Referencia': payload.reference,
     'Correo': email || undefined,
-    'Estado Email': emailResult.status,
+    'Estado Email': cleanPlainText(emailResult.status, 100),
     'HTML Recibo': html,
     'Log': auditLog
   };
