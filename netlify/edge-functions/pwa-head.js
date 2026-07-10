@@ -37,10 +37,10 @@ export default async (request, context) => {
       "function tableBlock(title,lines,paid,mode){const subtotal=money(lines.reduce((s,l)=>s+l.amount,0));let saldo=money(subtotal-paid);if(current&&current.total<=0.01)saldo=0;"
     );
 
-    // Permitir reportar pagos adelantados aunque la casa esté solvente.
+    // Opciones inteligentes para reportar pago: deuda primero; adelantos solo donde corresponde.
     html = html.replace(
       /function setupModes\(\)\{const sel=document\.getElementById\('payMode'\);const opts=\[\];if\(current\.debtUsd>0\.01\).*?sel\.innerHTML=opts\.join\(''\);updateLabels\(\)\}/,
-      "function setupModes(){const sel=document.getElementById('payMode');const opts=[];if(current.debtUsd>0.01)opts.push(`<option value=\"USD\">Pago en dólares · ${usd(current.debtUsd)} ref.</option>`);if(current.debtBs>0.01)opts.push(`<option value=\"Bs BCV\">Pago en Bs BCV · ${usd(current.debtBs)} ref. / ${bs(current.bsDue)}</option>`);opts.push('<option value=\"Bs BCV\">Adelanto en bolívares / saldo a favor</option>');opts.push('<option value=\"USD\">Adelanto en dólares / saldo a favor</option>');sel.innerHTML=opts.join('');updateLabels()}"
+      "function setupModes(){const sel=document.getElementById('payMode');const opts=[];const hasUsd=current.debtUsd>0.01,hasBs=current.debtBs>0.01,solvent=!hasUsd&&!hasBs;if(hasUsd)opts.push(`<option value=\"USD\">Pago en dólares · ${usd(current.debtUsd)} ref.</option>`);if(hasBs)opts.push(`<option value=\"Bs BCV\">Pago en Bs BCV · ${usd(current.debtBs)} ref. / ${bs(current.bsDue)}</option>`);if(solvent||hasUsd&&!hasBs)opts.push('<option value=\"Bs BCV\">Adelanto en bolívares / saldo a favor</option>');if(solvent||hasBs&&!hasUsd)opts.push('<option value=\"USD\">Adelanto en dólares / saldo a favor</option>');sel.innerHTML=opts.join('');updateLabels()}"
     );
 
     // Regla contable uniforme: el usuario ingresa USD referencial; si selecciona Bs BCV, se calcula Bs = USD ref x tasa BCV.
