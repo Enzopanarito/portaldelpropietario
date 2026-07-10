@@ -14,13 +14,11 @@ export default async (request, context) => {
   #app header h1,#app header p{color:#fff!important;position:relative!important}
   #theme-btn{background:rgba(255,255,255,.14)!important;color:#fff!important;border:1px solid rgba(255,255,255,.25)!important;backdrop-filter:blur(10px)!important}
   #app nav{background:rgba(255,255,255,.82)!important;border:1px solid rgba(148,163,184,.24)!important;box-shadow:0 18px 44px rgba(15,23,42,.09)!important;border-radius:30px!important;padding:12px!important;backdrop-filter:blur(18px)!important}
-  #app nav a,#app nav button.nav,#backup-btn{background:rgba(255,255,255,.74)!important;color:#334155!important;border:1px solid rgba(148,163,184,.26)!important;box-shadow:none!important;font-weight:700!important;letter-spacing:-.01em!important;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease,background .18s ease,color .18s ease!important}
-  #app nav a:hover,#app nav button.nav:hover,#backup-btn:hover{transform:translateY(-1px)!important;background:#fff!important;border-color:rgba(2,132,199,.34)!important;box-shadow:0 12px 26px rgba(15,23,42,.10)!important;color:#0f172a!important}
-  #app nav button.nav.active{background:linear-gradient(135deg,#0f172a,#075985)!important;color:#fff!important;border-color:rgba(255,255,255,.32)!important;box-shadow:0 14px 30px rgba(2,132,199,.24)!important}
-  #app nav a::after,#backup-btn::after{content:'↗';font-size:.72rem;margin-left:.35rem;opacity:.46;font-weight:800}
+  #app nav a,#app nav button.nav,#backup-btn{background:linear-gradient(135deg,#0f172a,#075985)!important;color:#fff!important;border:1px solid rgba(255,255,255,.32)!important;box-shadow:0 12px 26px rgba(2,132,199,.18)!important;font-weight:800!important;letter-spacing:-.01em!important;transition:transform .18s ease,box-shadow .18s ease,filter .18s ease,border-color .18s ease!important}
+  #app nav a:hover,#app nav button.nav:hover,#backup-btn:hover{transform:translateY(-1px)!important;box-shadow:0 16px 34px rgba(15,23,42,.20)!important;filter:saturate(1.08) brightness(1.04)!important;border-color:rgba(255,255,255,.54)!important;color:#fff!important}
+  #app nav button.nav.active{background:linear-gradient(135deg,#0f172a,#075985)!important;color:#fff!important;border-color:rgba(255,255,255,.62)!important;box-shadow:0 18px 38px rgba(2,132,199,.28)!important}
+  #app nav a::after,#backup-btn::after{content:'↗';font-size:.72rem;margin-left:.35rem;opacity:.52;font-weight:900}
   #backup-btn::after{content:'•'}
-  #app nav a.bg-indigo-600,#app nav a.bg-emerald-600,#app nav a.bg-green-600,#app nav a.bg-amber-600,#app nav a.bg-cyan-700,#app nav a.bg-red-600,#backup-btn{background:rgba(248,250,252,.86)!important;color:#334155!important}
-  #app nav a.bg-indigo-600:hover,#app nav a.bg-emerald-600:hover,#app nav a.bg-green-600:hover,#app nav a.bg-amber-600:hover,#app nav a.bg-cyan-700:hover,#app nav a.bg-red-600:hover,#backup-btn:hover{background:#fff!important;color:#0f172a!important}
   .section>.bg-white,#pay-modal .bg-white,#close-modal .bg-white{border:1px solid rgba(148,163,184,.24)!important;border-radius:28px!important;box-shadow:0 24px 70px rgba(15,23,42,.10)!important}
   .section h2,.section h3{letter-spacing:-.025em!important}
   #dashboard .grid>div{background:linear-gradient(180deg,#fff,#f8fafc)!important;border:1px solid rgba(148,163,184,.22)!important;border-radius:22px!important;box-shadow:0 12px 32px rgba(15,23,42,.07)!important}
@@ -38,8 +36,8 @@ export default async (request, context) => {
   html.dark body{background:radial-gradient(circle at top left,#0f172a 0,#020617 50%,#111827 100%)!important}
   html.dark #app header{background:linear-gradient(135deg,#020617,#075985)!important;border-color:#334155!important}
   html.dark #app nav{background:rgba(15,23,42,.84)!important;border-color:#334155!important}
-  html.dark #app nav a,html.dark #app nav button.nav:not(.active),html.dark #backup-btn{background:rgba(15,23,42,.78)!important;color:#e5e7eb!important;border-color:#334155!important}
-  html.dark #app nav a:hover,html.dark #app nav button.nav:not(.active):hover,html.dark #backup-btn:hover{background:#111827!important;color:#fff!important;border-color:#0ea5e9!important}
+  html.dark #app nav a,html.dark #app nav button.nav,html.dark #backup-btn{background:linear-gradient(135deg,#020617,#075985)!important;color:#fff!important;border-color:#334155!important}
+  html.dark #app nav a:hover,html.dark #app nav button.nav:hover,html.dark #backup-btn:hover{border-color:#0ea5e9!important;filter:saturate(1.1) brightness(1.08)!important}
   html.dark #dashboard .grid>div{background:linear-gradient(180deg,#0f172a,#111827)!important;border-color:#334155!important}
   html.dark tbody tr:hover{background:#111827!important}
 </style>`;
@@ -47,6 +45,8 @@ export default async (request, context) => {
     if (html.includes('</head>')) html = html.replace('</head>', adminVisualSkin + '</head>');
     else html = adminVisualSkin + html;
   }
+
+  html = html.replace('📊 Dashboard', '🏠 HOME');
 
   const whatsappLink = "<a href='/whatsapp.html' target='_self' class='bg-green-600 text-white px-4 py-2 rounded-full shadow font-semibold'>📲 WhatsApp</a>";
   const securityLink = "<a href='/seguridad.html' target='_self' class='bg-amber-600 text-white px-4 py-2 rounded-full shadow font-semibold'>🔐 Seguridad</a>";
