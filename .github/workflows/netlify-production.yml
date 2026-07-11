@@ -1,0 +1,42 @@
+name: Deploy Netlify Production
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN || secrets.NETLIFY_TOKEN }}
+      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID || secrets.NETLIFY_SITE_ID_VILLALOSAPAMATES }}
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+
+      - name: Verify configured credentials
+        shell: bash
+        run: |
+          if [ -z "$NETLIFY_AUTH_TOKEN" ]; then
+            echo "::error::No existe NETLIFY_AUTH_TOKEN ni NETLIFY_TOKEN en los secretos del repositorio."
+            exit 1
+          fi
+          if [ -z "$NETLIFY_SITE_ID" ]; then
+            echo "::error::No existe NETLIFY_SITE_ID ni NETLIFY_SITE_ID_VILLALOSAPAMATES en los secretos del repositorio."
+            exit 1
+          fi
+
+      - name: Deploy tested site to production
+        run: |
+          npx --yes netlify-cli@latest deploy \
+            --prod \
+            --dir=. \
+            --functions=netlify/functions \
+            --site="$NETLIFY_SITE_ID" \
+            --auth="$NETLIFY_AUTH_TOKEN" \
+            --message="VLA canonical balances 2026-07-11-v6"
