@@ -81,8 +81,8 @@ jobs:
           for attempt in $(seq 1 90); do
             if body="$(curl --fail --silent --show-error --location --max-time 30 \
               "https://villalosapamates.netlify.app/release.json?run=$GITHUB_RUN_ID&attempt=$attempt" 2>/dev/null)"; then
-              if printf '%s' "$body" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);if(j.release!=='2026-07-11-v6'||j.expectedHouses!==15||j.breakdownPresentation!=='2026-07-11-detail-v2')process.exit(1)})"; then
-                echo "Production verified: release 2026-07-11-v6, 15 houses, breakdown 2026-07-11-detail-v2."
+              if printf '%s' "$body" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);if(j.release!=='2026-07-11-v6'||j.expectedHouses!==15||j.breakdownPresentation!=='2026-07-11-detail-v3'||j.monthlyCloseEngine!==4)process.exit(1)})"; then
+                echo "Production verified: release 2026-07-11-v6, 15 houses, breakdown v3, monthly close v4."
                 exit 0
               fi
             fi
@@ -102,10 +102,10 @@ jobs:
             fi
             sleep 10
           done
-          echo "Production did not expose the expected breakdown marker before timeout."
+          echo "Production did not expose the expected breakdown and monthly-close markers before timeout."
           exit 1
 
-      - name: Report deployment result on PR 19
+      - name: Report deployment result on PR 22
         if: always()
         uses: actions/github-script@v7
         env:
@@ -126,13 +126,13 @@ jobs:
             if (!ready) {
               body = `### Producción Netlify bloqueada\n\nLos secretos de Netlify no están disponibles para el flujo. No se modificó producción.\n\nCommit: \`${context.sha}\` · [Ejecución](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
             } else if (triggered && verified) {
-              body = `### Desglose de propietarios publicado y verificado ✅\n\nNetlify confirmó la versión \`2026-07-11-v6\`, las 15 casas y el marcador de desglose \`2026-07-11-detail-v2\`.\n\nRama de producción: \`${branch}\` · Build: \`${buildId}\` · Commit del flujo: \`${context.sha}\` · [Ejecución](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
+              body = `### Desglose y cierre mensual publicados y verificados ✅\n\nNetlify confirmó la versión \`2026-07-11-v6\`, las 15 casas, el desglose \`2026-07-11-detail-v3\` y el cierre mensual v4.\n\nRama de producción: \`${branch}\` · Build: \`${buildId}\` · Commit del flujo: \`${context.sha}\` · [Ejecución](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
             } else {
-              body = `### Desglose de producción no verificado ⚠️\n\nRama de producción: \`${branch}\`. Build: \`${buildId}\`. Disparo: \`${process.env.TRIGGER_OUTCOME || 'no ejecutado'}\`. Verificación: \`${process.env.VERIFY_OUTCOME || 'no ejecutada'}\`.\n\nCommit: \`${context.sha}\` · [Ejecución](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
+              body = `### Producción no verificada ⚠️\n\nRama de producción: \`${branch}\`. Build: \`${buildId}\`. Disparo: \`${process.env.TRIGGER_OUTCOME || 'no ejecutado'}\`. Verificación: \`${process.env.VERIFY_OUTCOME || 'no ejecutada'}\`.\n\nCommit: \`${context.sha}\` · [Ejecución](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
             }
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: 19,
+              issue_number: 22,
               body
             });
