@@ -11,19 +11,14 @@ function json(statusCode, body, counter = null) {
   if (counter) headers['X-Airtable-Calls'] = String(counter.calls || 0);
   return { statusCode, headers, body: JSON.stringify(body) };
 }
-
 function currentMonthCaracas() {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Caracas', year: 'numeric', month: '2-digit'
-  }).formatToParts(new Date());
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit' }).formatToParts(new Date());
   return `${parts.find(part => part.type === 'year').value}-${parts.find(part => part.type === 'month').value}`;
 }
-
 function normalizeMonth(value) {
   const month = String(value || '').trim();
   return /^\d{4}-(0[1-9]|1[0-2])$/.test(month) ? month : currentMonthCaracas();
 }
-
 function lockMessage(result, month) {
   const messages = {
     'already-closed': `El mes ${month} ya fue cerrado. No se ejecutó nuevamente.`,
@@ -45,16 +40,8 @@ exports.handler = async function(event) {
   let body = {};
   try { body = JSON.parse(event.body || '{}'); } catch (_) { body = {}; }
   const month = normalizeMonth(body.month);
-
   if (body.action === 'repair') {
-    return repairOperation({
-      month,
-      operationId: String(body.operationId || '').trim(),
-      token: AIRTABLE_API_TOKEN,
-      baseId: AIRTABLE_BASE_ID,
-      counter,
-      json
-    });
+    return repairOperation({ month, operationId: String(body.operationId || '').trim(), token: AIRTABLE_API_TOKEN, baseId: AIRTABLE_BASE_ID, counter, json });
   }
 
   const dryRun = body.dryRun === true;
@@ -93,6 +80,8 @@ exports.handler = async function(event) {
     return json(400, { success: false, protected: true, message: 'La simulación no tiene una huella válida. Vuelva a simular.' }, counter);
   }
 
+  let closeLock = null;
+  let handedOff = false;
   try {
     const lockResult = await acquireCloseLock(month, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
     if (!lockResult.ok) {
@@ -107,23 +96,15 @@ exports.handler = async function(event) {
       }, counter);
     }
 
-    const closeLock = lockResult.marker;
+    closeLock = lockResult.marker;
     const context = await loadContext(month, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
     if (!context.owners.length) throw new Error('No se encontraron propietarios para cerrar el mes.');
     const plan = buildPlan({ owners: context.owners, expenses: context.expenses, payments: context.payments, month });
 
     if (plan.planHash !== submittedPlanHash) {
       await setCloseMarker(closeLock, month, 'ABORTED', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter).catch(() => null);
-      return json(409, {
-        success: false,
-        protected: true,
-        staleSimulation: true,
-        month,
-        newPlanHash: plan.planHash,
-        message: 'Los pagos, gastos o saldos cambiaron después de la simulación. No se modificó nada. Vuelva a simular.'
-      }, counter);
+      return json(409, { success: false, protected: true, staleSimulation: true, month, newPlanHash: plan.planHash, message: 'Los pagos, gastos o saldos cambiaron después de la simulación. No se modificó nada. Vuelva a simular.' }, counter);
     }
-
     if (!context.snapshotComplete) {
       await setCloseMarker(closeLock, month, 'ABORTED', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter).catch(() => null);
       return json(409, {
@@ -137,17 +118,10 @@ exports.handler = async function(event) {
       }, counter);
     }
 
-    return executeClose({
-      month,
-      closeLock,
-      plan,
-      context,
-      token: AIRTABLE_API_TOKEN,
-      baseId: AIRTABLE_BASE_ID,
-      counter,
-      json
-    });
+    handedOff = true;
+    return await executeClose({ month, closeLock, plan, context, token: AIRTABLE_API_TOKEN, baseId: AIRTABLE_BASE_ID, counter, json });
   } catch (error) {
+    if (closeLock && !handedOff) await setCloseMarker(closeLock, month, 'ERROR_SAFE', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter).catch(() => null);
     return json(500, { success: false, protected: true, month, message: 'Error preparando la ejecución del cierre. No se aplicaron cambios.', detail: error.message }, counter);
   }
 };
