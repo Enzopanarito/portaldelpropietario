@@ -73,6 +73,16 @@ assert.strictEqual(core.compareDebtValues({deudaAnteriorUsd:1,deudaAnteriorBsRef
 assert.strictEqual(core.compareDebtValues({deudaAnteriorUsd:1,deudaAnteriorBsRef:2,deudaAnterior:3},{deudaAnteriorUsd:1,deudaAnteriorBsRef:2,deudaAnterior:4}).ok,false);
 
 function source(file) { return fs.readFileSync(path.join(__dirname, '..', file), 'utf8'); }
+function stringConst(jsSource, name) {
+  const marker = `const ${name} = `;
+  const start = jsSource.indexOf(marker);
+  assert(start >= 0, `No se encontró la constante ${name}.`);
+  const rest = jsSource.slice(start + marker.length);
+  const end = rest.indexOf(';\n');
+  assert(end > 0, `No se pudo leer la constante ${name}.`);
+  return JSON.parse(rest.slice(0, end));
+}
+
 const endpoint = source('netlify/functions/monthly-close-v2.js');
 const executor = source('netlify/functions/_monthly_close_execute.js');
 const verifier = source('netlify/functions/_monthly_close_verify.js');
@@ -81,6 +91,7 @@ const guard = source('netlify/functions/_operation_guard_v2.js');
 const proxy = source('netlify/functions/airtable-v2.js');
 const batchDelete = source('netlify/functions/batch-delete-records-v2.js');
 const adminEdge = source('netlify/edge-functions/admin-monthly-close.js');
+const adminHtml = source('admin.html');
 
 assert(endpoint.includes('submittedPlanHash'));
 assert(endpoint.includes('plan.planHash !== submittedPlanHash'));
@@ -90,11 +101,15 @@ assert(executor.includes('createPreparedLog'));
 assert(executor.includes("verifyPlan(plan, 'target'"));
 assert(executor.includes('restorePlan'));
 assert(verifier.includes("verifyPlan(plan, 'before'"));
-assert(repair.includes("body") === false || repair.includes('repairOperation'));
+assert(repair.includes('restorePlan'));
+assert(repair.includes('repairOperation'));
 assert(guard.includes("'MANUAL_PAYMENT', 'PAYMENT_REPORT'"));
 assert(proxy.includes('ensureFinancialWritesAllowed'));
+assert(proxy.includes('La escritura fue detenida por seguridad'));
 assert(batchDelete.includes('ensureFinancialWritesAllowed'));
 assert(adminEdge.includes('planHash:finalCheck.planHash'));
 assert(adminEdge.includes("action:'repair'"));
+assert(adminHtml.includes(stringConst(adminEdge, 'oldFetch')), 'La capa visual debe encontrar adminFetch en admin.html.');
+assert(adminHtml.includes(stringConst(adminEdge, 'oldClose')), 'La capa visual debe encontrar runClose en admin.html.');
 
 console.log('STAGE3_MONTHLY_CLOSE_TESTS_OK');
