@@ -9,6 +9,7 @@ on:
       - hardening-final-all-2026-07-11
       - fix-balance-pronto-pago-2026-07-11
       - fix-all-houses-pronto-pago-2026-07-11
+      - fix-access-balance-engine-2026-07-11
 
 permissions:
   contents: read
@@ -56,6 +57,9 @@ jobs:
 
       - name: Audit all 15 current house balances
         run: node tests/all-houses-current-balance.test.js
+
+      - name: Validate gate expired-debt calculations
+        run: node tests/access-balance-engine.test.js
 
       - name: Validate JSON files
         run: |
