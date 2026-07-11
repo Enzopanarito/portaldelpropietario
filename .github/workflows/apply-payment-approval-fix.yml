@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - fix-payment-approval-protected-2026-07-11
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -45,19 +48,13 @@ jobs:
   const reportFunctionPattern = /async function handleReport\\(e\\)\\{[\\s\\S]*?\\}\\nfunction closeRows\\(\\)/;
   if (reportFunctionPattern.test(html)) {
     html = html.replace(reportFunctionPattern, protectedHandleReport + \"\\nfunction closeRows()\");
-  }
-  headersPaymentFlow = 'protected-v2';"""
+  }"""
           updated, count = re.subn(old_pattern, replacement, text, count=1)
           if count != 1:
               raise SystemExit(f'admin-links report block: expected one match, found {count}')
           updated = updated.replace(
-              "  const headers = new Headers(response.headers);",
-              "  let headersPaymentFlow = typeof headersPaymentFlow === 'string' ? headersPaymentFlow : 'protected-v2';\n  const headers = new Headers(response.headers);",
-              1
-          )
-          updated = updated.replace(
               "  headers.set('content-type', 'text/html; charset=utf-8');",
-              "  headers.set('content-type', 'text/html; charset=utf-8');\n  headers.set('x-vla-admin-payment-flow', headersPaymentFlow);",
+              "  headers.set('content-type', 'text/html; charset=utf-8');\n  headers.set('x-vla-admin-payment-flow', 'protected-v2');",
               1
           )
           edge.write_text(updated)
