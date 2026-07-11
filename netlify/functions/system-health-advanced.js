@@ -22,13 +22,26 @@ function bearer(event) {
   const headers = event.headers || {};
   return headers.authorization || headers.Authorization || '';
 }
-async function getControlRecords(prefixes) {
+function controlUrl(query = '') {
+  return `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(CONTROL_TABLE)}${query}`;
+}
+async function getRecordsByPrefix(prefix) {
   if (!process.env.AIRTABLE_API_TOKEN || !process.env.AIRTABLE_BASE_ID) return [];
-  const url = `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(CONTROL_TABLE)}?pageSize=100`;
-  const response = await fetch(url, { headers: { Authorization: `Bearer ${process.env.AIRTABLE_API_TOKEN}` } });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error?.message || data.message || 'No se pudo revisar ControlVersiones.');
-  return (data.records || []).filter(record => prefixes.some(prefix => String(record?.fields?.Key || '').startsWith(prefix)));
+  const formula = encodeURIComponent(`LEFT({Key}, ${prefix.length})='${prefix}'`);
+  let records = [], offset = null;
+  do {
+    const query = `?pageSize=100&filterByFormula=${formula}${offset ? `&offset=${encodeURIComponent(offset)}` : ''}`;
+    const response = await fetch(controlUrl(query), { headers: { Authorization: `Bearer ${process.env.AIRTABLE_API_TOKEN}` } });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error?.message || data.message || `No se pudo revisar ${prefix}.`);
+    records = records.concat(data.records || []);
+    offset = data.offset;
+  } while (offset);
+  return records;
+}
+async function getControlRecords(prefixes) {
+  const groups = await Promise.all(prefixes.map(getRecordsByPrefix));
+  return groups.flat();
 }
 function latest(records, prefix) {
   return [...records].filter(record => String(record?.fields?.Key || '').startsWith(prefix)).sort((a, b) => String(b.createdTime || '').localeCompare(String(a.createdTime || '')))[0] || null;
@@ -72,8 +85,10 @@ exports.handler = async function(event) {
     try {
       const control = await getControlRecords(['MONTHLY_CLOSE|','FIN_OP|','BCV_LAST_GOOD|']);
       const partial = control.filter(record => ['ERROR_PARTIAL','LOCKED'].includes(keyState(record)));
+      const runningFinancialOps = control.filter(record => String(record?.fields?.Key || '').startsWith('FIN_OP|') && String(record?.fields?.Key || '').includes('|RUNNING|'));
       const lastClose = latest(control, 'MONTHLY_CLOSE|');
-      add('Operaciones financieras pendientes', partial.length === 0, partial.length ? `${partial.length} marcador(es) de cierre requieren revisión o continúan bloqueados.` : 'No hay cierres parciales o bloqueos activos detectados.', partial.length ? 'error' : 'ok', { count: partial.length });
+      const pendingCount = partial.length + runningFinancialOps.length;
+      add('Operaciones financieras pendientes', pendingCount === 0, pendingCount ? `${partial.length} marcador(es) de cierre y ${runningFinancialOps.length} operación(es) financieras requieren revisión.` : 'No hay cierres parciales, bloqueos activos ni operaciones financieras en curso detectadas.', pendingCount ? 'error' : 'ok', { closeMarkers: partial.length, financialOperations: runningFinancialOps.length });
       add('Último marcador de cierre mensual', Boolean(lastClose), lastClose ? `${String(lastClose.fields?.Key || '').slice(0, 160)} · ${lastClose.createdTime || ''}` : 'No existe todavía un marcador de cierre mensual.', lastClose ? 'ok' : 'warning');
     } catch (error) {
       add('Operaciones financieras pendientes', false, safeDisplayText(error.message, 300), 'warning');
