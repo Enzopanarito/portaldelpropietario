@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cierre de Auditoría - Villa Los Apamates</title>
+  <title>Archivar y Limpiar Pagos - Villa Los Apamates</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');body{font-family:Inter,sans-serif}</style>
 </head>
@@ -24,8 +24,8 @@
     <header class="bg-white shadow">
       <div class="container mx-auto p-4 flex flex-col sm:flex-row justify-between gap-3">
         <div>
-          <h1 class="text-2xl font-extrabold">🧾 Auditoría y diagnóstico de pagos antiguos</h1>
-          <p class="text-sm text-slate-500">La simulación está disponible; la eliminación permanece bloqueada por seguridad.</p>
+          <h1 class="text-2xl font-extrabold">🧾 Archivar y limpiar pagos antiguos</h1>
+          <p class="text-sm text-slate-500">Reduce registros detallados sin modificar saldos, recibos ni estados del portón.</p>
         </div>
         <div class="flex flex-wrap gap-2">
           <a href="/audit.html" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold">📚 Auditoría</a>
@@ -35,20 +35,25 @@
     </header>
 
     <main class="container mx-auto p-4 sm:p-6 lg:p-8">
-      <section class="bg-red-50 border-l-4 border-red-600 p-5 rounded-xl mb-6">
-        <h2 class="font-bold text-red-900 mb-2">🔒 Ejecución protegida temporalmente</h2>
-        <p class="text-sm text-red-900">La función de borrar pagos antiguos está bloqueada para impedir alteraciones o aplicaciones dobles en los saldos. Puedes usar <b>Simular</b> para revisar qué registros antiguos existen, pero el sistema no modificará ni eliminará información hasta que se complete la nueva limpieza idempotente.</p>
+      <section class="bg-emerald-50 border-l-4 border-emerald-600 p-5 rounded-xl mb-6">
+        <h2 class="font-bold text-emerald-900 mb-2">🛡️ Limpieza contable protegida</h2>
+        <p class="text-sm text-emerald-900">El sistema archiva el detalle completo de cada pago y sus recibos. Después crea registros consolidados equivalentes, elimina los pagos antiguos y verifica que <b>Total Pagado, Deuda Restante, deudas por moneda, recargo y portón</b> permanezcan iguales. Si una casa no coincide, ese grupo se restaura y la ejecución se detiene.</p>
+      </section>
+
+      <section class="bg-amber-50 border-l-4 border-amber-500 p-5 rounded-xl mb-6">
+        <h2 class="font-bold text-amber-900 mb-2">Orden correcto</h2>
+        <p class="text-sm text-amber-900">Primero pulsa <b>Verificar corte</b>, luego <b>Simular</b>. El botón de ejecución solo se habilita cuando el corte mensual contiene todas las filas esperadas y existen pagos antiguos ya aplicados al cierre.</p>
       </section>
 
       <section class="bg-white rounded-2xl shadow p-6 mb-6">
-        <h2 class="text-xl font-bold mb-4">Configuración del diagnóstico</h2>
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+        <h2 class="text-xl font-bold mb-4">Configuración de la limpieza</h2>
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
           <div>
-            <label class="text-sm font-semibold">Mes auditado</label>
+            <label class="text-sm font-semibold">Mes del corte de respaldo</label>
             <input id="month" type="month" class="w-full p-3 border rounded-lg">
           </div>
           <div>
-            <label class="text-sm font-semibold">Antigüedad a revisar</label>
+            <label class="text-sm font-semibold">Conservar pagos recientes</label>
             <select id="days" class="w-full p-3 border rounded-lg">
               <option value="180">6 meses</option>
               <option value="120">4 meses</option>
@@ -56,15 +61,16 @@
               <option value="365">12 meses</option>
             </select>
           </div>
+          <button id="snapshot" class="bg-indigo-600 text-white px-4 py-3 rounded-lg font-bold">🛡️ Verificar corte</button>
           <button id="preview" class="bg-sky-600 text-white px-4 py-3 rounded-lg font-bold">🔎 Simular</button>
-          <button id="execute" class="bg-slate-300 text-slate-600 px-4 py-3 rounded-lg font-bold cursor-not-allowed" disabled title="Ejecución bloqueada por protección contable">🔒 Ejecución protegida</button>
+          <button id="execute" class="bg-red-600 text-white px-4 py-3 rounded-lg font-bold disabled:bg-slate-300 disabled:text-slate-600" disabled>🗄️ Archivar y limpiar</button>
         </div>
-        <p class="text-xs text-slate-500 mt-4">La simulación es de solo lectura. No cambia deudas, pagos, recibos ni estados del portón.</p>
+        <p class="text-xs text-slate-500 mt-4">La simulación no escribe ni borra. La ejecución exige confirmación escrita y conserva un archivo JSON verificable en Cierres de Auditoría.</p>
       </section>
 
       <section id="result" class="hidden bg-white rounded-2xl shadow p-6">
-        <h2 class="text-xl font-bold mb-4">Resultado del diagnóstico</h2>
-        <div id="summary" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6"></div>
+        <h2 class="text-xl font-bold mb-4">Resultado</h2>
+        <div id="summary" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 mb-6"></div>
         <div id="message" class="p-4 rounded-xl text-sm mb-6"></div>
         <h3 class="font-bold mb-3">Resumen por casa</h3>
         <div class="overflow-x-auto">
@@ -73,9 +79,10 @@
               <tr>
                 <th class="p-2 border text-left">Casa</th>
                 <th class="p-2 border text-left">Propietario</th>
-                <th class="p-2 border text-right">Pagos antiguos</th>
-                <th class="p-2 border text-right">Monto identificado</th>
-                <th class="p-2 border text-right">Deuda actual</th>
+                <th class="p-2 border text-right">Pagos detallados</th>
+                <th class="p-2 border text-right">Consolidados</th>
+                <th class="p-2 border text-right">Monto</th>
+                <th class="p-2 border text-right">Deuda antes</th>
                 <th class="p-2 border text-right">Deuda después</th>
               </tr>
             </thead>
@@ -89,19 +96,23 @@
   <div id="toast" class="fixed bottom-5 right-5 opacity-0 translate-y-6 text-white px-5 py-3 rounded-lg shadow-lg transition"></div>
 
 <script>
+const CONFIRM_TEXT='ARCHIVAR_Y_LIMPIAR';
+let lastSimulation=null;
 function token(){return sessionStorage.getItem('vla-admin-token')||''}
 function headers(){return {'Content-Type':'application/json','Authorization':'Bearer '+token()}}
 function caracasMonth(){const p=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Caracas',year:'numeric',month:'2-digit'}).formatToParts(new Date());return `${p.find(x=>x.type==='year').value}-${p.find(x=>x.type==='month').value}`}
 function money(n){return '$'+(Math.round(Number(n||0)*100)/100).toFixed(2)}
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function toast(m,e=false){const t=document.getElementById('toast');t.textContent=m;t.className='fixed bottom-5 right-5 text-white px-5 py-3 rounded-lg shadow-lg transition '+(e?'bg-red-600':'bg-green-600');t.classList.remove('opacity-0','translate-y-6');setTimeout(()=>t.classList.add('opacity-0','translate-y-6'),4500)}
-async function adminFetch(url,opt={}){const r=await fetch(url,{...opt,headers:{...headers(),...(opt.headers||{})}});const d=await r.json().catch(()=>({}));if(r.status===401){sessionStorage.removeItem('vla-admin-auth');sessionStorage.removeItem('vla-admin-token');throw new Error('Sesión vencida. Inicie sesión nuevamente.')}if(!r.ok)throw new Error(d.detail||d.message||'Error del servidor');return d}
+function toast(m,e=false){const t=document.getElementById('toast');t.textContent=m;t.className='fixed bottom-5 right-5 text-white px-5 py-3 rounded-lg shadow-lg transition '+(e?'bg-red-600':'bg-green-600');t.classList.remove('opacity-0','translate-y-6');setTimeout(()=>t.classList.add('opacity-0','translate-y-6'),5000)}
+async function adminFetch(url,opt={}){const r=await fetch(url,{...opt,headers:{...headers(),...(opt.headers||{})}});const d=await r.json().catch(()=>({}));if(r.status===401){sessionStorage.removeItem('vla-admin-auth');sessionStorage.removeItem('vla-admin-token');throw new Error('Sesión vencida. Inicie sesión nuevamente.')}if(!r.ok){const err=new Error(d.detail||d.message||'Error del servidor');err.data=d;err.status=r.status;throw err}return d}
 function showApp(){document.getElementById('login').classList.add('hidden');document.getElementById('app').classList.remove('hidden');document.getElementById('month').value=caracasMonth()}
 async function login(e){e.preventDefault();const btn=e.currentTarget.querySelector('button');btn.disabled=true;btn.textContent='Validando...';try{const r=await fetch('/.netlify/functions/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:document.getElementById('password').value})});const d=await r.json();if(!r.ok||!d.success)throw new Error(d.message||'Contraseña incorrecta');sessionStorage.setItem('vla-admin-auth','true');sessionStorage.setItem('vla-admin-token',d.token);showApp()}catch(err){document.getElementById('login-error').textContent=err.message;document.getElementById('login-error').classList.remove('hidden')}finally{btn.disabled=false;btn.textContent='Entrar'}}
-function render(d){document.getElementById('result').classList.remove('hidden');document.getElementById('execute').disabled=true;document.getElementById('summary').innerHTML=`<div class='bg-slate-100 p-4 rounded-xl'><p class='text-xs text-slate-500'>Modo</p><p class='text-2xl font-bold'>${esc(d.mode||'Simulación protegida')}</p></div><div class='bg-slate-100 p-4 rounded-xl'><p class='text-xs text-slate-500'>Pagos identificados</p><p class='text-2xl font-bold'>${Number(d.eligibleCount||0)}</p></div><div class='bg-slate-100 p-4 rounded-xl'><p class='text-xs text-slate-500'>Monto</p><p class='text-2xl font-bold'>${money(d.totalAmount)}</p></div><div class='bg-slate-100 p-4 rounded-xl'><p class='text-xs text-slate-500'>Corte hasta</p><p class='text-2xl font-bold'>${esc(d.cutoff||'—')}</p></div>`;const msg=document.getElementById('message');msg.textContent=d.message||'';msg.className='p-4 rounded-xl text-sm mb-6 bg-amber-50 text-amber-900';document.getElementById('rows').innerHTML=(d.summary||[]).map(r=>`<tr><td class='p-2 border'>${esc(r.casa||'')}</td><td class='p-2 border'>${esc(r.propietario||'')}</td><td class='p-2 border text-right'>${Number(r.pagosAEliminar||0)}</td><td class='p-2 border text-right'>${money(r.pagosAntiguosConsolidados)}</td><td class='p-2 border text-right'>${money(r.deudaAnteriorAntes)}</td><td class='p-2 border text-right'>${money(r.deudaAnteriorDespues)}</td></tr>`).join('')||'<tr><td colspan="6" class="p-4 text-center text-slate-500">Sin pagos antiguos identificados.</td></tr>'}
-async function preview(){try{const d=await adminFetch(`/.netlify/functions/audit-close?retentionDays=${encodeURIComponent(document.getElementById('days').value)}&month=${encodeURIComponent(document.getElementById('month').value)}`);render(d);toast('Simulación protegida lista.')}catch(e){toast(e.message,true)}}
-function execute(){toast('La ejecución está bloqueada temporalmente para proteger los saldos.',true)}
-document.addEventListener('DOMContentLoaded',()=>{document.getElementById('login-form').onsubmit=login;document.getElementById('preview').onclick=preview;document.getElementById('execute').onclick=execute;if(sessionStorage.getItem('vla-admin-auth')==='true'&&token())showApp()});
+function setBusy(busy,label){for(const id of ['snapshot','preview','execute'])document.getElementById(id).disabled=busy||(id==='execute'&&!(lastSimulation&&lastSimulation.canExecute));document.getElementById('execute').textContent=busy?(label||'Procesando...'):'🗄️ Archivar y limpiar'}
+function render(d){lastSimulation=d;document.getElementById('result').classList.remove('hidden');document.getElementById('execute').disabled=!d.canExecute;const snapshot=`${Number(d.snapshotCount||0)}/${Number(d.expectedSnapshotCount||0)}`;document.getElementById('summary').innerHTML=`<div class='bg-slate-100 p-4 rounded-xl'><p class='text-xs text-slate-500'>Modo</p><p class='text-xl font-bold'>${esc(d.mode||'Simulación')}</p></div><div class='bg-slate-100 p-4 rounded-xl'><p class='text-xs text-slate-500'>Pagos detallados</p><p class='text-2xl font-bold'>${Number(d.eligibleCount||0)}</p></div><div class='bg-slate-100 p-4 rounded-xl'><p class='text-xs text-slate-500'>Consolidados nuevos</p><p class='text-2xl font-bold'>${Number(d.groupCount||d.consolidatedRecords||0)}</p></div><div class='bg-slate-100 p-4 rounded-xl'><p class='text-xs text-slate-500'>Monto identificado</p><p class='text-2xl font-bold'>${money(d.totalAmount)}</p></div><div class='bg-slate-100 p-4 rounded-xl'><p class='text-xs text-slate-500'>Integridad del corte</p><p class='text-2xl font-bold ${d.snapshotComplete?'text-green-700':'text-red-600'}'>${esc(snapshot)}</p></div>`;const msg=document.getElementById('message');msg.textContent=d.message||'';msg.className='p-4 rounded-xl text-sm mb-6 '+(d.canExecute?'bg-green-50 text-green-900':d.snapshotComplete?'bg-amber-50 text-amber-900':'bg-red-50 text-red-900');const rows=d.summary||d.processedGroups||[];document.getElementById('rows').innerHTML=rows.map(r=>`<tr><td class='p-2 border'>${esc(r.casa||'')}</td><td class='p-2 border'>${esc(r.propietario||'')}</td><td class='p-2 border text-right'>${Number(r.pagosAEliminar||r.pagosEliminados||0)}</td><td class='p-2 border text-right'>${Number(r.registrosConsolidados||(r.aggregateId?1:0))}</td><td class='p-2 border text-right'>${money(r.montoIdentificado||r.montoConsolidado)}</td><td class='p-2 border text-right'>${money(r.deudaRestanteAntes??r.deudaAnteriorAntes)}</td><td class='p-2 border text-right'>${money(r.deudaRestanteDespues??r.deudaAnteriorDespues)}</td></tr>`).join('')||'<tr><td colspan="7" class="p-4 text-center text-slate-500">Sin pagos antiguos elegibles.</td></tr>'}
+async function repairSnapshot(){const btn=document.getElementById('snapshot');try{setBusy(true,'Verificando corte...');btn.textContent='Verificando...';const d=await adminFetch('/.netlify/functions/audit-snapshot',{method:'POST',body:JSON.stringify({month:document.getElementById('month').value})});toast(d.message||'Corte verificado.');await preview()}catch(e){toast(e.message,true)}finally{btn.textContent='🛡️ Verificar corte';setBusy(false)}}
+async function preview(){try{setBusy(true,'Simulando...');const d=await adminFetch(`/.netlify/functions/audit-close?retentionDays=${encodeURIComponent(document.getElementById('days').value)}&month=${encodeURIComponent(document.getElementById('month').value)}`);render(d);toast('Simulación lista. No se modificó ningún registro.')}catch(e){lastSimulation=null;toast(e.message,true)}finally{setBusy(false)}}
+async function execute(){if(!lastSimulation||!lastSimulation.canExecute)return toast('Primero ejecuta una simulación válida.',true);if(!confirm(`Se archivarán ${lastSimulation.eligibleCount} pagos detallados y serán reemplazados por ${lastSimulation.groupCount} consolidados. Los saldos serán verificados casa por casa. ¿Continuar?`))return;const typed=prompt(`Escriba exactamente: ${CONFIRM_TEXT}`);if(typed!==CONFIRM_TEXT)return toast('Confirmación incorrecta. No se ejecutó la limpieza.',true);try{setBusy(true,'Archivando y verificando...');const d=await adminFetch('/.netlify/functions/audit-close',{method:'POST',body:JSON.stringify({execute:true,confirm:typed,retentionDays:Number(document.getElementById('days').value),month:document.getElementById('month').value})});render({...d,canExecute:false,snapshotComplete:true,snapshotCount:lastSimulation.snapshotCount,expectedSnapshotCount:lastSimulation.expectedSnapshotCount,summary:d.processedGroups||[]});toast(d.message||'Limpieza completada.');lastSimulation=null;document.getElementById('execute').disabled=true}catch(e){toast(e.message,true);lastSimulation=null;document.getElementById('execute').disabled=true}finally{setBusy(false)}}
+document.addEventListener('DOMContentLoaded',()=>{document.getElementById('login-form').onsubmit=login;document.getElementById('snapshot').onclick=repairSnapshot;document.getElementById('preview').onclick=preview;document.getElementById('execute').onclick=execute;document.getElementById('month').onchange=()=>{lastSimulation=null;document.getElementById('execute').disabled=true};document.getElementById('days').onchange=()=>{lastSimulation=null;document.getElementById('execute').disabled=true};if(sessionStorage.getItem('vla-admin-auth')==='true'&&token())showApp()});
 </script>
 </body>
 </html>
