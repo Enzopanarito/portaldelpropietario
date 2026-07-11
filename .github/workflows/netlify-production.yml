@@ -1,0 +1,89 @@
+name: Deploy Netlify Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NETLIFY_AUTH_TOKEN_PRIMARY: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_AUTH_TOKEN_FALLBACK: ${{ secrets.NETLIFY_TOKEN }}
+      NETLIFY_SITE_ID_PRIMARY: ${{ secrets.NETLIFY_SITE_ID }}
+      NETLIFY_SITE_ID_FALLBACK: ${{ secrets.NETLIFY_SITE_ID_VILLALOSAPAMATES }}
+    steps:
+      - name: Checkout exact production commit
+        uses: actions/checkout@v4
+
+      - name: Resolve Netlify credentials safely
+        id: credentials
+        shell: bash
+        run: |
+          AUTH_TOKEN="${NETLIFY_AUTH_TOKEN_PRIMARY:-${NETLIFY_AUTH_TOKEN_FALLBACK:-}}"
+          SITE_ID="${NETLIFY_SITE_ID_PRIMARY:-${NETLIFY_SITE_ID_FALLBACK:-}}"
+          if [ -n "$AUTH_TOKEN" ]; then echo "::add-mask::$AUTH_TOKEN"; fi
+          if [ -n "$SITE_ID" ]; then echo "::add-mask::$SITE_ID"; fi
+          if [ -z "$AUTH_TOKEN" ] || [ -z "$SITE_ID" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "NETLIFY_DEPLOY_READY=false" >> "$GITHUB_ENV"
+            echo "NETLIFY_DEPLOY_REASON=missing_repository_secrets" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+          echo "NETLIFY_DEPLOY_READY=true" >> "$GITHUB_ENV"
+          echo "NETLIFY_AUTH_TOKEN=$AUTH_TOKEN" >> "$GITHUB_ENV"
+          echo "NETLIFY_SITE_ID=$SITE_ID" >> "$GITHUB_ENV"
+
+      - name: Deploy validated release to production
+        id: deploy
+        if: steps.credentials.outputs.ready == 'true'
+        run: |
+          npx --yes netlify-cli@latest deploy \
+            --prod \
+            --build \
+            --site="$NETLIFY_SITE_ID" \
+            --auth="$NETLIFY_AUTH_TOKEN" \
+            --message="VLA canonical balances 2026-07-11-v6 · $GITHUB_SHA"
+
+      - name: Verify production release marker
+        id: verify
+        if: steps.deploy.outcome == 'success'
+        shell: bash
+        run: |
+          body="$(curl --fail --silent --show-error --location --max-time 30 https://villalosapamates.netlify.app/release.json)"
+          echo "$body" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);if(j.release!=='2026-07-11-v6'||j.expectedHouses!==15)process.exit(1);console.log('Producción verificada:',j.release)})"
+
+      - name: Report deployment result on PR 9
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          CREDENTIALS_READY: ${{ steps.credentials.outputs.ready }}
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
+        with:
+          script: |
+            const ready = process.env.CREDENTIALS_READY === 'true';
+            const deployed = process.env.DEPLOY_OUTCOME === 'success';
+            const verified = process.env.VERIFY_OUTCOME === 'success';
+            let body;
+            if (!ready) {
+              body = `### Producción Netlify bloqueada\n\nEl código y los 15 saldos están validados, pero el repositorio no tiene disponibles los secretos \`NETLIFY_AUTH_TOKEN\` y \`NETLIFY_SITE_ID\` (o sus nombres alternativos). No se modificó producción.\n\nCommit: \`${context.sha}\` · [Ejecución](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
+            } else if (deployed && verified) {
+              body = `### Producción Netlify publicada y verificada ✅\n\nLa versión \`2026-07-11-v6\` fue desplegada y \`release.json\` confirmó los 15 saldos canónicos.\n\nCommit: \`${context.sha}\` · [Ejecución](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
+            } else {
+              body = `### Despliegue Netlify no verificado ⚠️\n\nCredenciales disponibles: **sí**. Resultado del despliegue: \`${process.env.DEPLOY_OUTCOME || 'no ejecutado'}\`. Verificación: \`${process.env.VERIFY_OUTCOME || 'no ejecutada'}\`.\n\nCommit: \`${context.sha}\` · [Ejecución](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
+            }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 9,
+              body
+            });
