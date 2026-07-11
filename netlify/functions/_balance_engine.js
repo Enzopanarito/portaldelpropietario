@@ -4,7 +4,12 @@ const TOLERANCE = 0.01;
 
 function money(value) {
   const number = Number(value || 0);
-  return Math.abs(number) < 0.005 ? 0 : Math.round(number * 100) / 100;
+  if (Math.abs(number) < 0.005) return 0;
+  const scaled = number * 100;
+  const rounded = scaled >= 0
+    ? Math.floor(scaled + 0.5 + 1e-9)
+    : Math.ceil(scaled - 0.5 - 1e-9);
+  return rounded / 100;
 }
 
 function selectName(value) {
