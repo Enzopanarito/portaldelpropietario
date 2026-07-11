@@ -97,7 +97,7 @@ function run(legacy, day) {
 
 const beforeTen = run(false, '01');
 assert(beforeTen.host.innerHTML.includes('Beneficio Pronto Pago'));
-assert(beforeTen.host.innerHTML.includes('- $15.84'));
+assert(beforeTen.host.innerHTML.includes('- $7.99'));
 assert.strictEqual(beforeTen.title.textContent, 'Desglose de Cargos para julio de 2026');
 
 const afterTen = run(true, '11');
