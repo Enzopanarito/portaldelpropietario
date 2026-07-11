@@ -45,13 +45,19 @@ jobs:
       - name: Deploy validated release to production
         id: deploy
         if: steps.credentials.outputs.ready == 'true'
+        shell: bash
         run: |
+          set +e
           npx --yes netlify-cli@latest deploy \
             --prod \
             --build \
             --site="$NETLIFY_SITE_ID" \
             --auth="$NETLIFY_AUTH_TOKEN" \
-            --message="VLA canonical balances 2026-07-11-v6 · $GITHUB_SHA"
+            --message="VLA canonical balances 2026-07-11-v6 · $GITHUB_SHA" \
+            2>&1 | tee netlify-deploy.log
+          status=${PIPESTATUS[0]}
+          set -e
+          exit "$status"
 
       - name: Verify production release marker
         id: verify
@@ -70,16 +76,27 @@ jobs:
           VERIFY_OUTCOME: ${{ steps.verify.outcome }}
         with:
           script: |
+            const fs = require('fs');
             const ready = process.env.CREDENTIALS_READY === 'true';
             const deployed = process.env.DEPLOY_OUTCOME === 'success';
             const verified = process.env.VERIFY_OUTCOME === 'success';
+            let diagnostic = '';
+            if (fs.existsSync('netlify-deploy.log')) {
+              const raw = fs.readFileSync('netlify-deploy.log', 'utf8')
+                .replace(/\u001b\[[0-9;]*m/g, '')
+                .split(/\r?\n/)
+                .filter(Boolean);
+              const relevant = raw.filter(line => /error|failed|failure|unauthor|forbidden|invalid|site|build|deploy/i.test(line));
+              const selected = (relevant.length ? relevant : raw).slice(-35).join('\n').slice(-5000);
+              if (selected) diagnostic = `\n\n<details><summary>Diagnóstico seguro del despliegue</summary>\n\n\`\`\`text\n${selected}\n\`\`\`\n</details>`;
+            }
             let body;
             if (!ready) {
               body = `### Producción Netlify bloqueada\n\nEl código y los 15 saldos están validados, pero el repositorio no tiene disponibles los secretos \`NETLIFY_AUTH_TOKEN\` y \`NETLIFY_SITE_ID\` (o sus nombres alternativos). No se modificó producción.\n\nCommit: \`${context.sha}\` · [Ejecución](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
             } else if (deployed && verified) {
               body = `### Producción Netlify publicada y verificada ✅\n\nLa versión \`2026-07-11-v6\` fue desplegada y \`release.json\` confirmó los 15 saldos canónicos.\n\nCommit: \`${context.sha}\` · [Ejecución](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
             } else {
-              body = `### Despliegue Netlify no verificado ⚠️\n\nCredenciales disponibles: **sí**. Resultado del despliegue: \`${process.env.DEPLOY_OUTCOME || 'no ejecutado'}\`. Verificación: \`${process.env.VERIFY_OUTCOME || 'no ejecutada'}\`.\n\nCommit: \`${context.sha}\` · [Ejecución](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
+              body = `### Despliegue Netlify no verificado ⚠️\n\nCredenciales disponibles: **sí**. Resultado del despliegue: \`${process.env.DEPLOY_OUTCOME || 'no ejecutado'}\`. Verificación: \`${process.env.VERIFY_OUTCOME || 'no ejecutada'}\`.\n\nCommit: \`${context.sha}\` · [Ejecución](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})${diagnostic}`;
             }
             await github.rest.issues.createComment({
               owner: context.repo.owner,
