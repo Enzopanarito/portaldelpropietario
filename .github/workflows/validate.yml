@@ -4,7 +4,9 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    branches:
+      - main
+      - hardening-stage-2-2026-07-11
 
 permissions:
   contents: read
@@ -27,3 +29,6 @@ jobs:
 
       - name: Run security and idempotency tests
         run: node tests/stage1-security.test.js
+
+      - name: Run audit cleanup preservation tests
+        run: node tests/stage2-audit-cleanup.test.js
