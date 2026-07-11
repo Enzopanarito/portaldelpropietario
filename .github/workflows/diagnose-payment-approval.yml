@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - diagnose-payment-approval-2026-07-11
-  pull_request:
-    branches:
-      - main
 
 permissions:
   contents: read
@@ -14,17 +11,32 @@ permissions:
 jobs:
   diagnose:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Inspect payment fix preview
+      - name: Wait for protected production flow
         shell: bash
         run: |
           set -euo pipefail
-          URL="https://deploy-preview-28--villalosapamates.netlify.app/admin.html?paymentDiagnostic=${GITHUB_RUN_ID}"
-          curl --fail --silent --show-error --location -D admin-live-headers.txt "$URL" -o admin-live.html
+          URL="https://villalosapamates.netlify.app/admin.html"
+          for attempt in $(seq 1 90); do
+            curl --fail --silent --show-error --location -D admin-live-headers.txt "${URL}?paymentDiagnostic=${GITHUB_RUN_ID}-${attempt}" -o admin-live.html || true
+            marker="$(awk -F': ' 'tolower($1)=="x-vla-admin-payment-flow"{gsub("\r","");print $2}' admin-live-headers.txt | tail -1)"
+            echo "Attempt $attempt: payment flow=${marker:-missing}"
+            if [ "$marker" = "protected-v3" ]; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Production never exposed protected-v3."
+          exit 1
+
+      - name: Inspect public admin HTML
+        shell: bash
+        run: |
+          set -euo pipefail
           echo '=== HEADERS ==='
           grep -iE '^(HTTP/|content-type:|cache-control:|x-vla-)' admin-live-headers.txt || true
           node <<'NODE'
@@ -37,29 +49,30 @@ jobs:
           const end = start >= 0 ? html.indexOf('function closeRows', start) : -1;
           const snippet = start >= 0 ? html.slice(start, end > start ? end : start + 12000) : '';
           const result = {
+            target: 'https://villalosapamates.netlify.app/admin.html',
             htmlBytes: Buffer.byteLength(html),
             handleReportFound: start >= 0,
             handleReportUsesProtectedCall: snippet.includes(protectedCall),
             handleReportUsesApproveDecision: snippet.includes("decision:approve?'approve':'reject'"),
             handleReportUsesDirectPaymentWrite: snippet.includes(directPayment),
             handleReportUsesDirectReportWrite: snippet.includes(directReport),
+            handleReportUsesAnyGenericAirtableWrite: snippet.includes('/.netlify/functions/airtable/'),
             handleReportSnippet: snippet.slice(0,12000)
           };
-          fs.writeFileSync('payment-approval-diagnostic.json', JSON.stringify(result,null,2));
+          fs.writeFileSync('payment-approval-production.json', JSON.stringify(result,null,2));
           console.log(JSON.stringify(result,null,2));
-          if (!result.handleReportFound || !result.handleReportUsesProtectedCall || !result.handleReportUsesApproveDecision || result.handleReportUsesDirectPaymentWrite || result.handleReportUsesDirectReportWrite) {
+          if (!result.handleReportFound || !result.handleReportUsesProtectedCall || !result.handleReportUsesApproveDecision || result.handleReportUsesDirectPaymentWrite || result.handleReportUsesDirectReportWrite || result.handleReportUsesAnyGenericAirtableWrite) {
             process.exit(1);
           }
           NODE
-          grep -qi '^x-vla-admin-payment-flow: protected-v3' admin-live-headers.txt
 
-      - name: Upload diagnostic evidence
+      - name: Upload production evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: payment-approval-preview-28
+          name: payment-approval-production
           path: |
             admin-live.html
             admin-live-headers.txt
-            payment-approval-diagnostic.json
-          retention-days: 3
+            payment-approval-production.json
+          retention-days: 7
