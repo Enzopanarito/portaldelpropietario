@@ -1,2 +1,2 @@
 'use strict';
-module.exports = require('./admin-data-v2');
+module.exports = require('./admin-data-v3');
