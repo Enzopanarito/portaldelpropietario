@@ -146,5 +146,6 @@ assert.ok(/\[build\][\s\S]*publish\s*=\s*"\."/.test(netlifyConfig), 'Netlify deb
 const release = JSON.parse(fs.readFileSync(path.join(__dirname, '../release.json'), 'utf8'));
 assert.strictEqual(release.release, CANONICAL_CONTRACT.release);
 assert.strictEqual(release.expectedHouses, 15);
+assert.strictEqual(release.breakdownPresentation, '2026-07-11-detail-v2');
 
 console.log('OFFICIAL_BALANCE_SYNC_TESTS_OK');
