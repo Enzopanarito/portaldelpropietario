@@ -1,8 +1,11 @@
-// netlify/functions/_access_control.js
+'use strict';
+
 // Motor central del control automático de acceso cómodo al portón.
-// Regla: el acceso se decide por deuda vencida anterior, no por deuda corriente del mes.
+// Regla: el acceso se decide exclusivamente por deuda anterior vencida,
+// nunca por cargos corrientes ni por el recargo del mes en curso.
 
 const { sendMail } = require('./_mailer');
+const { calculateOwnerBalance, money } = require('./_balance_engine_v4');
 
 const TABLES = {
   propietarios: 'Propietarios',
@@ -22,10 +25,6 @@ function json(statusCode, body) {
     headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
     body: JSON.stringify(body)
   };
-}
-
-function money(n) {
-  return Math.round(Number(n || 0) * 100) / 100;
 }
 
 function nowCaracas() {
@@ -60,8 +59,8 @@ async function airtableListAll(tableName, query = '') {
   let records = [];
   let offset = null;
   do {
-    const sep = query ? '&' : '?';
-    const url = airtableBaseUrl(tableName, `${query || ''}${offset ? `${sep}offset=${encodeURIComponent(offset)}` : ''}`);
+    const separator = query ? '&' : '?';
+    const url = airtableBaseUrl(tableName, `${query || ''}${offset ? `${separator}offset=${encodeURIComponent(offset)}` : ''}`);
     const response = await fetch(url, { headers: { Authorization: `Bearer ${process.env.AIRTABLE_API_TOKEN}` } });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error?.message || data.message || `Error cargando ${tableName}`);
@@ -103,9 +102,7 @@ async function airtableCreateRecord(tableName, fields) {
 }
 
 function normalizeAccessMode(value) {
-  const raw = String(value || '').trim().toLowerCase();
-  if (raw === 'manual') return ACCESS_MODE_MANUAL;
-  return ACCESS_MODE_AUTO;
+  return String(value || '').trim().toLowerCase() === 'manual' ? ACCESS_MODE_MANUAL : ACCESS_MODE_AUTO;
 }
 
 async function getAccessMode() {
@@ -132,7 +129,7 @@ function extractCookie(setCookieHeaders) {
 async function mkjLogin() {
   const response = await fetch(`${baseUrl()}/api/auth/login`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ email: process.env.MKJ_ADMIN_EMAIL, password: process.env.MKJ_ADMIN_PASSWORD })
   });
   const text = await response.text();
@@ -148,10 +145,10 @@ async function mkjSetMemberStatus(memberId, action) {
   const response = await fetch(`${baseUrl()}/api/organizations/${encodeURIComponent(orgId())}/members/${encodeURIComponent(memberId)}/${action}`, {
     method: 'PUT',
     headers: {
-      'Accept': 'application/json',
+      Accept: 'application/json',
       'Content-Type': 'application/json',
-      'Cookie': login.cookie,
-      'Referer': `${baseUrl()}/admin/users/${encodeURIComponent(memberId)}`
+      Cookie: login.cookie,
+      Referer: `${baseUrl()}/admin/users/${encodeURIComponent(memberId)}`
     }
   });
   const text = await response.text();
@@ -171,53 +168,50 @@ function equivalentUsd(fields, primary, fallback) {
 }
 
 function calculateExpiredAccessDebt(owner, pagos, reportes) {
-  const f = owner.fields || {};
-  const initialUsd = Number(f['Deuda Anterior USD'] || 0);
-  const initialBsRef = Number(f['Deuda Anterior Bs Ref'] || 0);
-  const splitExists = Math.abs(initialUsd) > 0.001 || Math.abs(initialBsRef) > 0.001;
-
-  let expiredUsd = Math.max(0, initialUsd);
-  let expiredBsRef = Math.max(0, initialBsRef + (!splitExists ? Number(f['Deuda Anterior'] || 0) : 0));
-
-  (pagos || []).forEach(payment => {
-    const pf = payment.fields || {};
-    if (pf['[x] Aplicado al Cierre'] === true) return;
-    if (!ownerLinkIncludes(payment, 'Propietario que Paga', owner.id)) return;
-    const mode = pf['Forma de Pago'] || 'Bs BCV';
-    const amount = equivalentUsd(pf, 'Equivalente USD Aplicado', 'Monto Pagado');
-    if (mode === 'USD') expiredUsd = Math.max(0, money(expiredUsd - amount));
-    else expiredBsRef = Math.max(0, money(expiredBsRef - amount));
-  });
+  // Se reutiliza el mismo motor auditado del portal/admin/cierre, pero sin gastos del mes.
+  // Así solo sobreviven las bolsas de deuda anterior después de aplicar los pagos activos.
+  const balance = calculateOwnerBalance(owner, [], pagos || []);
+  const expiredUsd = money(Math.max(0, balance.expiredUsd));
+  const expiredBsRef = money(Math.max(0, balance.expiredBsRef));
 
   let pendingUsd = 0;
   let pendingBsRef = 0;
-  (reportes || []).forEach(report => {
-    const rf = report.fields || {};
-    if (rf.Estado !== 'Pendiente') return;
-    if (!ownerLinkIncludes(report, 'Propietario que Reporta', owner.id)) return;
-    const mode = rf['Forma de Pago Reportada'] || 'Bs BCV';
-    const amount = equivalentUsd(rf, 'Equivalente USD Reportado', 'Monto Reportado');
-    if (mode === 'USD') pendingUsd += amount;
-    else pendingBsRef += amount;
-  });
+  let pendingLegacy = 0;
+  for (const report of reportes || []) {
+    const fields = report.fields || {};
+    if (fields.Estado !== 'Pendiente') continue;
+    if (!ownerLinkIncludes(report, 'Propietario que Reporta', owner.id)) continue;
+    const mode = String(fields['Forma de Pago Reportada'] || '').trim();
+    const amount = equivalentUsd(fields, 'Equivalente USD Reportado', 'Monto Reportado');
+    if (mode === 'USD') pendingUsd = money(pendingUsd + amount);
+    else if (mode === 'Bs BCV') pendingBsRef = money(pendingBsRef + amount);
+    else pendingLegacy = money(pendingLegacy + amount);
+  }
 
-  pendingUsd = money(pendingUsd);
-  pendingBsRef = money(pendingBsRef);
+  // Reportes históricos sin moneda conservan el mismo orden que los pagos históricos:
+  // primero deuda Bs y luego deuda USD. Los reportes explícitos nunca cruzan monedas.
+  let missingBsRef = money(Math.max(0, expiredBsRef - pendingBsRef));
+  let legacyRemaining = pendingLegacy;
+  const legacyToBs = Math.min(missingBsRef, legacyRemaining);
+  missingBsRef = money(missingBsRef - legacyToBs);
+  legacyRemaining = money(legacyRemaining - legacyToBs);
+  let missingUsd = money(Math.max(0, expiredUsd - pendingUsd));
+  const legacyToUsd = Math.min(missingUsd, legacyRemaining);
+  missingUsd = money(missingUsd - legacyToUsd);
 
-  const pendingCoversUsd = expiredUsd <= TOLERANCE || pendingUsd + TOLERANCE >= expiredUsd;
-  const pendingCoversBs = expiredBsRef <= TOLERANCE || pendingBsRef + TOLERANCE >= expiredBsRef;
-
+  const pendingTotal = money(pendingUsd + pendingBsRef + pendingLegacy);
   return {
-    expiredUsd: money(expiredUsd),
-    expiredBsRef: money(expiredBsRef),
+    expiredUsd,
+    expiredBsRef,
     expiredTotal: money(expiredUsd + expiredBsRef),
     pendingUsd,
     pendingBsRef,
-    pendingTotal: money(pendingUsd + pendingBsRef),
+    pendingLegacy,
+    pendingTotal,
     hasExpiredDebt: expiredUsd > TOLERANCE || expiredBsRef > TOLERANCE,
-    pendingCoversExpiredDebt: pendingCoversUsd && pendingCoversBs,
-    missingUsd: money(Math.max(0, expiredUsd - pendingUsd)),
-    missingBsRef: money(Math.max(0, expiredBsRef - pendingBsRef))
+    pendingCoversExpiredDebt: missingUsd <= TOLERANCE && missingBsRef <= TOLERANCE,
+    missingUsd,
+    missingBsRef
   };
 }
 
@@ -228,9 +222,16 @@ function accessDebtText(calc) {
   return parts.length ? parts.join(' y ') : 'sin deuda vencida';
 }
 
+function escapeHtml(value) {
+  return String(value || '').replace(/[&<>"']/g, character => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[character]);
+}
+
 function limitationEmailHtml(owner, calc) {
-  const f = owner.fields || {};
-  const name = f.Propietario || 'propietario(a)';
+  const fields = owner.fields || {};
+  const name = escapeHtml(fields.Propietario || 'propietario(a)');
+  const house = escapeHtml(fields.Casa || '');
   return `
   <div style="font-family:Arial,sans-serif;color:#0f172a;line-height:1.55">
     <p>Estimado(a) ${name},</p>
@@ -238,19 +239,19 @@ function limitationEmailHtml(owner, calc) {
     <p>Por medio del presente le informamos que, de acuerdo con nuestros registros administrativos, su inmueble presenta una deuda vencida pendiente con el condominio Villas Los Apamates.</p>
     <p>Por tal motivo, el sistema administrativo ha limitado <b>automáticamente</b> el acceso cómodo al portón eléctrico mediante control, aplicación o sistema automatizado.</p>
     <p>Esta medida no impide el acceso a la urbanización, pero sí restringe el uso del sistema cómodo de apertura hasta tanto sea regularizada la situación administrativa.</p>
-    <p>Una vez reportado el pago correspondiente a la deuda vencida, el sistema podrá habilitar <b>automáticamente</b> el acceso cómodo mientras la administración verifica el pago. Si el pago es aprobado, la habilitación se mantendrá; si el pago es rechazado o no cubre la deuda vencida, el sistema podrá limitar nuevamente el acceso cómodo.</p>
+    <p>Una vez reportado el pago correspondiente a la deuda vencida, el sistema podrá habilitar <b>automáticamente</b> el acceso cómodo mientras la administración verifica el pago.</p>
     <p>Le agradecemos ponerse al día lo antes posible o reportar su pago a través del portal para que podamos validar la información y solventar la situación.</p>
-    <p style="font-size:13px;color:#475569"><b>Referencia administrativa:</b> Casa ${f.Casa || ''}. Deuda vencida registrada: ${accessDebtText(calc)}.</p>
+    <p style="font-size:13px;color:#475569"><b>Referencia administrativa:</b> Casa ${house}. Deuda vencida registrada: ${escapeHtml(accessDebtText(calc))}.</p>
     <p>Atentamente,</p>
     <p><b>Administración<br>Villas Los Apamates</b></p>
   </div>`;
 }
 
 async function sendLimitationEmail(owner, calc) {
-  const f = owner.fields || {};
-  const to = f.Email || f['MKJ Email'];
+  const fields = owner.fields || {};
+  const to = fields.Email || fields['MKJ Email'];
   if (!to) return { sent: false, status: 'Sin correo del propietario' };
-  return await sendMail({
+  return sendMail({
     to,
     subject: 'Notificación automática de limitación de acceso cómodo al portón',
     html: limitationEmailHtml(owner, calc)
@@ -276,26 +277,26 @@ async function syncOwnerAccess(ownerId, options = {}, context = null) {
   }
 
   const ctx = context || await loadAccessContext();
-  let owner = (ctx.owners || []).find(o => o.id === ownerId);
+  let owner = (ctx.owners || []).find(item => item.id === ownerId);
   if (!owner) owner = await airtableGetRecord(TABLES.propietarios, ownerId);
 
-  const f = owner.fields || {};
-  const memberId = String(options.mkjUserId || f['MKJ User ID'] || '').trim();
-  const previousStatus = f['Estado Acceso Portón'] || 'Sin configurar';
+  const fields = owner.fields || {};
+  const memberId = String(options.mkjUserId || fields['MKJ User ID'] || '').trim();
+  const previousStatus = fields['Estado Acceso Portón'] || 'Sin configurar';
   const calc = calculateExpiredAccessDebt(owner, ctx.pagos, ctx.reportes);
   const runMkj = options.runMkj !== false;
 
   if (!memberId) {
-    return { ownerId, casa: f.Casa, propietario: f.Propietario, skipped: true, reason: 'Sin MKJ User ID', mode: modeInfo.mode, calc };
+    return { ownerId, casa: fields.Casa, propietario: fields.Propietario, skipped: true, reason: 'Sin MKJ User ID', mode: modeInfo.mode, calc };
   }
 
-  if (f['Excepción Acceso'] === true) {
+  if (fields['Excepción Acceso'] === true) {
     const patched = await airtablePatchRecord(TABLES.propietarios, owner.id, {
       'Estado Acceso Portón': 'Excepción Manual',
       'Última Sync MKJ': nowCaracas(),
       'Motivo Limitación Acceso': 'Omitido por excepción manual de acceso.'
     });
-    return { ownerId, casa: f.Casa, propietario: f.Propietario, action: 'skip-exception', estado: 'Excepción Manual', mode: modeInfo.mode, calc, owner: patched };
+    return { ownerId, casa: fields.Casa, propietario: fields.Propietario, action: 'skip-exception', estado: 'Excepción Manual', mode: modeInfo.mode, calc, owner: patched };
   }
 
   let desiredAction = 'enable';
@@ -304,8 +305,6 @@ async function syncOwnerAccess(ownerId, options = {}, context = null) {
   let temporary = false;
 
   if (calc.hasExpiredDebt && calc.pendingCoversExpiredDebt) {
-    desiredAction = 'enable';
-    desiredStatus = 'Habilitado';
     temporary = true;
     reason = `Habilitación temporal automática por reporte de pago pendiente suficiente para cubrir deuda vencida (${accessDebtText(calc)}).`;
   } else if (calc.hasExpiredDebt) {
@@ -316,9 +315,7 @@ async function syncOwnerAccess(ownerId, options = {}, context = null) {
 
   let mkjResult = null;
   const shouldCallMkj = runMkj && (options.forceMkj || previousStatus !== desiredStatus);
-  if (shouldCallMkj) {
-    mkjResult = await mkjSetMemberStatus(memberId, desiredAction);
-  }
+  if (shouldCallMkj) mkjResult = await mkjSetMemberStatus(memberId, desiredAction);
 
   const patched = await airtablePatchRecord(TABLES.propietarios, owner.id, {
     'Estado Acceso Portón': desiredStatus,
@@ -333,8 +330,8 @@ async function syncOwnerAccess(ownerId, options = {}, context = null) {
 
   return {
     ownerId: owner.id,
-    casa: f.Casa,
-    propietario: f.Propietario,
+    casa: fields.Casa,
+    propietario: fields.Propietario,
     mkjUserId: memberId,
     previousStatus,
     estado: desiredStatus,
@@ -365,11 +362,11 @@ async function autoSyncAll(options = {}) {
     };
   }
 
-  const ctx = await loadAccessContext();
+  const context = await loadAccessContext();
   const results = [];
-  for (const owner of ctx.owners.sort((a, b) => Number((a.fields || {}).Casa || 0) - Number((b.fields || {}).Casa || 0))) {
+  for (const owner of context.owners.sort((a, b) => Number((a.fields || {}).Casa || 0) - Number((b.fields || {}).Casa || 0))) {
     try {
-      results.push(await syncOwnerAccess(owner.id, options, ctx));
+      results.push(await syncOwnerAccess(owner.id, options, context));
     } catch (error) {
       results.push({ ownerId: owner.id, casa: owner.fields?.Casa, propietario: owner.fields?.Propietario, error: error.message });
     }
@@ -378,10 +375,10 @@ async function autoSyncAll(options = {}) {
     success: true,
     mode: modeInfo.mode,
     total: results.length,
-    limited: results.filter(r => r.estado === 'Limitado').length,
-    enabled: results.filter(r => r.estado === 'Habilitado').length,
-    skipped: results.filter(r => r.skipped || r.action === 'skip-exception').length,
-    errors: results.filter(r => r.error).length,
+    limited: results.filter(result => result.estado === 'Limitado').length,
+    enabled: results.filter(result => result.estado === 'Habilitado').length,
+    skipped: results.filter(result => result.skipped || result.action === 'skip-exception').length,
+    errors: results.filter(result => result.error).length,
     results
   };
 }
