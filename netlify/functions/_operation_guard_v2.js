@@ -5,7 +5,7 @@ const { ensureFinancialWritesAllowed } = require('./_financial_write_lock');
 
 const TABLE = 'ControlVersiones';
 const PREFIX = 'FIN_OP|';
-const CLOSE_SENSITIVE_SCOPES = new Set(['MANUAL_PAYMENT', 'PAYMENT_REPORT']);
+const CLOSE_SENSITIVE_SCOPES = new Set(['MANUAL_PAYMENT', 'PAYMENT_REPORT', 'EXPENSE_CREATE']);
 
 function endpoint(query = '') {
   return `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(TABLE)}${query}`;
