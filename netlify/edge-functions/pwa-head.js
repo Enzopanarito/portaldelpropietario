@@ -123,7 +123,9 @@ export default async (request, context) => {
       if(el.dataset.bcvLogoApplied==='1')return;
       el.dataset.bcvLogoApplied='1';
       el.setAttribute('aria-label','Banco Central de Venezuela');
-      el.innerHTML='<img src="'+src+'" alt="BCV" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.textContent=\'BCV\';this.remove();">';
+      el.innerHTML='<img src="'+src+'" alt="BCV" loading="lazy" referrerpolicy="no-referrer">';
+      var image=el.querySelector('img');
+      if(image)image.onerror=function(){el.textContent='BCV';};
     });
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',apply);else apply();
