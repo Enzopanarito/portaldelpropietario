@@ -1,0 +1,128 @@
+name: Audit Runtime Connections
+
+on:
+  push:
+    branches:
+      - audit-complete-system-2026-07-11
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install project dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund
+
+      - name: Read Netlify environment and test private connections
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/runtime-audit.cjs <<'NODE'
+          const { execFileSync } = require('child_process');
+          const nodemailer = require('nodemailer');
+
+          function flattenEnvironment(raw) {
+            const result = {};
+            const assign = (key, value, context='') => {
+              if (!key || value === undefined || value === null) return;
+              const priority = context === 'production' ? 3 : context === 'all' ? 2 : 1;
+              if (!result[key] || priority >= result[key].priority) result[key] = { value:String(value), priority };
+            };
+            if (Array.isArray(raw)) {
+              for (const item of raw) {
+                const key = item.key || item.name;
+                if (Array.isArray(item.values)) {
+                  for (const entry of item.values) assign(key, entry.value, entry.context || entry.context_parameter || '');
+                } else assign(key, item.value, item.context || '');
+              }
+            } else if (raw && typeof raw === 'object') {
+              for (const [key, value] of Object.entries(raw)) {
+                if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') assign(key, value, 'all');
+                else if (Array.isArray(value)) for (const entry of value) assign(key, entry?.value, entry?.context || '');
+                else if (value && typeof value === 'object') assign(key, value.value, value.context || '');
+              }
+            }
+            return Object.fromEntries(Object.entries(result).map(([key,item]) => [key,item.value]));
+          }
+          function required(value, name) {
+            if (!String(value || '').trim()) throw new Error(`Falta ${name}`);
+            return String(value).trim();
+          }
+          async function main() {
+            if (!process.env.NETLIFY_AUTH_TOKEN || !process.env.NETLIFY_SITE_ID) throw new Error('Faltan secretos NETLIFY_AUTH_TOKEN/NETLIFY_SITE_ID en GitHub.');
+            let stdout;
+            try {
+              stdout = execFileSync('npx', ['--yes','netlify-cli@latest','env:list','--json'], {
+                encoding:'utf8',
+                env:{ ...process.env, NETLIFY_AUTH_TOKEN:process.env.NETLIFY_AUTH_TOKEN, NETLIFY_SITE_ID:process.env.NETLIFY_SITE_ID },
+                stdio:['ignore','pipe','pipe'],
+                maxBuffer:10*1024*1024
+              });
+            } catch (error) {
+              throw new Error(`No se pudo consultar el entorno Netlify (código ${error.status || 'desconocido'}).`);
+            }
+            const vars = flattenEnvironment(JSON.parse(stdout));
+            for (const value of Object.values(vars)) if (value) console.log(`::add-mask::${value}`);
+
+            const requiredNames = ['AIRTABLE_API_TOKEN','AIRTABLE_BASE_ID','ADMIN_TOKEN_SECRET','SMTP_HOST','SMTP_USER','SMTP_SECRET','MKJ_ADMIN_EMAIL','MKJ_ADMIN_PASSWORD'];
+            const optionalNames = ['ADMIN_PASSWORD','MAIL_FROM','SMTP_PORT','SMTP_SECURE','MKJ_BASE_URL','MKJ_ORG_ID','ADMIN_RECOVERY_EMAIL','ADMIN_NOTIFY_EMAIL','GEMINI_API_KEY'];
+            const missing = requiredNames.filter(name => !String(vars[name] || '').trim());
+            console.log('Variables obligatorias presentes:', requiredNames.filter(name => !missing.includes(name)).join(', '));
+            console.log('Variables opcionales presentes:', optionalNames.filter(name => String(vars[name] || '').trim()).join(', ') || 'ninguna');
+            if (missing.length) throw new Error(`Faltan variables privadas obligatorias: ${missing.join(', ')}`);
+            if (vars.ADMIN_PASSWORD && vars.ADMIN_TOKEN_SECRET === vars.ADMIN_PASSWORD) throw new Error('ADMIN_TOKEN_SECRET no es independiente de ADMIN_PASSWORD.');
+
+            const airtableToken = required(vars.AIRTABLE_API_TOKEN,'AIRTABLE_API_TOKEN');
+            const baseId = required(vars.AIRTABLE_BASE_ID,'AIRTABLE_BASE_ID');
+            const airtableResponse = await fetch(`https://api.airtable.com/v0/${encodeURIComponent(baseId)}/${encodeURIComponent('Propietarios')}?maxRecords=1`, { headers:{ Authorization:`Bearer ${airtableToken}` } });
+            if (!airtableResponse.ok) throw new Error(`Airtable falló HTTP ${airtableResponse.status}`);
+            const airtableData = await airtableResponse.json();
+            if (!Array.isArray(airtableData.records)) throw new Error('Airtable respondió sin registros válidos.');
+            console.log('AIRTABLE_CONNECTION_OK');
+
+            const transporter = nodemailer.createTransport({
+              host: required(vars.SMTP_HOST,'SMTP_HOST'),
+              port: Number(vars.SMTP_PORT || 465),
+              secure: String(vars.SMTP_SECURE || 'true') === 'true',
+              auth:{ user:required(vars.SMTP_USER,'SMTP_USER'), pass:required(vars.SMTP_SECRET,'SMTP_SECRET') }
+            });
+            await transporter.verify();
+            console.log('SMTP_VERIFY_OK');
+
+            const mkjBase = String(vars.MKJ_BASE_URL || 'https://cloud.mkjoules.com').replace(/\/$/,'');
+            const mkjResponse = await fetch(`${mkjBase}/api/auth/login`, {
+              method:'POST',
+              headers:{ 'Content-Type':'application/json', Accept:'application/json' },
+              body:JSON.stringify({ email:required(vars.MKJ_ADMIN_EMAIL,'MKJ_ADMIN_EMAIL'), password:required(vars.MKJ_ADMIN_PASSWORD,'MKJ_ADMIN_PASSWORD') })
+            });
+            const setCookie = mkjResponse.headers.get('set-cookie') || '';
+            if (!mkjResponse.ok || !/access_token=[^;]+/.test(setCookie)) throw new Error(`Login MKJ falló HTTP ${mkjResponse.status}`);
+            console.log('MKJ_LOGIN_OK');
+
+            const publicUrls = [
+              'https://villalosapamates.netlify.app/',
+              'https://villalosapamates.netlify.app/admin.html',
+              'https://villalosapamates.netlify.app/mkj-access.html',
+              'https://villalosapamates.netlify.app/whatsapp.html',
+              'https://villalosapamates.netlify.app/.netlify/functions/public-data',
+              'https://villalosapamates.netlify.app/.netlify/functions/bcv-rate'
+            ];
+            for (const url of publicUrls) {
+              const response = await fetch(url, { redirect:'follow' });
+              if (!response.ok) throw new Error(`${url} respondió HTTP ${response.status}`);
+            }
+            console.log('PUBLIC_ROUTES_OK');
+            console.log(`GEMINI_KEY_PRESENT=${Boolean(vars.GEMINI_API_KEY)}`);
+          }
+          main().catch(error => { console.error('RUNTIME_AUDIT_FAILED:', error.message); process.exit(1); });
+          NODE
+          node /tmp/runtime-audit.cjs
