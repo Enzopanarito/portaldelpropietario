@@ -1,0 +1,62 @@
+name: Diagnose Payment Approval
+
+on:
+  push:
+    branches:
+      - diagnose-payment-approval-2026-07-11
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Inspect public admin HTML
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://villalosapamates.netlify.app/admin.html?paymentDiagnostic=${GITHUB_RUN_ID}"
+          curl --fail --silent --show-error --location -D admin-live-headers.txt "$URL" -o admin-live.html
+          echo '=== HEADERS ==='
+          grep -iE '^(HTTP/|content-type:|cache-control:|x-vla-)' admin-live-headers.txt || true
+          node <<'NODE'
+          const fs = require('fs');
+          const html = fs.readFileSync('admin-live.html','utf8');
+          const protectedCall = "/.netlify/functions/process-payment-report";
+          const directPayment = "/.netlify/functions/airtable/'+encodeURIComponent(TABLE_PAGOS)";
+          const directReport = "/.netlify/functions/airtable/'+encodeURIComponent(TABLE_REPORTES)";
+          const start = html.indexOf('async function handleReport');
+          const end = start >= 0 ? html.indexOf('async function loadUsage', start) : -1;
+          const snippet = start >= 0 ? html.slice(start, end > start ? end : start + 12000) : '';
+          const result = {
+            htmlBytes: Buffer.byteLength(html),
+            hasProtectedPaymentReportCall: html.includes(protectedCall),
+            protectedPaymentReportCallCount: html.split(protectedCall).length - 1,
+            hasDirectPaymentWrite: html.includes(directPayment),
+            hasDirectReportWrite: html.includes(directReport),
+            handleReportFound: start >= 0,
+            handleReportUsesProtectedCall: snippet.includes(protectedCall),
+            handleReportUsesDirectPaymentWrite: snippet.includes(directPayment),
+            handleReportUsesDirectReportWrite: snippet.includes(directReport),
+            handleReportSnippet: snippet.slice(0,12000)
+          };
+          fs.writeFileSync('payment-approval-diagnostic.json', JSON.stringify(result,null,2));
+          console.log(JSON.stringify(result,null,2));
+          if (!result.handleReportFound) process.exitCode = 2;
+          NODE
+
+      - name: Upload diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: payment-approval-diagnostic
+          path: |
+            admin-live.html
+            admin-live-headers.txt
+            payment-approval-diagnostic.json
+          retention-days: 3
