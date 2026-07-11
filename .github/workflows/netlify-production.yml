@@ -33,76 +33,102 @@ jobs:
           if [ -n "$SITE_ID" ]; then echo "::add-mask::$SITE_ID"; fi
           if [ -z "$AUTH_TOKEN" ] || [ -z "$SITE_ID" ]; then
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "NETLIFY_DEPLOY_READY=false" >> "$GITHUB_ENV"
-            echo "NETLIFY_DEPLOY_REASON=missing_repository_secrets" >> "$GITHUB_ENV"
             exit 0
           fi
           echo "ready=true" >> "$GITHUB_OUTPUT"
-          echo "NETLIFY_DEPLOY_READY=true" >> "$GITHUB_ENV"
           echo "NETLIFY_AUTH_TOKEN=$AUTH_TOKEN" >> "$GITHUB_ENV"
           echo "NETLIFY_SITE_ID=$SITE_ID" >> "$GITHUB_ENV"
 
-      - name: Install Netlify Function dependencies
-        if: steps.credentials.outputs.ready == 'true'
-        run: npm install --omit=dev --no-audit --no-fund
-
-      - name: Deploy validated release to production
-        id: deploy
+      - name: Inspect Netlify production configuration
+        id: site
         if: steps.credentials.outputs.ready == 'true'
         shell: bash
         run: |
-          set +e
-          npx --yes netlify-cli@latest deploy \
-            --prod \
-            --no-build \
-            --dir=. \
-            --functions=netlify/functions \
-            --skip-functions-cache \
-            --site="$NETLIFY_SITE_ID" \
-            --auth="$NETLIFY_AUTH_TOKEN" \
-            --message="VLA canonical balances 2026-07-11-v6 · $GITHUB_SHA" \
-            2>&1 | tee netlify-deploy.log
-          status=${PIPESTATUS[0]}
-          set -e
-          exit "$status"
+          site_json="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            -H "User-Agent: VLA-GitHub-Actions" \
+            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID")"
+          production_branch="$(printf '%s' "$site_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);process.stdout.write(String(j.build_settings?.repo_branch||j.repo?.branch||'unknown'))})")"
+          repo_url="$(printf '%s' "$site_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);process.stdout.write(String(j.build_settings?.repo_url||j.repo?.repo_path||'connected'))})")"
+          echo "production_branch=$production_branch" >> "$GITHUB_OUTPUT"
+          echo "Production branch: $production_branch"
+          echo "Repository connection: $repo_url"
+
+      - name: Trigger server-side production build
+        id: trigger
+        if: steps.site.outcome == 'success'
+        shell: bash
+        run: |
+          build_json="$(curl --fail-with-body --silent --show-error --request POST \
+            -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            -H "User-Agent: VLA-GitHub-Actions" \
+            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/builds?clear_cache=true")"
+          build_id="$(printf '%s' "$build_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);process.stdout.write(String(j.id||j.build_id||''))})")"
+          if [ -z "$build_id" ]; then
+            echo "Netlify did not return a build ID."
+            exit 1
+          fi
+          echo "build_id=$build_id" >> "$GITHUB_OUTPUT"
+          echo "Server-side production build triggered: $build_id"
 
       - name: Verify production release marker
         id: verify
-        if: steps.deploy.outcome == 'success'
+        if: steps.trigger.outcome == 'success'
+        env:
+          BUILD_ID: ${{ steps.trigger.outputs.build_id }}
         shell: bash
         run: |
-          body="$(curl --fail --silent --show-error --location --max-time 30 https://villalosapamates.netlify.app/release.json)"
-          echo "$body" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);if(j.release!=='2026-07-11-v6'||j.expectedHouses!==15)process.exit(1);console.log('Producción verificada:',j.release)})"
+          for attempt in $(seq 1 90); do
+            if body="$(curl --fail --silent --show-error --location --max-time 30 \
+              "https://villalosapamates.netlify.app/release.json?run=$GITHUB_RUN_ID&attempt=$attempt" 2>/dev/null)"; then
+              if printf '%s' "$body" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);if(j.release!=='2026-07-11-v6'||j.expectedHouses!==15)process.exit(1)})"; then
+                echo "Production verified: release 2026-07-11-v6, 15 houses."
+                exit 0
+              fi
+            fi
+
+            build_json="$(curl --fail --silent --show-error \
+              -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+              -H "User-Agent: VLA-GitHub-Actions" \
+              "https://api.netlify.com/api/v1/builds/$BUILD_ID" 2>/dev/null || true)"
+            if [ -n "$build_json" ]; then
+              build_state="$(printf '%s' "$build_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);process.stdout.write(String(j.state||(j.done?'done':'pending')))})")"
+              build_error="$(printf '%s' "$build_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);const e=j.error;process.stdout.write(e?String(e):'')})")"
+              echo "Attempt $attempt: Netlify build state $build_state"
+              if [ -n "$build_error" ]; then
+                echo "Netlify build error: $build_error"
+                exit 1
+              fi
+            fi
+            sleep 10
+          done
+          echo "Production did not expose the expected release marker before timeout."
+          exit 1
 
       - name: Report deployment result on PR 13
         if: always()
         uses: actions/github-script@v7
         env:
           CREDENTIALS_READY: ${{ steps.credentials.outputs.ready }}
-          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          SITE_OUTCOME: ${{ steps.site.outcome }}
+          TRIGGER_OUTCOME: ${{ steps.trigger.outcome }}
           VERIFY_OUTCOME: ${{ steps.verify.outcome }}
+          PRODUCTION_BRANCH: ${{ steps.site.outputs.production_branch }}
+          BUILD_ID: ${{ steps.trigger.outputs.build_id }}
         with:
           script: |
-            const fs = require('fs');
             const ready = process.env.CREDENTIALS_READY === 'true';
-            const deployed = process.env.DEPLOY_OUTCOME === 'success';
+            const triggered = process.env.TRIGGER_OUTCOME === 'success';
             const verified = process.env.VERIFY_OUTCOME === 'success';
-            let diagnostic = '';
-            if (fs.existsSync('netlify-deploy.log')) {
-              const raw = fs.readFileSync('netlify-deploy.log', 'utf8')
-                .replace(/\u001b\[[0-9;]*m/g, '')
-                .split(/\r?\n/)
-                .filter(Boolean);
-              const selected = raw.slice(-120).join('\n').slice(-12000);
-              if (selected) diagnostic = `\n\n<details><summary>Diagnóstico seguro del despliegue</summary>\n\n\`\`\`text\n${selected}\n\`\`\`\n</details>`;
-            }
+            const branch = process.env.PRODUCTION_BRANCH || 'unknown';
+            const buildId = process.env.BUILD_ID || 'not returned';
             let body;
             if (!ready) {
-              body = `### Producción Netlify bloqueada\n\nEl código y los 15 saldos están validados, pero el repositorio no tiene disponibles los secretos \`NETLIFY_AUTH_TOKEN\` y \`NETLIFY_SITE_ID\` (o sus nombres alternativos). No se modificó producción.\n\nCommit: \`${context.sha}\` · [Ejecución](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
-            } else if (deployed && verified) {
-              body = `### Producción Netlify publicada y verificada ✅\n\nLa versión \`2026-07-11-v6\` fue desplegada y \`release.json\` confirmó los 15 saldos canónicos.\n\nCommit: \`${context.sha}\` · [Ejecución](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
+              body = `### Producción Netlify bloqueada\n\nLos secretos de Netlify no están disponibles para el flujo. No se modificó producción.\n\nCommit: \`${context.sha}\` · [Ejecución](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
+            } else if (triggered && verified) {
+              body = `### Producción Netlify publicada y verificada ✅\n\nNetlify ejecutó el build en sus servidores y \`release.json\` confirmó la versión \`2026-07-11-v6\` con 15 casas.\n\nRama de producción: \`${branch}\` · Build: \`${buildId}\` · Commit del flujo: \`${context.sha}\` · [Ejecución](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
             } else {
-              body = `### Despliegue Netlify no verificado ⚠️\n\nCredenciales disponibles: **sí**. Resultado del despliegue: \`${process.env.DEPLOY_OUTCOME || 'no ejecutado'}\`. Verificación: \`${process.env.VERIFY_OUTCOME || 'no ejecutada'}\`.\n\nCommit: \`${context.sha}\` · [Ejecución](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})${diagnostic}`;
+              body = `### Build de producción Netlify no verificado ⚠️\n\nRama de producción: \`${branch}\`. Build: \`${buildId}\`. Disparo: \`${process.env.TRIGGER_OUTCOME || 'no ejecutado'}\`. Verificación: \`${process.env.VERIFY_OUTCOME || 'no ejecutada'}\`.\n\nCommit: \`${context.sha}\` · [Ejecución](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
             }
             await github.rest.issues.createComment({
               owner: context.repo.owner,
