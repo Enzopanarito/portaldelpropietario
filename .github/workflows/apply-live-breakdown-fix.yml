@@ -68,15 +68,6 @@ jobs:
               'BCV logo script',
               flags=re.MULTILINE
           )
-
-          validate = Path('.github/workflows/validate.yml')
-          text = validate.read_text()
-          if 'Validate generated browser scripts' not in text:
-              needle = "      - name: Run security and idempotency tests\n"
-              insert = "      - name: Validate generated browser scripts\n        run: node tests/injected-browser-scripts.test.js\n\n" + needle
-              if text.count(needle) != 1:
-                  raise SystemExit('validate workflow insertion point not found exactly once')
-              validate.write_text(text.replace(needle, insert, 1))
           PY
 
       - name: Prove generated scripts are valid
@@ -86,14 +77,11 @@ jobs:
           node tests/injected-browser-scripts.test.js
           node tests/visual-breakdown-v4.test.js
 
-      - name: Remove one-time patch workflow
-        run: rm .github/workflows/apply-live-breakdown-fix.yml
-
-      - name: Commit verified fix
+      - name: Commit verified functional fix
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add netlify/edge-functions/balance-fix.js netlify/edge-functions/pwa-head.js release.json tests/visual-breakdown-v4.test.js
           git commit -m "Corregir ejecución real del desglose en navegador"
           git push origin HEAD:fix-live-breakdown-browser-v6
