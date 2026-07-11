@@ -54,7 +54,9 @@ jobs:
           set +e
           npx --yes netlify-cli@latest deploy \
             --prod \
-            --build \
+            --no-build \
+            --dir=. \
+            --functions=netlify/functions \
             --skip-functions-cache \
             --site="$NETLIFY_SITE_ID" \
             --auth="$NETLIFY_AUTH_TOKEN" \
