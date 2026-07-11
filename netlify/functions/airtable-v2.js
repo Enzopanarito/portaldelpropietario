@@ -7,7 +7,7 @@ const { deepEscapeStrings, safeDisplayText } = require('./_security_utils');
 const cache = new Map();
 const CACHE_TTL_MS = { default:5*60*1000, propietarios:15*60*1000, gastos:15*60*1000, pagos:5*60*1000, reportes:30*1000 };
 const ALLOWED_TABLES = new Set(['Propietarios','Gastos del Mes','Configuración','Pagos','Historial de Cargos','Reportes de Pago','Recibos de Pago','Cierres de Auditoría','WhatsApp Jobs','WhatsApp Programaciones']);
-const GENERIC_WRITE_TABLES = new Set(['Propietarios','Gastos del Mes','Configuración']);
+const GENERIC_WRITE_TABLES = new Set(['Propietarios','Configuración']);
 const ALLOWED_METHODS = new Set(['GET','POST','PATCH','DELETE']);
 const MAX_BODY_BYTES = 100000;
 
