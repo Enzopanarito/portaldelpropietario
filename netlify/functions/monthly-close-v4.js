@@ -2,7 +2,7 @@
 
 const { requireAdmin } = require('./_auth');
 const { buildPlan } = require('./_monthly_close_core_v4');
-const { ACTIVE_LOCK_TTL_MS, loadContext, listCloseMarkers, acquireCloseLock, setCloseMarker } = require('./_monthly_close_store');
+const { ACTIVE_LOCK_TTL_MS, loadContext, listCloseMarkers, acquireCloseLock, setCloseMarker } = require('./_monthly_close_store_v5');
 const { repairOperation } = require('./_monthly_close_repair');
 const { executeClose } = require('./_monthly_close_execute');
 
