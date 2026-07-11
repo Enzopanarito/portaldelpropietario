@@ -7,6 +7,7 @@ on:
     branches:
       - main
       - hardening-stage-2-2026-07-11
+      - hardening-stage-3-2026-07-11
 
 permissions:
   contents: read
@@ -32,3 +33,6 @@ jobs:
 
       - name: Run audit cleanup preservation tests
         run: node tests/stage2-audit-cleanup.test.js
+
+      - name: Run transactional monthly close tests
+        run: node tests/stage3-monthly-close.test.js
