@@ -1,16 +1,15 @@
 'use strict';
 
 const crypto = require('crypto');
+const balanceEngine = require('./_balance_engine_v4');
+const { attachOfficialBalances } = require('./_official_balances');
 
-const TOLERANCE = 0.01;
-
-function money(value) {
-  return Math.round(Number(value || 0) * 100) / 100;
-}
-
-function selectName(value) {
-  return value && typeof value === 'object' && value.name ? value.name : String(value || '');
-}
+const TOLERANCE = balanceEngine.TOLERANCE;
+const money = balanceEngine.money;
+const selectName = balanceEngine.selectName;
+const isAppliedPayment = balanceEngine.isAppliedPayment;
+const ownerShare = balanceEngine.ownerShare;
+const paymentEquivalentUsd = balanceEngine.paymentEquivalentUsd;
 
 function canonicalize(value) {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -27,112 +26,45 @@ function hashJson(value) {
   return crypto.createHash('sha256').update(JSON.stringify(canonicalize(value))).digest('hex');
 }
 
-function isAppliedPayment(record) {
-  return record?.fields?.['[x] Aplicado al Cierre'] === true;
-}
-
 function hasLegacyIndividualCharges(expenses) {
   return (expenses || []).some(record => String(record?.fields?.Concepto || '').toLowerCase().includes('(cargo individual)'));
 }
 
-function ownerShare(expense, owner) {
-  const fields = expense?.fields || {};
-  const amount = Number(fields.Monto || 0);
-  const type = selectName(fields['Tipo de Gasto']);
-  const linkedOwners = Array.isArray(fields.Propietarios) ? fields.Propietarios : [];
-  const aliquot = Number(owner?.fields?.Alicuota || 0);
-  if (type === 'Gasto Común') return money(amount * aliquot);
-  if (type === 'Gasto Especial' && linkedOwners.includes(owner.id)) return money(amount / (linkedOwners.length || 1));
-  return 0;
+function currentMonthCaracas(now = new Date()) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Caracas', year: 'numeric', month: '2-digit'
+  }).formatToParts(now).map(part => [part.type, part.value]));
+  return `${parts.year}-${parts.month}`;
 }
 
-function paymentEquivalentUsd(payment) {
-  const fields = payment?.fields || {};
-  return money(fields['Equivalente USD Aplicado'] || fields['Monto Pagado'] || 0);
-}
-
-function explicitNegativeSplit(total, initialUsd, initialBs, rawUsd, rawBsRef) {
-  if (total >= -TOLERANCE) return { usd: 0, bsRef: 0 };
-  if (initialUsd < -TOLERANCE && Math.abs(initialBs) <= TOLERANCE) return { usd: total, bsRef: 0 };
-  if (initialBs < -TOLERANCE && Math.abs(initialUsd) <= TOLERANCE) return { usd: 0, bsRef: total };
-  const negativeUsd = Math.max(0, -rawUsd);
-  const negativeBs = Math.max(0, -rawBsRef);
-  const negativeTotal = negativeUsd + negativeBs;
-  if (negativeTotal <= TOLERANCE) return { usd: 0, bsRef: total };
-  if (negativeUsd > TOLERANCE && negativeBs <= TOLERANCE) return { usd: total, bsRef: 0 };
-  if (negativeBs > TOLERANCE && negativeUsd <= TOLERANCE) return { usd: 0, bsRef: total };
-  const usd = money(total * (negativeUsd / negativeTotal));
-  return { usd, bsRef: money(total - usd) };
-}
-
-function calculateSplitBalance(owner, expenses, payments, transitionMode) {
+function calculateSplitBalance(owner, expenses, payments, transitionMode = false, month = currentMonthCaracas()) {
   const fields = owner?.fields || {};
-  const initialUsd = Number(fields['Deuda Anterior USD'] || 0);
-  const initialBs = Number(fields['Deuda Anterior Bs Ref'] || 0);
-  const splitExists = Math.abs(initialUsd) > 0.001 || Math.abs(initialBs) > 0.001;
-  let usdBalance = initialUsd;
-  let bsRefBalance = initialBs;
-  if (!splitExists) bsRefBalance += Number(fields['Deuda Anterior'] || 0);
-
-  for (const expense of expenses || []) {
-    const share = ownerShare(expense, owner);
-    if (share <= 0) continue;
-    const mode = selectName(expense?.fields?.['Forma de Pago'] || 'Bs BCV');
-    if (mode === 'USD') usdBalance += share;
-    else bsRefBalance += share;
-  }
-
-  for (const payment of payments || []) {
-    if (isAppliedPayment(payment)) continue;
-    const linkedOwners = payment?.fields?.['Propietario que Paga'] || [];
-    if (!Array.isArray(linkedOwners) || !linkedOwners.includes(owner.id)) continue;
-    const mode = selectName(payment?.fields?.['Forma de Pago'] || 'Bs BCV');
-    const amount = paymentEquivalentUsd(payment);
-    if (mode === 'USD') usdBalance -= amount;
-    else bsRefBalance -= amount;
-  }
-
-  const rawUsd = money(usdBalance);
-  const rawBsRef = money(bsRefBalance);
-  const rawTotal = money(rawUsd + rawBsRef);
+  const result = balanceEngine.calculateOwnerBalance(owner, expenses || [], payments || [], {
+    month: String(month),
+    day: 31
+  });
+  const usd = money(result.usd);
+  const bsRef = money(result.bsRef);
+  const totalRef = money(result.totalRef);
   const legacyTotal = money(fields['Deuda Restante']);
-  let finalUsd = rawUsd;
-  let finalBsRef = rawBsRef;
-  let totalRef = rawTotal;
-  let reconciled = false;
-  const difference = money(rawTotal - legacyTotal);
-
-  if (transitionMode && Number.isFinite(legacyTotal)) {
-    reconciled = true;
-    totalRef = legacyTotal;
-    if (legacyTotal <= TOLERANCE) {
-      const negative = explicitNegativeSplit(legacyTotal, initialUsd, initialBs, rawUsd, rawBsRef);
-      finalUsd = negative.usd;
-      finalBsRef = negative.bsRef;
-    } else {
-      const positiveUsd = Math.max(0, rawUsd);
-      const positiveBs = Math.max(0, rawBsRef);
-      const positiveTotal = positiveUsd + positiveBs;
-      if (positiveTotal <= TOLERANCE) {
-        finalUsd = 0;
-        finalBsRef = legacyTotal;
-      } else {
-        finalUsd = money(legacyTotal * (positiveUsd / positiveTotal));
-        finalBsRef = money(legacyTotal - finalUsd);
-      }
-    }
-  }
 
   return {
-    usd: money(finalUsd),
-    bsRef: money(finalBsRef),
-    totalRef: money(totalRef),
-    rawUsd,
-    rawBsRef,
-    rawTotal,
+    usd,
+    bsRef,
+    totalRef,
+    rawUsd: usd,
+    rawBsRef: bsRef,
+    rawTotal: totalRef,
     legacyTotal,
-    difference,
-    reconciled
+    difference: money(totalRef - legacyTotal),
+    reconciled: result.officialSnapshotActive === true,
+    officialSnapshotActive: result.officialSnapshotActive === true,
+    recargoBsRef: money(result.recargoBsRef),
+    chargesUsd: money(result.chargesUsd),
+    chargesBsRef: money(result.chargesBsRef),
+    paidUsd: money(result.paidUsd),
+    paidBsRef: money(result.paidBsRef),
+    transitionMode: transitionMode === true
   };
 }
 
@@ -163,7 +95,12 @@ function compactOwnerSource(owner) {
     deudaAnterior: money(fields['Deuda Anterior']),
     deudaAnteriorUsd: money(fields['Deuda Anterior USD']),
     deudaAnteriorBsRef: money(fields['Deuda Anterior Bs Ref']),
-    deudaRestante: money(fields['Deuda Restante'])
+    deudaRestante: money(fields['Deuda Restante']),
+    mesSaldoOficial: String(fields['Mes Saldo Oficial'] || ''),
+    saldoOficialUsdBase: money(fields['Saldo Oficial USD Base']),
+    saldoOficialBsRefBase: money(fields['Saldo Oficial Bs Ref Base']),
+    baseVigenteBsRef: money(fields['Base Recargo Oficial Bs Ref']),
+    corteSaldoOficial: String(fields['Corte Saldo Oficial'] || '')
   };
 }
 
@@ -174,6 +111,7 @@ function compactExpenseSource(expense) {
     concepto: String(fields.Concepto || ''),
     monto: money(fields.Monto),
     tipo: selectName(fields['Tipo de Gasto']),
+    frecuencia: selectName(fields.Frecuencia),
     forma: selectName(fields['Forma de Pago'] || 'Bs BCV'),
     propietarios: [...(Array.isArray(fields.Propietarios) ? fields.Propietarios : [])].sort()
   };
@@ -190,18 +128,21 @@ function compactPaymentSource(payment) {
     equivalenteUsd: money(fields['Equivalente USD Aplicado']),
     forma: selectName(fields['Forma de Pago'] || 'Bs BCV'),
     fecha: String(fields['Fecha de Pago'] || '').slice(0, 10),
-    aplicado: fields['[x] Aplicado al Cierre'] === true
+    aplicado: fields['[x] Aplicado al Cierre'] === true,
+    createdTime: String(payment?.createdTime || '')
   };
 }
 
 function buildPlan({ owners = [], expenses = [], payments = [], month }) {
-  const sortedOwners = [...owners].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  const normalizedMonth = String(month || currentMonthCaracas());
+  const normalizedOwners = attachOfficialBalances(owners, [], normalizedMonth);
+  const sortedOwners = [...normalizedOwners].sort((a, b) => String(a.id).localeCompare(String(b.id)));
   const sortedExpenses = [...expenses].sort((a, b) => String(a.id).localeCompare(String(b.id)));
   const sortedPayments = [...payments].sort((a, b) => String(a.id).localeCompare(String(b.id)));
   const transitionMode = hasLegacyIndividualCharges(sortedExpenses);
 
   const ownerUpdates = sortedOwners.map(owner => {
-    const balance = calculateSplitBalance(owner, sortedExpenses, sortedPayments, transitionMode);
+    const balance = calculateSplitBalance(owner, sortedExpenses, sortedPayments, transitionMode, normalizedMonth);
     return {
       id: owner.id,
       casa: owner?.fields?.Casa ?? null,
@@ -216,8 +157,9 @@ function buildPlan({ owners = [], expenses = [], payments = [], month }) {
   const totalUsd = money(ownerUpdates.reduce((sum, item) => sum + item.target.deudaAnteriorUsd, 0));
   const totalBsRef = money(ownerUpdates.reduce((sum, item) => sum + item.target.deudaAnteriorBsRef, 0));
   const totalRef = money(ownerUpdates.reduce((sum, item) => sum + item.target.deudaAnterior, 0));
-  const rawTotal = money(ownerUpdates.reduce((sum, item) => sum + item.calculation.rawTotal, 0));
+  const rawTotal = totalRef;
   const legacyTotal = money(ownerUpdates.reduce((sum, item) => sum + item.calculation.legacyTotal, 0));
+  const totalVigenteBsRef = money(ownerUpdates.reduce((sum, item) => sum + item.calculation.recargoBsRef, 0));
   const differences = ownerUpdates
     .filter(item => Math.abs(item.calculation.difference) > TOLERANCE)
     .map(item => ({
@@ -230,8 +172,9 @@ function buildPlan({ owners = [], expenses = [], payments = [], month }) {
     }));
 
   const validation = {
-    month,
+    month: normalizedMonth,
     transitionMode,
+    engine: 'unified-balance-v4',
     totalUsd,
     totalBsRef,
     totalRef,
@@ -240,11 +183,14 @@ function buildPlan({ owners = [], expenses = [], payments = [], month }) {
     difference: money(rawTotal - legacyTotal),
     differences,
     differenceCount: differences.length,
+    totalVigenteBsRef,
+    officialSnapshotCount: ownerUpdates.filter(item => item.calculation.officialSnapshotActive).length,
     conDeudaUsd: ownerUpdates.filter(item => item.target.deudaAnteriorUsd > TOLERANCE).length,
     conDeudaBs: ownerUpdates.filter(item => item.target.deudaAnteriorBsRef > TOLERANCE).length,
     conSaldoFavor: ownerUpdates.filter(item => item.target.deudaAnterior < -TOLERANCE).length,
     pendingPaymentsCount: paymentIds.length,
-    ownerCount: ownerUpdates.length
+    ownerCount: ownerUpdates.length,
+    expenseCount: sortedExpenses.length
   };
 
   const source = {
@@ -254,16 +200,16 @@ function buildPlan({ owners = [], expenses = [], payments = [], month }) {
   };
   const sourceHash = hashJson(source);
   const planHash = hashJson({
-    version: 3,
-    month,
+    version: 4,
+    month: normalizedMonth,
     sourceHash,
     ownerUpdates: ownerUpdates.map(item => ({ id: item.id, before: item.before, target: item.target })),
     paymentIds
   });
 
   return {
-    version: 3,
-    month,
+    version: 4,
+    month: normalizedMonth,
     generatedAt: new Date().toISOString(),
     transitionMode,
     sourceHash,

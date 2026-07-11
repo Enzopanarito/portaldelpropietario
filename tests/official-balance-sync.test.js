@@ -11,8 +11,7 @@ const {
 const {
   calculateAllOwners,
   calculateOwnerBalance,
-  calculatedFields,
-  money
+  calculatedFields
 } = require('../netlify/functions/_balance_engine_v4');
 
 const expected = {
@@ -41,7 +40,6 @@ const owners = Object.keys(expected).map(house => ({
   }
 }));
 
-// Incluso si Airtable entrega registros divergentes, el contrato aprobado de julio prevalece.
 const divergentControls = Object.keys(expected).map(house => ({
   id:`wrong-${house}`,
   createdTime:'2026-07-11T20:00:00.000Z',
@@ -70,8 +68,8 @@ for (let house=1; house<=15; house+=1) {
   assert.strictEqual(publicResult.expiredBsRef, 0, `Casa ${house}: vencida Bs`);
   assert.strictEqual(publicResult.expiredTotalRef, 0, `Casa ${house}: vencida total`);
   assert.strictEqual(publicResult.usd, usd, `Casa ${house}: USD`);
-  assert.strictEqual(publicResult.bsRef, bs, `Casa ${house}: Bs ref con recargo`);
-  assert.strictEqual(publicResult.recargoBsRef, recargo, `Casa ${house}: recargo`);
+  assert.strictEqual(publicResult.bsRef, bs, `Casa ${house}: Bs ref con vigencia`);
+  assert.strictEqual(publicResult.recargoBsRef, recargo, `Casa ${house}: ajuste de vigencia`);
   assert.strictEqual(publicResult.totalRef, total, `Casa ${house}: total`);
 
   const publicFields = calculatedFields(publicResult, officialOwners[house-1]);
@@ -81,7 +79,6 @@ for (let house=1; house<=15; house+=1) {
   }
 }
 
-// Un pago posterior al corte reduce únicamente su moneda.
 const postCutoffPayment = {
   id:'new-payment',
   createdTime:'2026-07-11T20:00:00.000Z',
@@ -101,7 +98,6 @@ assert.strictEqual(paid.bsRef, 193.17);
 assert.strictEqual(paid.totalRef, 278.17);
 assert.strictEqual(paid.expiredTotalRef, 0);
 
-// Un gasto posterior al corte se agrega una sola vez y no altera la base aprobada del recargo.
 const postCutoffExpense = {
   id:'new-expense',
   createdTime:'2026-07-11T20:05:00.000Z',
@@ -120,20 +116,37 @@ assert.strictEqual(charged.bsRef, 231.40);
 assert.strictEqual(charged.recargoBsRef, 20.13);
 assert.strictEqual(charged.totalRef, 316.40);
 
-// El contrato de julio no se arrastra automáticamente a agosto.
 const nextMonth = calculateOwnerBalance(house10, [], [], {month:'2026-08',day:1});
 assert.strictEqual(nextMonth.officialSnapshotActive, false);
 
-// El portal ya no puede depender de reemplazos regex de la función calc.
 const edgeSource = fs.readFileSync(path.join(__dirname, '../netlify/edge-functions/balance-fix.js'), 'utf8');
 assert.ok(edgeSource.includes("const RELEASE = '2026-07-11-v6'"));
+assert.ok(edgeSource.includes("const BREAKDOWN_PRESENTATION = '2026-07-11-detail-v3'"));
 assert.ok(edgeSource.includes("headers.set('x-vla-balance-engine', 'v6')"));
+assert.ok(edgeSource.includes("window.renderBreakdown=function()"));
+assert.ok(edgeSource.includes("owner['Desglose Informativo']"));
+assert.ok(edgeSource.includes('Monto total del servicio'));
+assert.ok(edgeSource.includes('Tu parte vigente'));
+assert.ok(edgeSource.includes('Saldo oficial pendiente'));
+assert.ok(!edgeSource.includes('Recargo 10% por pérdida del pronto pago'));
 assert.ok(!edgeSource.includes("replace(/function calc"), 'No debe reescribir calc mediante regex');
+
+const publicSource = fs.readFileSync(path.join(__dirname, '../netlify/functions/public-data-v2.js'), 'utf8');
+assert.ok(publicSource.includes("require('./_expense_breakdown')"));
+assert.ok(publicSource.includes("'Desglose Informativo'"));
+assert.ok(publicSource.includes('breakdownEngineVersion: 3'));
+
+const closeSource = fs.readFileSync(path.join(__dirname, '../netlify/functions/_monthly_close_core.js'), 'utf8');
+assert.ok(closeSource.includes("require('./_balance_engine_v4')"));
+assert.ok(closeSource.includes('attachOfficialBalances'));
+assert.ok(closeSource.includes("engine: 'unified-balance-v4'"));
 
 const netlifyConfig = fs.readFileSync(path.join(__dirname, '../netlify.toml'), 'utf8');
 assert.ok(/\[build\][\s\S]*publish\s*=\s*"\."/.test(netlifyConfig), 'Netlify debe publicar la raíz del repositorio');
 const release = JSON.parse(fs.readFileSync(path.join(__dirname, '../release.json'), 'utf8'));
 assert.strictEqual(release.release, CANONICAL_CONTRACT.release);
 assert.strictEqual(release.expectedHouses, 15);
+assert.strictEqual(release.breakdownPresentation, '2026-07-11-detail-v3');
+assert.strictEqual(release.monthlyCloseEngine, 4);
 
 console.log('OFFICIAL_BALANCE_SYNC_TESTS_OK');

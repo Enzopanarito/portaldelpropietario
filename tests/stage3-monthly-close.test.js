@@ -35,34 +35,40 @@ const expense = {
     Concepto: 'Condominio',
     Monto: 100,
     'Tipo de Gasto': 'Gasto Común',
+    Frecuencia: 'Fijo',
     'Forma de Pago': 'Bs BCV',
     Propietarios: [ownerA.id, ownerB.id]
   }
 };
 const payment = {
   id: 'recPAYMENT000001',
+  createdTime: '2026-08-05T12:00:00.000Z',
   fields: {
     'Propietario que Paga': [ownerA.id],
     'Monto Pagado': 15,
     'Equivalente USD Aplicado': 15,
     'Forma de Pago': 'Bs BCV',
-    'Fecha de Pago': '2026-07-05',
+    'Fecha de Pago': '2026-08-05',
     '[x] Aplicado al Cierre': false
   }
 };
 
-const plan = core.buildPlan({ owners: [ownerA, ownerB], expenses: [expense], payments: [payment], month: '2026-07' });
-const reversed = core.buildPlan({ owners: [ownerB, ownerA], expenses: [expense], payments: [payment], month: '2026-07' });
+const plan = core.buildPlan({ owners: [ownerA, ownerB], expenses: [expense], payments: [payment], month: '2026-08' });
+const reversed = core.buildPlan({ owners: [ownerB, ownerA], expenses: [expense], payments: [payment], month: '2026-08' });
 assert.strictEqual(plan.planHash, reversed.planHash, 'La huella debe ser determinista sin depender del orden de Airtable.');
+assert.strictEqual(plan.version, 4);
+assert.strictEqual(plan.validation.engine, 'unified-balance-v4');
 assert.strictEqual(plan.paymentIds.length, 1);
 assert.strictEqual(plan.validation.pendingPaymentsCount, 1);
-assert.strictEqual(plan.ownerUpdates.find(item => item.id === ownerA.id).target.deudaAnterior, 45);
-assert.strictEqual(plan.ownerUpdates.find(item => item.id === ownerB.id).target.deudaAnterior, 50);
+assert.strictEqual(plan.ownerUpdates.find(item => item.id === ownerA.id).target.deudaAnterior, 50, 'Debe incluir el 10% dentro del saldo Bs cuando no se cubrió todo antes del día 10.');
+assert.strictEqual(plan.ownerUpdates.find(item => item.id === ownerB.id).target.deudaAnterior, 55);
+assert.strictEqual(plan.ownerUpdates.find(item => item.id === ownerA.id).calculation.recargoBsRef, 5);
+assert.strictEqual(plan.ownerUpdates.find(item => item.id === ownerB.id).calculation.recargoBsRef, 5);
 
 const changedPayment = JSON.parse(JSON.stringify(payment));
 changedPayment.fields['Monto Pagado'] = 16;
 changedPayment.fields['Equivalente USD Aplicado'] = 16;
-const changedPlan = core.buildPlan({ owners: [ownerA, ownerB], expenses: [expense], payments: [changedPayment], month: '2026-07' });
+const changedPlan = core.buildPlan({ owners: [ownerA, ownerB], expenses: [expense], payments: [changedPayment], month: '2026-08' });
 assert.notStrictEqual(plan.planHash, changedPlan.planHash, 'Un cambio financiero debe invalidar la simulación anterior.');
 
 const targetFields = core.debtFields(plan.ownerUpdates[0].target);
@@ -71,6 +77,18 @@ assert(Object.prototype.hasOwnProperty.call(targetFields, 'Deuda Anterior Bs Ref
 assert(Object.prototype.hasOwnProperty.call(targetFields, 'Deuda Anterior'));
 assert.strictEqual(core.compareDebtValues({deudaAnteriorUsd:1,deudaAnteriorBsRef:2,deudaAnterior:3},{deudaAnteriorUsd:1,deudaAnteriorBsRef:2,deudaAnterior:3}).ok,true);
 assert.strictEqual(core.compareDebtValues({deudaAnteriorUsd:1,deudaAnteriorBsRef:2,deudaAnterior:3},{deudaAnteriorUsd:1,deudaAnteriorBsRef:2,deudaAnterior:4}).ok,false);
+
+// Julio debe cerrar usando exactamente el contrato oficial que hoy ve el portal.
+const julyOwner = {
+  id: 'recOWNERJULY0003',
+  fields: { Casa: 3, Propietario: 'Casa 3', Alicuota: 0.06186, 'Deuda Anterior': 999, 'Deuda Restante': 999 }
+};
+const julyPlan = core.buildPlan({ owners: [julyOwner], expenses: [], payments: [], month: '2026-07' });
+const julyTarget = julyPlan.ownerUpdates[0].target;
+assert.strictEqual(julyPlan.validation.officialSnapshotCount, 1);
+assert.strictEqual(julyTarget.deudaAnteriorUsd, 0);
+assert.strictEqual(julyTarget.deudaAnteriorBsRef, 157.07);
+assert.strictEqual(julyTarget.deudaAnterior, 157.07);
 
 function source(file) { return fs.readFileSync(path.join(__dirname, '..', file), 'utf8'); }
 function stringConst(jsSource, name) {
