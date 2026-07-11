@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - fix-live-breakdown-browser-v6
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
