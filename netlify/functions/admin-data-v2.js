@@ -2,7 +2,7 @@
 
 const { requireAdmin } = require('./_auth');
 const { deepEscapeStrings, safeDisplayText } = require('./_security_utils');
-const { calculateAllOwners, calculatedFields } = require('./_balance_engine');
+const { calculateAllOwners, calculatedFields } = require('./_balance_engine_v4');
 
 let adminCache = null;
 const ADMIN_CACHE_TTL_MS = 2 * 60 * 1000;
