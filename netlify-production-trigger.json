@@ -1,0 +1,7 @@
+{
+  "release": "2026-07-11-v6",
+  "source": "tested-main",
+  "testedSha": "fc58b44d2ff727c394acbaa7bc036715ec559182",
+  "mergeSha": "5e46349939d458206ad975c5a1c89cc746660c03",
+  "purpose": "Trigger legacy Netlify production branch without changing application data"
+}
