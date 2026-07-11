@@ -34,6 +34,10 @@ path = "/index.html"
 function = "balance-fix"
 path = "/admin*"
 
+[[edge_functions]]
+function = "admin-payment-flow"
+path = "/admin*"
+
 [[headers]]
 for = "/*"
   [headers.values]

@@ -45,6 +45,9 @@ jobs:
       - name: Validate generated browser scripts
         run: node tests/injected-browser-scripts.test.js
 
+      - name: Validate protected payment approval
+        run: node tests/admin-payment-flow.test.js
+
       - name: Run security and idempotency tests
         run: node tests/stage1-security.test.js
 
