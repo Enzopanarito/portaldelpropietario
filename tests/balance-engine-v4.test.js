@@ -39,6 +39,18 @@ assert.strictEqual(noSurcharge.recargoBsRef,0);
 assert.strictEqual(noSurcharge.bsRef,0);
 assert.strictEqual(noSurcharge.usd,85);
 
+// Pagar únicamente una deuda vieja en Bs antes del día 10 no paga el mes corriente
+// y no puede conservar el beneficio del pronto pago.
+const priorBsOwner={id:'ownerPrior',fields:{Casa:99,Propietario:'Prueba','Alicuota':0.06186,'Deuda Anterior':100,'Deuda Anterior USD':0,'Deuda Anterior Bs Ref':100}};
+const priorAll=['ownerPrior'];
+const priorExpenses=expenses.map(item=>({...item,fields:{...item.fields,Propietarios:priorAll}}));
+const priorPayment={id:'oldDebtPayment',fields:{'Propietario que Paga':['ownerPrior'],'Monto Pagado':100,'Equivalente USD Aplicado':100,'Forma de Pago':'Bs BCV','Fecha de Pago':'2026-07-10','[x] Aplicado al Cierre':false}};
+const priorResult=calculateOwnerBalance(priorBsOwner,priorExpenses,[priorPayment],{month:'2026-07',day:11});
+assert.strictEqual(priorResult.expiredBsRef,0);
+assert.strictEqual(priorResult.timelyPaidBsRef,0);
+assert.strictEqual(priorResult.recargoBsRef,19.38);
+assert.strictEqual(priorResult.bsRef,213.17);
+
 const plan=buildPlan({owners:[owner],expenses,payments:[usdPayment],month:'2026-07'});
 assert.strictEqual(plan.ownerUpdates[0].target.deudaAnteriorUsd,85);
 assert.strictEqual(plan.ownerUpdates[0].target.deudaAnteriorBsRef,213.17);
