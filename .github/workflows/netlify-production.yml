@@ -67,7 +67,7 @@ jobs:
           body="$(curl --fail --silent --show-error --location --max-time 30 https://villalosapamates.netlify.app/release.json)"
           echo "$body" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);if(j.release!=='2026-07-11-v6'||j.expectedHouses!==15)process.exit(1);console.log('Producción verificada:',j.release)})"
 
-      - name: Report deployment result on PR 9
+      - name: Report deployment result on PR 13
         if: always()
         uses: actions/github-script@v7
         env:
@@ -100,6 +100,6 @@ jobs:
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: 9,
+              issue_number: 13,
               body
             });
