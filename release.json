@@ -1,0 +1,9 @@
+{
+  "release": "2026-07-11-v6",
+  "canonicalMonth": "2026-07",
+  "expectedHouses": 15,
+  "balanceEngine": 6,
+  "balanceSource": "canonical-july-2026",
+  "cutoff": "2026-07-11T19:10:08.000Z",
+  "productionPublishDirectory": "."
+}
