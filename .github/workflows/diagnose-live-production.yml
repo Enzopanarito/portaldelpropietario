@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - diagnose-live-production-2026-07-11
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
