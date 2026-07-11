@@ -3,6 +3,7 @@
 const { deepEscapeStrings } = require('./_security_utils');
 const { calculateAllOwners, calculatedFields } = require('./_balance_engine_v4');
 const { attachOfficialBalances, officialControlQuery } = require('./_official_balances');
+const { buildExpenseBreakdown } = require('./_expense_breakdown');
 
 let publicCache = null;
 const PUBLIC_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -43,8 +44,9 @@ async function airtableGetAll(tableName, query, token, baseId, counter) {
   } while (offset);
   return records;
 }
-function compactOwner(record, balance) {
+function compactOwner(record, balance, expenses) {
   const f = record.fields || {};
+  const breakdown = buildExpenseBreakdown(record, expenses, { surchargeBsRef: balance.recargoBsRef });
   return Object.assign({
     id: record.id, Casa: f.Casa, Propietario: f.Propietario, Alicuota: f.Alicuota,
     'Deuda Anterior': f['Deuda Anterior'],
@@ -60,7 +62,16 @@ function compactOwner(record, balance) {
     'Corte Saldo Oficial': f['Corte Saldo Oficial'] || '',
     'Estado Acceso Portón': f['Estado Acceso Portón'] || 'Sin configurar',
     'Motivo Limitación Acceso': f['Motivo Limitación Acceso'] || '',
-    'Última Sync MKJ': f['Última Sync MKJ'] || ''
+    'Última Sync MKJ': f['Última Sync MKJ'] || '',
+    'Desglose Informativo': {
+      version: breakdown.version,
+      usd: breakdown.usd,
+      bs: breakdown.bs,
+      distributedUsd: breakdown.distributedUsd,
+      distributedBs: breakdown.distributedBs,
+      officialDueUsd: balance.usd,
+      officialDueBs: balance.bsRef
+    }
   }, calculatedFields(balance, record));
 }
 function compactGasto(record) {
@@ -100,8 +111,8 @@ exports.handler = async function(event) {
     const balances = calculateAllOwners(officialOwners, expenses, payments);
     const payload = deepEscapeStrings({
       generatedAt: new Date().toISOString(), generatedAtCaracas: nowCaracasLabel(),
-      balanceEngineVersion: 5,
-      propietarios: officialOwners.map(record => compactOwner(record, balances.get(record.id))).sort((a,b)=>(a.Casa||0)-(b.Casa||0)),
+      balanceEngineVersion: 6, breakdownEngineVersion: 3,
+      propietarios: officialOwners.map(record => compactOwner(record, balances.get(record.id), expenses)).sort((a,b)=>(a.Casa||0)-(b.Casa||0)),
       gastos: expenses.map(compactGasto), pagos: payments.map(compactPago)
     });
     publicCache = { payload, expiresAt: Date.now() + PUBLIC_CACHE_TTL_MS };
