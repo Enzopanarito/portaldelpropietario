@@ -10,6 +10,7 @@ on:
       - fix-balance-pronto-pago-2026-07-11
       - fix-all-houses-pronto-pago-2026-07-11
       - fix-access-balance-engine-2026-07-11
+      - fix-official-balances-all-portals-2026-07-11
 
 permissions:
   contents: read
@@ -60,6 +61,9 @@ jobs:
 
       - name: Validate gate expired-debt calculations
         run: node tests/access-balance-engine.test.js
+
+      - name: Validate official balances in all portals
+        run: node tests/official-balance-sync.test.js
 
       - name: Validate JSON files
         run: |
