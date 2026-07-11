@@ -57,9 +57,7 @@ const consolidatedPayment = payment('recPAYMENT0000004', {
   'Método de Pago': cleanup.CONSOLIDATED_METHOD,
   '[x] Aplicado al Cierre': true,
   'Forma de Pago': 'USD',
-  'Equivalente USD Aplicado': 25,
-  [cleanup.CONSOLIDATED_FLAG_FIELD]: true,
-  [cleanup.AUDIT_OPERATION_FIELD]: 'AUD-TEST'
+  'Equivalente USD Aplicado': 25
 });
 const blockedPayment = payment('recPAYMENT0000005', {
   'Monto Pagado': 10,
@@ -106,8 +104,9 @@ assert(plan.skipped.some(item => item.id === blockedPayment.id && item.motivo.in
 const aggregateRecords = plan.groups.map(group => cleanup.aggregateFields(group, 'AUD-TEST-001'));
 assert.strictEqual(aggregateRecords.length, 2);
 assert(aggregateRecords.every(fields => fields['[x] Aplicado al Cierre'] === true));
-assert(aggregateRecords.every(fields => fields[cleanup.CONSOLIDATED_FLAG_FIELD] === true));
-assert(aggregateRecords.every(fields => fields[cleanup.AUDIT_OPERATION_FIELD] === 'AUD-TEST-001'));
+assert(aggregateRecords.every(fields => fields['Método de Pago'] === cleanup.CONSOLIDATED_METHOD));
+assert(aggregateRecords.every(fields => !Object.prototype.hasOwnProperty.call(fields, 'Registro Consolidado Auditoría')));
+assert(aggregateRecords.every(fields => !Object.prototype.hasOwnProperty.call(fields, 'Auditoría Operación')));
 
 const beforeRollup = allPayments.reduce((sum, item) => sum + cleanup.rollupAmount(item), 0);
 const remainingRollup = allPayments
