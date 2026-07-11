@@ -57,6 +57,9 @@ jobs:
       - name: Run unified balance and prompt-payment tests
         run: node tests/balance-engine-v4.test.js
 
+      - name: Run protected visual breakdown tests
+        run: node tests/visual-breakdown-v4.test.js
+
       - name: Audit all 15 current house balances
         run: node tests/all-houses-current-balance.test.js
 
