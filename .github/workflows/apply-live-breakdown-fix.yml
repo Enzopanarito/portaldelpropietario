@@ -27,49 +27,47 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
 
-          def replace_once(path, old, new, label):
+          def sub_once(path, pattern, replacement, label, flags=0):
               p = Path(path)
               text = p.read_text()
-              count = text.count(old)
+              updated, count = re.subn(pattern, replacement, text, count=1, flags=flags)
               if count != 1:
                   raise SystemExit(f'{label}: expected one match, found {count}')
-              p.write_text(text.replace(old, new, 1))
+              p.write_text(updated)
 
-          replace_once(
+          sub_once(
               'netlify/edge-functions/balance-fix.js',
-              "const BREAKDOWN_PRESENTATION = '2026-07-11-photo-v5';",
+              r"const BREAKDOWN_PRESENTATION = '2026-07-11-photo-v\d+';",
               "const BREAKDOWN_PRESENTATION = '2026-07-11-photo-v6';",
               'breakdown marker'
           )
-          replace_once(
+          sub_once(
               'netlify/edge-functions/balance-fix.js',
-              "return html.includes('</body>') ? html.replace('</body>', injection + '</body>') : html + injection;",
+              r"return html\.includes\('</body>'\) \? html\.replace\('</body>', injection \+ '</body>'\) : html \+ injection;",
               "return html.includes('</body>') ? html.replace('</body>', () => injection + '</body>') : html + injection;",
               'safe replacement callback'
           )
-          replace_once(
+          sub_once(
               'release.json',
-              '"breakdownPresentation": "2026-07-11-photo-v5"',
+              r'"breakdownPresentation": "2026-07-11-photo-v\d+"',
               '"breakdownPresentation": "2026-07-11-photo-v6"',
               'release marker'
           )
-          replace_once(
+          sub_once(
               'tests/visual-breakdown-v4.test.js',
-              "assert.strictEqual(release.breakdownPresentation, '2026-07-11-photo-v5');",
+              r"assert\.strictEqual\(release\.breakdownPresentation, '2026-07-11-photo-v\d+'\);",
               "assert.strictEqual(release.breakdownPresentation, '2026-07-11-photo-v6');",
               'visual test marker'
           )
-
-          pwa = Path('netlify/edge-functions/pwa-head.js')
-          text = pwa.read_text()
-          old = """      el.innerHTML='<img src="'+src+'" alt="BCV" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.textContent=\\'BCV\\';this.remove();">';"""
-          new = """      el.innerHTML='<img src="'+src+'" alt="BCV" loading="lazy" referrerpolicy="no-referrer">';
-              var image=el.querySelector('img');
-              if(image)image.onerror=function(){el.textContent='BCV';};"""
-          if text.count(old) != 1:
-              raise SystemExit(f'BCV logo script: expected one match, found {text.count(old)}')
-          pwa.write_text(text.replace(old, new, 1))
+          sub_once(
+              'netlify/edge-functions/pwa-head.js',
+              r"^\s*el\.innerHTML='<img src=\"'\+src\+'\" alt=\"BCV\" loading=\"lazy\" referrerpolicy=\"no-referrer\" onerror=.*$",
+              "      el.innerHTML='<img src=\"'+src+'\" alt=\"BCV\" loading=\"lazy\" referrerpolicy=\"no-referrer\">';\n      var image=el.querySelector('img');\n      if(image)image.onerror=function(){el.textContent='BCV';};",
+              'BCV logo script',
+              flags=re.MULTILINE
+          )
 
           validate = Path('.github/workflows/validate.yml')
           text = validate.read_text()
