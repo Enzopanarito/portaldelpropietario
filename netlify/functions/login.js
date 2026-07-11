@@ -1,17 +1,15 @@
 // netlify/functions/login.js
-// Login administrativo con contraseña hasheada, token firmado y limitación progresiva de intentos.
+// Login administrativo con scrypt/PBKDF2 compatible, token firmado y límites persistentes de abuso.
 
-const crypto = require('crypto');
+'use strict';
+
 const { issueAdminToken } = require('./_auth');
+const { loadConfigRecord, verifyPassword } = require('./_admin_auth_store');
+const { consume } = require('./_persistent_rate_limit');
 
-const TABLE = 'ControlVersiones';
-const CONFIG_PREFIX = 'ADMIN_AUTH_CONFIG|';
-const AUTH_CACHE_TTL_MS = 15 * 1000;
 const ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
 const BLOCK_TIME_MS = 15 * 60 * 1000;
 const MAX_FAILED_ATTEMPTS = 5;
-
-let authCache = null;
 const attemptsByIp = new Map();
 
 function json(statusCode, body, extraHeaders = {}) {
@@ -20,166 +18,97 @@ function json(statusCode, body, extraHeaders = {}) {
     headers: {
       'Content-Type': 'application/json',
       'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
       ...extraHeaders
     },
     body: JSON.stringify(body)
   };
 }
-
-function url(path = '') {
-  return `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(TABLE)}${path}`;
-}
-
-function unb64url(str) {
-  return Buffer.from(str, 'base64url').toString('utf8');
-}
-
-function hashPassword(password, salt) {
-  return crypto.pbkdf2Sync(String(password || ''), salt, 120000, 32, 'sha256').toString('hex');
-}
-
-function safeEqualText(a, b) {
-  const left = crypto.createHash('sha256').update(String(a || '')).digest();
-  const right = crypto.createHash('sha256').update(String(b || '')).digest();
-  return crypto.timingSafeEqual(left, right);
-}
-
-function safeEqualHex(a, b) {
-  try {
-    const left = Buffer.from(String(a || ''), 'hex');
-    const right = Buffer.from(String(b || ''), 'hex');
-    return left.length > 0 && left.length === right.length && crypto.timingSafeEqual(left, right);
-  } catch (_) {
-    return false;
-  }
-}
-
-function safeParse(record) {
-  const key = record?.fields?.Key || '';
-  if (!key.startsWith(CONFIG_PREFIX)) return null;
-  try { return JSON.parse(unb64url(key.slice(CONFIG_PREFIX.length))); } catch (_) { return null; }
-}
-
-async function getConfig() {
-  if (authCache && authCache.expiresAt > Date.now()) return authCache.config;
-  if (!process.env.AIRTABLE_API_TOKEN || !process.env.AIRTABLE_BASE_ID) return null;
-  try {
-    const formula = encodeURIComponent(`LEFT({Key}, ${CONFIG_PREFIX.length})='${CONFIG_PREFIX}'`);
-    const res = await fetch(url(`?filterByFormula=${formula}&maxRecords=1`), {
-      headers: { Authorization: `Bearer ${process.env.AIRTABLE_API_TOKEN}` }
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) return null;
-    const config = safeParse(data.records?.[0]);
-    authCache = { config, expiresAt: Date.now() + AUTH_CACHE_TTL_MS };
-    return config;
-  } catch (_) {
-    return null;
-  }
-}
-
-function verify(password, config) {
-  if (config?.passwordHash && config?.salt) {
-    return safeEqualHex(hashPassword(password, config.salt), config.passwordHash);
-  }
-  return Boolean(process.env.ADMIN_PASSWORD) && safeEqualText(password, process.env.ADMIN_PASSWORD);
-}
-
 function clientIp(event) {
   const headers = event.headers || {};
   return String(
-    headers['x-nf-client-connection-ip'] ||
-    headers['X-Nf-Client-Connection-Ip'] ||
-    headers['x-forwarded-for'] ||
-    headers['X-Forwarded-For'] ||
-    'unknown'
+    headers['x-nf-client-connection-ip'] || headers['X-Nf-Client-Connection-Ip'] ||
+    headers['x-forwarded-for'] || headers['X-Forwarded-For'] || 'unknown'
   ).split(',')[0].trim().slice(0, 120);
 }
-
-function cleanupAttempts(now) {
-  if (attemptsByIp.size < 500) return;
-  for (const [key, value] of attemptsByIp.entries()) {
-    if ((!value.blockedUntil || value.blockedUntil < now) && value.windowStarted + ATTEMPT_WINDOW_MS < now) {
-      attemptsByIp.delete(key);
-    }
-  }
-}
-
-function getAttemptState(ip) {
+function getState(ip) {
   const now = Date.now();
-  cleanupAttempts(now);
   let state = attemptsByIp.get(ip);
-  if (!state || state.windowStarted + ATTEMPT_WINDOW_MS < now) {
+  if (!state || state.windowStarted + ATTEMPT_WINDOW_MS <= now) {
     state = { failures: 0, windowStarted: now, blockedUntil: 0 };
     attemptsByIp.set(ip, state);
   }
   return state;
 }
-
-function secondsUntil(until) {
-  return Math.max(1, Math.ceil((Number(until || 0) - Date.now()) / 1000));
-}
-
-function registerFailure(ip) {
-  const state = getAttemptState(ip);
+function retrySeconds(until) { return Math.max(1, Math.ceil((Number(until || 0) - Date.now()) / 1000)); }
+function registerLocalFailure(ip) {
+  const state = getState(ip);
   state.failures += 1;
   if (state.failures >= MAX_FAILED_ATTEMPTS) state.blockedUntil = Date.now() + BLOCK_TIME_MS;
   attemptsByIp.set(ip, state);
   return state;
 }
-
-function clearFailures(ip) {
-  attemptsByIp.delete(ip);
+function clearLocal(ip) { attemptsByIp.delete(ip); }
+async function persistentFailure(ip) {
+  try {
+    return await consume({ scope: 'ADMIN_LOGIN_FAIL', identity: ip, max: MAX_FAILED_ATTEMPTS, windowMs: ATTEMPT_WINDOW_MS });
+  } catch (error) {
+    console.warn('Límite persistente no disponible:', error.message);
+    return { allowed: true, count: 0, retryAfter: Math.ceil(BLOCK_TIME_MS / 1000) };
+  }
 }
 
 exports.handler = async function(event) {
   if (event.httpMethod !== 'POST') return json(405, { message: 'Method Not Allowed' });
-
   const ip = clientIp(event);
-  const state = getAttemptState(ip);
-  if (state.blockedUntil > Date.now()) {
-    const retryAfter = secondsUntil(state.blockedUntil);
-    return json(429, {
-      success: false,
-      message: `Demasiados intentos incorrectos. Espere ${Math.ceil(retryAfter / 60)} minuto(s) antes de intentar nuevamente.`
-    }, { 'Retry-After': String(retryAfter) });
+  const local = getState(ip);
+  if (local.blockedUntil > Date.now()) {
+    const retryAfter = retrySeconds(local.blockedUntil);
+    return json(429, { success: false, message: 'Demasiados intentos incorrectos. Espere antes de intentar nuevamente.' }, { 'Retry-After': String(retryAfter) });
+  }
+
+  let body = {};
+  try { body = JSON.parse(event.body || '{}'); }
+  catch (_) { return json(400, { success: false, message: 'Solicitud de acceso inválida.' }); }
+
+  const password = String(body.password || '');
+  if (!password || password.length > 256) {
+    registerLocalFailure(ip);
+    await persistentFailure(ip);
+    return json(401, { success: false, message: 'Contraseña incorrecta.' });
   }
 
   try {
-    const { password } = JSON.parse(event.body || '{}');
-    const suppliedPassword = String(password || '');
-    if (!suppliedPassword) {
-      registerFailure(ip);
-      return json(401, { success: false, message: 'Contraseña incorrecta.' });
-    }
-
-    const config = await getConfig();
+    const { config } = await loadConfigRecord();
     if (!config?.passwordHash && !process.env.ADMIN_PASSWORD) {
       return json(500, { message: 'La contraseña de administrador no está configurada en el servidor.' });
     }
 
-    if (verify(suppliedPassword, config)) {
-      clearFailures(ip);
-      const token = issueAdminToken();
+    if (verifyPassword(password, config)) {
+      clearLocal(ip);
+      const authVersion = Math.max(0, Number(config?.version || 0));
       return json(200, {
         success: true,
-        token,
-        expiresInHours: 12,
-        source: config?.passwordHash ? 'secure-config' : 'environment'
+        token: issueAdminToken({ authVersion }),
+        expiresInHours: 6,
+        source: config?.passwordHash ? String(config.algorithm || config.algo || 'pbkdf2-sha256-v1') : 'environment',
+        passwordConfigVersion: authVersion
       });
     }
 
-    const failed = registerFailure(ip);
-    if (failed.blockedUntil > Date.now()) {
-      const retryAfter = secondsUntil(failed.blockedUntil);
+    const failed = registerLocalFailure(ip);
+    const persistent = await persistentFailure(ip);
+    if (failed.blockedUntil > Date.now() || persistent.allowed === false) {
+      const retryAfter = persistent.retryAfter || retrySeconds(failed.blockedUntil);
+      failed.blockedUntil = Math.max(failed.blockedUntil, Date.now() + retryAfter * 1000);
+      attemptsByIp.set(ip, failed);
       return json(429, {
         success: false,
         message: 'Demasiados intentos incorrectos. El acceso quedó bloqueado temporalmente por 15 minutos.'
       }, { 'Retry-After': String(retryAfter) });
     }
-
     return json(401, { success: false, message: 'Contraseña incorrecta.' });
-  } catch (_) {
-    return json(400, { success: false, message: 'Solicitud de acceso inválida.' });
+  } catch (error) {
+    return json(500, { success: false, message: 'No fue posible validar el acceso en este momento.', detail: String(error.message || '').slice(0, 300) });
   }
 };
