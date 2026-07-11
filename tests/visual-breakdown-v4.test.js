@@ -102,6 +102,8 @@ assert.strictEqual(beforeTen.title.textContent, 'Desglose de Cargos para julio d
 
 const afterTen = run(true, '11');
 assert(!afterTen.host.innerHTML.includes('Beneficio Pronto Pago'));
-assert.strictEqual(afterTen.title.textContent, 'Desglose de Cargos para julio de 2026');
+assert(afterTen.host.innerHTML.includes('VIGILANCIA'));
+assert(afterTen.host.innerHTML.includes('Costo<br>Total'));
+assert(afterTen.host.innerHTML.includes('Su<br>Parte'));
 
 console.log('VISUAL_BREAKDOWN_V5_TESTS_OK');
