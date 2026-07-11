@@ -7,6 +7,7 @@ on:
     branches:
       - main
       - hardening-final-all-2026-07-11
+      - fix-balance-pronto-pago-2026-07-11
 
 permissions:
   contents: read
@@ -48,6 +49,9 @@ jobs:
 
       - name: Run final hardening tests
         run: node tests/final-hardening.test.js
+
+      - name: Run unified balance and prompt-payment tests
+        run: node tests/balance-engine-v4.test.js
 
       - name: Validate JSON files
         run: |

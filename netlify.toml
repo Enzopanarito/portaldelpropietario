@@ -18,6 +18,18 @@ path = "/admin*"
 function = "admin-monthly-close"
 path = "/admin*"
 
+[[edge_functions]]
+function = "balance-fix"
+path = "/"
+
+[[edge_functions]]
+function = "balance-fix"
+path = "/index.html"
+
+[[edge_functions]]
+function = "balance-fix"
+path = "/admin*"
+
 [[headers]]
 for = "/*"
   [headers.values]
