@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('assert');
-const { calculateOwnerBalance } = require('../netlify/functions/_balance_engine');
+const { calculateOwnerBalance } = require('../netlify/functions/_balance_engine_v4');
 const { buildPlan } = require('../netlify/functions/_monthly_close_core_v4');
 
 const owner={id:'owner10',fields:{Casa:10,Propietario:'Douglas',Alicuota:0.06186,'Deuda Anterior':100,'Deuda Anterior USD':100,'Deuda Anterior Bs Ref':0,'Deuda Restante':288.07}};
