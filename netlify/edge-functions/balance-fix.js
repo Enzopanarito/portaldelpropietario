@@ -52,8 +52,8 @@ const ownerBreakdownOverride = `<script id="vla-visual-breakdown-${BREAKDOWN_PRE
     var amount=Number(fields.Monto||0);
     var linked=Array.isArray(fields.Propietarios)?fields.Propietarios:[];
     var type=String(fields['Tipo de Gasto']||'');
-    if(type==='Gasto Común')return m(amount*Number(owner&&owner.Alicuota||0));
-    if(type==='Gasto Especial'&&linked.indexOf(owner&&owner.id)>=0)return m(amount/(linked.length||1));
+    if(type==='Gasto Común')return amount*Number(owner&&owner.Alicuota||0);
+    if(type==='Gasto Especial'&&linked.indexOf(owner&&owner.id)>=0)return amount/(linked.length||1);
     return 0;
   }
   function paymentReference(payment){
@@ -98,11 +98,12 @@ const ownerBreakdownOverride = `<script id="vla-visual-breakdown-${BREAKDOWN_PRE
     var promptBase=0;
     var expenses=Array.isArray(dataset.gastos)?dataset.gastos:[];
     expenses.forEach(function(expense){
-      var share=displayShare(expense,owner);
+      var rawShare=displayShare(expense,owner);
+      var share=m(rawShare);
       if(Math.abs(share)<=0.005)return;
       var fields=expense&&expense.fields||{};
       rows+=expenseRow(fields.Concepto||'Gasto',Number(fields.Monto||0),share);
-      if(String(fields['Forma de Pago']||'Bs BCV')!=='USD')promptBase=m(promptBase+share);
+      if(String(fields['Forma de Pago']||'Bs BCV')!=='USD')promptBase+=Number(rawShare||0);
     });
 
     var paid=0;
