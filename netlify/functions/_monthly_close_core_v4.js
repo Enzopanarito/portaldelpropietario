@@ -1,7 +1,7 @@
 'use strict';
 
 const { money, hashJson, isAppliedPayment } = require('./_monthly_close_core');
-const { calculateOwnerBalance, selectName } = require('./_balance_engine');
+const { calculateOwnerBalance, selectName } = require('./_balance_engine_v4');
 
 function ownerBefore(owner) {
   const f = owner?.fields || {};
