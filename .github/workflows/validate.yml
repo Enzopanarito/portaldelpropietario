@@ -11,6 +11,7 @@ on:
       - fix-all-houses-pronto-pago-2026-07-11
       - fix-access-balance-engine-2026-07-11
       - fix-official-balances-all-portals-2026-07-11
+      - fix-single-source-balances-2026-07-11
 
 permissions:
   contents: read
@@ -69,6 +70,7 @@ jobs:
         run: |
           node -e "JSON.parse(require('fs').readFileSync('package.json','utf8'))"
           if [ -f package-lock.json ]; then node -e "JSON.parse(require('fs').readFileSync('package-lock.json','utf8'))"; fi
+          node -e "JSON.parse(require('fs').readFileSync('release.json','utf8'))"
 
       - name: Scan for obvious committed secrets
         shell: bash
