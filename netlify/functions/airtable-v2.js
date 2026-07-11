@@ -20,14 +20,14 @@ exports.handler=async function(event){
   const auth=requireAdmin(event); if(!auth.ok) return auth.response;
   const {AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID}=process.env; const {httpMethod,body}=event;
   if(!AIRTABLE_API_TOKEN||!AIRTABLE_BASE_ID) return {statusCode:500,body:JSON.stringify({message:'Variables de entorno de Airtable no configuradas.'})};
-  const airtablePath=normalizePath(event.path);
-  if(isFinancialWrite(httpMethod,airtablePath)){const lock=await ensureFinancialWritesAllowed();if(!lock.ok)return lock.response;}
-  const url=buildAirtableUrl(event,airtablePath,AIRTABLE_BASE_ID); const forceRefresh=shouldForceRefresh(event); const cacheKey=getCacheKey(httpMethod,airtablePath,url); let airtableCalls=0;
+  const airtablePath=normalizePath(event.path); let airtableCalls=0;
   try{
+    if(isFinancialWrite(httpMethod,airtablePath)){const lock=await ensureFinancialWritesAllowed();if(!lock.ok)return lock.response;}
+    const url=buildAirtableUrl(event,airtablePath,AIRTABLE_BASE_ID); const forceRefresh=shouldForceRefresh(event); const cacheKey=getCacheKey(httpMethod,airtablePath,url);
     if(httpMethod==='GET'&&!forceRefresh){ const cached=cache.get(cacheKey); if(cached&&cached.expiresAt>Date.now()) return {statusCode:200,headers:{'Content-Type':'application/json','X-Cache':'HIT','X-Airtable-Calls':'0','Cache-Control':'private, max-age=60'},body:JSON.stringify(cached.data)}; }
     airtableCalls+=1; const response=await fetch(url,{method:httpMethod,headers:{Authorization:`Bearer ${AIRTABLE_API_TOKEN}`,'Content-Type':'application/json'},body:httpMethod!=='GET'?body:undefined}); const data=await response.json();
     if(!response.ok) return {statusCode:response.status,headers:{'Content-Type':'application/json','X-Airtable-Calls':String(airtableCalls)},body:JSON.stringify(data)};
     if(httpMethod==='GET') cache.set(cacheKey,{data,expiresAt:Date.now()+getCacheTtl(airtablePath)}); else clearCache();
     return {statusCode:200,headers:{'Content-Type':'application/json','X-Cache':httpMethod==='GET'?'MISS':'BYPASS','X-Airtable-Calls':String(airtableCalls),'Cache-Control':httpMethod==='GET'?'private, max-age=60':'no-store'},body:JSON.stringify(data)};
-  }catch(error){ return {statusCode:500,headers:{'Content-Type':'application/json','X-Airtable-Calls':String(airtableCalls)},body:JSON.stringify({message:'Error en la función del servidor.',detail:error.message})}; }
+  }catch(error){ return {statusCode:503,headers:{'Content-Type':'application/json','X-Airtable-Calls':String(airtableCalls),'Cache-Control':'no-store'},body:JSON.stringify({message:isFinancialWrite(httpMethod,airtablePath)?'No se pudo verificar el bloqueo financiero. La escritura fue detenida por seguridad.':'Error en la función del servidor.',detail:error.message})}; }
 };
