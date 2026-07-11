@@ -86,8 +86,7 @@ jobs:
                 .replace(/\u001b\[[0-9;]*m/g, '')
                 .split(/\r?\n/)
                 .filter(Boolean);
-              const relevant = raw.filter(line => /error|failed|failure|unauthor|forbidden|invalid|site|build|deploy/i.test(line));
-              const selected = (relevant.length ? relevant : raw).slice(-35).join('\n').slice(-5000);
+              const selected = raw.slice(-120).join('\n').slice(-12000);
               if (selected) diagnostic = `\n\n<details><summary>Diagnóstico seguro del despliegue</summary>\n\n\`\`\`text\n${selected}\n\`\`\`\n</details>`;
             }
             let body;
