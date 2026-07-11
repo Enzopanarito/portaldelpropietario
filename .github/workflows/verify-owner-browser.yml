@@ -1,0 +1,164 @@
+name: Verify Owner Portal Browser
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_run:
+    workflows: ["Deploy Netlify Production"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  verify-owner-portal:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve target URL
+        id: target
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "url=https://deploy-preview-${{ github.event.pull_request.number }}--villalosapamates.netlify.app" >> "$GITHUB_OUTPUT"
+          else
+            echo "url=https://villalosapamates.netlify.app" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Wait for the exact browser release
+        env:
+          TARGET_URL: ${{ steps.target.outputs.url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 90); do
+            headers="$(curl --silent --show-error --location --dump-header - --output /dev/null --max-time 30 "${TARGET_URL}/?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            marker="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-breakdown-presentation"{gsub("\r","");print $2}' | tail -1)"
+            if [ "$marker" = "2026-07-11-photo-v6" ]; then
+              echo "Browser release available at $TARGET_URL"
+              exit 0
+            fi
+            echo "Attempt $attempt: marker=${marker:-missing}"
+            sleep 10
+          done
+          echo "Expected browser release was not available."
+          exit 1
+
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.53.0
+          npx playwright install --with-deps chromium
+
+      - name: Verify table and all 15 official balances
+        env:
+          TARGET_URL: ${{ steps.target.outputs.url }}
+        shell: bash
+        run: |
+          cat > verify-owner-browser.cjs <<'NODE'
+          const { chromium } = require('playwright');
+          const fs = require('fs');
+
+          const expected = {
+            1:85, 2:0, 3:157.07, 4:306.40, 5:85, 6:0, 7:85, 8:85,
+            9:-20, 10:298.17, 11:-378.89, 12:109.99, 13:298.17, 14:-50, 15:186.90
+          };
+
+          function parseMoney(text) {
+            const raw = String(text || '').trim();
+            const negative = raw.startsWith('-') || /saldo a favor/i.test(raw);
+            const value = Number(raw.replace(/[^0-9.]/g, '')) || 0;
+            return negative ? -value : value;
+          }
+
+          (async () => {
+            const browser = await chromium.launch({ headless: true });
+            const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+            const pageErrors = [];
+            const consoleErrors = [];
+            page.on('pageerror', error => pageErrors.push(String(error.stack || error.message || error)));
+            page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
+
+            const response = await page.goto(`${process.env.TARGET_URL}/?browser=${Date.now()}`, { waitUntil: 'networkidle', timeout: 60000 });
+            await page.waitForFunction(() => {
+              const select = document.getElementById('welcomeSelector') || document.querySelector('select');
+              return select && Array.from(select.options).some(option => option.value);
+            }, null, { timeout: 30000 });
+
+            const welcome = page.locator('#welcomeSelector');
+            const firstValue = await welcome.locator('option').evaluateAll(options => {
+              const item = options.find(option => String(option.textContent || '').trim().startsWith('Casa 1 -')) || options.find(option => option.value);
+              return item ? item.value : '';
+            });
+            if (!firstValue) throw new Error('No se encontró la Casa 1 en el selector inicial.');
+            await welcome.selectOption(firstValue);
+            await page.getByRole('button', { name: /Consultar Estado de Cuenta/i }).click();
+
+            const breakdown = page.locator('[data-vla-breakdown-host="2026-07-11-photo-v6"]');
+            await breakdown.waitFor({ state: 'visible', timeout: 30000 });
+            await page.waitForFunction(() => {
+              const host = document.querySelector('[data-vla-breakdown-host="2026-07-11-photo-v6"]');
+              return host && /Costo\s*Total/i.test(host.innerText) && /Su\s*Parte/i.test(host.innerText);
+            }, null, { timeout: 30000 });
+
+            const breakdownText = await breakdown.innerText();
+            if (!/VIGILANCIA/i.test(breakdownText)) throw new Error('El desglose visible no contiene VIGILANCIA.');
+            if (/Recargo 10% por pérdida del pronto pago/i.test(breakdownText)) throw new Error('El recargo prohibido aparece como renglón.');
+
+            const balances = {};
+            const selector = page.locator('#userSelector');
+            for (const house of Object.keys(expected).map(Number)) {
+              const value = await selector.locator('option').evaluateAll((options, houseNumber) => {
+                const prefix = `Casa ${houseNumber} -`;
+                const item = options.find(option => String(option.textContent || '').trim().startsWith(prefix));
+                return item ? item.value : '';
+              }, house);
+              if (!value) throw new Error(`No se encontró la Casa ${house}.`);
+              await selector.selectOption(value);
+              await page.waitForTimeout(250);
+              const shown = parseMoney(await page.locator('#m-total').innerText());
+              balances[house] = shown;
+              if (Math.abs(shown - expected[house]) > 0.009) {
+                throw new Error(`Casa ${house}: saldo visible ${shown}, esperado ${expected[house]}.`);
+              }
+            }
+
+            if (pageErrors.length) throw new Error(`Errores JavaScript: ${pageErrors.join(' | ')}`);
+            const result = {
+              target: process.env.TARGET_URL,
+              status: response ? response.status() : null,
+              breakdownVisible: true,
+              hasCostoTotal: /Costo\s*Total/i.test(breakdownText),
+              hasSuParte: /Su\s*Parte/i.test(breakdownText),
+              hasVigilancia: /VIGILANCIA/i.test(breakdownText),
+              forbiddenRecargoVisible: /Recargo 10% por pérdida del pronto pago/i.test(breakdownText),
+              balances,
+              pageErrors,
+              consoleErrors
+            };
+            fs.writeFileSync('owner-browser-result.json', JSON.stringify(result, null, 2));
+            await page.screenshot({ path: 'owner-browser.png', fullPage: true });
+            console.log(JSON.stringify(result, null, 2));
+            await browser.close();
+          })().catch(error => {
+            fs.writeFileSync('owner-browser-error.txt', String(error.stack || error));
+            console.error(error.stack || error);
+            process.exit(1);
+          });
+          NODE
+          node verify-owner-browser.cjs
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: owner-portal-browser-evidence
+          path: |
+            owner-browser-result.json
+            owner-browser-error.txt
+            owner-browser.png
+          if-no-files-found: ignore
+          retention-days: 7
