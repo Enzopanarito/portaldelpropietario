@@ -1,62 +1,139 @@
 'use strict';
 
 const assert = require('assert');
-const { attachOfficialBalances } = require('../netlify/functions/_official_balances');
-const { calculateAllOwners, calculateOwnerBalance, money } = require('../netlify/functions/_balance_engine_v4');
+const fs = require('fs');
+const path = require('path');
+const {
+  CANONICAL_CONTRACT,
+  attachOfficialBalances,
+  chooseSnapshots
+} = require('../netlify/functions/_official_balances');
+const {
+  calculateAllOwners,
+  calculateOwnerBalance,
+  calculatedFields,
+  money
+} = require('../netlify/functions/_balance_engine_v4');
 
-const cutoff = '2026-07-11T18:00:00.000Z';
-const bases = {
-  1:[85,0], 2:[0,0], 3:[0,142.79], 4:[85,201.27], 5:[85,0],
-  6:[0,0], 7:[85,0], 8:[85,0], 9:[-20,0], 10:[85,193.79],
-  11:[0,-378.89], 12:[0,99.99], 13:[85,193.79], 14:[-50,0], 15:[0,169.91]
-};
 const expected = {
-  1:[85,0,0], 2:[0,0,0], 3:[0,157.07,14.28], 4:[85,221.40,20.13], 5:[85,0,0],
-  6:[0,0,0], 7:[85,0,0], 8:[85,0,0], 9:[-20,0,0], 10:[85,213.17,19.38],
-  11:[0,-378.89,0], 12:[0,109.99,10], 13:[85,213.17,19.38], 14:[-50,0,0], 15:[0,186.90,16.99]
+  1:[85,0,0,85], 2:[0,0,0,0], 3:[0,157.07,14.28,157.07],
+  4:[85,221.40,20.13,306.40], 5:[85,0,0,85], 6:[0,0,0,0],
+  7:[85,0,0,85], 8:[85,0,0,85], 9:[-20,0,0,-20],
+  10:[85,213.17,19.38,298.17], 11:[0,-378.89,0,-378.89],
+  12:[0,109.99,10,109.99], 13:[85,213.17,19.38,298.17],
+  14:[-50,0,0,-50], 15:[0,186.90,16.99,186.90]
 };
 
-const owners = Object.keys(bases).map(house => ({
+assert.strictEqual(CANONICAL_CONTRACT.release, '2026-07-11-v6');
+assert.strictEqual(CANONICAL_CONTRACT.month, '2026-07');
+assert.strictEqual(Object.keys(CANONICAL_CONTRACT.houses).length, 15);
+
+const owners = Object.keys(expected).map(house => ({
   id:`h${house}`,
-  fields:{Casa:Number(house),Propietario:`Casa ${house}`,Alicuota:0.06186,'Deuda Anterior':999,'Deuda Anterior USD':500,'Deuda Anterior Bs Ref':499}
-}));
-const controls = Object.entries(bases).map(([house,[usd,bs]]) => ({
-  id:`control-${house}`,
-  createdTime:cutoff,
   fields:{
-    Key:`CURRENT_BALANCE|2026-07|HOUSE=${house}|USD_CENTS=${Math.round(usd*100)}|BS_CENTS=${Math.round(bs*100)}|SURCHARGE_CENTS=${Math.round(Math.max(0,bs)*100)}|CUTOFF=${cutoff}`,
-    Version:20260711
+    Casa:Number(house),
+    Propietario:`Casa ${house}`,
+    Alicuota:0.06186,
+    'Deuda Anterior':999,
+    'Deuda Anterior USD':500,
+    'Deuda Anterior Bs Ref':499,
+    'Deuda Restante':12345
   }
 }));
 
-const officialOwners = attachOfficialBalances(owners,controls,'2026-07');
-assert.strictEqual(officialOwners.length,15);
-const results = calculateAllOwners(officialOwners,[],[],{month:'2026-07',day:11});
+// Incluso si Airtable entrega registros divergentes, el contrato aprobado de julio prevalece.
+const divergentControls = Object.keys(expected).map(house => ({
+  id:`wrong-${house}`,
+  createdTime:'2026-07-11T20:00:00.000Z',
+  fields:{
+    Key:`CURRENT_BALANCE|2026-07|HOUSE=${house}|USD_CENTS=999999|BS_CENTS=999999|SURCHARGE_CENTS=999999|CUTOFF=2026-07-11T20:00:00.000Z`,
+    Version:99999999
+  }
+}));
 
-for(let house=1;house<=15;house+=1){
-  const result=results.get(`h${house}`);
-  const [usd,bs,recargo]=expected[house];
-  assert.strictEqual(result.officialSnapshotActive,true,`Casa ${house}: corte oficial activo`);
-  assert.strictEqual(result.expiredTotalRef,0,`Casa ${house}: nadie tiene deuda vencida`);
-  assert.strictEqual(result.usd,usd,`Casa ${house}: USD`);
-  assert.strictEqual(result.bsRef,bs,`Casa ${house}: Bs ref`);
-  assert.strictEqual(result.recargoBsRef,recargo,`Casa ${house}: recargo`);
-  assert.strictEqual(result.totalRef,money(usd+bs),`Casa ${house}: total`);
+const snapshots = chooseSnapshots(divergentControls, '2026-07');
+assert.strictEqual(snapshots.size, 15);
+for (let house=1; house<=15; house+=1) {
+  assert.strictEqual(snapshots.get(house).source, 'canonical-contract', `Casa ${house}: fuente canónica`);
 }
 
-// Un pago creado después del corte reduce únicamente su moneda y no altera la deuda vencida.
-const postCutoffPayment={
-  id:'new-payment',createdTime:'2026-07-11T19:00:00.000Z',
-  fields:{'Propietario que Paga':['h10'],'Monto Pagado':20,'Equivalente USD Aplicado':20,'Forma de Pago':'Bs BCV','Fecha de Pago':'2026-07-11','[x] Aplicado al Cierre':false}
-};
-const house10=officialOwners.find(owner=>owner.id==='h10');
-const paid=calculateOwnerBalance(house10,[],[postCutoffPayment],{month:'2026-07',day:11});
-assert.strictEqual(paid.usd,85);
-assert.strictEqual(paid.bsRef,193.17);
-assert.strictEqual(paid.expiredTotalRef,0);
+const officialOwners = attachOfficialBalances(owners, divergentControls, '2026-07');
+const publicResults = calculateAllOwners(officialOwners, [], [], {month:'2026-07',day:11});
+const adminResults = calculateAllOwners(officialOwners, [], [], {month:'2026-07',day:11});
 
-// Al cambiar de mes el corte deja de estar activo y el motor normal vuelve a operar.
-const nextMonth=calculateOwnerBalance(house10,[],[],{month:'2026-08',day:1});
-assert.strictEqual(nextMonth.officialSnapshotActive,false);
+for (let house=1; house<=15; house+=1) {
+  const publicResult = publicResults.get(`h${house}`);
+  const adminResult = adminResults.get(`h${house}`);
+  const [usd,bs,recargo,total] = expected[house];
+  assert.strictEqual(publicResult.officialSnapshotActive, true, `Casa ${house}: corte activo`);
+  assert.strictEqual(publicResult.expiredUsd, 0, `Casa ${house}: vencida USD`);
+  assert.strictEqual(publicResult.expiredBsRef, 0, `Casa ${house}: vencida Bs`);
+  assert.strictEqual(publicResult.expiredTotalRef, 0, `Casa ${house}: vencida total`);
+  assert.strictEqual(publicResult.usd, usd, `Casa ${house}: USD`);
+  assert.strictEqual(publicResult.bsRef, bs, `Casa ${house}: Bs ref con recargo`);
+  assert.strictEqual(publicResult.recargoBsRef, recargo, `Casa ${house}: recargo`);
+  assert.strictEqual(publicResult.totalRef, total, `Casa ${house}: total`);
+
+  const publicFields = calculatedFields(publicResult, officialOwners[house-1]);
+  const adminFields = calculatedFields(adminResult, officialOwners[house-1]);
+  for (const field of ['Saldo USD Actual','Saldo Bs Ref Actual','Saldo Total Actual','Recargo Aplicado','Deuda Vencida Total','Mes Corriente Total','Saldo Oficial Activo']) {
+    assert.deepStrictEqual(publicFields[field], adminFields[field], `Casa ${house}: Público/Admin ${field}`);
+  }
+}
+
+// Un pago posterior al corte reduce únicamente su moneda.
+const postCutoffPayment = {
+  id:'new-payment',
+  createdTime:'2026-07-11T20:00:00.000Z',
+  fields:{
+    'Propietario que Paga':['h10'],
+    'Monto Pagado':20,
+    'Equivalente USD Aplicado':20,
+    'Forma de Pago':'Bs BCV',
+    'Fecha de Pago':'2026-07-11',
+    '[x] Aplicado al Cierre':false
+  }
+};
+const house10 = officialOwners.find(owner => owner.id === 'h10');
+const paid = calculateOwnerBalance(house10, [], [postCutoffPayment], {month:'2026-07',day:11});
+assert.strictEqual(paid.usd, 85);
+assert.strictEqual(paid.bsRef, 193.17);
+assert.strictEqual(paid.totalRef, 278.17);
+assert.strictEqual(paid.expiredTotalRef, 0);
+
+// Un gasto posterior al corte se agrega una sola vez y no altera la base aprobada del recargo.
+const postCutoffExpense = {
+  id:'new-expense',
+  createdTime:'2026-07-11T20:05:00.000Z',
+  fields:{
+    Concepto:'Gasto posterior',
+    Monto:10,
+    'Tipo de Gasto':'Gasto Especial',
+    Propietarios:['h4'],
+    'Forma de Pago':'Bs BCV'
+  }
+};
+const house4 = officialOwners.find(owner => owner.id === 'h4');
+const charged = calculateOwnerBalance(house4, [postCutoffExpense], [], {month:'2026-07',day:11});
+assert.strictEqual(charged.usd, 85);
+assert.strictEqual(charged.bsRef, 231.40);
+assert.strictEqual(charged.recargoBsRef, 20.13);
+assert.strictEqual(charged.totalRef, 316.40);
+
+// El contrato de julio no se arrastra automáticamente a agosto.
+const nextMonth = calculateOwnerBalance(house10, [], [], {month:'2026-08',day:1});
+assert.strictEqual(nextMonth.officialSnapshotActive, false);
+
+// El portal ya no puede depender de reemplazos regex de la función calc.
+const edgeSource = fs.readFileSync(path.join(__dirname, '../netlify/edge-functions/balance-fix.js'), 'utf8');
+assert.ok(edgeSource.includes("const RELEASE = '2026-07-11-v6'"));
+assert.ok(edgeSource.includes("headers.set('x-vla-balance-engine', 'v6')"));
+assert.ok(!edgeSource.includes("replace(/function calc"), 'No debe reescribir calc mediante regex');
+
+const netlifyConfig = fs.readFileSync(path.join(__dirname, '../netlify.toml'), 'utf8');
+assert.ok(/\[build\][\s\S]*publish\s*=\s*"\."/.test(netlifyConfig), 'Netlify debe publicar la raíz del repositorio');
+const release = JSON.parse(fs.readFileSync(path.join(__dirname, '../release.json'), 'utf8'));
+assert.strictEqual(release.release, CANONICAL_CONTRACT.release);
+assert.strictEqual(release.expectedHouses, 15);
 
 console.log('OFFICIAL_BALANCE_SYNC_TESTS_OK');
