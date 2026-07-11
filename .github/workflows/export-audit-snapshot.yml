@@ -1,0 +1,40 @@
+name: Export Audit Snapshot
+
+on:
+  push:
+    branches:
+      - audit-complete-system-2026-07-11
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Build repository snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$GITHUB_SHA" > AUDIT_COMMIT_SHA.txt
+          find . -path './.git' -prune -o -path './node_modules' -prune -o -type f -print | sort > AUDIT_FILE_INVENTORY.txt
+          zip -q -r repository-audit-snapshot.zip . \
+            -x '.git/*' 'node_modules/*' 'repository-audit-snapshot.zip'
+          sha256sum repository-audit-snapshot.zip > repository-audit-snapshot.sha256
+
+      - name: Upload repository snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: repository-audit-snapshot
+          path: |
+            repository-audit-snapshot.zip
+            repository-audit-snapshot.sha256
+            AUDIT_COMMIT_SHA.txt
+            AUDIT_FILE_INVENTORY.txt
+          retention-days: 7
