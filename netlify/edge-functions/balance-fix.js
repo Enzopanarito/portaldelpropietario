@@ -1,5 +1,5 @@
 const RELEASE = '2026-07-11-v6';
-const BREAKDOWN_PRESENTATION = '2026-07-11-photo-v4';
+const BREAKDOWN_PRESENTATION = '2026-07-11-photo-v5';
 
 const ownerOverride = `<script id="vla-balance-contract-${RELEASE}">
 (function(){
@@ -18,18 +18,39 @@ const ownerOverride = `<script id="vla-balance-contract-${RELEASE}">
     var recargo=m(o['Recargo Aplicado']);
     var expired=m(o['Deuda Vencida Total']);
     var currentMonth=m(o['Mes Corriente Total']);
-    var baseBs=m(debtBs-recargo);
     var linesUsd=[];
     var linesBs=[];
     if(Math.abs(debtUsd)>0.01)linesUsd.push({concept:'Saldo corriente oficial en dólares',totalAmount:debtUsd,amount:debtUsd,type:'Saldo oficial'});
-    if(Math.abs(baseBs)>0.01)linesBs.push({concept:'Saldo corriente oficial en bolívares',totalAmount:baseBs,amount:baseBs,type:'Saldo oficial'});
-    if(recargo>0.01)linesBs.push({concept:'Recargo 10% por pérdida del pronto pago',totalAmount:recargo,amount:recargo,type:'Recargo'});
+    if(Math.abs(debtBs)>0.01)linesBs.push({concept:'Saldo corriente oficial en bolívares',totalAmount:debtBs,amount:debtBs,type:'Saldo oficial'});
     return {linesUsd:linesUsd,linesBs:linesBs,paidUsd:0,paidBs:0,debtUsd:debtUsd,debtBs:debtBs,total:total,saldoFavor:total<-.01?Math.abs(total):0,bsDue:m(Math.max(0,debtBs)*r),active:[],expired:expired,currentMonth:currentMonth,recargo:recargo};
   };
 })();
 </script>`;
 
-const ownerBreakdownOverride = `<script id="vla-visual-breakdown-${BREAKDOWN_PRESENTATION}">
+const ownerBreakdownOverride = `<style id="vla-visual-breakdown-style-${BREAKDOWN_PRESENTATION}">
+  [data-vla-breakdown-host="${BREAKDOWN_PRESENTATION}"]{width:100%;display:block}
+  [data-vla-breakdown-host="${BREAKDOWN_PRESENTATION}"] .vla-breakdown-wrap{width:100%;overflow:hidden}
+  [data-vla-breakdown-host="${BREAKDOWN_PRESENTATION}"] .vla-breakdown-scroll{width:100%;overflow-x:auto}
+  [data-vla-breakdown-host="${BREAKDOWN_PRESENTATION}"] table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:14px}
+  [data-vla-breakdown-host="${BREAKDOWN_PRESENTATION}"] th{padding:0 8px 12px;font-weight:800;color:#475569;border-bottom:1px solid #cbd5e1}
+  [data-vla-breakdown-host="${BREAKDOWN_PRESENTATION}"] td{padding:12px 8px;border-bottom:1px solid #e2e8f0;vertical-align:middle}
+  [data-vla-breakdown-host="${BREAKDOWN_PRESENTATION}"] td:first-child,[data-vla-breakdown-host="${BREAKDOWN_PRESENTATION}"] th:first-child{text-align:left}
+  [data-vla-breakdown-host="${BREAKDOWN_PRESENTATION}"] td:not(:first-child),[data-vla-breakdown-host="${BREAKDOWN_PRESENTATION}"] th:not(:first-child){text-align:right}
+  [data-vla-breakdown-host="${BREAKDOWN_PRESENTATION}"] .vla-concept{font-weight:500;color:#334155;line-height:1.35}
+  [data-vla-breakdown-host="${BREAKDOWN_PRESENTATION}"] .vla-total{color:#64748b;white-space:nowrap}
+  [data-vla-breakdown-host="${BREAKDOWN_PRESENTATION}"] .vla-share{font-weight:700;color:#334155;white-space:nowrap}
+  [data-vla-breakdown-host="${BREAKDOWN_PRESENTATION}"] .vla-previous td{font-weight:800;color:#1e293b;border-bottom-color:#cbd5e1}
+  [data-vla-breakdown-host="${BREAKDOWN_PRESENTATION}"] .vla-summary td{color:#16a34a;font-weight:800;border-bottom:0;padding-top:18px;padding-bottom:6px}
+  html.dark [data-vla-breakdown-host="${BREAKDOWN_PRESENTATION}"] th,
+  html.dark [data-vla-breakdown-host="${BREAKDOWN_PRESENTATION}"] td,
+  html.dark [data-vla-breakdown-host="${BREAKDOWN_PRESENTATION}"] .vla-concept,
+  html.dark [data-vla-breakdown-host="${BREAKDOWN_PRESENTATION}"] .vla-total,
+  html.dark [data-vla-breakdown-host="${BREAKDOWN_PRESENTATION}"] .vla-share,
+  html.dark [data-vla-breakdown-host="${BREAKDOWN_PRESENTATION}"] .vla-previous td{color:#f8fafc!important;border-color:#334155}
+  html.dark [data-vla-breakdown-host="${BREAKDOWN_PRESENTATION}"] .vla-summary td{color:#4ade80!important}
+  @media(min-width:640px){[data-vla-breakdown-host="${BREAKDOWN_PRESENTATION}"] table{font-size:16px}}
+</style>
+<script id="vla-visual-breakdown-${BREAKDOWN_PRESENTATION}">
 (function(){
   if(window.__VLA_VISUAL_BREAKDOWN=== '${BREAKDOWN_PRESENTATION}')return;
   window.__VLA_VISUAL_BREAKDOWN='${BREAKDOWN_PRESENTATION}';
@@ -47,93 +68,222 @@ const ownerBreakdownOverride = `<script id="vla-visual-breakdown-${BREAKDOWN_PRE
       .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
       .replace(/"/g,'&quot;').replace(/'/g,'&#039;');
   }
+  function fieldObject(record){
+    return record&&record.fields&&typeof record.fields==='object'?record.fields:(record||{});
+  }
+  function selectName(value){
+    return value&&typeof value==='object'&&value.name?String(value.name):String(value||'');
+  }
+  function linkedIds(value){
+    return Array.isArray(value)
+      ? value.map(function(item){return typeof item==='string'?item:(item&&item.id)||'';}).filter(Boolean)
+      : [];
+  }
+  function dataset(){
+    if(typeof all!=='undefined'&&all)return all;
+    return window.all||window.portalData||window.data||{propietarios:[],gastos:[],pagos:[]};
+  }
+  function selectedOwner(){
+    if(typeof currentOwner!=='undefined'&&currentOwner)return currentOwner;
+    if(window.currentOwner)return window.currentOwner;
+    if(window.selectedOwner)return window.selectedOwner;
+    if(window.currentPropietario)return window.currentPropietario;
+    var data=dataset();
+    var owners=Array.isArray(data.propietarios)?data.propietarios:(Array.isArray(data.owners)?data.owners:[]);
+    var selector=document.getElementById('userSelector')||document.getElementById('welcomeSelector')||document.querySelector('select[data-owner-selector]');
+    var id=selector&&selector.value;
+    if(!id)return null;
+    return owners.find(function(owner){return String(owner&&owner.id||'')===String(id);})||null;
+  }
   function displayShare(expense,owner){
-    var fields=expense&&expense.fields||{};
-    var amount=Number(fields.Monto||0);
-    var linked=Array.isArray(fields.Propietarios)?fields.Propietarios:[];
-    var type=String(fields['Tipo de Gasto']||'');
-    if(type==='Gasto Común')return amount*Number(owner&&owner.Alicuota||0);
-    if(type==='Gasto Especial'&&linked.indexOf(owner&&owner.id)>=0)return amount/(linked.length||1);
+    var fields=fieldObject(expense);
+    var amount=Number(fields.Monto||fields.amount||0);
+    var linked=linkedIds(fields.Propietarios||fields.owners);
+    var type=selectName(fields['Tipo de Gasto']||fields.type);
+    var aliquota=Number(owner&&owner.Alicuota||owner&&owner.aliquota||0);
+    if(aliquota>1)aliquota=aliquota/100;
+    if(type==='Gasto Común'||type==='Gasto Comun')return amount*aliquota;
+    if(type==='Gasto Especial'&&linked.indexOf(String(owner&&owner.id||''))>=0)return amount/(linked.length||1);
     return 0;
   }
   function paymentReference(payment){
-    var fields=payment&&payment.fields||{};
-    return m(Number(fields['Equivalente USD Aplicado']||fields['Monto Pagado']||0));
+    var fields=fieldObject(payment);
+    return m(Number(fields['Equivalente USD Aplicado']||fields['Monto Pagado']||fields.amount||0));
+  }
+  function normalize(text){
+    return String(text||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().trim();
+  }
+  function findTitle(){
+    var exact=document.getElementById('breakdown-title')||document.querySelector('[data-vla-breakdown-title]');
+    if(exact)return exact;
+    var headings=Array.prototype.slice.call(document.querySelectorAll('h1,h2,h3,h4,h5,.card-title,.section-title'));
+    return headings.find(function(node){
+      var text=normalize(node.textContent);
+      return text.indexOf('desglose de cargos')>=0||text==='desglose';
+    })||null;
+  }
+  function findExistingHost(){
+    return document.querySelector('[data-vla-breakdown-host="${BREAKDOWN_PRESENTATION}"]')
+      ||document.getElementById('breakdown')
+      ||document.getElementById('expenseBreakdown')
+      ||document.getElementById('chargeBreakdown')
+      ||document.getElementById('breakdown-content')
+      ||document.getElementById('desglose-cargos')
+      ||document.querySelector('[data-vla-breakdown]');
+  }
+  function ensureHost(owner){
+    var host=findExistingHost();
+    if(host){
+      host.setAttribute('data-vla-breakdown-host','${BREAKDOWN_PRESENTATION}');
+      return host;
+    }
+    var title=findTitle();
+    host=document.createElement('div');
+    host.id='vla-visual-breakdown-host';
+    host.setAttribute('data-vla-breakdown-host','${BREAKDOWN_PRESENTATION}');
+    if(title){
+      var card=title.closest&&title.closest('.card,section,article,[class*="card"]');
+      if(card){
+        card.appendChild(host);
+      }else if(title.parentNode){
+        title.parentNode.insertBefore(host,title.nextSibling);
+      }
+    }else{
+      var section=document.createElement('section');
+      section.id='vla-visual-breakdown-section';
+      section.className='card p-5 sm:p-6 mb-5';
+      var heading=document.createElement('h2');
+      heading.id='breakdown-title';
+      heading.className='text-xl font-black mb-5';
+      heading.textContent='Desglose de Cargos';
+      section.appendChild(heading);
+      section.appendChild(host);
+      var anchor=document.getElementById('notas')||document.getElementById('morosos-box');
+      var parent=(anchor&&anchor.parentNode)||document.querySelector('main')||document.body;
+      if(anchor&&anchor.parentNode)anchor.parentNode.insertBefore(section,anchor);
+      else parent.appendChild(section);
+    }
+    return host;
   }
   function expenseRow(concept,total,share){
-    return '<tr class="border-b border-slate-200">'
-      +'<td class="py-3 pr-3 align-top text-slate-700 font-medium leading-snug">'+esc(String(concept||'Gasto').toUpperCase())+'</td>'
-      +'<td class="py-3 px-2 align-middle text-right text-slate-500 whitespace-nowrap">'+fmt(total)+'</td>'
-      +'<td class="py-3 pl-2 align-middle text-right font-bold text-slate-700 whitespace-nowrap">'+fmt(share)+'</td>'
+    return '<tr>'
+      +'<td class="vla-concept">'+esc(String(concept||'Gasto').toUpperCase())+'</td>'
+      +'<td class="vla-total">'+fmt(total)+'</td>'
+      +'<td class="vla-share">'+fmt(share)+'</td>'
       +'</tr>';
   }
   function previousRow(amount){
-    return '<tr class="border-b border-slate-300">'
-      +'<td class="py-3 pr-3 font-extrabold text-slate-800">Deuda del Mes Anterior</td>'
-      +'<td class="py-3 px-2"></td>'
-      +'<td class="py-3 pl-2 text-right font-extrabold text-slate-800 whitespace-nowrap">'+fmt(amount)+'</td>'
+    return '<tr class="vla-previous">'
+      +'<td>Deuda del Mes Anterior</td><td></td><td>'+fmt(amount)+'</td>'
       +'</tr>';
   }
   function summaryRow(label,amount){
-    return '<tr class="text-green-600 font-extrabold">'
-      +'<td class="pt-5 pb-2 pr-3" colspan="2">'+esc(label)+'</td>'
-      +'<td class="pt-5 pb-2 pl-2 text-right whitespace-nowrap">- '+fmt(amount)+'</td>'
+    return '<tr class="vla-summary">'
+      +'<td colspan="2">'+esc(label)+'</td><td>- '+fmt(amount)+'</td>'
       +'</tr>';
   }
+  function currentDay(){
+    if(typeof caracasParts!=='undefined'&&typeof caracasParts==='function')return Number(caracasParts().day||31);
+    if(typeof window.caracasParts==='function')return Number(window.caracasParts().day||31);
+    return 31;
+  }
+  function currentMonthLabel(){
+    if(typeof monthLabel!=='undefined'&&typeof monthLabel==='function')return monthLabel();
+    if(typeof window.monthLabel==='function')return window.monthLabel();
+    return 'mes actual';
+  }
 
-  window.renderBreakdown=function(){
-    var owner=typeof currentOwner!=='undefined'?currentOwner:null;
-    var dataset=typeof all!=='undefined'&&all?all:{gastos:[],pagos:[]};
-    var target=document.getElementById('breakdown');
-    var title=document.getElementById('breakdown-title');
-    if(!owner||!target)return;
+  function draw(){
+    var owner=selectedOwner();
+    if(!owner)return false;
+    var data=dataset();
+    var host=ensureHost(owner);
+    var title=findTitle();
+    if(title)title.textContent='Desglose de Cargos para '+currentMonthLabel();
 
-    if(title){
-      var label=typeof window.monthLabel==='function'?window.monthLabel():'mes actual';
-      title.textContent='Desglose de Cargos para '+label;
-    }
-
-    var previous=m(Number(owner['Deuda Anterior']||0));
+    var previous=m(Number(owner['Deuda Anterior']||owner.previousDebt||0));
     var rows=previousRow(previous);
-    var promptBase=0;
-    var expenses=Array.isArray(dataset.gastos)?dataset.gastos:[];
+    var promptBaseRaw=0;
+    var expenses=Array.isArray(data.gastos)?data.gastos:(Array.isArray(data.expenses)?data.expenses:[]);
     expenses.forEach(function(expense){
       var rawShare=displayShare(expense,owner);
       var share=m(rawShare);
       if(Math.abs(share)<=0.005)return;
-      var fields=expense&&expense.fields||{};
-      rows+=expenseRow(fields.Concepto||'Gasto',Number(fields.Monto||0),share);
-      if(String(fields['Forma de Pago']||'Bs BCV')!=='USD')promptBase+=Number(rawShare||0);
+      var fields=fieldObject(expense);
+      rows+=expenseRow(fields.Concepto||fields.concept||'Gasto',Number(fields.Monto||fields.amount||0),share);
+      if(selectName(fields['Forma de Pago']||fields.paymentMode||'Bs BCV')!=='USD')promptBaseRaw+=Number(rawShare||0);
     });
 
     var paid=0;
-    var payments=Array.isArray(dataset.pagos)?dataset.pagos:[];
+    var payments=Array.isArray(data.pagos)?data.pagos:(Array.isArray(data.payments)?data.payments:[]);
     payments.forEach(function(payment){
-      var fields=payment&&payment.fields||{};
-      var linked=Array.isArray(fields['Propietario que Paga'])?fields['Propietario que Paga']:[];
-      if(linked.indexOf(owner.id)<0||fields['[x] Aplicado al Cierre']===true)return;
+      var fields=fieldObject(payment);
+      var linked=linkedIds(fields['Propietario que Paga']||fields.owner);
+      if(linked.indexOf(String(owner.id||''))<0||fields['[x] Aplicado al Cierre']===true)return;
       paid=m(paid+paymentReference(payment));
     });
 
-    var day=typeof window.caracasParts==='function'?Number(window.caracasParts().day||0):31;
-    var benefit=day<=10?m(promptBase*0.10):0;
+    var benefit=currentDay()<=10?m(promptBaseRaw*0.10):0;
     var summary='';
     if(benefit>0.005)summary+=summaryRow('Beneficio Pronto Pago',benefit);
     summary+=summaryRow('Total Pagado',paid);
 
-    target.className='';
-    target.innerHTML='<div class="w-full overflow-hidden">'
-      +'<div class="overflow-x-auto">'
-      +'<table class="w-full table-fixed text-sm sm:text-base">'
-      +'<colgroup><col style="width:55%"><col style="width:23%"><col style="width:22%"></colgroup>'
-      +'<thead><tr class="border-b border-slate-300 text-slate-600">'
-      +'<th class="pb-3 pr-3 text-left font-extrabold">Concepto</th>'
-      +'<th class="pb-3 px-2 text-right font-extrabold">Costo<br>Total</th>'
-      +'<th class="pb-3 pl-2 text-right font-extrabold">Su<br>Parte</th>'
-      +'</tr></thead>'
-      +'<tbody>'+rows+summary+'</tbody>'
-      +'</table></div></div>';
-  };
+    host.className='';
+    host.setAttribute('data-vla-breakdown-owner',String(owner.id||owner.Casa||'selected'));
+    host.innerHTML='<div class="vla-breakdown-wrap"><div class="vla-breakdown-scroll">'
+      +'<table aria-label="Desglose de cargos"><colgroup><col style="width:55%"><col style="width:23%"><col style="width:22%"></colgroup>'
+      +'<thead><tr><th>Concepto</th><th>Costo<br>Total</th><th>Su<br>Parte</th></tr></thead>'
+      +'<tbody>'+rows+summary+'</tbody></table></div></div>';
+    return true;
+  }
+
+  function schedule(){
+    clearTimeout(window.__VLA_BREAKDOWN_TIMER);
+    window.__VLA_BREAKDOWN_TIMER=setTimeout(function(){try{draw();}catch(error){console.error('VLA breakdown render error',error);}},50);
+  }
+
+  window.renderBreakdown=draw;
+  window.__VLA_RENDER_BREAKDOWN=draw;
+
+  if(typeof window.renderUser==='function'&&!window.renderUser.__vlaBreakdownWrapped){
+    var previousRenderUser=window.renderUser;
+    var wrapped=function(){
+      var result=previousRenderUser.apply(this,arguments);
+      schedule();
+      setTimeout(schedule,180);
+      return result;
+    };
+    wrapped.__vlaBreakdownWrapped=true;
+    window.renderUser=wrapped;
+  }
+
+  document.addEventListener('change',function(event){
+    var target=event&&event.target;
+    if(target&&(target.id==='userSelector'||target.id==='welcomeSelector'||target.matches&&target.matches('select[data-owner-selector]')))schedule();
+  });
+  document.addEventListener('click',function(event){
+    var target=event&&event.target;
+    if(target&&(target.id==='enterBtn'||target.closest&&target.closest('#enterBtn')))setTimeout(schedule,120);
+  });
+
+  function boot(){
+    schedule();
+    var attempts=0;
+    var timer=setInterval(function(){
+      attempts+=1;
+      if(draw()||attempts>=40)clearInterval(timer);
+    },250);
+    if(document.body&&typeof MutationObserver!=='undefined'){
+      var observer=new MutationObserver(function(){
+        var owner=selectedOwner();
+        var host=findExistingHost();
+        var ownerKey=owner&&String(owner.id||owner.Casa||'selected');
+        if(owner&&(!host||host.getAttribute('data-vla-breakdown-owner')!==ownerKey))schedule();
+      });
+      observer.observe(document.body,{childList:true,subtree:true});
+    }
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
 </script>`;
 
