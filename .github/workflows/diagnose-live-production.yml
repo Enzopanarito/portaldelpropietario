@@ -1,0 +1,147 @@
+name: Diagnose Live Production
+
+on:
+  push:
+    branches:
+      - diagnose-live-production-2026-07-11
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Inspect live HTML and headers
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://villalosapamates.netlify.app/?diagnostic=${GITHUB_RUN_ID}"
+          curl --fail --silent --show-error --location -D live-headers.txt "$URL" -o live.html
+          echo '=== VLA HEADERS ==='
+          grep -iE '^(HTTP/|content-type:|cache-control:|x-vla-|etag:|age:)' live-headers.txt || true
+          echo '=== LIVE HTML MARKERS ==='
+          for marker in \
+            'Bienvenido a Villa Los Apamates' \
+            'Desglose de Cargos del Mes Actual' \
+            'vla-visual-breakdown' \
+            '2026-07-11-photo-v5' \
+            'breakdown-title' \
+            'renderBreakdown' \
+            'Costo<br>Total' \
+            'Su<br>Parte'; do
+            if grep -Fq "$marker" live.html; then echo "FOUND: $marker"; else echo "MISSING: $marker"; fi
+          done
+          echo '=== SCRIPT IDS ==='
+          grep -oE '<script[^>]+id="[^"]+"' live.html | tail -30 || true
+          echo '=== HTML SIZE ==='
+          wc -c live.html
+
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.53.0
+          npx playwright install --with-deps chromium
+
+      - name: Exercise the real owner portal
+        shell: bash
+        run: |
+          cat > diagnose-live.cjs <<'NODE'
+          const { chromium } = require('playwright');
+          const fs = require('fs');
+
+          (async () => {
+            const browser = await chromium.launch({ headless: true });
+            const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+            const consoleMessages = [];
+            const pageErrors = [];
+            page.on('console', msg => consoleMessages.push(`${msg.type()}: ${msg.text()}`));
+            page.on('pageerror', error => pageErrors.push(String(error.stack || error.message || error)));
+
+            const url = `https://villalosapamates.netlify.app/?browserDiagnostic=${Date.now()}`;
+            const response = await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
+            const headers = response ? await response.allHeaders() : {};
+
+            await page.waitForTimeout(3000);
+            const selects = page.locator('select');
+            const selectCount = await selects.count();
+            let selected = false;
+            let selectedValue = '';
+            for (let i = 0; i < selectCount; i++) {
+              const select = selects.nth(i);
+              const options = await select.locator('option').evaluateAll(nodes => nodes.map(n => ({ value: n.value, text: n.textContent })));
+              const usable = options.find(option => String(option.value || '').trim());
+              if (usable) {
+                await select.selectOption(usable.value);
+                selected = true;
+                selectedValue = usable.value;
+                break;
+              }
+            }
+
+            const consult = page.getByRole('button', { name: /Consultar Estado de Cuenta/i }).first();
+            if (selected && await consult.count()) {
+              await consult.click();
+              await page.waitForTimeout(5000);
+            }
+
+            const bodyText = await page.locator('body').innerText();
+            const headings = await page.locator('h1,h2,h3,h4,h5').allInnerTexts();
+            const tables = await page.locator('table').count();
+            const breakdownHost = page.locator('[data-vla-breakdown-host], #breakdown, #vla-visual-breakdown-host');
+            const breakdownHostCount = await breakdownHost.count();
+            const breakdownHtml = breakdownHostCount ? await breakdownHost.first().innerHTML() : '';
+            const breakdownVisible = breakdownHostCount ? await breakdownHost.first().isVisible().catch(() => false) : false;
+            const scripts = await page.locator('script[id]').evaluateAll(nodes => nodes.map(n => n.id));
+
+            const diagnostic = {
+              url,
+              status: response ? response.status() : null,
+              headers: Object.fromEntries(Object.entries(headers).filter(([key]) => key.startsWith('x-vla') || ['cache-control','content-type','etag','age'].includes(key))),
+              title: await page.title(),
+              headings,
+              selectCount,
+              selected,
+              selectedValue,
+              tables,
+              breakdownHostCount,
+              breakdownVisible,
+              breakdownHasCostTotal: /Costo\s*(<br>)?\s*Total/i.test(breakdownHtml),
+              breakdownHasSuParte: /Su\s*(<br>)?\s*Parte/i.test(breakdownHtml),
+              bodyHasCostoTotal: /Costo\s+Total/i.test(bodyText),
+              bodyHasSuParte: /Su\s+Parte/i.test(bodyText),
+              bodyHasVigilancia: /VIGILANCIA/i.test(bodyText),
+              bodyHasLegacyTitle: /Desglose de Cargos del Mes Actual/i.test(bodyText),
+              bodyHasModernTitle: /Desglose de Cargos para/i.test(bodyText),
+              scriptIds: scripts,
+              consoleMessages,
+              pageErrors,
+              breakdownHtml: breakdownHtml.slice(0, 20000),
+              bodyText: bodyText.slice(0, 30000)
+            };
+
+            fs.writeFileSync('live-diagnostic.json', JSON.stringify(diagnostic, null, 2));
+            await page.screenshot({ path: 'live-portal.png', fullPage: true });
+            console.log(JSON.stringify(diagnostic, null, 2));
+            await browser.close();
+          })().catch(error => {
+            console.error(error.stack || error);
+            process.exit(1);
+          });
+          NODE
+          node diagnose-live.cjs
+
+      - name: Upload diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-production-diagnostic
+          path: |
+            live-headers.txt
+            live.html
+            live-diagnostic.json
+            live-portal.png
+          retention-days: 3
