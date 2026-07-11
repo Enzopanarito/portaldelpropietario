@@ -10,7 +10,7 @@ const release = JSON.parse(fs.readFileSync(path.join(__dirname, '../release.json
 
 assert.strictEqual(release.release, '2026-07-11-v6');
 assert.strictEqual(release.expectedHouses, 15);
-assert.strictEqual(release.breakdownPresentation, '2026-07-11-photo-v4');
+assert.strictEqual(release.breakdownPresentation, '2026-07-11-photo-v6');
 
 const visualStart = source.indexOf('const ownerBreakdownOverride');
 const adminStart = source.indexOf('const adminOverride');

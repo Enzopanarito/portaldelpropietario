@@ -1,5 +1,5 @@
 const RELEASE = '2026-07-11-v6';
-const BREAKDOWN_PRESENTATION = '2026-07-11-photo-v5';
+const BREAKDOWN_PRESENTATION = '2026-07-11-photo-v6';
 
 const ownerOverride = `<script id="vla-balance-contract-${RELEASE}">
 (function(){
@@ -310,7 +310,7 @@ const adminOverride = `<script id="vla-admin-balance-contract-${RELEASE}">
 
 function appendInjection(html, injection, marker) {
   if (!injection || html.includes(marker)) return html;
-  return html.includes('</body>') ? html.replace('</body>', injection + '</body>') : html + injection;
+  return html.includes('</body>') ? html.replace('</body>', () => injection + '</body>') : html + injection;
 }
 
 export default async (request, context) => {

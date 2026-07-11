@@ -4,7 +4,7 @@
   "expectedHouses": 15,
   "balanceEngine": 6,
   "balanceSource": "canonical-july-2026",
-  "breakdownPresentation": "2026-07-11-photo-v4",
+  "breakdownPresentation": "2026-07-11-photo-v6",
   "cutoff": "2026-07-11T19:10:08.000Z",
   "productionPublishDirectory": "."
 }
