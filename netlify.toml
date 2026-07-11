@@ -14,6 +14,10 @@ path = "/index.html"
 function = "admin-links"
 path = "/admin*"
 
+[[edge_functions]]
+function = "admin-monthly-close"
+path = "/admin*"
+
 [[headers]]
 for = "/*"
   [headers.values]
