@@ -1,0 +1,56 @@
+name: Apply Clean Financial Source
+on:
+  push:
+    branches: [hardening-remove-legacy-writes-2026-07-12]
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hardening-remove-legacy-writes-2026-07-12
+          fetch-depth: 0
+      - name: Apply protected source flows
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          admin=Path('admin.html'); s=admin.read_text('utf-8')
+          manual="async function manualPay(){if(window.vlaPayBusy)return;const btn=document.getElementById('pay-confirm');try{const mode=document.getElementById('pay-mode').value,amount=Number(document.getElementById('pay-amount').value),owner=owners.find(x=>x.id===currentOwnerId),r=rate();if(!currentOwnerId||!owner)throw new Error('Seleccione un propietario.');if(!(amount>0))throw new Error('Ingrese un monto válido en USD referencial.');if(mode==='Bs BCV'&&!(r>0))throw new Error('No hay tasa BCV disponible. Presione Actualizar e intente de nuevo.');window.vlaPayBusy=true;btn.disabled=true;btn.textContent='Registrando...';const processed=await adminFetch('/.netlify/functions/admin-manual-payment',{method:'POST',body:JSON.stringify({ownerId:currentOwnerId,mode,amount,rate:r,reference:'Pago manual admin'})});hidePay();toast(processed.message||'Pago registrado.');await loadAll(true)}catch(e){toast(e.message,true)}finally{window.vlaPayBusy=false;btn.disabled=false;btn.textContent='Registrar'}}"
+          s,n=re.subn(r"async function manualPay\(\)\{[\s\S]*?\}\nasync function addExpense",manual+"\nasync function addExpense",s,count=1)
+          if n!=1: raise SystemExit(f'manualPay matches={n}')
+          old="await adminFetch('/.netlify/functions/airtable/'+encodeURIComponent(TABLE_GASTOS),{method:'POST',body:JSON.stringify({records:[{fields:{Concepto:concept,Monto:amount,'Tipo de Gasto':type,Frecuencia:freq,Propietarios:selected,'Forma de Pago':mode}}],typecast:true})});"
+          new="await adminFetch('/.netlify/functions/admin-expense',{method:'POST',body:JSON.stringify({action:'create',concept,amount,type,mode,frequency:freq,ownerIds:selected})});"
+          if old not in s: raise SystemExit('legacy expense call not found')
+          s=s.replace(old,new,1)
+          protected="async function handleReport(e){const btn=e.target.closest('button');if(!btn||window.vlaReportBusy)return;const id=btn.dataset.id,r=reportes.find(x=>x.id===id);if(!r)return;const approve=btn.classList.contains('confirm-report'),reject=btn.classList.contains('reject-report');if(!approve&&!reject)return;if(reject&&!confirm('¿Rechazar este pago?'))return;const original=btn.textContent;try{window.vlaReportBusy=true;btn.disabled=true;btn.textContent=approve?'Confirmando...':'Rechazando...';const processed=await adminFetch('/.netlify/functions/process-payment-report',{method:'POST',body:JSON.stringify({reportId:id,decision:approve?'approve':'reject'})});toast(processed.message||(approve?'Pago confirmado, recibo procesado y acceso sincronizado.':'Pago rechazado y acceso sincronizado.'));await loadAll(true)}catch(err){toast(err.message,true)}finally{window.vlaReportBusy=false;btn.disabled=false;btn.textContent=original}}"
+          s,n=re.subn(r"async function handleReport\(e\)\{[\s\S]*?\}\nfunction closeRows\(\)",protected+"\nfunction closeRows()",s,count=1)
+          if n!=1: raise SystemExit(f'handleReport matches={n}')
+          admin.write_text(s,'utf-8')
+          edge=Path('netlify/edge-functions/admin-links.js'); e=edge.read_text('utf-8')
+          e,n1=re.subn(r"\n  // Pago manual admin:[\s\S]*?\n  // Confirmar/rechazar reportes siempre debe pasar por backend", "\n\n  // Flujos financieros protegidos definidos directamente en admin.html.\n  // Confirmar/rechazar reportes siempre debe pasar por backend",e,count=1)
+          e,n2=re.subn(r"\n  // Confirmar/rechazar reportes siempre debe pasar por backend[\s\S]*?\n  const headers = new Headers", "\n\n  const headers = new Headers",e,count=1)
+          if n1!=1 or n2!=1: raise SystemExit(f'admin-links blocks={n1},{n2}')
+          edge.write_text(e,'utf-8')
+          close=Path('netlify/edge-functions/admin-monthly-close.js'); c=close.read_text('utf-8')
+          c,n3=re.subn(r"\n  const oldExpenseCall = [\s\S]*?\n  if \(html\.includes\(oldExpenseCall\)\) html = html\.replace\(oldExpenseCall, newExpenseCall\);", "",c,count=1)
+          if n3!=1: raise SystemExit(f'oldExpenseCall blocks={n3}')
+          close.write_text(c,'utf-8')
+          PY
+          node --input-type=module --check < netlify/edge-functions/admin-links.js
+          node --input-type=module --check < netlify/edge-functions/admin-monthly-close.js
+          ! grep -F "/.netlify/functions/airtable/'+encodeURIComponent(TABLE_PAGOS)" admin.html
+          ! grep -F "/.netlify/functions/airtable/'+encodeURIComponent(TABLE_REPORTES)" admin.html
+          ! grep -F "/.netlify/functions/airtable/'+encodeURIComponent(TABLE_GASTOS)" admin.html
+      - name: Commit source cleanup
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add admin.html netlify/edge-functions/admin-links.js netlify/edge-functions/admin-monthly-close.js
+          git commit -m 'Eliminar rutas financieras heredadas del administrador'
+          git push origin HEAD:hardening-remove-legacy-writes-2026-07-12
