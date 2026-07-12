@@ -27,8 +27,15 @@ assert(css.includes('.vla-brand-logo'),'Falta estilo para el logo oficial.');
 assert(css.includes('overflow-wrap:anywhere'),'Los valores largos podrían desbordar sus tarjetas.');
 assert(css.includes('#owners table{min-width:900px}'),'La tabla de propietarios debe conservar legibilidad con desplazamiento interno.');
 assert(css.includes('clamp(180px,11vw,270px)'),'El gráfico circular debe conservar un mínimo legible de 180 px.');
+assert(css.includes('#api-restan'),'Falta controlar el texto auxiliar de Airtable API.');
+assert(css.includes('-webkit-line-clamp:3'),'El texto auxiliar de Airtable debe limitarse a tres líneas.');
+assert(css.includes('white-space:nowrap!important'),'Los valores principales no deben partirse en varias líneas.');
 
 assert(js.includes("const ICON='/.netlify/functions/app-icon?app=portal&size=180'"),'El encabezado no reutiliza el logo oficial VLA.');
+assert(js.includes('const KPI_SELECTOR='),'Falta la lista canónica de monitores KPI.');
+assert(js.includes('function fitKpiValue'),'Falta el ajuste automático del texto dentro de cada tarjeta.');
+assert(js.includes("'ResizeObserver'in window"),'Falta recalcular el ajuste al cambiar el tamaño de la tarjeta.');
+assert(js.includes("'MutationObserver'in window"),'Falta recalcular el ajuste cuando cambian los datos o la escala de lectura.');
 assert(js.includes("document.documentElement.dataset.vlaAdminReady='1'"),'El admin nunca marca el final del montaje.');
 assert(js.includes("document.getElementById('vla-premium-shell')"),'El revelado no espera el shell premium.');
 assert(js.includes("document.getElementById('vla-dashboard-panels')"),'El revelado no espera el dashboard premium.');
