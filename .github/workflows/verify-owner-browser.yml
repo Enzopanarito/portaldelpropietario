@@ -94,6 +94,19 @@ jobs:
             if (Object.keys(baseline).length !== 15) throw new Error('La referencia de producción no contiene las 15 casas únicas.');
             return baseline;
           }
+          async function readVisibleBalances(page) {
+            const cards = await page.locator('#summary > div').allInnerTexts();
+            const usdCard = cards.find(text => /Pagadero en USD/i.test(text));
+            const bsCard = cards.find(text => /Pagadero en Bs Ref\.?/i.test(text));
+            if (!usdCard || !bsCard) {
+              throw new Error(`No se encontraron las tarjetas visibles USD/Bs. Tarjetas: ${JSON.stringify(cards)}`);
+            }
+            return {
+              total: parseMoney(await page.locator('#m-total').innerText()),
+              usd: parseMoney(usdCard),
+              bs: parseMoney(bsCard)
+            };
+          }
 
           (async () => {
             const baseline = await loadProductionBaseline();
@@ -142,11 +155,7 @@ jobs:
               await selector.selectOption(value);
               await page.waitForTimeout(250);
 
-              const shown = {
-                total: parseMoney(await page.locator('#m-total').innerText()),
-                usd: parseMoney(await page.locator('#m-usd').innerText()),
-                bs: parseMoney(await page.locator('#m-bs').innerText())
-              };
+              const shown = await readVisibleBalances(page);
               const expected = baseline[house];
               balances[house] = { shown, expected };
               for (const field of ['total', 'usd', 'bs']) {
