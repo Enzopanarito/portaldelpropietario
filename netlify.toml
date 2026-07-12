@@ -11,6 +11,10 @@ function = "admin-premium-assets"
 path = "/*"
 
 [[edge_functions]]
+function = "admin-auth-version"
+path = "/.netlify/functions/*"
+
+[[edge_functions]]
 function = "owner-signature"
 path = "/"
 
