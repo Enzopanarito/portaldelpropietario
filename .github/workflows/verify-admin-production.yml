@@ -19,7 +19,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Wait for production admin release
+      - name: Wait for production admin quality 10 release
         shell: bash
         run: |
           set -u -o pipefail
@@ -29,11 +29,15 @@ jobs:
             headers="$(curl --silent --show-error --location --dump-header - --output /tmp/admin.html --max-time 30 "${TARGET_URL}/admin.html?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
             ui="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-admin-ui"{gsub("\r","");print $2}' | tail -1)"
             session="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-admin-session"{gsub("\r","");print $2}' | tail -1)"
+            quality="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-admin-quality"{gsub("\r","");print $2}' | tail -1)"
             [ "$ui" = "premium-v1" ] || ready=0
             [ "$session" = "single-login-v1" ] || ready=0
-            grep -q 'admin-premium.css' /tmp/admin.html 2>/dev/null || ready=0
-            grep -q 'admin-session-bridge.js' /tmp/admin.html 2>/dev/null || ready=0
-            for asset in admin-premium.css admin-premium-polish.css admin-premium-preflight.js admin-premium.js admin-premium-controls.js admin-session-bridge.js; do
+            [ "$quality" = "10" ] || ready=0
+            grep -q 'admin-premium-10.css' /tmp/admin.html 2>/dev/null || ready=0
+            grep -q 'admin-premium-10.js' /tmp/admin.html 2>/dev/null || ready=0
+            grep -q 'admin-feature-parity.js' /tmp/admin.html 2>/dev/null || ready=0
+            grep -q 'vla-admin-quality' /tmp/admin.html 2>/dev/null || ready=0
+            for asset in admin-premium.css admin-premium-polish.css admin-premium-10.css admin-premium-preflight.js admin-premium.js admin-premium-controls.js admin-premium-10.js admin-feature-parity.js admin-session-bridge.js; do
               code="$(curl --silent --show-error --location --output "/tmp/${asset}" --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/${asset}?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
               [ "$code" = "200" ] || ready=0
               [ -s "/tmp/${asset}" ] || ready=0
@@ -45,13 +49,13 @@ jobs:
             protected="$(curl --silent --show-error --location --output /tmp/protected.json --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/.netlify/functions/admin-data" 2>/dev/null || true)"
             [ "$protected" = "401" ] || ready=0
             if [ "$ready" = "1" ]; then
-              echo "Producción administrativa exacta disponible."
+              echo "Producción administrativa calidad 10 disponible."
               exit 0
             fi
-            echo "Intento ${attempt}: ui=${ui:-missing}, session=${session:-missing}, protected=${protected:-missing}"
+            echo "Intento ${attempt}: ui=${ui:-missing}, session=${session:-missing}, quality=${quality:-missing}, protected=${protected:-missing}"
             sleep 10
           done
-          echo "La publicación administrativa exacta no estuvo disponible."
+          echo "La publicación administrativa calidad 10 no estuvo disponible."
           exit 1
 
       - name: Install Chromium
@@ -59,7 +63,7 @@ jobs:
           npm install --no-save --ignore-scripts playwright@1.53.0
           npx playwright install --with-deps chromium
 
-      - name: Verify production login rendering
+      - name: Verify production login readability and quality assets
         shell: bash
         run: |
           cat > verify-admin-production.cjs <<'NODE'
@@ -76,15 +80,57 @@ jobs:
               const text = message.text();
               if (message.type() === 'error' && !/app\.netlify\.com|permissions policy/i.test(text)) consoleErrors.push(text);
             });
-            const response = await page.goto(`${target}/admin.html?browser=${Date.now()}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            const response = await page.goto(`${target}/admin.html?browser=${Date.now()}`, { waitUntil: 'networkidle', timeout: 60000 });
             if (!response || response.status() !== 200) throw new Error(`Admin respondió ${response && response.status()}.`);
             await page.locator('#login').waitFor({ state: 'visible', timeout: 20000 });
             await page.locator('#password').waitFor({ state: 'visible', timeout: 20000 });
-            if (!await page.locator('#vla-admin-premium-css').count()) throw new Error('No se cargó el CSS premium.');
-            if (!await page.locator('#vla-admin-session-bridge').count()) throw new Error('No se cargó el puente de sesión.');
+            const required = {
+              premiumCss: '#vla-admin-premium-css',
+              premiumTenCss: '#vla-admin-premium-10-css',
+              premiumMarker: 'meta[name="vla-admin-ui"][content="premium-v1"]',
+              qualityMarker: 'meta[name="vla-admin-quality"][content="10"]',
+              sessionBridge: '#vla-admin-session-bridge'
+            };
+            for (const [name, selector] of Object.entries(required)) {
+              if (!await page.locator(selector).count()) throw new Error(`Falta ${name} (${selector}).`);
+            }
+            const metrics = await page.evaluate(() => {
+              const input = document.getElementById('password');
+              const button = document.querySelector('#login-form button');
+              return {
+                inputFont: parseFloat(getComputedStyle(input).fontSize),
+                inputHeight: input.getBoundingClientRect().height,
+                buttonHeight: button.getBoundingClientRect().height
+              };
+            });
+            if (metrics.inputFont < 16) throw new Error(`Texto del login pequeño: ${metrics.inputFont}px.`);
+            if (metrics.inputHeight < 44 || metrics.buttonHeight < 44) throw new Error(`Objetivos táctiles insuficientes: ${JSON.stringify(metrics)}.`);
+            const assetChecks = await Promise.all(['admin-premium-10.css','admin-premium-10.js','admin-feature-parity.js'].map(async asset => {
+              const res = await page.request.get(`${target}/${asset}?browser=${Date.now()}`);
+              const body = await res.body();
+              return { asset, status: res.status(), bytes: body.length };
+            }));
+            for (const asset of assetChecks) if (asset.status !== 200 || asset.bytes < 100) throw new Error(`Asset inválido: ${JSON.stringify(asset)}.`);
+            const protectedResponse = await page.request.get(`${target}/.netlify/functions/admin-data`);
+            if (protectedResponse.status() !== 401) throw new Error(`admin-data sin token respondió ${protectedResponse.status()}.`);
             if (pageErrors.length) throw new Error(`Errores JavaScript: ${pageErrors.join(' | ')}`);
             if (consoleErrors.length) throw new Error(`Errores de consola: ${consoleErrors.join(' | ')}`);
-            const result = { target, status: response.status(), loginVisible: true, premiumCss: true, sessionBridge: true, protectedAdminData: true, pageErrors, consoleErrors };
+            const result = {
+              target,
+              status: response.status(),
+              loginVisible: true,
+              quality: 10,
+              premiumCss: true,
+              premiumTen: true,
+              featureParity: true,
+              sessionBridge: true,
+              readableLogin: true,
+              protectedAdminData: true,
+              metrics,
+              assetChecks,
+              pageErrors,
+              consoleErrors
+            };
             fs.writeFileSync('admin-production-result.json', JSON.stringify(result, null, 2));
             await page.screenshot({ path: 'admin-production-login.png', fullPage: true });
             console.log(JSON.stringify(result, null, 2));
@@ -118,7 +164,7 @@ jobs:
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
             -f state=success \
             -f context='Admin Production Verification' \
-            -f description='Diseño premium, sesión y acceso protegido verificados en producción.' \
+            -f description='Admin calidad 10, sesión, legibilidad y acceso protegido verificados en producción.' \
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
       - name: Publish failed production status
@@ -130,5 +176,5 @@ jobs:
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
             -f state=failure \
             -f context='Admin Production Verification' \
-            -f description='La verificación del administrador en producción falló.' \
+            -f description='La verificación del administrador calidad 10 en producción falló.' \
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
