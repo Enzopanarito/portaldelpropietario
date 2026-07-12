@@ -24,10 +24,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Import reviewed functional source
+      - name: Remove accidental dependency files and import reviewed source
         shell: bash
         run: |
           set -euo pipefail
+          git rm -r --cached --ignore-unmatch node_modules || true
+          rm -rf node_modules
           git fetch origin hardening-system-clean-api-meter-2026-07-12
           rm -rf netlify/functions netlify/edge-functions tests
           git archive origin/hardening-system-clean-api-meter-2026-07-12 \
@@ -58,12 +60,15 @@ jobs:
           node tests/access-balance-engine.test.js
           node tests/official-balance-sync.test.js
           npm audit --omit=dev --audit-level=critical
-      - name: Commit final functional source
+      - name: Commit only functional source
         shell: bash
         run: |
+          rm -rf node_modules
+          git restore package.json package-lock.json 2>/dev/null || true
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
+          git add -u
+          git add admin.html netlify/functions netlify/edge-functions tests .github/workflows/validate.yml
           if git diff --cached --quiet; then exit 0; fi
           git commit -m 'Finalizar saneamiento y contador confiable de Airtable'
           git push origin HEAD:fix-final-clean-counter-2026-07-12
