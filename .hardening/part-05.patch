@@ -1,0 +1,227 @@
+diff --git a/netlify/functions/access-auto-sync.js b/netlify/functions/access-auto-sync.js
+index 92ff6a8..46ed2bf 100644
+--- a/netlify/functions/access-auto-sync.js
++++ b/netlify/functions/access-auto-sync.js
+@@ -1,11 +1,11 @@
+ // netlify/functions/access-auto-sync.js
+ // Sincronización automática/inteligente del acceso cómodo del portón.
+ 
+-const { requireAdmin } = require('./_auth');
++const { requireAdminCurrent } = require('./_auth');
+ const { json, syncOwnerAccess, autoSyncAll } = require('./_access_control');
+ 
+ exports.handler = async function(event) {
+-  const auth = requireAdmin(event);
++  const auth = await requireAdminCurrent(event);
+   if (!auth.ok) return auth.response;
+   if (event.httpMethod !== 'POST') return json(405, { message: 'Method Not Allowed' });
+ 
+diff --git a/netlify/functions/access-mode.js b/netlify/functions/access-mode.js
+index edf19c8..f5e8483 100644
+--- a/netlify/functions/access-mode.js
++++ b/netlify/functions/access-mode.js
+@@ -1,11 +1,11 @@
+ // netlify/functions/access-mode.js
+ // Lee o actualiza el modo del control de acceso del portón: Automático / Manual.
+ 
+-const { requireAdmin } = require('./_auth');
++const { requireAdminCurrent } = require('./_auth');
+ const { json, getAccessMode, setAccessMode, ACCESS_MODE_AUTO, ACCESS_MODE_MANUAL } = require('./_access_control');
+ 
+ exports.handler = async function(event) {
+-  const auth = requireAdmin(event);
++  const auth = await requireAdminCurrent(event);
+   if (!auth.ok) return auth.response;
+ 
+   try {
+diff --git a/netlify/functions/admin-data-v2.js b/netlify/functions/admin-data-v2.js
+index 62531f9..dd7d1ff 100644
+--- a/netlify/functions/admin-data-v2.js
++++ b/netlify/functions/admin-data-v2.js
+@@ -1,6 +1,6 @@
+ 'use strict';
+ 
+-const { requireAdmin } = require('./_auth');
++const { requireAdminCurrent } = require('./_auth');
+ const { deepEscapeStrings, safeDisplayText } = require('./_security_utils');
+ const { calculateAllOwners, calculatedFields } = require('./_balance_engine_v4');
+ 
+@@ -25,7 +25,7 @@ async function safeLoad(label,loader,required){try{return{label,ok:true,records:
+ function onlyPendingReports(records){return(records||[]).filter(record=>String(record?.fields?.Estado||'').trim().toLowerCase()==='pendiente')}
+ function flattenOwner(record,balance){return Object.assign({id:record.id},record.fields||{},calculatedFields(balance,record))}
+ exports.handler=async function(event){
+-  const auth=requireAdmin(event);if(!auth.ok)return auth.response;
++  const auth=await requireAdminCurrent(event);if(!auth.ok)return auth.response;
+   const token=process.env.AIRTABLE_API_TOKEN,baseId=process.env.AIRTABLE_BASE_ID;
+   if(!token||!baseId)return{statusCode:500,headers:NO_STORE_HEADERS,body:JSON.stringify({message:'Airtable no está configurado.'})};
+   const force=(event.queryStringParameters||{}).force==='1';
+diff --git a/netlify/functions/admin-expense.js b/netlify/functions/admin-expense.js
+index 448176e..4475e96 100644
+--- a/netlify/functions/admin-expense.js
++++ b/netlify/functions/admin-expense.js
+@@ -1,7 +1,7 @@
+ 'use strict';
+ 
+ const crypto = require('crypto');
+-const { requireAdmin } = require('./_auth');
++const { requireAdminCurrent } = require('./_auth');
+ const { ensureFinancialWritesAllowed } = require('./_financial_write_lock');
+ const { begin, setState } = require('./_operation_guard');
+ const { cleanPlainText, deepEscapeStrings, safeDisplayText } = require('./_security_utils');
+@@ -39,7 +39,7 @@ function businessKey({ concept, amount, type, mode, frequency, ownerIds }) {
+ }
+ 
+ exports.handler = async function(event) {
+-  const auth = requireAdmin(event); if (!auth.ok) return auth.response;
++  const auth = await requireAdminCurrent(event); if (!auth.ok) return auth.response;
+   if (event.httpMethod !== 'POST') return json(405, { message:'Method Not Allowed' });
+   if (!process.env.AIRTABLE_API_TOKEN || !process.env.AIRTABLE_BASE_ID) return json(500, { message:'Airtable no está configurado.' });
+ 
+diff --git a/netlify/functions/admin-manual-payment.js b/netlify/functions/admin-manual-payment.js
+index 29d139a..7e58cd6 100644
+--- a/netlify/functions/admin-manual-payment.js
++++ b/netlify/functions/admin-manual-payment.js
+@@ -5,7 +5,7 @@
+ // El recibo PDF/correo se genera desde backend inmediatamente después de crear el pago.
+ // Protección: una operación igual no puede crear dos pagos por doble clic o reintento de red.
+ 
+-const { requireAdmin } = require('./_auth');
++const { requireAdminCurrent } = require('./_auth');
+ const { airtableCreateRecord, syncOwnerAccess, TABLES, money } = require('./_access_control');
+ const { createAndSendReceipt } = require('./_receipt_service');
+ const { begin, setState } = require('./_operation_guard');
+@@ -40,7 +40,7 @@ function operationKey(body, ownerId, mode, amountUsdRef, rate, reference) {
+ }
+ 
+ exports.handler = async function(event) {
+-  const auth = requireAdmin(event);
++  const auth = await requireAdminCurrent(event);
+   if (!auth.ok) return auth.response;
+   if (event.httpMethod !== 'POST') return json(405, { message: 'Method Not Allowed' });
+ 
+diff --git a/netlify/functions/admin-security.js b/netlify/functions/admin-security.js
+index c7c480c..247dac4 100644
+--- a/netlify/functions/admin-security.js
++++ b/netlify/functions/admin-security.js
+@@ -4,7 +4,7 @@
+ 'use strict';
+ 
+ const crypto = require('crypto');
+-const { requireAdmin, issueAdminToken } = require('./_auth');
++const { requireAdminCurrent, issueAdminToken } = require('./_auth');
+ const { sendMail } = require('./_mailer');
+ const {
+   loadConfigRecord,
+@@ -66,7 +66,7 @@ exports.handler = async function(event) {
+ 
+   try {
+     if (action === 'changePassword') {
+-      const auth = requireAdmin(event);
++      const auth = await requireAdminCurrent(event);
+       if (!auth.ok) return auth.response;
+       const passwordError = validateNewPassword(body.newPassword);
+       if (!body.currentPassword || passwordError) return json(400, { message: passwordError || 'Debe indicar la contraseña actual.' });
+@@ -105,7 +105,7 @@ exports.handler = async function(event) {
+       const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+       const nextConfig = {
+         ...(config || {}),
+-        version: Math.max(1, Number(config?.version || 0) + 1),
++        version: Math.max(1, Number(config?.version || 1)),
+         recoveryEmail: RECOVERY_EMAIL,
+         resetHash: tokenHash(token),
+         resetExpires: expires,
+diff --git a/netlify/functions/airtable-backup.js b/netlify/functions/airtable-backup.js
+index b07df48..cf3606b 100644
+--- a/netlify/functions/airtable-backup.js
++++ b/netlify/functions/airtable-backup.js
+@@ -4,7 +4,7 @@
+ 'use strict';
+ 
+ const crypto = require('crypto');
+-const { requireAdmin } = require('./_auth');
++const { requireAdminCurrent } = require('./_auth');
+ const { sha256, sortRecords } = require('./_integrity');
+ 
+ const TABLES = [
+@@ -40,7 +40,7 @@ function jsonError(statusCode, message, detail = '') {
+ }
+ 
+ exports.handler = async function(event) {
+-  const auth = requireAdmin(event);
++  const auth = await requireAdminCurrent(event);
+   if (!auth.ok) return auth.response;
+   if (event.httpMethod !== 'GET') return jsonError(405, 'Method Not Allowed');
+ 
+diff --git a/netlify/functions/airtable-v2.js b/netlify/functions/airtable-v2.js
+index afd16a3..ce51e97 100644
+--- a/netlify/functions/airtable-v2.js
++++ b/netlify/functions/airtable-v2.js
+@@ -1,13 +1,13 @@
+ 'use strict';
+ 
+-const { requireAdmin } = require('./_auth');
++const { requireAdminCurrent } = require('./_auth');
+ const { ensureFinancialWritesAllowed } = require('./_financial_write_lock');
+ const { deepEscapeStrings, safeDisplayText } = require('./_security_utils');
+ 
+ const cache = new Map();
+ const CACHE_TTL_MS = { default:5*60*1000, propietarios:15*60*1000, gastos:15*60*1000, pagos:5*60*1000, reportes:30*1000 };
+ const ALLOWED_TABLES = new Set(['Propietarios','Gastos del Mes','Configuración','Pagos','Historial de Cargos','Reportes de Pago','Recibos de Pago','Cierres de Auditoría','WhatsApp Jobs','WhatsApp Programaciones']);
+-const GENERIC_WRITE_TABLES = new Set(['Propietarios','Configuración']);
++const GENERIC_WRITE_TABLES = new Set();
+ const ALLOWED_METHODS = new Set(['GET','POST','PATCH','DELETE']);
+ const MAX_BODY_BYTES = 100000;
+ 
+@@ -25,7 +25,7 @@ function isFinancialWrite(method,table){return method!=='GET'&&['Propietarios','
+ function reply(statusCode,body,extra={}){return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...extra},body:JSON.stringify(body)}}
+ 
+ exports.handler=async function(event){
+- const auth=requireAdmin(event);if(!auth.ok)return auth.response;
++ const auth=await requireAdminCurrent(event);if(!auth.ok)return auth.response;
+  const {AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID}=process.env,{httpMethod,body}=event;
+  if(!AIRTABLE_API_TOKEN||!AIRTABLE_BASE_ID)return reply(500,{message:'Variables de entorno de Airtable no configuradas.'});
+  if(!ALLOWED_METHODS.has(httpMethod))return reply(405,{message:'Método no permitido.'});
+diff --git a/netlify/functions/api-usage.js b/netlify/functions/api-usage.js
+index a351ea6..f6542a9 100644
+--- a/netlify/functions/api-usage.js
++++ b/netlify/functions/api-usage.js
+@@ -1,7 +1,7 @@
+ // netlify/functions/api-usage.js
+ // Lee el contador mensual de llamadas a Airtable registradas por las funciones del portal.
+ 
+-const { requireAdmin } = require('./_auth');
++const { requireAdminCurrent } = require('./_auth');
+ const TABLE = 'ControlVersiones';
+ 
+ const HEADERS = {
+@@ -39,7 +39,7 @@ function emptyPayload(month,note,detail){
+   return {month,total:0,limit,percent:0,remaining:limit,events:0,bySource:{},lastEvent:null,note,detail:detail||null};
+ }
+ exports.handler=async function(event){
+-  const auth=requireAdmin(event); if(!auth.ok)return auth.response;
++  const auth=await requireAdminCurrent(event); if(!auth.ok)return auth.response;
+   const {AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID}=process.env;
+   if(!AIRTABLE_API_TOKEN||!AIRTABLE_BASE_ID){
+     return{statusCode:200,headers:HEADERS,body:JSON.stringify(emptyPayload(currentMonthCaracas(),'Airtable no está configurado para contador API.'))};
+diff --git a/netlify/functions/audit-close.js b/netlify/functions/audit-close.js
+index e74b445..faa9233 100644
+--- a/netlify/functions/audit-close.js
++++ b/netlify/functions/audit-close.js
+@@ -5,7 +5,7 @@
+ 'use strict';
+ 
+ const crypto = require('crypto');
+-const { requireAdmin } = require('./_auth');
++const { requireAdminCurrent } = require('./_auth');
+ const { begin, setState } = require('./_operation_guard');
+ const { safeDisplayText, deepEscapeStrings } = require('./_security_utils');
+ const {
+@@ -473,7 +473,7 @@ async function createFinalLog({ operation, plan, groupResults, status, detail, t
+ }
+ 
+ exports.handler = async function(event) {
+-  const auth = requireAdmin(event);
++  const auth = await requireAdminCurrent(event);
+   if (!auth.ok) return auth.response;
+   if (!['GET', 'POST'].includes(event.httpMethod)) return json(405, { message: 'Method Not Allowed' });
+ 
