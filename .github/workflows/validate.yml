@@ -14,18 +14,15 @@ on:
       - fix-single-source-balances-2026-07-11
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
-          fetch-depth: 0
 
       - name: Use Node.js
         uses: actions/setup-node@v4
@@ -34,39 +31,6 @@ jobs:
 
       - name: Install dependencies safely
         run: npm install --ignore-scripts --no-audit --no-fund
-
-      - name: Apply reviewed system cleanup
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'hardening-system-clean-api-meter-2026-07-12'
-        shell: bash
-        run: |
-          set -euo pipefail
-          if ! grep -Fq "/.netlify/functions/airtable/'+encodeURIComponent(TABLE_GASTOS)" admin.html; then
-            echo 'Cleanup already applied; nothing to regenerate.'
-            exit 0
-          fi
-          python - <<'PY'
-          from pathlib import Path
-          lines=Path('.github/workflows/apply-system-cleanup.yml').read_text('utf-8').splitlines()
-          start=None
-          for i,line in enumerate(lines):
-            if line.strip() == '- name: Move protected flows to the source and instrument Airtable calls':
-              start=i
-              break
-          if start is None: raise SystemExit('Cleanup step not found')
-          run_line=None
-          for i in range(start+1,len(lines)):
-            if lines[i].strip() == 'run: |':
-              run_line=i+1
-              break
-          if run_line is None: raise SystemExit('Cleanup run block not found')
-          block=[]
-          for line in lines[run_line:]:
-            if line.startswith('      - name:'):
-              break
-            block.append(line[10:] if line.startswith('          ') else line)
-          Path('/tmp/apply-cleanup.sh').write_text('\n'.join(block)+'\n','utf-8')
-          PY
-          bash /tmp/apply-cleanup.sh
 
       - name: Check Netlify function syntax
         run: find netlify/functions -maxdepth 1 -type f -name '*.js' -print0 | xargs -0 -n1 node --check
@@ -130,14 +94,3 @@ jobs:
 
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=critical
-
-      - name: Commit generated functional cleanup
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'hardening-system-clean-api-meter-2026-07-12'
-        shell: bash
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add admin.html netlify/functions netlify/edge-functions tests .github/workflows/validate.yml
-          if git diff --cached --quiet; then exit 0; fi
-          git commit -m 'Sanear flujos financieros y centralizar contador Airtable'
-          git push origin HEAD:hardening-system-clean-api-meter-2026-07-12
