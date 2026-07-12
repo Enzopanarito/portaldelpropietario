@@ -14,14 +14,14 @@
       <a href="/whatsapp.html" class="bg-green-600 text-white px-4 py-2 rounded-full font-semibold">📲 WhatsApp</a>
     </div>
     <h1 class="text-3xl font-extrabold text-slate-900 mb-2">🔐 Seguridad del Admin</h1>
-    <p class="text-slate-600 mb-6">Cambio y recuperación de contraseña. Correo autorizado: <b>enzopanarito@gmail.com</b></p>
+    <p class="text-slate-600 mb-6">La sesión iniciada en el portal autoriza esta pantalla. Correo autorizado: <b>enzopanarito@gmail.com</b></p>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <section class="bg-white rounded-2xl shadow p-6">
+      <section id="change-section" class="bg-white rounded-2xl shadow p-6">
+        <div class="inline-flex items-center gap-2 bg-green-50 text-green-700 px-3 py-1 rounded-full text-xs font-bold mb-4">✓ Sesión administrativa verificada</div>
         <h2 class="text-xl font-bold mb-4">Cambiar contraseña</h2>
-        <p class="text-sm text-slate-500 mb-4">Mínimo 12 caracteres, con mayúscula, minúscula, número y símbolo. Al cambiarla, esta pantalla guardará automáticamente una sesión nueva de 6 horas.</p>
+        <p class="text-sm text-slate-500 mb-4">No es necesario volver a introducir la contraseña actual. Mínimo 12 caracteres, con mayúscula, minúscula, número y símbolo.</p>
         <form id="change-form" class="space-y-3">
-          <input id="current-password" type="password" class="w-full p-3 border rounded-lg" placeholder="Contraseña actual" autocomplete="current-password">
           <input id="new-password" type="password" class="w-full p-3 border rounded-lg" placeholder="Nueva contraseña segura" autocomplete="new-password">
           <input id="new-password2" type="password" class="w-full p-3 border rounded-lg" placeholder="Repetir nueva contraseña" autocomplete="new-password">
           <button class="w-full bg-sky-600 text-white py-3 rounded-lg font-bold">Actualizar contraseña</button>
@@ -50,9 +50,9 @@
     <section class="bg-white rounded-2xl shadow p-6 mt-6">
       <h2 class="text-xl font-bold mb-3">Protecciones activas</h2>
       <ul class="list-disc pl-5 text-sm text-slate-600 space-y-1">
-        <li>Las contraseñas nuevas se guardan con <b>scrypt</b> y sal aleatoria; las anteriores PBKDF2 siguen siendo compatibles hasta el próximo cambio.</li>
+        <li>Las contraseñas nuevas se guardan con <b>scrypt</b> y sal aleatoria.</li>
         <li>Después de cinco intentos fallidos, el login se bloquea durante 15 minutos.</li>
-        <li>Los límites de login y recuperación quedan registrados de forma persistente, no solo en la memoria de una función.</li>
+        <li>Los límites de login y recuperación quedan registrados de forma persistente.</li>
         <li>Los enlaces de recuperación usan el dominio oficial, expiran en 15 minutos y son de un solo uso.</li>
         <li>Los tokens administrativos tienen audiencia, emisor, identificador único y vencimiento de 6 horas.</li>
       </ul>
@@ -62,15 +62,15 @@
   <div id="toast" class="fixed bottom-5 right-5 opacity-0 translate-y-6 toast text-white px-5 py-3 rounded-lg shadow-lg"></div>
 
 <script>
-function token(){return sessionStorage.getItem('vla-admin-token')||''}
+function token(){return localStorage.getItem('vla-admin-token')||sessionStorage.getItem('vla-admin-token')||''}
 function authHeaders(){return {'Content-Type':'application/json','Authorization':'Bearer '+token()}}
 function toast(m,err=false){const t=document.getElementById('toast');t.textContent=m;t.className='fixed bottom-5 right-5 toast text-white px-5 py-3 rounded-lg shadow-lg '+(err?'bg-red-600':'bg-green-600');t.classList.remove('opacity-0','translate-y-6');setTimeout(()=>t.classList.add('opacity-0','translate-y-6'),5000)}
-async function post(body,auth=true){const r=await fetch('/.netlify/functions/admin-security',{method:'POST',headers:auth?authHeaders():{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.detail||d.message||'Error');if(d.token){sessionStorage.setItem('vla-admin-token',d.token);sessionStorage.setItem('vla-admin-auth','true')}return d}
+async function post(body,auth=true){const r=await fetch('/.netlify/functions/admin-security',{method:'POST',headers:auth?authHeaders():{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json().catch(()=>({}));if(r.status===401&&auth){localStorage.removeItem('vla-admin-token');localStorage.removeItem('vla-admin-auth');sessionStorage.removeItem('vla-admin-token');sessionStorage.removeItem('vla-admin-auth');location.href='/admin.html';throw new Error('Sesión vencida.')}if(!r.ok)throw new Error(d.detail||d.message||'Error');if(d.token){localStorage.setItem('vla-admin-token',d.token);localStorage.setItem('vla-admin-auth','true');sessionStorage.setItem('vla-admin-token',d.token);sessionStorage.setItem('vla-admin-auth','true')}return d}
 function validatePassword(value){const v=String(value||'');if(v.length<12)throw new Error('La nueva contraseña debe tener al menos 12 caracteres.');if(!/[a-záéíóúñ]/.test(v))throw new Error('Debe incluir una letra minúscula.');if(!/[A-ZÁÉÍÓÚÑ]/.test(v))throw new Error('Debe incluir una letra mayúscula.');if(!/\d/.test(v))throw new Error('Debe incluir un número.');if(!/[^A-Za-zÁÉÍÓÚáéíóúÑñ0-9\s]/.test(v))throw new Error('Debe incluir un símbolo.')}
-document.getElementById('change-form').onsubmit=async e=>{e.preventDefault();const btn=e.currentTarget.querySelector('button');try{btn.disabled=true;btn.textContent='Actualizando...';const a=document.getElementById('new-password').value,b=document.getElementById('new-password2').value;if(a!==b)throw new Error('Las contraseñas nuevas no coinciden.');validatePassword(a);const d=await post({action:'changePassword',currentPassword:document.getElementById('current-password').value,newPassword:a});toast(d.message||'Contraseña actualizada.');e.target.reset()}catch(err){toast(err.message,true)}finally{btn.disabled=false;btn.textContent='Actualizar contraseña'}}
+document.getElementById('change-form').onsubmit=async e=>{e.preventDefault();const btn=e.currentTarget.querySelector('button');try{btn.disabled=true;btn.textContent='Actualizando...';const a=document.getElementById('new-password').value,b=document.getElementById('new-password2').value;if(a!==b)throw new Error('Las contraseñas nuevas no coinciden.');validatePassword(a);const d=await post({action:'changePassword',newPassword:a});toast(d.message||'Contraseña actualizada.');e.target.reset()}catch(err){toast(err.message,true)}finally{btn.disabled=false;btn.textContent='Actualizar contraseña'}}
 document.getElementById('recover-form').onsubmit=async e=>{e.preventDefault();const btn=e.currentTarget.querySelector('button');try{btn.disabled=true;btn.textContent='Enviando...';const d=await post({action:'requestReset',email:document.getElementById('recover-email').value},false);toast(d.message||'Solicitud enviada.',!d.emailSent);if(!d.emailSent&&d.detail)console.warn(d.detail)}catch(err){toast(err.message,true)}finally{btn.disabled=false;btn.textContent='Enviar enlace de recuperación'}}
 document.getElementById('reset-form').onsubmit=async e=>{e.preventDefault();const btn=e.currentTarget.querySelector('button');try{btn.disabled=true;btn.textContent='Restableciendo...';const a=document.getElementById('reset-password').value,b=document.getElementById('reset-password2').value;if(a!==b)throw new Error('Las contraseñas nuevas no coinciden.');validatePassword(a);const d=await post({action:'resetPassword',token:document.getElementById('reset-token').value,newPassword:a},false);toast(d.message||'Contraseña restablecida.');e.target.reset();history.replaceState({},document.title,'/seguridad.html')}catch(err){toast(err.message,true)}finally{btn.disabled=false;btn.textContent='Restablecer contraseña'}}
-const params=new URLSearchParams(location.search);if(params.get('reset')){document.getElementById('reset-box').classList.remove('hidden');document.getElementById('reset-token').value=params.get('reset')}
+const params=new URLSearchParams(location.search);const reset=params.get('reset');if(reset){document.getElementById('reset-box').classList.remove('hidden');document.getElementById('reset-token').value=reset;document.getElementById('change-section').classList.add('hidden')}else if(!token()){location.href='/admin.html'}
 </script>
 </body>
 </html>
