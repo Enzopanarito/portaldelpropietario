@@ -70,7 +70,7 @@ const server=http.createServer((req,res)=>{
       const style=app&&getComputedStyle(app);
       const loaderStyle=loader&&getComputedStyle(loader);
       window.__vlaFoucSamples.push({
-        loginHidden:Boolean(login&&login.classList.contains('hidden')),
+        loginHidden:Boolean(login&&getComputedStyle(login).display==='none'),
         appVisible:Boolean(app&&style.display!=='none'&&style.visibility!=='hidden'&&Number(style.opacity||1)>.01),
         shell:Boolean(shell),
         loaderVisible:Boolean(loader&&loaderStyle.display!=='none'&&loaderStyle.visibility!=='hidden')
@@ -79,8 +79,16 @@ const server=http.createServer((req,res)=>{
   });
   await page.locator('#password').fill('Prueba segura');
   await page.locator('#login-form button').click();
-  await page.waitForFunction(()=>document.documentElement.dataset.vlaAdminReady==='1',{timeout:15000});
-  await page.locator('#vla-premium-shell').waitFor({state:'visible'});
+  await page.waitForFunction(()=>{
+    const login=document.getElementById('login');
+    const app=document.getElementById('app');
+    const shell=document.getElementById('vla-premium-shell');
+    return Boolean(login&&app&&shell&&document.documentElement.dataset.vlaAdminReady==='1'&&getComputedStyle(login).display==='none'&&getComputedStyle(app).display!=='none'&&getComputedStyle(app).visibility!=='hidden'&&Number(getComputedStyle(app).opacity||1)>.01);
+  },null,{timeout:15000});
+  await page.locator('#login').waitFor({state:'hidden',timeout:15000});
+  await page.locator('#app').waitFor({state:'visible',timeout:15000});
+  await page.locator('#vla-premium-shell').waitFor({state:'visible',timeout:15000});
+  await page.waitForFunction(()=>document.getElementById('vla-sum-owners')?.textContent==='15',{timeout:15000});
   const transition=await page.evaluate(()=>{clearInterval(window.__vlaFoucTimer);return window.__vlaFoucSamples});
   const flash=transition.filter(sample=>sample.loginHidden&&sample.appVisible&&!sample.shell);
   if(flash.length)throw new Error(`Se detectó el diseño heredado visible en ${flash.length} muestra(s).`);
@@ -98,12 +106,15 @@ const server=http.createServer((req,res)=>{
   const results=[];
   for(const viewport of viewports){
     await page.setViewportSize({width:viewport.width,height:viewport.height});
-    await page.waitForTimeout(180);
+    await page.waitForTimeout(220);
     const metrics=await page.evaluate(()=>{
       const values=[...document.querySelectorAll('#dashboard>.bg-white>.grid p[id],.vla-kpi-value')];
       const donut=document.getElementById('vla-donut');
       const shell=document.getElementById('vla-premium-shell');
       const menu=document.getElementById('vla-mobile-menu');
+      const login=document.getElementById('login');
+      const app=document.getElementById('app');
+      const dashboard=document.getElementById('dashboard');
       return{
         viewport:innerWidth,
         documentWidth:document.documentElement.scrollWidth,
@@ -111,9 +122,18 @@ const server=http.createServer((req,res)=>{
         donutWidth:donut&&donut.getBoundingClientRect().width,
         valueFonts:values.map(node=>parseFloat(getComputedStyle(node).fontSize)),
         overflowingValues:values.filter(node=>node.scrollWidth>node.clientWidth+3).length,
-        mobileMenu:menu&&getComputedStyle(menu).display!=='none'
+        mobileMenu:menu&&getComputedStyle(menu).display!=='none',
+        loginDisplay:login&&getComputedStyle(login).display,
+        appDisplay:app&&getComputedStyle(app).display,
+        appVisibility:app&&getComputedStyle(app).visibility,
+        appOpacity:app&&Number(getComputedStyle(app).opacity||1),
+        dashboardVisible:Boolean(dashboard&&getComputedStyle(dashboard).display!=='none'&&dashboard.classList.contains('active')),
+        shellReady:Boolean(shell&&shell.dataset.vlaLayoutReady==='1')
       };
     });
+    if(metrics.loginDisplay!=='none')throw new Error(`${viewport.name}: el login sigue visible en la captura.`);
+    if(metrics.appDisplay==='none'||metrics.appVisibility==='hidden'||metrics.appOpacity<=.01)throw new Error(`${viewport.name}: el dashboard no está visible.`);
+    if(!metrics.dashboardVisible||!metrics.shellReady)throw new Error(`${viewport.name}: el shell premium no terminó de montar.`);
     if(metrics.documentWidth>viewport.width+3)throw new Error(`${viewport.name}: el documento desborda horizontalmente (${metrics.documentWidth}/${viewport.width}).`);
     if(metrics.shellWidth>viewport.width+3)throw new Error(`${viewport.name}: el shell supera la pantalla.`);
     if(metrics.overflowingValues)throw new Error(`${viewport.name}: ${metrics.overflowingValues} valor(es) KPI desbordan su tarjeta.`);
@@ -124,7 +144,7 @@ const server=http.createServer((req,res)=>{
     results.push({name:viewport.name,...metrics});
   }
   if(errors.length)throw new Error('Errores del navegador: '+errors.join(' | '));
-  fs.writeFileSync('admin-responsive-result.json',JSON.stringify({noLegacyFlash:true,loader:true,officialLogo:true,viewports:results},null,2));
+  fs.writeFileSync('admin-responsive-result.json',JSON.stringify({noLegacyFlash:true,loader:true,officialLogo:true,dashboardCaptured:true,viewports:results},null,2));
   await browser.close();
   server.close();
   console.log('ADMIN_RESPONSIVE_FOUC_BROWSER_OK');
