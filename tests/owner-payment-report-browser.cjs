@@ -11,6 +11,7 @@ async function verifyLive(browser,target){
   page.on('console',message=>{if(message.type()==='error'&&!/favicon|permissions policy/i.test(message.text()))errors.push(message.text())});
   const response=await page.goto(`${target}/?payment-report-live=${Date.now()}`,{waitUntil:'networkidle',timeout:60000});
   if(!response||response.status()!==200)throw new Error(`Portal respondió ${response&&response.status()}.`);
+  await page.addStyleTag({content:'[data-netlify-deploy-id]{display:none!important;pointer-events:none!important} iframe[title="Netlify Drawer"]{display:none!important;pointer-events:none!important}'});
   if(response.headers()['x-vla-owner-payment-report']!=='smart-v3')throw new Error('Falta x-vla-owner-payment-report: smart-v3.');
   await page.locator('#welcomeSelector').waitFor({state:'visible'});
   const casa4=await page.locator('#welcomeSelector option').evaluateAll(options=>{const option=options.find(x=>/^Casa 4\s+-/.test(x.textContent||''));return option&&option.value});
