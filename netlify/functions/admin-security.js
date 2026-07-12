@@ -11,7 +11,6 @@ const { sendMail } = require('./_mailer');
 const {
   loadConfigRecord,
   saveConfig,
-  verifyPassword,
   createPasswordFields,
   validateNewPassword,
   safeEqualHex
@@ -71,10 +70,9 @@ const handler = async function(event) {
       const auth = requireAdmin(event);
       if (!auth.ok) return auth.response;
       const passwordError = validateNewPassword(body.newPassword);
-      if (!body.currentPassword || passwordError) return json(400, { message: passwordError || 'Debe indicar la contraseña actual.' });
+      if (passwordError) return json(400, { message: passwordError });
 
       const { record, config } = await loadConfigRecord({ force: true });
-      if (!verifyPassword(body.currentPassword, config)) return json(401, { message: 'La contraseña actual no es correcta.' });
       const nextVersion = Math.max(1, Number(config?.version || 0) + 1);
       const nextConfig = {
         ...(config || {}),
