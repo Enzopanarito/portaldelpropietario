@@ -1,5 +1,4 @@
-require('./_airtable_usage_meter').install('resend-receipt');
-
+const { withAirtableUsage } = require('./_airtable_meter');
 // netlify/functions/resend-receipt.js
 // Reenvía / crea recibo PDF para un pago existente. Útil para reparar casos donde el pago fue creado
 // por un flujo viejo o el correo falló antes de que se registrara el recibo.
@@ -10,7 +9,7 @@ const { createAndSendReceipt } = require('./_receipt_service');
 
 function validRecordId(id){ return /^rec[A-Za-z0-9]{14}$/.test(String(id || '')); }
 
-exports.handler = async function(event) {
+const handler = async function(event) {
   const auth = requireAdmin(event);
   if (!auth.ok) return auth.response;
   if (event.httpMethod !== 'POST') return json(405, { message: 'Method Not Allowed' });
@@ -52,3 +51,5 @@ exports.handler = async function(event) {
     return json(500, { success:false, message:'Error reenviando recibo.', detail:error.message });
   }
 };
+
+exports.handler = withAirtableUsage('resend-receipt', handler);

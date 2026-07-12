@@ -1,6 +1,6 @@
 'use strict';
 
-require('./_airtable_usage_meter').install('admin-data-v3');
+const { withAirtableUsage } = require('./_airtable_meter');
 
 const previous = require('./admin-data-v2');
 const { calculateAllOwners, calculatedFields } = require('./_balance_engine_v4');
@@ -55,7 +55,7 @@ function synchronizePayload(payload, controlRecords) {
   });
 }
 
-exports.handler = async function handler(event) {
+const handler = async function handler(event) {
   const response = await previous.handler(event);
   if (response.statusCode !== 200) return response;
   try {
@@ -79,3 +79,5 @@ exports.handler = async function handler(event) {
 };
 
 module.exports.synchronizePayload = synchronizePayload;
+
+exports.handler = withAirtableUsage('admin-data-v3', handler);

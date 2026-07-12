@@ -1,6 +1,6 @@
 'use strict';
 
-require('./_airtable_usage_meter').install('admin-data-v2');
+const { withAirtableUsage } = require('./_airtable_meter');
 
 const { requireAdmin } = require('./_auth');
 const { deepEscapeStrings, safeDisplayText } = require('./_security_utils');
@@ -26,7 +26,7 @@ async function airtableGetAllWithFallback(tableName,preferredQuery,fallbackQuery
 async function safeLoad(label,loader,required){try{return{label,ok:true,records:(await loader())||[],error:null,required:!!required}}catch(error){return{label,ok:false,records:[],error:safeDisplayText(error.message,500),required:!!required}}}
 function onlyPendingReports(records){return(records||[]).filter(record=>String(record?.fields?.Estado||'').trim().toLowerCase()==='pendiente')}
 function flattenOwner(record,balance){return Object.assign({id:record.id},record.fields||{},calculatedFields(balance,record))}
-exports.handler=async function(event){
+const handler = async function(event){
   const auth=requireAdmin(event);if(!auth.ok)return auth.response;
   const token=process.env.AIRTABLE_API_TOKEN,baseId=process.env.AIRTABLE_BASE_ID;
   if(!token||!baseId)return{statusCode:500,headers:NO_STORE_HEADERS,body:JSON.stringify({message:'Airtable no está configurado.'})};
@@ -54,3 +54,5 @@ exports.handler=async function(event){
     return{statusCode:200,headers:Object.assign({},NO_STORE_HEADERS,{'X-Cache':force?'BYPASS':'MISS','X-Airtable-Calls':String(counter.calls)}),body:JSON.stringify(payload)};
   }catch(error){return{statusCode:500,headers:Object.assign({},NO_STORE_HEADERS,{'X-Airtable-Calls':String(counter.calls)}),body:JSON.stringify({message:'Error cargando datos administrativos.',detail:safeDisplayText(error.message,500)})}}
 };
+
+exports.handler = withAirtableUsage('admin-data-v2', handler);

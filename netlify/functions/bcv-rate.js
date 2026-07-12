@@ -1,9 +1,9 @@
-require('./_airtable_usage_meter').install('bcv-rate');
-
 // netlify/functions/bcv-rate.js
 // Tasa BCV con fuentes redundantes, timeout y último valor válido persistente.
 
 'use strict';
+
+const { withAirtableUsage } = require('./_airtable_meter');
 
 const { loadLastGood, saveLastGood } = require('./_bcv_store');
 
@@ -116,7 +116,7 @@ async function fetchBcvRate() {
   return { success: false, currency: 'USD', rate: null, rateFormatted: null, source: null, updatedAt: null, fetchedAt: new Date().toISOString(), venezuelaDate: vzla.date, venezuelaMonth: vzla.month, venezuelaTime: vzla.time, venezuelaDateTimeLabel: vzla.label, timezone: TIMEZONE, stale: true, fallback: false, message: 'No se pudo obtener la tasa BCV y no existe una tasa válida de respaldo.' };
 }
 
-exports.handler = async function(event) {
+const handler = async function(event) {
   const force = event.queryStringParameters?.force === '1';
   if (!force && rateCache && rateCache.expiresAt > Date.now()) {
     return { statusCode: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'private, max-age=300', 'X-Cache': 'HIT', 'X-Content-Type-Options': 'nosniff' }, body: JSON.stringify(rateCache.payload) };
@@ -125,3 +125,5 @@ exports.handler = async function(event) {
   rateCache = { payload, expiresAt: Date.now() + (payload.success ? SUCCESS_CACHE_TTL_MS : FAILURE_CACHE_TTL_MS) };
   return { statusCode: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'private, max-age=300', 'X-Cache': 'MISS', 'X-Content-Type-Options': 'nosniff' }, body: JSON.stringify(payload) };
 };
+
+exports.handler = withAirtableUsage('bcv-rate', handler);

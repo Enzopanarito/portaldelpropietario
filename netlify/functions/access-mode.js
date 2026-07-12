@@ -1,12 +1,11 @@
-require('./_airtable_usage_meter').install('access-mode');
-
+const { withAirtableUsage } = require('./_airtable_meter');
 // netlify/functions/access-mode.js
 // Lee o actualiza el modo del control de acceso del portón: Automático / Manual.
 
 const { requireAdmin } = require('./_auth');
 const { json, getAccessMode, setAccessMode, ACCESS_MODE_AUTO, ACCESS_MODE_MANUAL } = require('./_access_control');
 
-exports.handler = async function(event) {
+const handler = async function(event) {
   const auth = requireAdmin(event);
   if (!auth.ok) return auth.response;
 
@@ -35,3 +34,5 @@ exports.handler = async function(event) {
     return json(500, { success: false, message: 'Error consultando o actualizando modo del portón.', detail: error.message });
   }
 };
+
+exports.handler = withAirtableUsage('access-mode', handler);

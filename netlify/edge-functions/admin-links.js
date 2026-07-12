@@ -82,11 +82,9 @@ export default async (request, context) => {
     else html = html.replace('</nav>', links + '</nav>');
   }
 
-  html = html.replace('renderAll();loadUsage();', 'renderAll();');
 
 
-  // Flujos financieros protegidos definidos directamente en admin.html.
-
+  // Los flujos financieros protegidos están definidos en admin.html.
   const headers = new Headers(response.headers);
   headers.delete('content-length');
   headers.delete('content-encoding');

@@ -1,5 +1,3 @@
-require('./_airtable_usage_meter').install('app-icon');
-
 // netlify/functions/app-icon.js
 // Iconos PWA dinámicos para Portal del Propietario y Admin VLA.
 

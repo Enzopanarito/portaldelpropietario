@@ -1,10 +1,10 @@
-require('./_airtable_usage_meter').install('audit-close');
-
 // netlify/functions/audit-close.js
 // Archiva y limpia pagos antiguos ya aplicados al cierre sin alterar saldos operativos.
 // Estrategia: archivo verificable -> consolidado equivalente -> eliminación -> verificación por casa.
 
 'use strict';
+
+const { withAirtableUsage } = require('./_airtable_meter');
 
 const crypto = require('crypto');
 const { requireAdmin } = require('./_auth');
@@ -474,7 +474,7 @@ async function createFinalLog({ operation, plan, groupResults, status, detail, t
   return records[0] || null;
 }
 
-exports.handler = async function(event) {
+const handler = async function(event) {
   const auth = requireAdmin(event);
   if (!auth.ok) return auth.response;
   if (!['GET', 'POST'].includes(event.httpMethod)) return json(405, { message: 'Method Not Allowed' });
@@ -725,3 +725,5 @@ exports.handler = async function(event) {
     }, counter);
   }
 };
+
+exports.handler = withAirtableUsage('audit-close', handler);
