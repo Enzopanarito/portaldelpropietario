@@ -1,5 +1,7 @@
 'use strict';
 
+const { withAirtableUsage } = require('./_airtable_meter');
+
 const { deepEscapeStrings } = require('./_security_utils');
 const { calculateAllOwners, calculatedFields } = require('./_balance_engine_v4');
 const { attachOfficialBalances, officialControlQuery } = require('./_official_balances');
@@ -83,7 +85,7 @@ function compactPago(record) {
     'Equivalente USD Aplicado': f['Equivalente USD Aplicado'] || 0
   }};
 }
-exports.handler = async function(event) {
+const handler = async function(event) {
   const { AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID } = process.env;
   if (!AIRTABLE_API_TOKEN || !AIRTABLE_BASE_ID) return { statusCode: 500, headers: responseHeaders(0, 'ERROR'), body: JSON.stringify({ message: 'Airtable no está configurado.' }) };
   const force = event.queryStringParameters?.force === '1';
@@ -110,3 +112,5 @@ exports.handler = async function(event) {
     return { statusCode: 500, headers: responseHeaders(counter.calls, 'ERROR'), body: JSON.stringify({ message: 'Error cargando datos públicos.', detail: String(error.message || '').slice(0,500) }) };
   }
 };
+
+exports.handler = withAirtableUsage('public-data-v2', handler);

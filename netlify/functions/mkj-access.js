@@ -1,3 +1,4 @@
+const { withAirtableUsage } = require('./_airtable_meter');
 // netlify/functions/mkj-access.js
 // Integración MKJoules: login automático + enable/disable de usuarios por ID.
 // Las credenciales se leen únicamente desde variables privadas de Netlify.
@@ -110,7 +111,7 @@ function nowCaracas() {
   }).format(new Date());
 }
 
-exports.handler = async function(event) {
+const handler = async function(event) {
   const auth = requireAdmin(event);
   if (!auth.ok) return auth.response;
   if (event.httpMethod !== 'POST') return json(405, { message: 'Method Not Allowed' });
@@ -168,3 +169,5 @@ exports.handler = async function(event) {
     return json(500, { success: false, message: 'Error sincronizando con MKJoules.', detail: error.message });
   }
 };
+
+exports.handler = withAirtableUsage('mkj-access', handler);

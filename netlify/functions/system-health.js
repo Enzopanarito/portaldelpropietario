@@ -1,3 +1,4 @@
+const { withAirtableUsage } = require('./_airtable_meter');
 // netlify/functions/system-health.js
 // Panel de salud protegido para revisar componentes críticos del sistema.
 // Monitorea finanzas, Airtable, BCV, correo oficial, recibos, WhatsApp y control de acceso MKJoules.
@@ -78,7 +79,7 @@ function newestRecords(records, limit = 20) {
     .slice(0, limit);
 }
 
-exports.handler = async function(event) {
+const handler = async function(event) {
   const auth = requireAdmin(event);
   if (!auth.ok) return auth.response;
 
@@ -213,3 +214,5 @@ exports.handler = async function(event) {
     return { statusCode: 500, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify({ ok: false, status: 'error', checks, generatedAt: new Date().toISOString(), apiUsage: counter }) };
   }
 };
+
+exports.handler = withAirtableUsage('system-health', handler);

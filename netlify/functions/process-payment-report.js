@@ -1,3 +1,4 @@
+const { withAirtableUsage } = require('./_airtable_meter');
 // netlify/functions/process-payment-report.js
 // Aprueba o rechaza reportes de pago y sincroniza automáticamente el acceso del portón.
 // Al aprobar, crea el pago y genera/envía el recibo PDF desde backend.
@@ -39,7 +40,7 @@ function guardResponse(result) {
   });
 }
 
-exports.handler = async function(event) {
+const handler = async function(event) {
   const auth = requireAdmin(event);
   if (!auth.ok) return auth.response;
   if (event.httpMethod !== 'POST') return json(405, { message: 'Method Not Allowed' });
@@ -209,3 +210,5 @@ exports.handler = async function(event) {
     });
   }
 };
+
+exports.handler = withAirtableUsage('process-payment-report', handler);

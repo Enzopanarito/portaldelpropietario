@@ -1,3 +1,4 @@
+const { withAirtableUsage } = require('./_airtable_meter');
 // netlify/functions/whatsapp-jobs.js
 // Módulo liviano e independiente para órdenes de WhatsApp. No afecta admin-data ni contabilidad.
 
@@ -163,7 +164,7 @@ async function runScheduler() {
   return { checkedAt: nowIso(), createdCount: created.length, created };
 }
 
-exports.handler = async function(event) {
+const handler = async function(event) {
   const auth = requireAdmin(event);
   if (!auth.ok) return auth.response;
   try {
@@ -188,3 +189,5 @@ exports.handler = async function(event) {
     return json(500, { message: 'Error en módulo WhatsApp.', detail: error.message });
   }
 };
+
+exports.handler = withAirtableUsage('whatsapp-jobs', handler);

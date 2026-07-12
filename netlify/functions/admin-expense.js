@@ -1,5 +1,7 @@
 'use strict';
 
+const { withAirtableUsage } = require('./_airtable_meter');
+
 const crypto = require('crypto');
 const { requireAdmin } = require('./_auth');
 const { ensureFinancialWritesAllowed } = require('./_financial_write_lock');
@@ -38,7 +40,7 @@ function businessKey({ concept, amount, type, mode, frequency, ownerIds }) {
   return crypto.createHash('sha256').update(input).digest('hex');
 }
 
-exports.handler = async function(event) {
+const handler = async function(event) {
   const auth = requireAdmin(event); if (!auth.ok) return auth.response;
   if (event.httpMethod !== 'POST') return json(405, { message:'Method Not Allowed' });
   if (!process.env.AIRTABLE_API_TOKEN || !process.env.AIRTABLE_BASE_ID) return json(500, { message:'Airtable no está configurado.' });
@@ -76,3 +78,5 @@ exports.handler = async function(event) {
     return json(500, { success:false,protected:true,partial:Boolean(recordId),recordId:recordId||null,message:recordId?'El gasto pudo haberse creado antes del error. Revise la tabla antes de repetir.':'No se pudo crear el gasto.',detail:safeDisplayText(error.message,500) });
   }
 };
+
+exports.handler = withAirtableUsage('admin-expense', handler);

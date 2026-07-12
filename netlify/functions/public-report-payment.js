@@ -3,6 +3,8 @@
 
 'use strict';
 
+const { withAirtableUsage } = require('./_airtable_meter');
+
 const { airtableCreateRecord, airtableGetRecord, syncOwnerAccess, TABLES, money } = require('./_access_control');
 const { sendMail } = require('./_mailer');
 const { sanitizeReference, escapeHtml, cleanPlainText, safeDisplayText, deepEscapeStrings } = require('./_security_utils');
@@ -56,7 +58,7 @@ async function notifyAdminPaymentReport({ownerId,mode,amount,usdEq,amountBs,refe
   return sendMail({to,subject:`🚨 Pago reportado - Casa ${casaRaw} - ${fmtUsd(usdEq)} ref.`,html:`<div style="font-family:Arial,sans-serif;color:#0f172a;line-height:1.5"><h2 style="margin:0 0 10px;color:#0f3d24">🚨 Nuevo pago reportado</h2><p>Se acaba de recibir un reporte de pago en el portal.</p><div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:14px;margin:14px 0"><p><b>Casa:</b> ${escapeHtml(casaRaw)}</p><p><b>Propietario:</b> ${escapeHtml(ownerRaw)}</p><p><b>Forma:</b> ${escapeHtml(mode)}</p><p><b>Monto:</b> ${escapeHtml(originalAmount)}</p><p><b>Equivalente USD:</b> ${escapeHtml(fmtUsd(usdEq))}</p>${rateText}<p><b>Referencia:</b> ${escapeHtml(referenceRaw)}</p><p><b>Fecha:</b> ${escapeHtml(nowCaracasLabel())}</p><p><b>Reporte:</b> ${escapeHtml(reportId||'—')}</p><p><b>Portón:</b> ${escapeHtml(accessRaw)}</p></div><p><a href="https://villalosapamates.netlify.app/admin.html" style="display:inline-block;background:#0f3d24;color:white;text-decoration:none;padding:12px 18px;border-radius:12px;font-weight:bold">Abrir Admin VLA</a></p></div>`});
 }
 
-exports.handler=async function(event){
+const handler = async function(event){
   const {AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID}=process.env;
   if(event.httpMethod!=='POST')return json(405,{message:'Method Not Allowed'});
   if(!AIRTABLE_API_TOKEN||!AIRTABLE_BASE_ID)return json(500,{message:'Airtable no está configurado.'});
@@ -83,3 +85,5 @@ exports.handler=async function(event){
     return json(200,deepEscapeStrings({success:true,message:'Pago reportado correctamente. La administración verificará la información en un plazo no mayor de 72 horas.',reportId:report?.id,amountUsdRef:amount,amountBs,access,adminNotification}));
   }catch(error){return json(500,{message:'Error guardando reporte.',detail:safeDisplayText(error.message,500)});}
 };
+
+exports.handler = withAirtableUsage('public-report-payment', handler);

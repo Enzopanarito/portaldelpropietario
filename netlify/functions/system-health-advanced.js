@@ -1,5 +1,7 @@
 'use strict';
 
+const { withAirtableUsage } = require('./_airtable_meter');
+
 const { requireAdmin } = require('./_auth');
 const { loadConfigRecord } = require('./_admin_auth_store');
 const { loadLastGood } = require('./_bcv_store');
@@ -52,7 +54,7 @@ function keyState(record) {
   return '';
 }
 
-exports.handler = async function(event) {
+const handler = async function(event) {
   const auth = requireAdmin(event);
   if (!auth.ok) return auth.response;
   if (event.httpMethod !== 'GET') return json(405, { message: 'Method Not Allowed' });
@@ -106,3 +108,5 @@ exports.handler = async function(event) {
     return json(500, { ok: false, status: 'error', checks: [{ name: 'Salud avanzada', ok: false, severity: 'error', detail: safeDisplayText(error.message, 500) }], generatedAt: new Date().toISOString(), advanced: true });
   }
 };
+
+exports.handler = withAirtableUsage('system-health-advanced', handler);

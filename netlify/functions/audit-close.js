@@ -4,6 +4,8 @@
 
 'use strict';
 
+const { withAirtableUsage } = require('./_airtable_meter');
+
 const crypto = require('crypto');
 const { requireAdmin } = require('./_auth');
 const { begin, setState } = require('./_operation_guard');
@@ -472,7 +474,7 @@ async function createFinalLog({ operation, plan, groupResults, status, detail, t
   return records[0] || null;
 }
 
-exports.handler = async function(event) {
+const handler = async function(event) {
   const auth = requireAdmin(event);
   if (!auth.ok) return auth.response;
   if (!['GET', 'POST'].includes(event.httpMethod)) return json(405, { message: 'Method Not Allowed' });
@@ -723,3 +725,5 @@ exports.handler = async function(event) {
     }, counter);
   }
 };
+
+exports.handler = withAirtableUsage('audit-close', handler);

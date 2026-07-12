@@ -3,6 +3,8 @@
 
 'use strict';
 
+const { withAirtableUsage } = require('./_airtable_meter');
+
 const { issueAdminToken } = require('./_auth');
 const { loadConfigRecord, verifyPassword } = require('./_admin_auth_store');
 const { consume } = require('./_persistent_rate_limit');
@@ -58,7 +60,7 @@ async function persistentFailure(ip) {
   }
 }
 
-exports.handler = async function(event) {
+const handler = async function(event) {
   if (event.httpMethod !== 'POST') return json(405, { message: 'Method Not Allowed' });
   const ip = clientIp(event);
   const local = getState(ip);
@@ -112,3 +114,5 @@ exports.handler = async function(event) {
     return json(500, { success: false, message: 'No fue posible validar el acceso en este momento.', detail: String(error.message || '').slice(0, 300) });
   }
 };
+
+exports.handler = withAirtableUsage('login', handler);

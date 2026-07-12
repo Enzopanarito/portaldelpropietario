@@ -4,6 +4,8 @@
 
 'use strict';
 
+const { withAirtableUsage } = require('./_airtable_meter');
+
 const { requireAdmin } = require('./_auth');
 const { begin, setState } = require('./_operation_guard');
 const { safeDisplayText } = require('./_security_utils');
@@ -228,7 +230,7 @@ function auditQuery(month) {
   return `?filterByFormula=${encodeURIComponent(`IFERROR(FIND('AUDITORIA|${month}|', {Concepto}), 0)`)}`;
 }
 
-exports.handler = async function(event) {
+const handler = async function(event) {
   const auth = requireAdmin(event);
   if (!auth.ok) return auth.response;
   if (event.httpMethod !== 'POST') return json(405, { message: 'Method Not Allowed' }, { calls: 0 });
@@ -324,3 +326,5 @@ exports.handler = async function(event) {
     }, counter);
   }
 };
+
+exports.handler = withAirtableUsage('audit-snapshot', handler);

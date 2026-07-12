@@ -1,5 +1,7 @@
 'use strict';
 
+const { withAirtableUsage } = require('./_airtable_meter');
+
 const { requireAdmin } = require('./_auth');
 const { buildPlan } = require('./_monthly_close_core_v4');
 const { ACTIVE_LOCK_TTL_MS, loadContext, listCloseMarkers, acquireCloseLock, setCloseMarker } = require('./_monthly_close_store_v5');
@@ -27,7 +29,7 @@ function lockMessage(result, month) {
   };
   return messages[result.status] || 'El cierre está protegido.';
 }
-exports.handler = async function(event) {
+const handler = async function(event) {
   const auth = requireAdmin(event);
   if (!auth.ok) return auth.response;
   if (event.httpMethod !== 'POST') return json(405, { message: 'Method Not Allowed' });
@@ -78,3 +80,5 @@ exports.handler = async function(event) {
     return json(500, { success:false, protected:true, month, message:'Error preparando la ejecución del cierre. No se aplicaron cambios.', detail:error.message }, counter);
   }
 };
+
+exports.handler = withAirtableUsage('monthly-close-v4', handler);

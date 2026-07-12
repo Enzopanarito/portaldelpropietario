@@ -3,6 +3,8 @@
 
 'use strict';
 
+const { withAirtableUsage } = require('./_airtable_meter');
+
 const crypto = require('crypto');
 const { requireAdmin } = require('./_auth');
 const { sha256, sortRecords } = require('./_integrity');
@@ -39,7 +41,7 @@ function jsonError(statusCode, message, detail = '') {
   return { statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }, body: JSON.stringify({ message, detail }) };
 }
 
-exports.handler = async function(event) {
+const handler = async function(event) {
   const auth = requireAdmin(event);
   if (!auth.ok) return auth.response;
   if (event.httpMethod !== 'GET') return jsonError(405, 'Method Not Allowed');
@@ -98,3 +100,5 @@ exports.handler = async function(event) {
     return jsonError(500, 'Error generando respaldo de Airtable.', String(error.message || '').slice(0, 500));
   }
 };
+
+exports.handler = withAirtableUsage('airtable-backup', handler);

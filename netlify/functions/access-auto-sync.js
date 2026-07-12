@@ -1,10 +1,11 @@
+const { withAirtableUsage } = require('./_airtable_meter');
 // netlify/functions/access-auto-sync.js
 // Sincronización automática/inteligente del acceso cómodo del portón.
 
 const { requireAdmin } = require('./_auth');
 const { json, syncOwnerAccess, autoSyncAll } = require('./_access_control');
 
-exports.handler = async function(event) {
+const handler = async function(event) {
   const auth = requireAdmin(event);
   if (!auth.ok) return auth.response;
   if (event.httpMethod !== 'POST') return json(405, { message: 'Method Not Allowed' });
@@ -31,3 +32,5 @@ exports.handler = async function(event) {
     return json(500, { success: false, message: 'Error sincronizando accesos automáticamente.', detail: error.message });
   }
 };
+
+exports.handler = withAirtableUsage('access-auto-sync', handler);
