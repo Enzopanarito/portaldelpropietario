@@ -86,8 +86,7 @@ function compactPago(record) {
 exports.handler = async function(event) {
   const { AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID } = process.env;
   if (!AIRTABLE_API_TOKEN || !AIRTABLE_BASE_ID) return { statusCode: 500, headers: responseHeaders(0, 'ERROR'), body: JSON.stringify({ message: 'Airtable no está configurado.' }) };
-  const force = event.queryStringParameters?.force === '1';
-  if (!force && publicCache && publicCache.expiresAt > Date.now()) return { statusCode: 200, headers: responseHeaders(0, 'HIT'), body: JSON.stringify(publicCache.payload) };
+  if (publicCache && publicCache.expiresAt > Date.now()) return { statusCode: 200, headers: responseHeaders(0, 'HIT'), body: JSON.stringify(publicCache.payload) };
   const counter = { calls: 0 };
   try {
     const [owners, expenses, payments, control] = await Promise.all([

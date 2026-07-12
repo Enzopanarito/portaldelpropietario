@@ -6,6 +6,7 @@ const { ensureFinancialWritesAllowed } = require('./_financial_write_lock');
 const TABLE = 'ControlVersiones';
 const PREFIX = 'FIN_OP|';
 const CLOSE_SENSITIVE_SCOPES = new Set(['MANUAL_PAYMENT', 'PAYMENT_REPORT', 'EXPENSE_CREATE']);
+const RUNNING_TTL_MS = 15 * 60 * 1000;
 
 function endpoint(query = '') {
   return `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(TABLE)}${query}`;
@@ -65,11 +66,19 @@ async function begin(scope, key) {
     if (!lock.ok) return { ok: false, reason: 'running', monthlyClose: true, activeClose: lock.active, marker: null };
   }
 
-  const existing = await list(scope, key);
+  let existing = await list(scope, key);
   const done = existing.find(item => item.state === 'DONE');
   if (done) return { ok: false, reason: 'done', marker: done };
   const partial = existing.find(item => item.state === 'PARTIAL');
   if (partial) return { ok: false, reason: 'partial', marker: partial };
+
+  // Una ejecución interrumpida no puede bloquear el sistema para siempre.
+  const now = Date.now();
+  const stale = existing.filter(item => item.state === 'RUNNING' && (!Number.isFinite(item.createdAt) || now - item.createdAt > RUNNING_TTL_MS));
+  if (stale.length) {
+    await Promise.all(stale.map(item => setState(item, scope, key, 'ABORTED').catch(() => null)));
+    existing = await list(scope, key);
+  }
   const running = firstByTime(existing.filter(item => item.state === 'RUNNING'));
   if (running) return { ok: false, reason: 'running', marker: running };
 
@@ -94,4 +103,4 @@ async function begin(scope, key) {
   return { ok: true, marker: own };
 }
 
-module.exports = { begin, setState };
+module.exports = { begin, setState, RUNNING_TTL_MS, prefix, parse };

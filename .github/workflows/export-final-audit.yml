@@ -1,0 +1,30 @@
+name: Export Final Audit
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create reviewed source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          zip -q -r final-audit-source.zip . -x '.git/*' 'node_modules/*' 'final-audit-source.zip'
+          sha256sum final-audit-source.zip > final-audit-source.sha256
+          git rev-parse HEAD > final-audit-commit.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: final-audit-source
+          path: |
+            final-audit-source.zip
+            final-audit-source.sha256
+            final-audit-commit.txt
+          retention-days: 3

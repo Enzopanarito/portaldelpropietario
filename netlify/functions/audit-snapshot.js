@@ -4,7 +4,7 @@
 
 'use strict';
 
-const { requireAdmin } = require('./_auth');
+const { requireAdminCurrent } = require('./_auth');
 const { begin, setState } = require('./_operation_guard');
 const { safeDisplayText } = require('./_security_utils');
 const { hashJson } = require('./_audit_cleanup');
@@ -229,7 +229,7 @@ function auditQuery(month) {
 }
 
 exports.handler = async function(event) {
-  const auth = requireAdmin(event);
+  const auth = await requireAdminCurrent(event);
   if (!auth.ok) return auth.response;
   if (event.httpMethod !== 'POST') return json(405, { message: 'Method Not Allowed' }, { calls: 0 });
 

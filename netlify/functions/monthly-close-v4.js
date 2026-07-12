@@ -1,6 +1,6 @@
 'use strict';
 
-const { requireAdmin } = require('./_auth');
+const { requireAdminCurrent } = require('./_auth');
 const { buildPlan } = require('./_monthly_close_core_v4');
 const { ACTIVE_LOCK_TTL_MS, loadContext, listCloseMarkers, acquireCloseLock, setCloseMarker } = require('./_monthly_close_store_v5');
 const { repairOperation } = require('./_monthly_close_repair');
@@ -28,7 +28,7 @@ function lockMessage(result, month) {
   return messages[result.status] || 'El cierre está protegido.';
 }
 exports.handler = async function(event) {
-  const auth = requireAdmin(event);
+  const auth = await requireAdminCurrent(event);
   if (!auth.ok) return auth.response;
   if (event.httpMethod !== 'POST') return json(405, { message: 'Method Not Allowed' });
   const { AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID } = process.env;

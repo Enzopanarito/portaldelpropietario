@@ -14,7 +14,7 @@ jobs:
   verify-owner-portal:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,96 +53,123 @@ jobs:
           npm install --no-save --ignore-scripts playwright@1.53.0
           npx playwright install --with-deps chromium
 
-      - name: Verify table and all 15 official balances
+      - name: Compare production, preview and canonical backend
         env:
           TARGET_URL: ${{ steps.target.outputs.url }}
+          PRODUCTION_URL: https://villalosapamates.netlify.app
         shell: bash
         run: |
           cat > verify-owner-browser.cjs <<'NODE'
           const { chromium } = require('playwright');
           const fs = require('fs');
 
-          const expected = {
-            1:85, 2:0, 3:157.07, 4:306.40, 5:85, 6:0, 7:85, 8:85,
-            9:-20, 10:298.17, 11:-378.89, 12:109.99, 13:298.17, 14:-50, 15:186.90
-          };
-
+          const round = value => Math.round(Number(value || 0) * 100) / 100;
           function parseMoney(text) {
             const raw = String(text || '').trim();
-            const negative = raw.startsWith('-') || /saldo a favor/i.test(raw);
+            const negative = raw.startsWith('-') || /saldo a favor|a favor/i.test(raw);
             const value = Number(raw.replace(/[^0-9.]/g, '')) || 0;
-            return negative ? -value : value;
+            return round(negative ? -value : value);
           }
-
-          (async () => {
-            const browser = await chromium.launch({ headless: true });
-            const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+          function expectedFromOwner(owner) {
+            const usd = round(owner['Saldo USD Actual'] ?? owner['Deuda Anterior USD'] ?? 0);
+            const bs = round(owner['Saldo Bs Ref Actual'] ?? owner['Deuda Anterior Bs Ref'] ?? owner['Deuda Anterior'] ?? 0);
+            const total = round(owner['Saldo Total Actual'] ?? owner['Deuda Restante'] ?? (usd + bs));
+            return { total, usd, bs };
+          }
+          function same(a, b) {
+            return ['total', 'usd', 'bs'].every(field => Math.abs(round(a[field]) - round(b[field])) <= 0.009);
+          }
+          async function loadCanonicalBackend() {
+            const response = await fetch(`${process.env.PRODUCTION_URL}/.netlify/functions/public-data?force=1&audit=${Date.now()}`, { headers:{ accept:'application/json' } });
+            if (!response.ok) throw new Error(`Backend canónico HTTP ${response.status}.`);
+            const data = await response.json();
+            const owners = Array.isArray(data.propietarios) ? data.propietarios : [];
+            if (owners.length !== 15) throw new Error(`Backend devolvió ${owners.length} propietarios.`);
+            const result = {};
+            for (const owner of owners) result[Number(owner.Casa)] = expectedFromOwner(owner);
+            if (Object.keys(result).length !== 15) throw new Error('El backend no contiene 15 casas únicas.');
+            return result;
+          }
+          async function readCards(page) {
+            const cards = await page.locator('#summary > div').allInnerTexts();
+            const usdCard = cards.find(text => /Pagadero en USD/i.test(text));
+            const bsCard = cards.find(text => /Pagadero en Bs Ref\.?/i.test(text));
+            if (!usdCard || !bsCard) throw new Error(`Tarjetas USD/Bs ausentes: ${JSON.stringify(cards)}`);
+            return { total:parseMoney(await page.locator('#m-total').innerText()), usd:parseMoney(usdCard), bs:parseMoney(bsCard), cards };
+          }
+          async function captureSite(browser, url, label) {
+            const page = await browser.newPage({ viewport:{ width:390, height:844 } });
             const pageErrors = [];
             const consoleErrors = [];
             page.on('pageerror', error => pageErrors.push(String(error.stack || error.message || error)));
             page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
-
-            const response = await page.goto(`${process.env.TARGET_URL}/?browser=${Date.now()}`, { waitUntil: 'networkidle', timeout: 60000 });
+            const response = await page.goto(`${url}/?browserAudit=${Date.now()}`, { waitUntil:'networkidle', timeout:60000 });
             await page.waitForFunction(() => {
-              const select = document.getElementById('welcomeSelector') || document.querySelector('select');
+              const select = document.getElementById('welcomeSelector');
               return select && Array.from(select.options).some(option => option.value);
-            }, null, { timeout: 30000 });
-
+            }, null, { timeout:30000 });
             const welcome = page.locator('#welcomeSelector');
             const firstValue = await welcome.locator('option').evaluateAll(options => {
               const item = options.find(option => String(option.textContent || '').trim().startsWith('Casa 1 -')) || options.find(option => option.value);
               return item ? item.value : '';
             });
-            if (!firstValue) throw new Error('No se encontró la Casa 1 en el selector inicial.');
+            if (!firstValue) throw new Error(`${label}: Casa 1 no está disponible.`);
             await welcome.selectOption(firstValue);
-            await page.getByRole('button', { name: /Consultar Estado de Cuenta/i }).click();
-
+            await page.getByRole('button', { name:/Consultar Estado de Cuenta/i }).click();
             const breakdown = page.locator('[data-vla-breakdown-host="2026-07-11-photo-v6"]');
-            await breakdown.waitFor({ state: 'visible', timeout: 30000 });
-            await page.waitForFunction(() => {
-              const host = document.querySelector('[data-vla-breakdown-host="2026-07-11-photo-v6"]');
-              return host && /Costo\s*Total/i.test(host.innerText) && /Su\s*Parte/i.test(host.innerText);
-            }, null, { timeout: 30000 });
-
+            await breakdown.waitFor({ state:'visible', timeout:30000 });
             const breakdownText = await breakdown.innerText();
-            if (!/VIGILANCIA/i.test(breakdownText)) throw new Error('El desglose visible no contiene VIGILANCIA.');
-            if (/Recargo 10% por pérdida del pronto pago/i.test(breakdownText)) throw new Error('El recargo prohibido aparece como renglón.');
-
-            const balances = {};
+            const breakdownResult = {
+              visible:true,
+              costoTotal:/Costo\s*Total/i.test(breakdownText),
+              suParte:/Su\s*Parte/i.test(breakdownText),
+              vigilancia:/VIGILANCIA/i.test(breakdownText),
+              forbiddenRecargo:/Recargo 10% por pérdida del pronto pago/i.test(breakdownText)
+            };
+            if (!breakdownResult.costoTotal || !breakdownResult.suParte || !breakdownResult.vigilancia || breakdownResult.forbiddenRecargo) {
+              throw new Error(`${label}: desglose visual inválido ${JSON.stringify(breakdownResult)}.`);
+            }
             const selector = page.locator('#userSelector');
-            for (const house of Object.keys(expected).map(Number)) {
+            const balances = {};
+            for (let house = 1; house <= 15; house++) {
               const value = await selector.locator('option').evaluateAll((options, houseNumber) => {
                 const prefix = `Casa ${houseNumber} -`;
                 const item = options.find(option => String(option.textContent || '').trim().startsWith(prefix));
                 return item ? item.value : '';
               }, house);
-              if (!value) throw new Error(`No se encontró la Casa ${house}.`);
+              if (!value) throw new Error(`${label}: no se encontró Casa ${house}.`);
               await selector.selectOption(value);
-              await page.waitForTimeout(250);
-              const shown = parseMoney(await page.locator('#m-total').innerText());
-              balances[house] = shown;
-              if (Math.abs(shown - expected[house]) > 0.009) {
-                throw new Error(`Casa ${house}: saldo visible ${shown}, esperado ${expected[house]}.`);
-              }
+              await page.waitForTimeout(150);
+              balances[house] = await readCards(page);
             }
+            await page.screenshot({ path:`owner-browser-${label}.png`, fullPage:true });
+            await page.close();
+            return { url, status:response ? response.status() : null, breakdown:breakdownResult, balances, pageErrors, consoleErrors };
+          }
 
-            if (pageErrors.length) throw new Error(`Errores JavaScript: ${pageErrors.join(' | ')}`);
-            const result = {
-              target: process.env.TARGET_URL,
-              status: response ? response.status() : null,
-              breakdownVisible: true,
-              hasCostoTotal: /Costo\s*Total/i.test(breakdownText),
-              hasSuParte: /Su\s*Parte/i.test(breakdownText),
-              hasVigilancia: /VIGILANCIA/i.test(breakdownText),
-              forbiddenRecargoVisible: /Recargo 10% por pérdida del pronto pago/i.test(breakdownText),
-              balances,
-              pageErrors,
-              consoleErrors
-            };
-            fs.writeFileSync('owner-browser-result.json', JSON.stringify(result, null, 2));
-            await page.screenshot({ path: 'owner-browser.png', fullPage: true });
-            console.log(JSON.stringify(result, null, 2));
+          (async () => {
+            const canonical = await loadCanonicalBackend();
+            const browser = await chromium.launch({ headless:true });
+            const production = await captureSite(browser, process.env.PRODUCTION_URL, 'production');
+            const target = process.env.TARGET_URL === process.env.PRODUCTION_URL
+              ? production
+              : await captureSite(browser, process.env.TARGET_URL, 'target');
             await browser.close();
+
+            const mismatches = [];
+            for (let house = 1; house <= 15; house++) {
+              const prod = production.balances[house];
+              const shown = target.balances[house];
+              const backend = canonical[house];
+              if (!same(prod, backend)) mismatches.push({ house, type:'production-ui-vs-backend', production:prod, backend });
+              if (!same(shown, prod)) mismatches.push({ house, type:'target-vs-production-ui', target:shown, production:prod });
+            }
+            if (production.pageErrors.length || target.pageErrors.length) mismatches.push({ type:'javascript-errors', production:production.pageErrors, target:target.pageErrors });
+
+            const result = { generatedAt:new Date().toISOString(), canonical, production, target, mismatches, housesVerified:15 };
+            fs.writeFileSync('owner-browser-result.json', JSON.stringify(result, null, 2));
+            console.log(JSON.stringify(result, null, 2));
+            if (mismatches.length) throw new Error(`Se detectaron ${mismatches.length} inconsistencias. Revise owner-browser-result.json.`);
           })().catch(error => {
             fs.writeFileSync('owner-browser-error.txt', String(error.stack || error));
             console.error(error.stack || error);
@@ -159,6 +186,7 @@ jobs:
           path: |
             owner-browser-result.json
             owner-browser-error.txt
-            owner-browser.png
+            owner-browser-production.png
+            owner-browser-target.png
           if-no-files-found: ignore
           retention-days: 7

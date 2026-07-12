@@ -72,6 +72,19 @@ const guard = require(path.join(__dirname, '..', 'netlify', 'functions', '_opera
   assert.strictEqual(repeated.reason, 'done');
   assert.strictEqual(repeated.marker.resultId, 'recPAYMENT000001');
 
+  // Una operación RUNNING abandonada debe liberarse después del TTL.
+  const staleScope = 'STALE_TEST';
+  const staleKey = 'job-1';
+  records.push({
+    id: 'recSTALE00000001',
+    createdTime: new Date(Date.now() - guard.RUNNING_TTL_MS - 60000).toISOString(),
+    fields: { Key: `${guard.prefix(staleScope, staleKey)}RUNNING|old-operation|`, Version: 1 }
+  });
+  const recovered = await guard.begin(staleScope, staleKey);
+  assert.strictEqual(recovered.ok, true, 'El bloqueo obsoleto debe recuperarse automáticamente');
+  const staleRecord = records.find(item => item.id === 'recSTALE00000001');
+  assert(String(staleRecord.fields.Key).includes('|ABORTED|'), 'El bloqueo obsoleto debe quedar auditado como ABORTED');
+
   console.log('STAGE1_SECURITY_TESTS_OK');
 })().catch(error => {
   console.error(error);

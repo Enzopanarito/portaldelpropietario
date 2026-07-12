@@ -1,13 +1,13 @@
 'use strict';
 
-const { requireAdmin } = require('./_auth');
+const { requireAdminCurrent } = require('./_auth');
 const { ensureFinancialWritesAllowed } = require('./_financial_write_lock');
 const { deepEscapeStrings, safeDisplayText } = require('./_security_utils');
 
 const cache = new Map();
 const CACHE_TTL_MS = { default:5*60*1000, propietarios:15*60*1000, gastos:15*60*1000, pagos:5*60*1000, reportes:30*1000 };
 const ALLOWED_TABLES = new Set(['Propietarios','Gastos del Mes','Configuración','Pagos','Historial de Cargos','Reportes de Pago','Recibos de Pago','Cierres de Auditoría','WhatsApp Jobs','WhatsApp Programaciones']);
-const GENERIC_WRITE_TABLES = new Set(['Propietarios','Configuración']);
+const GENERIC_WRITE_TABLES = new Set();
 const ALLOWED_METHODS = new Set(['GET','POST','PATCH','DELETE']);
 const MAX_BODY_BYTES = 100000;
 
@@ -25,7 +25,7 @@ function isFinancialWrite(method,table){return method!=='GET'&&['Propietarios','
 function reply(statusCode,body,extra={}){return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...extra},body:JSON.stringify(body)}}
 
 exports.handler=async function(event){
- const auth=requireAdmin(event);if(!auth.ok)return auth.response;
+ const auth=await requireAdminCurrent(event);if(!auth.ok)return auth.response;
  const {AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID}=process.env,{httpMethod,body}=event;
  if(!AIRTABLE_API_TOKEN||!AIRTABLE_BASE_ID)return reply(500,{message:'Variables de entorno de Airtable no configuradas.'});
  if(!ALLOWED_METHODS.has(httpMethod))return reply(405,{message:'Método no permitido.'});

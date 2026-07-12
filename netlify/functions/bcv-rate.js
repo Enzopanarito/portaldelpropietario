@@ -115,8 +115,7 @@ async function fetchBcvRate() {
 }
 
 exports.handler = async function(event) {
-  const force = event.queryStringParameters?.force === '1';
-  if (!force && rateCache && rateCache.expiresAt > Date.now()) {
+  if (rateCache && rateCache.expiresAt > Date.now()) {
     return { statusCode: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'private, max-age=300', 'X-Cache': 'HIT', 'X-Content-Type-Options': 'nosniff' }, body: JSON.stringify(rateCache.payload) };
   }
   const payload = await fetchBcvRate();

@@ -67,3 +67,6 @@ for = "/service-worker.js"
 for = "/release.json"
   [headers.values]
   Cache-Control = "no-store, no-cache, must-revalidate"
+
+[functions."whatsapp-scheduler"]
+  schedule = "*/5 * * * *"

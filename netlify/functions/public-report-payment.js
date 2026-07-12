@@ -7,6 +7,7 @@ const { airtableCreateRecord, airtableGetRecord, syncOwnerAccess, TABLES, money 
 const { sendMail } = require('./_mailer');
 const { sanitizeReference, escapeHtml, cleanPlainText, safeDisplayText, deepEscapeStrings } = require('./_security_utils');
 const { consume } = require('./_persistent_rate_limit');
+const { begin, setState } = require('./_operation_guard');
 
 const ALLOWED_MODES = new Set(['USD', 'Bs BCV']);
 const DUPLICATE_WINDOW_MS = 5 * 60 * 1000;
@@ -58,6 +59,7 @@ async function notifyAdminPaymentReport({ownerId,mode,amount,usdEq,amountBs,refe
 
 exports.handler=async function(event){
   const {AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID}=process.env;
+  let operation=null, createdReportId='', operationKey='';
   if(event.httpMethod!=='POST')return json(405,{message:'Method Not Allowed'});
   if(!AIRTABLE_API_TOKEN||!AIRTABLE_BASE_ID)return json(500,{message:'Airtable no está configurado.'});
   try{
@@ -74,12 +76,21 @@ exports.handler=async function(event){
     const duplicate=await findRecentDuplicate({ownerId,mode,amount,reference});
     if(duplicate)return json(409,{success:false,duplicate:true,retryAfterSeconds:300,message:'Este pago ya fue reportado recientemente. La administración se encuentra verificándolo. Espere al menos 5 minutos antes de intentar nuevamente.'},{'Retry-After':'300'});
 
+    // Bloqueo atómico por propietario, moneda, monto, referencia y ventana de cinco minutos.
+    const bucket=Math.floor(Date.now()/DUPLICATE_WINDOW_MS);
+    operationKey=`${ownerId}|${mode}|${amount.toFixed(2)}|${normalizeReference(reference)}|${bucket}`;
+    const guard=await begin('PUBLIC_PAYMENT_REPORT',operationKey);
+    if(!guard.ok)return json(409,{success:false,duplicate:true,protected:true,retryAfterSeconds:300,message:'Este pago ya está siendo reportado o fue recibido recientemente. La administración se encuentra verificándolo.'},{'Retry-After':'300'});
+    operation=guard.marker;
+
     const usdEq=amount,amountBs=mode==='Bs BCV'?money(amount*rate):0;
     const fields={'Propietario que Reporta':[ownerId],'Monto Reportado':usdEq,Referencia:reference,Estado:'Pendiente','Fecha del Reporte':todayCaracasISO(),'Forma de Pago Reportada':mode,'Equivalente USD Reportado':usdEq};
     if(mode==='Bs BCV'){fields['Monto Reportado Bs']=amountBs;fields['Tasa BCV Reporte']=rate;}
     const report=await airtableCreateRecord(TABLES.reportes,fields);
+    createdReportId=report?.id||'';
+    await setState(operation,'PUBLIC_PAYMENT_REPORT',operationKey,'DONE',createdReportId).catch(error=>console.warn('No se pudo cerrar guard de reporte:',error.message));
     let access=null;try{access=await syncOwnerAccess(ownerId,{reason:'Habilitación temporal por reporte pendiente suficiente para deuda vencida.',sendEmail:false})}catch(error){access={error:safeDisplayText(error.message,500)}}
     let adminNotification=null;try{adminNotification=await notifyAdminPaymentReport({ownerId,mode,amount,usdEq,amountBs,reference,rate,reportId:report?.id,access})}catch(error){adminNotification={sent:false,status:'Error enviando notificación admin',detail:safeDisplayText(error.message,500)}}
     return json(200,deepEscapeStrings({success:true,message:'Pago reportado correctamente. La administración verificará la información en un plazo no mayor de 72 horas.',reportId:report?.id,amountUsdRef:amount,amountBs,access,adminNotification}));
-  }catch(error){return json(500,{message:'Error guardando reporte.',detail:safeDisplayText(error.message,500)});}
+  }catch(error){if(operation&&!createdReportId&&operationKey)await setState(operation,'PUBLIC_PAYMENT_REPORT',operationKey,'ERROR').catch(()=>null);return json(500,{message:'Error guardando reporte.',detail:safeDisplayText(error.message,500)});}
 };

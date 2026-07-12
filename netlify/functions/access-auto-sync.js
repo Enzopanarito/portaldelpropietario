@@ -1,11 +1,11 @@
 // netlify/functions/access-auto-sync.js
 // Sincronización automática/inteligente del acceso cómodo del portón.
 
-const { requireAdmin } = require('./_auth');
+const { requireAdminCurrent } = require('./_auth');
 const { json, syncOwnerAccess, autoSyncAll } = require('./_access_control');
 
 exports.handler = async function(event) {
-  const auth = requireAdmin(event);
+  const auth = await requireAdminCurrent(event);
   if (!auth.ok) return auth.response;
   if (event.httpMethod !== 'POST') return json(405, { message: 'Method Not Allowed' });
 

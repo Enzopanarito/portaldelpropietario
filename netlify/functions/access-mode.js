@@ -1,11 +1,11 @@
 // netlify/functions/access-mode.js
 // Lee o actualiza el modo del control de acceso del portón: Automático / Manual.
 
-const { requireAdmin } = require('./_auth');
+const { requireAdminCurrent } = require('./_auth');
 const { json, getAccessMode, setAccessMode, ACCESS_MODE_AUTO, ACCESS_MODE_MANUAL } = require('./_access_control');
 
 exports.handler = async function(event) {
-  const auth = requireAdmin(event);
+  const auth = await requireAdminCurrent(event);
   if (!auth.ok) return auth.response;
 
   try {

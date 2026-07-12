@@ -1,12 +1,15 @@
 'use strict';
 
-const { requireAdmin } = require('./_auth');
+const { requireAdminCurrent } = require('./_auth');
 const { loadConfigRecord } = require('./_admin_auth_store');
 const { loadLastGood } = require('./_bcv_store');
 const { deepEscapeStrings, safeDisplayText } = require('./_security_utils');
+const { verifySmtp } = require('./_mailer');
+const { mkjLogin } = require('./_access_control');
 
 const CONTROL_TABLE = 'ControlVersiones';
 const EXPECTED_BACKUP_TABLES = 11;
+const OP_RUNNING_TTL_MS = 15 * 60 * 1000;
 
 function json(statusCode, body) {
   return { statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }, body: JSON.stringify(body) };
@@ -53,7 +56,7 @@ function keyState(record) {
 }
 
 exports.handler = async function(event) {
-  const auth = requireAdmin(event);
+  const auth = await requireAdminCurrent(event);
   if (!auth.ok) return auth.response;
   if (event.httpMethod !== 'GET') return json(405, { message: 'Method Not Allowed' });
 
@@ -76,6 +79,16 @@ exports.handler = async function(event) {
     }
 
     try {
+      await Promise.race([verifySmtp(), new Promise((_,reject)=>setTimeout(()=>reject(new Error('Timeout SMTP')),12000))]);
+      add('Conexión SMTP real', true, 'El proveedor autenticó correctamente sin enviar un correo de prueba.');
+    } catch (error) { add('Conexión SMTP real', false, safeDisplayText(error.message,300), 'error'); }
+
+    try {
+      const login = await Promise.race([mkjLogin(), new Promise((_,reject)=>setTimeout(()=>reject(new Error('Timeout MKJoules')),12000))]);
+      add('Conexión MKJoules real', Boolean(login?.cookie), login?.cookie ? `Login administrativo correcto, HTTP ${login.status}. No se modificó ningún usuario.` : 'MKJoules no devolvió sesión.', login?.cookie ? 'ok' : 'error');
+    } catch (error) { add('Conexión MKJoules real', false, safeDisplayText(error.message,300), 'error'); }
+
+    try {
       const bcv = await loadLastGood({ force: true });
       add('Última tasa BCV persistente', Boolean(bcv?.rate), bcv?.rate ? `${bcv.rateFormatted || bcv.rate} · ${bcv.source || 'fuente no indicada'} · ${bcv.updatedAt || bcv.fetchedAt || 'sin fecha'}` : 'Todavía no existe una tasa válida persistente. Se guardará con la próxima consulta exitosa.', bcv?.rate ? 'ok' : 'warning');
     } catch (error) {
@@ -83,16 +96,32 @@ exports.handler = async function(event) {
     }
 
     try {
-      const control = await getControlRecords(['MONTHLY_CLOSE|','FIN_OP|','BCV_LAST_GOOD|']);
+      const control = await getControlRecords(['MONTHLY_CLOSE|','FIN_OP|','BCV_LAST_GOOD|','WHATSAPP_AGENT|']);
       const partial = control.filter(record => ['ERROR_PARTIAL','LOCKED'].includes(keyState(record)));
+      const partialFinancialOps = control.filter(record => String(record?.fields?.Key || '').startsWith('FIN_OP|') && String(record?.fields?.Key || '').includes('|PARTIAL|'));
       const runningFinancialOps = control.filter(record => String(record?.fields?.Key || '').startsWith('FIN_OP|') && String(record?.fields?.Key || '').includes('|RUNNING|'));
+      const staleFinancialOps = runningFinancialOps.filter(record => { const created=Date.parse(record.createdTime||''); return !Number.isFinite(created) || Date.now()-created>OP_RUNNING_TTL_MS; });
+      const activeFinancialOps = runningFinancialOps.filter(record => !staleFinancialOps.includes(record));
       const lastClose = latest(control, 'MONTHLY_CLOSE|');
-      const pendingCount = partial.length + runningFinancialOps.length;
-      add('Operaciones financieras pendientes', pendingCount === 0, pendingCount ? `${partial.length} marcador(es) de cierre y ${runningFinancialOps.length} operación(es) financieras requieren revisión.` : 'No hay cierres parciales, bloqueos activos ni operaciones financieras en curso detectadas.', pendingCount ? 'error' : 'ok', { closeMarkers: partial.length, financialOperations: runningFinancialOps.length });
+      const pendingCount = partial.length + partialFinancialOps.length + activeFinancialOps.length;
+      add('Operaciones financieras pendientes', pendingCount === 0, pendingCount ? `${partial.length} marcador(es) de cierre, ${partialFinancialOps.length} operación(es) parciales y ${activeFinancialOps.length} operación(es) activas requieren revisión.` : 'No hay cierres parciales, bloqueos activos ni operaciones financieras en curso detectadas.', pendingCount ? 'error' : 'ok', { closeMarkers: partial.length, partialOperations:partialFinancialOps.length, activeOperations:activeFinancialOps.length, staleOperations:staleFinancialOps.length });
+      if (staleFinancialOps.length) add('Operaciones antiguas recuperables', false, `${staleFinancialOps.length} marcador(es) RUNNING superaron 15 minutos. El guard los liberará automáticamente al reintentar la operación.`, 'warning');
       add('Último marcador de cierre mensual', Boolean(lastClose), lastClose ? `${String(lastClose.fields?.Key || '').slice(0, 160)} · ${lastClose.createdTime || ''}` : 'No existe todavía un marcador de cierre mensual.', lastClose ? 'ok' : 'warning');
     } catch (error) {
       add('Operaciones financieras pendientes', false, safeDisplayText(error.message, 300), 'warning');
     }
+
+    try {
+      const heartbeatRecord = latest(await getRecordsByPrefix('WHATSAPP_AGENT|'), 'WHATSAPP_AGENT|');
+      let payload = null;
+      if (heartbeatRecord) {
+        const encoded = String(heartbeatRecord.fields?.Key || '').slice('WHATSAPP_AGENT|'.length);
+        try { payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')); } catch (_) { payload = null; }
+      }
+      const ageMs = payload?.at ? Date.now() - Date.parse(payload.at) : Infinity;
+      const fresh = Number.isFinite(ageMs) && ageMs <= 10 * 60 * 1000;
+      add('Heartbeat del agente WhatsApp', fresh, fresh ? `${payload.agent || 'Agente'} conectado hace ${Math.max(0,Math.round(ageMs/1000))} segundos; versión ${payload.version || 'N/D'}.` : heartbeatRecord ? 'El agente no reporta actividad desde hace más de 10 minutos.' : 'No existe heartbeat del agente local. Los mensajes no pueden enviarse aunque se creen órdenes.', fresh ? 'ok' : 'error', { lastAt:payload?.at||null, agent:payload?.agent||null });
+    } catch (error) { add('Heartbeat del agente WhatsApp', false, safeDisplayText(error.message,300), 'warning'); }
 
     add('Cobertura de respaldo', true, `El respaldo operativo incluye ${EXPECTED_BACKUP_TABLES} tablas, manifiesto SHA-256 y verificador local.`, 'ok', { expectedTables: EXPECTED_BACKUP_TABLES });
     add('Transparencia pública', true, 'El portal continúa mostrando la información financiera de todas las casas según la política definida por la administración.');

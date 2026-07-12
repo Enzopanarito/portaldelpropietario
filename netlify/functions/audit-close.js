@@ -5,7 +5,7 @@
 'use strict';
 
 const crypto = require('crypto');
-const { requireAdmin } = require('./_auth');
+const { requireAdminCurrent } = require('./_auth');
 const { begin, setState } = require('./_operation_guard');
 const { safeDisplayText, deepEscapeStrings } = require('./_security_utils');
 const {
@@ -473,7 +473,7 @@ async function createFinalLog({ operation, plan, groupResults, status, detail, t
 }
 
 exports.handler = async function(event) {
-  const auth = requireAdmin(event);
+  const auth = await requireAdminCurrent(event);
   if (!auth.ok) return auth.response;
   if (!['GET', 'POST'].includes(event.httpMethod)) return json(405, { message: 'Method Not Allowed' });
 
