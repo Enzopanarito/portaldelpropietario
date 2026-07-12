@@ -1,0 +1,102 @@
+name: Verify Owner Mobile
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_run:
+    workflows: ["Deploy Netlify Production"]
+    types: [completed]
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  verify-owner-mobile:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate static mobile recovery
+        run: node tests/owner-mobile-v2.test.js
+
+      - name: Resolve target URL
+        id: target
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "url=https://deploy-preview-${{ github.event.pull_request.number }}--villalosapamates.netlify.app" >> "$GITHUB_OUTPUT"
+          else
+            echo "url=https://villalosapamates.netlify.app" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Wait for fluid-v2 release
+        env:
+          TARGET_URL: ${{ steps.target.outputs.url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 90); do
+            headers="$(curl --silent --show-error --location --dump-header - --output /dev/null --max-time 30 "${TARGET_URL}/?owner-mobile-release=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            marker="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-owner-mobile"{gsub("\r","");print $2}' | tail -1)"
+            if [ "$marker" = "fluid-v2" ]; then
+              css_status="$(curl --silent --show-error --location --output /tmp/owner-mobile.css --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/owner-mobile-v2.css?v=${GITHUB_RUN_ID}" 2>/dev/null || true)"
+              if [ "$css_status" = "200" ] && grep -q 'Portal propietario móvil fluid-v2' /tmp/owner-mobile.css; then
+                echo "Owner mobile fluid-v2 available at $TARGET_URL"
+                exit 0
+              fi
+            fi
+            echo "Attempt $attempt: marker=${marker:-missing}"
+            sleep 10
+          done
+          echo "Expected owner mobile release was not available."
+          exit 1
+
+      - name: Install Chromium
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.53.0
+          npx playwright install --with-deps chromium
+
+      - name: Verify mobile layout without Tailwind CDN
+        env:
+          TARGET_URL: ${{ steps.target.outputs.url }}
+        run: node tests/owner-mobile-browser.cjs
+
+      - name: Upload mobile evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: owner-mobile-evidence
+          path: |
+            owner-mobile-result.json
+            owner-mobile-error.txt
+            owner-mobile-*.png
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Publish successful production status
+        if: success() && github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+            -f state=success \
+            -f context='Owner Mobile Production Verification' \
+            -f description='Portal móvil verificado sin Tailwind CDN en 320, 390 y 430 px.' \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+      - name: Publish failed production status
+        if: failure() && github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+            -f state=failure \
+            -f context='Owner Mobile Production Verification' \
+            -f description='La verificación móvil del portal propietario falló.' \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
