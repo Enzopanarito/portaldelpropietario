@@ -1,0 +1,143 @@
+name: Apply System Cleanup
+
+on:
+  push:
+    branches:
+      - hardening-system-clean-api-meter-2026-07-12
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hardening-system-clean-api-meter-2026-07-12
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Move protected flows to the source and instrument Airtable calls
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          root=Path('.')
+          functions=root/'netlify/functions'
+
+          targets={
+            'access-auto-sync.js':'access-auto-sync','access-mode.js':'access-mode',
+            'admin-data-v2.js':'admin-data-v2','admin-data-v3.js':'admin-data-v3',
+            'admin-expense.js':'admin-expense','admin-manual-payment.js':'admin-manual-payment',
+            'admin-security.js':'admin-security','airtable-backup.js':'airtable-backup',
+            'airtable-v2.js':'airtable-v2','audit-close.js':'audit-close',
+            'audit-history.js':'audit-history','audit-snapshot.js':'audit-snapshot',
+            'bcv-rate.js':'bcv-rate','login.js':'login','mkj-access.js':'mkj-access',
+            'monthly-close-v2.js':'monthly-close-v2','monthly-close-v4.js':'monthly-close-v4',
+            'process-payment-report.js':'process-payment-report','public-data-v2.js':'public-data-v2',
+            'public-report-payment.js':'public-report-payment','resend-receipt.js':'resend-receipt',
+            'send-receipt.js':'send-receipt','system-health-advanced.js':'system-health-advanced',
+            'system-health.js':'system-health','whatsapp-jobs.js':'whatsapp-jobs'
+          }
+          meter_line="const { withAirtableUsage } = require('./_airtable_meter');"
+          for filename, source in targets.items():
+            p=functions/filename
+            s=p.read_text('utf-8')
+            if "withAirtableUsage('" in s:
+              continue
+            if meter_line not in s:
+              if "'use strict';" in s:
+                s=s.replace("'use strict';", "'use strict';\n\n"+meter_line, 1)
+              elif '"use strict";' in s:
+                s=s.replace('"use strict";', '"use strict";\n\n'+meter_line, 1)
+              else:
+                s=meter_line+'\n'+s
+            s,n=re.subn(r'exports\.handler\s*=\s*async function', 'const handler = async function', s, count=1)
+            if n != 1:
+              raise SystemExit(f'No se encontró handler en {filename}')
+            s=s.rstrip()+f"\n\nexports.handler = withAirtableUsage('{source}', handler);\n"
+            p.write_text(s,'utf-8')
+
+          admin=Path('admin.html'); s=admin.read_text('utf-8')
+          manual="async function manualPay(){if(window.vlaPayBusy)return;const btn=document.getElementById('pay-confirm');try{const mode=document.getElementById('pay-mode').value,amount=Number(document.getElementById('pay-amount').value),owner=owners.find(x=>x.id===currentOwnerId),r=rate();if(!currentOwnerId||!owner)throw new Error('Seleccione un propietario.');if(!(amount>0))throw new Error('Ingrese un monto válido en USD referencial.');if(mode==='Bs BCV'&&!(r>0))throw new Error('No hay tasa BCV disponible. Presione Actualizar e intente de nuevo.');window.vlaPayBusy=true;btn.disabled=true;btn.textContent='Registrando...';const processed=await adminFetch('/.netlify/functions/admin-manual-payment',{method:'POST',body:JSON.stringify({ownerId:currentOwnerId,mode,amount,rate:r,reference:'Pago manual admin'})});hidePay();toast(processed.message||'Pago registrado.');await loadAll(true)}catch(e){toast(e.message,true)}finally{window.vlaPayBusy=false;btn.disabled=false;btn.textContent='Registrar'}}"
+          s,n=re.subn(r"async function manualPay\(\)\{[\s\S]*?\}\nasync function addExpense", manual+"\nasync function addExpense", s, count=1)
+          if n != 1: raise SystemExit(f'manualPay matches={n}')
+
+          old_expense="await adminFetch('/.netlify/functions/airtable/'+encodeURIComponent(TABLE_GASTOS),{method:'POST',body:JSON.stringify({records:[{fields:{Concepto:concept,Monto:amount,'Tipo de Gasto':type,Frecuencia:freq,Propietarios:selected,'Forma de Pago':mode}}],typecast:true})});"
+          new_expense="await adminFetch('/.netlify/functions/admin-expense',{method:'POST',body:JSON.stringify({action:'create',concept,amount,type,mode,frequency:freq,ownerIds:selected})});"
+          if old_expense not in s: raise SystemExit('No se encontró escritura heredada de gastos')
+          s=s.replace(old_expense,new_expense,1)
+
+          protected="async function handleReport(e){const btn=e.target.closest('button');if(!btn||window.vlaReportBusy)return;const id=btn.dataset.id,r=reportes.find(x=>x.id===id);if(!r)return;const approve=btn.classList.contains('confirm-report'),reject=btn.classList.contains('reject-report');if(!approve&&!reject)return;if(reject&&!confirm('¿Rechazar este pago?'))return;const original=btn.textContent;try{window.vlaReportBusy=true;btn.disabled=true;btn.textContent=approve?'Confirmando...':'Rechazando...';const processed=await adminFetch('/.netlify/functions/process-payment-report',{method:'POST',body:JSON.stringify({reportId:id,decision:approve?'approve':'reject'})});toast(processed.message||(approve?'Pago confirmado, recibo procesado y acceso sincronizado.':'Pago rechazado y acceso sincronizado.'));await loadAll(true)}catch(err){toast(err.message,true)}finally{window.vlaReportBusy=false;btn.disabled=false;btn.textContent=original}}"
+          s,n=re.subn(r"async function handleReport\(e\)\{[\s\S]*?\}\nfunction closeRows\(\)", protected+"\nfunction closeRows()", s, count=1)
+          if n != 1: raise SystemExit(f'handleReport matches={n}')
+
+          usage="async function loadUsage(){const k=document.getElementById('kpi-api'),r=document.getElementById('api-restan'),b=document.getElementById('api-bar');k.textContent='…';r.textContent='Consultando Airtable…';b.style.width='0%';try{const d=await adminFetch('/.netlify/functions/api-usage');if(!d.ok)throw new Error(d.message||'Contador no disponible');k.textContent=`${d.total}/${d.limit}`;const stamp=d.lastEvent?new Date(d.lastEvent).toLocaleString('es-VE'):'sin eventos';r.textContent=`Restan ${d.remaining} · ${d.coverage==='reconciliado-con-baseline'?'reconciliado':'interno auditado'} · ${stamp}`;r.title=d.note||'';b.style.width=Math.min(100,Number(d.percent||0))+'%'}catch(e){k.textContent='Error';r.textContent=e.message||'No se pudo leer el contador';r.title='El contador no oculta fallas: revise Salud del sistema.';b.style.width='0%';toast('Contador API: '+(e.message||'error desconocido'),true)}}"
+          s,n=re.subn(r"async function loadUsage\(\)\{[\s\S]*?\}\nasync function loadHealth", usage+"\nasync function loadHealth", s, count=1)
+          if n != 1: raise SystemExit(f'loadUsage matches={n}')
+          s=s.replace("<p class='text-sm text-slate-500'>API</p>","<p class='text-sm text-slate-500'>Airtable API</p>")
+
+          old_note="function payNote(){document.getElementById('pay-note').textContent=document.getElementById('pay-mode').value==='USD'?'Se aplicará como pago exclusivamente en dólares.':`Se registrará en Bs y equivalente USD a tasa ${bcv&&bcv.rateFormatted?bcv.rateFormatted:bs(rate())}.`}"
+          new_note="function payNote(){const mode=document.getElementById('pay-mode').value,amount=Number(document.getElementById('pay-amount').value||0),r=rate(),note=document.getElementById('pay-note');if(mode==='USD'){note.textContent='Ingrese el monto en USD referencial. Se aplicará como pago en dólares.';return}const bsEq=(amount>0&&r>0)?money(amount*r):0;note.textContent=`Ingrese el monto en USD referencial. Se registrará como pago en bolívares a tasa ${bcv&&bcv.rateFormatted?bcv.rateFormatted:bs(r)}${amount>0?` · Equivalente: ${bs(bsEq)}`:''}`}"
+          if old_note in s: s=s.replace(old_note,new_note,1)
+          s=s.replace("document.getElementById('pay-mode').onchange=payNote;document.getElementById('pay-confirm').onclick=manualPay;","document.getElementById('pay-mode').onchange=payNote;document.getElementById('pay-amount').oninput=payNote;document.getElementById('pay-confirm').onclick=manualPay;")
+          admin.write_text(s,'utf-8')
+
+          edge=Path('netlify/edge-functions/admin-links.js'); e=edge.read_text('utf-8')
+          e=e.replace("  html = html.replace('renderAll();loadUsage();', 'renderAll();');\n",'')
+          e,n=re.subn(r"\n  // Pago manual admin:[\s\S]*?\n  const headers = new Headers", "\n\n  // Los flujos financieros protegidos están definidos en admin.html.\n  const headers = new Headers", e, count=1)
+          if n != 1: raise SystemExit(f'Bloque financiero admin-links matches={n}')
+          edge.write_text(e,'utf-8')
+
+          close=Path('netlify/edge-functions/admin-monthly-close.js'); c=close.read_text('utf-8')
+          c,n=re.subn(r"\n  const oldExpenseCall = [\s\S]*?\n  if \(html\.includes\(oldExpenseCall\)\) html = html\.replace\(oldExpenseCall, newExpenseCall\);",'',c,count=1)
+          if n != 1: raise SystemExit(f'oldExpenseCall matches={n}')
+          close.write_text(c,'utf-8')
+
+          test=Path('tests/final-hardening.test.js'); t=test.read_text('utf-8')
+          t=t.replace("assert(adminEdge.includes('/.netlify/functions/admin-expense'));\n",'')
+          old="assert(adminHtml.includes(\"await adminFetch('/.netlify/functions/airtable/'+encodeURIComponent(TABLE_GASTOS),{method:'POST'\"));\nassert(adminEdge.includes('oldExpenseCall'));"
+          new="assert(adminHtml.includes('/.netlify/functions/admin-expense'));\nassert(adminHtml.includes('/.netlify/functions/admin-manual-payment'));\nassert(adminHtml.includes('/.netlify/functions/process-payment-report'));\nassert(!adminHtml.includes(\"/.netlify/functions/airtable/'+encodeURIComponent(TABLE_PAGOS)\"));\nassert(!adminHtml.includes(\"/.netlify/functions/airtable/'+encodeURIComponent(TABLE_REPORTES)\"));\nassert(!adminHtml.includes(\"/.netlify/functions/airtable/'+encodeURIComponent(TABLE_GASTOS)\"));\nassert(!adminEdge.includes('oldExpenseCall'));\nassert(!adminEdge.includes('manualOld'));\nassert(!adminEdge.includes('reportOld'));\nassert(!source('netlify/edge-functions/admin-links.js').includes(\"renderAll();loadUsage();', 'renderAll();\"));\nconst usage = source('netlify/functions/api-usage.js');\nassert(usage.includes('withAirtableUsage'));\nassert(usage.includes('flushCurrentUsage'));\nassert(usage.includes('officialCounterAvailableByApi: false'));\nassert(adminHtml.includes('interno auditado'));\nassert(!adminHtml.includes('catch(e){}'));"
+          if old not in t: raise SystemExit('No se encontraron aserciones heredadas')
+          test.write_text(t.replace(old,new,1),'utf-8')
+
+          validate=Path('.github/workflows/validate.yml'); y=validate.read_text('utf-8')
+          marker="      - name: Run final hardening tests\n        run: node tests/final-hardening.test.js\n"
+          if 'api-usage-meter.test.js' not in y:
+            y=y.replace(marker,marker+"\n      - name: Validate centralized Airtable API counter\n        run: node tests/api-usage-meter.test.js\n")
+          validate.write_text(y,'utf-8')
+          PY
+      - name: Validate complete system
+        shell: bash
+        run: |
+          set -euo pipefail
+          find netlify/functions -maxdepth 1 -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+          while IFS= read -r -d '' file; do node --input-type=module --check < "$file"; done < <(find netlify/edge-functions -maxdepth 1 -type f -name '*.js' -print0)
+          node tests/injected-browser-scripts.test.js
+          node tests/admin-payment-flow.test.js
+          node tests/api-usage-meter.test.js
+          node tests/stage1-security.test.js
+          node tests/stage2-audit-cleanup.test.js
+          node tests/stage3-monthly-close.test.js
+          node tests/final-hardening.test.js
+          node tests/balance-engine-v4.test.js
+          node tests/visual-breakdown-v4.test.js
+          node tests/all-houses-current-balance.test.js
+          node tests/access-balance-engine.test.js
+          node tests/official-balance-sync.test.js
+      - name: Commit functional cleanup
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add admin.html netlify/functions netlify/edge-functions tests .github/workflows/validate.yml
+          git commit -m 'Sanear flujos financieros y centralizar contador Airtable'
+          git push origin HEAD:hardening-system-clean-api-meter-2026-07-12
