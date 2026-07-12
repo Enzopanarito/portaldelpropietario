@@ -38,7 +38,7 @@ const server=http.createServer((req,res)=>{
     if(name==='admin-data')return json(res,200,{propietarios:owners,gastos:[],pagos:[],reportes:[],generatedAtCaracas:'12/07/2026 12:00'});
     if(name==='public-data')return json(res,200,{propietarios:owners,gastos:[],pagos:[],reportes:[]});
     if(name==='bcv-rate')return json(res,200,{rate:150.25,rateFormatted:'150.25'});
-    if(name==='api-usage')return json(res,200,{ok:true,total:120,limit:1000,remaining:880,percent:12});
+    if(name==='api-usage')return json(res,200,{ok:true,total:120,limit:1000,remaining:880,percent:12,coverage:'interno-auditado',lastEvent:'2026-07-12T12:00:00.000Z',note:'Contador interno auditado con detalle suficiente para probar que el texto auxiliar permanece dentro de su tarjeta.'});
     if(name==='system-health'||name==='system-health-advanced')return json(res,200,{ok:true,status:'ok',checks:[]});
     if(name==='access-mode')return json(res,200,{mode:'Automático'});
     return json(res,200,{ok:true});
@@ -117,6 +117,7 @@ async function diagnostic(page,label){
     await page.locator('#app').waitFor({state:'visible',timeout:30000});
     await page.locator('#vla-premium-shell').waitFor({state:'visible',timeout:30000});
     await page.waitForFunction(()=>document.getElementById('vla-sum-owners')?.textContent==='15',null,{timeout:30000});
+    await page.waitForFunction(()=>document.getElementById('kpi-api')?.dataset.vlaFittedSize&&document.getElementById('vla-porton-value')?.dataset.vlaFittedSize,null,{timeout:10000});
   }catch(error){
     const state=await diagnostic(page,'boot-timeout');
     throw new Error(`${error.message}\nDiagnóstico: ${JSON.stringify(state)}`);
@@ -138,15 +139,27 @@ async function diagnostic(page,label){
   const results=[];
   for(const viewport of viewports){
     await page.setViewportSize({width:viewport.width,height:viewport.height});
-    await page.waitForTimeout(220);
+    await page.waitForTimeout(360);
     const metrics=await page.evaluate(()=>{
-      const values=[...document.querySelectorAll('#dashboard>.bg-white>.grid p[id],.vla-kpi-value')];
+      const primarySelector='#kpi-total,#kpi-usd,#kpi-bs,#kpi-morosos,#kpi-bcv,#kpi-api,#vla-porton-value,#vla-reports-value';
+      const values=[...document.querySelectorAll(primarySelector)];
+      const cards=[...document.querySelectorAll('#dashboard>.bg-white>.grid>div')];
       const donut=document.getElementById('vla-donut');
       const shell=document.getElementById('vla-premium-shell');
       const menu=document.getElementById('vla-mobile-menu');
       const login=document.getElementById('login');
       const app=document.getElementById('app');
       const dashboard=document.getElementById('dashboard');
+      const apiHelper=document.getElementById('api-restan');
+      const apiCard=document.getElementById('kpi-api')?.parentElement;
+      const rect=node=>node&&node.getBoundingClientRect();
+      const cardOverflow=cards.map(card=>{
+        const cardRect=rect(card);
+        const descendants=[...card.children].filter(node=>getComputedStyle(node).display!=='none');
+        const visualOverflow=descendants.some(node=>{const child=rect(node);return child.bottom>cardRect.bottom+3||child.right>cardRect.right+3||child.left<cardRect.left-3});
+        return{label:card.querySelector('p')?.textContent?.trim()||card.id||'KPI',visualOverflow,scrollOverflow:card.scrollHeight>card.clientHeight+3};
+      });
+      const apiRect=rect(apiHelper),apiCardRect=rect(apiCard);
       return{
         viewport:innerWidth,
         documentWidth:document.documentElement.scrollWidth,
@@ -154,6 +167,12 @@ async function diagnostic(page,label){
         donutWidth:donut&&donut.getBoundingClientRect().width,
         valueFonts:values.map(node=>parseFloat(getComputedStyle(node).fontSize)),
         overflowingValues:values.filter(node=>node.scrollWidth>node.clientWidth+3).length,
+        wrappedValues:values.filter(node=>getComputedStyle(node).whiteSpace!=='nowrap').length,
+        unfittedValues:values.filter(node=>!node.dataset.vlaFittedSize).length,
+        overflowingCards:cardOverflow.filter(item=>item.visualOverflow||item.scrollOverflow),
+        apiHelperFont:apiHelper&&parseFloat(getComputedStyle(apiHelper).fontSize),
+        apiHelperWithinCard:Boolean(apiRect&&apiCardRect&&apiRect.bottom<=apiCardRect.bottom+3&&apiRect.right<=apiCardRect.right+3),
+        apiHelperLineClamp:apiHelper&&getComputedStyle(apiHelper).webkitLineClamp,
         mobileMenu:menu&&getComputedStyle(menu).display!=='none',
         loginDisplay:login&&getComputedStyle(login).display,
         appDisplay:app&&getComputedStyle(app).display,
@@ -168,7 +187,13 @@ async function diagnostic(page,label){
     if(!metrics.dashboardVisible||!metrics.shellReady)throw new Error(`${viewport.name}: el shell premium no terminó de montar.`);
     if(metrics.documentWidth>viewport.width+3)throw new Error(`${viewport.name}: el documento desborda horizontalmente (${metrics.documentWidth}/${viewport.width}).`);
     if(metrics.shellWidth>viewport.width+3)throw new Error(`${viewport.name}: el shell supera la pantalla.`);
-    if(metrics.overflowingValues)throw new Error(`${viewport.name}: ${metrics.overflowingValues} valor(es) KPI desbordan su tarjeta.`);
+    if(metrics.overflowingValues)throw new Error(`${viewport.name}: ${metrics.overflowingValues} valor(es) KPI desbordan horizontalmente.`);
+    if(metrics.wrappedValues)throw new Error(`${viewport.name}: ${metrics.wrappedValues} valor(es) KPI se partieron en más de una línea.`);
+    if(metrics.unfittedValues)throw new Error(`${viewport.name}: ${metrics.unfittedValues} valor(es) KPI no recibieron ajuste automático.`);
+    if(metrics.overflowingCards.length)throw new Error(`${viewport.name}: contenido fuera de tarjeta: ${JSON.stringify(metrics.overflowingCards)}.`);
+    if(!(metrics.apiHelperFont>0&&metrics.apiHelperFont<=16))throw new Error(`${viewport.name}: texto auxiliar Airtable fuera de escala (${metrics.apiHelperFont}px).`);
+    if(!metrics.apiHelperWithinCard)throw new Error(`${viewport.name}: el texto auxiliar Airtable sale de la tarjeta.`);
+    if(String(metrics.apiHelperLineClamp)!=='3')throw new Error(`${viewport.name}: el texto auxiliar Airtable no está limitado a tres líneas.`);
     if(Math.min(...metrics.valueFonts)<22)throw new Error(`${viewport.name}: texto KPI demasiado pequeño.`);
     if(viewport.width<=760&&!metrics.mobileMenu)throw new Error('El control móvil no aparece en pantalla pequeña.');
     if(viewport.width>=1920&&metrics.donutWidth<180)throw new Error(`${viewport.name}: gráfico circular demasiado pequeño.`);
@@ -176,7 +201,7 @@ async function diagnostic(page,label){
     results.push({name:viewport.name,...metrics});
   }
   if(errors.length)throw new Error('Errores de navegador: '+errors.join(' | '));
-  fs.writeFileSync('admin-responsive-result.json',JSON.stringify({noLegacyFlash:true,loader:true,officialLogo:true,dashboardCaptured:true,viewports:results},null,2));
+  fs.writeFileSync('admin-responsive-result.json',JSON.stringify({noLegacyFlash:true,loader:true,officialLogo:true,dashboardCaptured:true,cardFit:true,viewports:results},null,2));
   await browser.close();
   server.close();
   console.log('ADMIN_RESPONSIVE_FOUC_BROWSER_OK');
