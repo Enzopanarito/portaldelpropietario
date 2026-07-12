@@ -23,4 +23,5 @@ jobs:
         with:
           name: hardening-parts
           path: .hardening/*.patch
+          include-hidden-files: true
           retention-days: 2
