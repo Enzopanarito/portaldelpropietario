@@ -35,8 +35,8 @@ index 1a1244a..f4bfbac 100644
 -  const reportNew = "const processed=await adminFetch('/.netlify/functions/process-payment-report',{method:'POST',body:JSON.stringify({reportId:id,decision:'approve'})});toast(processed.message||'Pago confirmado, recibo procesado y acceso sincronizado.');";
 -  if (html.includes(reportOld)) html = html.replace(reportOld, reportNew);
 -
--  const rejectOld = "await adminFetch('/.netlify/functions/airtable/'+encodeURIComponent(TABLE_REPORTES)+'/'+id,{method:'PATCH',body:JSON.stringify({fields:{Estado:'Rechazado'}})});toast('Pago rechazado.');";
--  const rejectNew = "const processed=await adminFetch('/.netlify/functions/process-payment-report',{method:'POST',body:JSON.stringify({reportId:id,decision:'reject'})});toast(processed.message||'Pago rechazado y acceso sincronizado.');";
+-  const rejectOld = "await adminFetch('/.netlify/functions/airtable/'+encodeURIComponent(TABLE_REPORTES)+'/'+id,{method:'PATCH',body:JSON.stringify({fields:{Estado:'Rechazado'}})});toast('Pago rechazado.')";
+-  const rejectNew = "const processed=await adminFetch('/.netlify/functions/process-payment-report',{method:'POST',body:JSON.stringify({reportId:id,decision:'reject'})});toast(processed.message||'Pago rechazado y acceso sincronizado.')";
 -  if (html.includes(rejectOld)) html = html.replace(rejectOld, rejectNew);
 +  // Confirmar/rechazar ya vienen protegidos desde admin.html; admin-payment-flow queda como defensa adicional.
  
