@@ -30,6 +30,9 @@ jobs:
       - name: Validate admin feature parity
         run: node tests/admin-feature-parity.test.js
 
+      - name: Validate owner gate indicators
+        run: node tests/admin-owner-access-indicator.test.js
+
       - name: Validate responsive admin and flash prevention
         run: node tests/admin-responsive-fouc.test.js
 
@@ -50,6 +53,7 @@ jobs:
           node --input-type=module --check < netlify/edge-functions/admin-premium-assets.js
           node --input-type=module --check < netlify/edge-functions/admin-links.js
           node --input-type=module --check < netlify/edge-functions/admin-auth-version.js
+          node --check admin-owner-access-v1.js
 
       - name: Install Chromium
         run: |
@@ -61,6 +65,9 @@ jobs:
 
       - name: Run no-flash responsive browser test
         run: node tests/admin-responsive-fouc-browser.cjs
+
+      - name: Run owner gate indicator browser test
+        run: node tests/admin-owner-access-browser.cjs
 
       - name: Upload visual and technical evidence
         if: always()
@@ -81,6 +88,9 @@ jobs:
             admin-responsive-result.json
             admin-responsive-error.txt
             admin-responsive-diagnostic.json
+            admin-owner-access-indicator.png
+            admin-owner-access-result.json
+            admin-owner-access-error.txt
             porton-state.json
             porton-session.png
             audit-state.json

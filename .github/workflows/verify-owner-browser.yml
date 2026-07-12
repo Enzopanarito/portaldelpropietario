@@ -70,13 +70,38 @@ jobs:
             return negative ? -value : value;
           }
 
+          async function loadPortalWithOwners(page) {
+            let lastError = null;
+            for (let attempt = 1; attempt <= 3; attempt += 1) {
+              try {
+                const response = await page.goto(`${process.env.TARGET_URL}/?browser=${Date.now()}-${attempt}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+                if (!response || response.status() !== 200) throw new Error(`El portal respondió ${response && response.status()}.`);
+                await page.addStyleTag({ content: '[data-netlify-deploy-id],iframe[title="Netlify Drawer"]{display:none!important;pointer-events:none!important}' }).catch(() => {});
+                await page.waitForFunction(() => {
+                  const select = document.getElementById('welcomeSelector');
+                  if (!select) return false;
+                  const houses = Array.from(select.options).filter(option => /^Casa\s+\d+\s+-/.test(String(option.textContent || '').trim()));
+                  return houses.length === 15;
+                }, null, { timeout: 30000 });
+                await page.waitForTimeout(400);
+                return response;
+              } catch (error) {
+                lastError = error;
+                if (attempt < 3) await page.waitForTimeout(attempt * 1000);
+              }
+            }
+            throw new Error(`No se pudieron cargar las 15 casas después de 3 intentos: ${lastError && lastError.message}`);
+          }
+
           (async () => {
             const browser = await chromium.launch({ headless: true });
             const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
             const pageErrors = [];
             const consoleErrors = [];
             page.on('pageerror', error => pageErrors.push(String(error.stack || error.message || error)));
-            page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
+            page.on('console', msg => {
+              if (msg.type() === 'error' && !/app\.netlify\.com|favicon|permissions policy/i.test(msg.text())) consoleErrors.push(msg.text());
+            });
 
             const sourceResponse = await page.request.get(`${process.env.TARGET_URL}/.netlify/functions/public-data?browser-source=${Date.now()}`, { timeout: 60000 });
             if (!sourceResponse.ok()) throw new Error(`La fuente pública respondió ${sourceResponse.status()}.`);
@@ -89,12 +114,7 @@ jobs:
             }
             if (Object.keys(expected).length !== 15) throw new Error(`La fuente oficial devolvió ${Object.keys(expected).length} casas; se esperaban 15.`);
 
-            const response = await page.goto(`${process.env.TARGET_URL}/?browser=${Date.now()}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
-            await page.waitForFunction(() => {
-              const select = document.getElementById('welcomeSelector');
-              return select && Array.from(select.options).some(option => String(option.textContent || '').trim().startsWith('Casa 1 -'));
-            }, null, { timeout: 30000 });
-
+            const response = await loadPortalWithOwners(page);
             const welcome = page.locator('#welcomeSelector');
             const firstValue = await welcome.locator('option').evaluateAll(options => {
               const item = options.find(option => String(option.textContent || '').trim().startsWith('Casa 1 -'));
@@ -126,7 +146,10 @@ jobs:
               }, house);
               if (!value) throw new Error(`No se encontró la Casa ${house}.`);
               await selector.selectOption(value);
-              await page.waitForTimeout(250);
+              await page.waitForFunction(houseNumber => {
+                const text = String(document.getElementById('welcome-msg')?.textContent || '').trim();
+                return text.startsWith(`Casa ${houseNumber} ·`);
+              }, house, { timeout: 5000 });
               const shown = parseMoney(await page.locator('#m-total').innerText());
               balances[house] = shown;
               if (Math.abs(shown - expected[house]) > 0.009) {
@@ -135,9 +158,10 @@ jobs:
             }
 
             if (pageErrors.length) throw new Error(`Errores JavaScript: ${pageErrors.join(' | ')}`);
+            if (consoleErrors.length) throw new Error(`Errores de consola: ${consoleErrors.join(' | ')}`);
             const result = {
               target: process.env.TARGET_URL,
-              status: response ? response.status() : null,
+              status: response.status(),
               sourceGeneratedAt: source.generatedAt || null,
               sourceBalanceEngineVersion: source.balanceEngineVersion || null,
               breakdownVisible: true,

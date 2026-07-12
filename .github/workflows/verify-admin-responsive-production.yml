@@ -19,7 +19,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Wait for responsive release
+      - name: Wait for responsive and access indicator release
         shell: bash
         run: |
           set -u -o pipefail
@@ -28,23 +28,26 @@ jobs:
             ready=1
             headers="$(curl --silent --show-error --location --dump-header - --output /tmp/admin.html --max-time 30 "${TARGET_URL}/admin.html?responsive=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
             marker="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-admin-responsive"{gsub("\r","");print $2}' | tail -1)"
+            access_marker="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-admin-access-indicator"{gsub("\r","");print $2}' | tail -1)"
             [ "$marker" = "fluid-v4" ] || ready=0
+            [ "$access_marker" = "v1" ] || ready=0
             grep -q 'admin-responsive-v4.css' /tmp/admin.html 2>/dev/null || ready=0
             grep -q 'admin-responsive-v4.js' /tmp/admin.html 2>/dev/null || ready=0
+            grep -q 'admin-owner-access-v1.js' /tmp/admin.html 2>/dev/null || ready=0
             grep -q 'vla-admin-loader' /tmp/admin.html 2>/dev/null || ready=0
-            for asset in admin-responsive-v4.css admin-responsive-v4.js; do
+            for asset in admin-responsive-v4.css admin-responsive-v4.js admin-owner-access-v1.js; do
               code="$(curl --silent --show-error --location --output "/tmp/${asset}" --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/${asset}?responsive=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
               [ "$code" = "200" ] || ready=0
               [ -s "/tmp/${asset}" ] || ready=0
             done
             if [ "$ready" = "1" ]; then
-              echo "Admin responsive fluid-v4 disponible en producción."
+              echo "Admin responsive fluid-v4 e indicador de portón v1 disponibles en producción."
               exit 0
             fi
-            echo "Intento ${attempt}: responsive=${marker:-missing}"
+            echo "Intento ${attempt}: responsive=${marker:-missing} access=${access_marker:-missing}"
             sleep 10
           done
-          echo "La versión responsive no apareció en producción."
+          echo "La versión responsive o el indicador de portón no apareció en producción."
           exit 1
 
       - name: Install Chromium
@@ -52,7 +55,7 @@ jobs:
           npm install --no-save --ignore-scripts playwright@1.53.0
           npx playwright install --with-deps chromium
 
-      - name: Verify responsive login and anti-flash guard
+      - name: Verify responsive login, anti-flash guard and access asset
         shell: bash
         run: |
           cat > verify-responsive-production.cjs <<'NODE'
@@ -68,15 +71,17 @@ jobs:
             const response=await page.goto(`${target}/admin.html?responsive-browser=${Date.now()}`,{waitUntil:'networkidle',timeout:60000});
             if(!response||response.status()!==200)throw new Error(`Admin respondió ${response&&response.status()}.`);
             await page.locator('#login').waitFor({state:'visible'});
-            const required=['#vla-admin-responsive-v4-css','#vla-admin-loader','meta[name="vla-admin-responsive"][content="fluid-v4"]'];
+            const required=['#vla-admin-responsive-v4-css','#vla-admin-loader','#vla-admin-owner-access-v1','meta[name="vla-admin-responsive"][content="fluid-v4"]','meta[name="vla-admin-access-indicator"][content="v1"]'];
             for(const selector of required)if(!await page.locator(selector).count())throw new Error(`Falta ${selector}.`);
             const guard=await page.evaluate(()=>({
               appVisibility:getComputedStyle(document.getElementById('app')).visibility,
               appOpacity:getComputedStyle(document.getElementById('app')).opacity,
               ready:document.documentElement.dataset.vlaAdminReady||'',
-              pageMarker:document.documentElement.dataset.vlaAdminPage||''
+              pageMarker:document.documentElement.dataset.vlaAdminPage||'',
+              accessScript:document.getElementById('vla-admin-owner-access-v1')?.getAttribute('src')||''
             }));
             if(guard.appVisibility!=='hidden'||Number(guard.appOpacity)>.01)throw new Error(`La protección anti-parpadeo no ocultó el app: ${JSON.stringify(guard)}.`);
+            if(!guard.accessScript.includes('admin-owner-access-v1.js'))throw new Error(`No se cargó el indicador de acceso: ${JSON.stringify(guard)}.`);
             const viewports=[{name:'mobile',width:390,height:844},{name:'laptop-13',width:1366,height:768},{name:'desktop',width:1920,height:1080},{name:'large-4k',width:3840,height:2160}];
             const results=[];
             for(const viewport of viewports){
@@ -89,7 +94,7 @@ jobs:
               results.push({name:viewport.name,...metrics});
             }
             if(errors.length)throw new Error(`Errores de navegador: ${errors.join(' | ')}`);
-            const result={target,status:response.status(),responsive:'fluid-v4',antiFlashGuard:true,viewports:results,errors};
+            const result={target,status:response.status(),responsive:'fluid-v4',accessIndicator:'v1',antiFlashGuard:true,viewports:results,errors};
             fs.writeFileSync('admin-responsive-production-result.json',JSON.stringify(result,null,2));
             console.log(JSON.stringify(result,null,2));
             await browser.close();
@@ -121,7 +126,7 @@ jobs:
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
             -f state=success \
             -f context='Admin Responsive Production Verification' \
-            -f description='Logo VLA, responsive fluid-v4 y protección anti-parpadeo verificados.' \
+            -f description='Responsive, anti-parpadeo e indicador de portón verificados.' \
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
       - name: Publish failed status
@@ -133,5 +138,5 @@ jobs:
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
             -f state=failure \
             -f context='Admin Responsive Production Verification' \
-            -f description='Falló la verificación responsive del administrador en producción.' \
+            -f description='Falló responsive o indicador de portón en producción.' \
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"

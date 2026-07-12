@@ -1,0 +1,14 @@
+'use strict';
+const fs=require('fs');const assert=require('assert');
+const script=fs.readFileSync('admin-owner-access-v1.js','utf8');
+const edge=fs.readFileSync('netlify/edge-functions/admin-premium-assets.js','utf8');
+assert(script.includes("owner['Estado Acceso Portón']"),'Debe leer el estado existente del portón.');
+assert(script.includes("raw==='Limitado'?'Limitado':'Habilitado'"),'Solo Limitado debe mostrarse rojo.');
+assert(script.includes("limited?'limited':'enabled'"),'Debe diferenciar rojo y verde.');
+assert(script.includes('Motivo Limitación Acceso'),'Debe conservar el motivo en el tooltip.');
+assert(script.includes('MutationObserver'),'Debe sobrevivir a los refrescos de la tabla.');
+assert(script.includes('renderOwners=wrapped'),'Debe integrarse sin reemplazar la lógica financiera.');
+assert(edge.includes('/admin-owner-access-v1.js'),'El admin debe cargar el indicador.');
+assert(edge.includes("x-vla-admin-access-indicator"),'Falta marcador de despliegue del indicador.');
+assert(edge.includes("html.includes('<div id=\"vla-admin-loader\"')"),'No debe regresar la comprobación genérica del loader.');
+console.log('admin-owner-access-indicator: OK');
