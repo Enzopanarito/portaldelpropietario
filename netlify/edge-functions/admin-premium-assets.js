@@ -3,6 +3,7 @@ const ADMIN_PATHS=['/admin','/porton','/mkj-access','/seguridad','/audit','/audi
 const ADMIN_ICON='/.netlify/functions/app-icon?app=portal&size=180';
 
 const criticalBoot=`<style id="vla-admin-boot-style">
+#login.hidden{display:none!important}
 html[data-vla-admin-page="1"] #app{visibility:hidden!important;opacity:0!important}
 html[data-vla-admin-page="1"][data-vla-admin-ready="1"] #app{visibility:visible!important;opacity:1!important;transition:opacity .18s ease}
 #vla-admin-loader{display:none;position:fixed;inset:0;z-index:99999;align-items:center;justify-content:center;padding:24px;background:radial-gradient(circle at 22% 16%,rgba(22,131,60,.18),transparent 34%),linear-gradient(145deg,#061f3b,#020b17);font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
