@@ -48,6 +48,13 @@ const server=http.createServer((req,res)=>{
   let body=read(file);if(file.endsWith('.html'))body=Buffer.from(inject(body.toString('utf8'),file==='admin.html'));
   res.writeHead(200,{'content-type':fileType(file),'cache-control':'no-store'});res.end(body);
 });
+async function pageState(page,label){
+  await page.waitForTimeout(1200);
+  const state=await page.evaluate(()=>{const app=document.getElementById('app'),login=document.getElementById('login');return{url:location.href,readyState:document.readyState,tokenLocal:localStorage.getItem('vla-admin-token'),tokenSession:sessionStorage.getItem('vla-admin-token'),authLocal:localStorage.getItem('vla-admin-auth'),authSession:sessionStorage.getItem('vla-admin-auth'),hasApp:Boolean(app),appClass:app&&app.className,appDisplay:app&&getComputedStyle(app).display,hasLogin:Boolean(login),loginClass:login&&login.className,loginDisplay:login&&getComputedStyle(login).display,showAppType:typeof window.showApp,bodyText:document.body.innerText.slice(0,300)}});
+  fs.writeFileSync(`${label}-state.json`,JSON.stringify(state,null,2));
+  await page.screenshot({path:`${label}-session.png`,fullPage:true});
+  return state;
+}
 (async()=>{
   await new Promise(resolve=>server.listen(PORT,'127.0.0.1',resolve));
   const browser=await chromium.launch({headless:true});
@@ -69,11 +76,11 @@ const server=http.createServer((req,res)=>{
   if(!await page.locator('#reports').evaluate(el=>el.classList.contains('active')))throw new Error('La navegación a Pagos falló.');
   await page.screenshot({path:'admin-premium-desktop.png',fullPage:true});
   await page.goto(`http://127.0.0.1:${PORT}/porton.html`,{waitUntil:'domcontentloaded'});
-  await page.locator('#app').waitFor({state:'visible',timeout:10000});
-  if(!await page.locator('#login').evaluate(el=>el.classList.contains('hidden')))throw new Error('Portón volvió a pedir la clave.');
+  const porton=await pageState(page,'porton');
+  if(!porton.hasApp||porton.appDisplay==='none'||String(porton.appClass||'').split(/\s+/).includes('hidden'))throw new Error('Portón no restauró la sesión: '+JSON.stringify(porton));
   await page.goto(`http://127.0.0.1:${PORT}/audit.html`,{waitUntil:'domcontentloaded'});
-  await page.locator('#app').waitFor({state:'visible',timeout:10000});
-  if(!await page.locator('#login').evaluate(el=>el.classList.contains('hidden')))throw new Error('Auditoría volvió a pedir la clave.');
+  const audit=await pageState(page,'audit');
+  if(!audit.hasApp||audit.appDisplay==='none'||String(audit.appClass||'').split(/\s+/).includes('hidden'))throw new Error('Auditoría no restauró la sesión: '+JSON.stringify(audit));
   await page.setViewportSize({width:390,height:844});
   await page.goto(`http://127.0.0.1:${PORT}/admin.html`,{waitUntil:'domcontentloaded'});
   await page.locator('#vla-premium-shell').waitFor({state:'visible',timeout:10000});
