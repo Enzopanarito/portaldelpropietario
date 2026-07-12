@@ -1,0 +1,36 @@
+name: Cleanup Hardening Branch
+
+on:
+  push:
+    branches:
+      - full-system-hardening-2026-07-12
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: full-system-hardening-2026-07-12
+          fetch-depth: 0
+
+      - name: Remove tracked local dependencies and caches
+        shell: bash
+        run: |
+          set -euo pipefail
+          git ls-files -z | grep -zE '(^|/)node_modules/|(^|/)__pycache__/|\.pyc$' | xargs -0 -r git rm -f --cached
+          rm -rf node_modules local-whatsapp-agent/__pycache__ tests/__pycache__
+          find . -type d -name '__pycache__' -prune -exec rm -rf {} + || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --cached --quiet; then
+            echo 'No tracked artifacts remained.'
+            exit 0
+          fi
+          git commit -m "Retirar dependencias y cachés accidentales"
+          git push origin HEAD:full-system-hardening-2026-07-12
