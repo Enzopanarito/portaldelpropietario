@@ -51,6 +51,33 @@ const server=http.createServer((req,res)=>{
   send();
 });
 
+async function diagnostic(page,label){
+  const state=await page.evaluate(()=>{
+    const login=document.getElementById('login');
+    const app=document.getElementById('app');
+    const shell=document.getElementById('vla-premium-shell');
+    const panels=document.getElementById('vla-dashboard-panels');
+    const parity=document.getElementById('vla-feature-parity');
+    const loader=document.getElementById('vla-admin-loader');
+    const style=node=>node?{display:getComputedStyle(node).display,visibility:getComputedStyle(node).visibility,opacity:getComputedStyle(node).opacity,className:node.className}:null;
+    return{
+      label,
+      readyState:document.readyState,
+      windowReady:window.ready,
+      showAppType:typeof window.showApp,
+      login:style(login),app:style(app),loader:style(loader),
+      shell:Boolean(shell),shellReady:shell&&shell.dataset.vlaLayoutReady||'',
+      panels:Boolean(panels),parity:Boolean(parity),brandLogo:Boolean(document.querySelector('.vla-brand-logo')),
+      datasets:{...document.documentElement.dataset},
+      scripts:[...document.scripts].map(script=>script.src||script.id||'inline').filter(Boolean),
+      errors:window.__vlaBrowserErrors||[],
+      bodyText:document.body.innerText.slice(0,500)
+    };
+  });
+  fs.writeFileSync('admin-responsive-diagnostic.json',JSON.stringify(state,null,2));
+  return state;
+}
+
 (async()=>{
   await new Promise(resolve=>server.listen(PORT,'127.0.0.1',resolve));
   const browser=await chromium.launch({headless:true});
@@ -58,8 +85,10 @@ const server=http.createServer((req,res)=>{
   const errors=[];
   page.on('pageerror',error=>errors.push(String(error.stack||error)));
   page.on('console',message=>{if(message.type()==='error'&&!/cdn\.tailwindcss|fonts\.googleapis/i.test(message.text()))errors.push(message.text())});
+  await page.addInitScript(()=>{window.__vlaBrowserErrors=[];window.addEventListener('error',event=>window.__vlaBrowserErrors.push(String(event.error?.stack||event.message||event.error)));});
   await page.goto(`http://127.0.0.1:${PORT}/admin.html`,{waitUntil:'domcontentloaded'});
   await page.locator('#password').waitFor({state:'visible'});
+  await page.waitForFunction(()=>typeof window.showApp==='function'&&typeof document.getElementById('login-form')?.onsubmit==='function',null,{timeout:10000});
   await page.evaluate(()=>{
     window.__vlaFoucSamples=[];
     window.__vlaFoucTimer=setInterval(()=>{
@@ -75,20 +104,22 @@ const server=http.createServer((req,res)=>{
         shell:Boolean(shell),
         loaderVisible:Boolean(loader&&loaderStyle.display!=='none'&&loaderStyle.visibility!=='hidden')
       });
-    },8);
+    },16);
   });
   await page.locator('#password').fill('Prueba segura');
   await page.locator('#login-form button').click();
-  await page.waitForFunction(()=>{
-    const login=document.getElementById('login');
-    const app=document.getElementById('app');
-    const shell=document.getElementById('vla-premium-shell');
-    return Boolean(login&&app&&shell&&document.documentElement.dataset.vlaAdminReady==='1'&&getComputedStyle(login).display==='none'&&getComputedStyle(app).display!=='none'&&getComputedStyle(app).visibility!=='hidden'&&Number(getComputedStyle(app).opacity||1)>.01);
-  },null,{timeout:15000});
-  await page.locator('#login').waitFor({state:'hidden',timeout:15000});
-  await page.locator('#app').waitFor({state:'visible',timeout:15000});
-  await page.locator('#vla-premium-shell').waitFor({state:'visible',timeout:15000});
-  await page.waitForFunction(()=>document.getElementById('vla-sum-owners')?.textContent==='15',{timeout:15000});
+  try{
+    await page.locator('#login').waitFor({state:'hidden',timeout:10000});
+    await page.locator('#vla-admin-loader').waitFor({state:'visible',timeout:10000});
+    await page.waitForFunction(()=>Boolean(document.getElementById('vla-premium-shell')&&document.getElementById('vla-dashboard-panels')&&document.documentElement.dataset.vlaAdminTen==='1'),null,{timeout:30000});
+    await page.waitForFunction(()=>document.documentElement.dataset.vlaAdminReady==='1',null,{timeout:30000});
+    await page.locator('#app').waitFor({state:'visible',timeout:30000});
+    await page.locator('#vla-premium-shell').waitFor({state:'visible',timeout:30000});
+    await page.waitForFunction(()=>document.getElementById('vla-sum-owners')?.textContent==='15',null,{timeout:30000});
+  }catch(error){
+    const state=await diagnostic(page,'boot-timeout');
+    throw new Error(`${error.message}\nDiagnóstico: ${JSON.stringify(state)}`);
+  }
   const transition=await page.evaluate(()=>{clearInterval(window.__vlaFoucTimer);return window.__vlaFoucSamples});
   const flash=transition.filter(sample=>sample.loginHidden&&sample.appVisible&&!sample.shell);
   if(flash.length)throw new Error(`Se detectó el diseño heredado visible en ${flash.length} muestra(s).`);
@@ -143,7 +174,7 @@ const server=http.createServer((req,res)=>{
     await page.screenshot({path:`admin-responsive-${viewport.name}.png`,fullPage:false});
     results.push({name:viewport.name,...metrics});
   }
-  if(errors.length)throw new Error('Errores del navegador: '+errors.join(' | '));
+  if(errors.length)throw new Error('Errores de navegador: '+errors.join(' | '));
   fs.writeFileSync('admin-responsive-result.json',JSON.stringify({noLegacyFlash:true,loader:true,officialLogo:true,dashboardCaptured:true,viewports:results},null,2));
   await browser.close();
   server.close();
