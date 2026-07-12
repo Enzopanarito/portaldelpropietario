@@ -51,6 +51,9 @@ jobs:
       - name: Validate admin feature parity
         run: node tests/admin-feature-parity.test.js
 
+      - name: Validate responsive admin and flash prevention
+        run: node tests/admin-responsive-fouc.test.js
+
       - name: Validate financial write lock coverage
         run: node tests/financial-write-lock-coverage.test.js
 
