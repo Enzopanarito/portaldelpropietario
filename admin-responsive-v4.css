@@ -38,8 +38,8 @@ html[data-vla-admin-premium="1"] #vla-dashboard-panels>.vla-premium-card:last-ch
 html[data-vla-admin-premium="1"] .vla-premium-card{min-width:0;padding:clamp(19px,1.3vw,32px)!important}
 html[data-vla-admin-premium="1"] .vla-panel-title{font-size:clamp(17px,.45vw + 11px,24px)!important}
 html[data-vla-admin-premium="1"] .vla-panel-sub,html[data-vla-admin-premium="1"] .vla-bar-head,html[data-vla-admin-premium="1"] .vla-legend-row,html[data-vla-admin-premium="1"] .vla-health-row,html[data-vla-admin-premium="1"] .vla-summary-row{font-size:var(--vla-fluid-copy)!important}
-html[data-vla-admin-premium="1"] .vla-donut-wrap{grid-template-columns:minmax(150px,clamp(160px,11vw,270px)) minmax(0,1fr)!important;gap:clamp(18px,1.4vw,34px)!important}
-html[data-vla-admin-premium="1"] .vla-donut{width:clamp(160px,11vw,270px)!important;height:clamp(160px,11vw,270px)!important}
+html[data-vla-admin-premium="1"] .vla-donut-wrap{grid-template-columns:minmax(180px,clamp(180px,11vw,270px)) minmax(0,1fr)!important;gap:clamp(18px,1.4vw,34px)!important}
+html[data-vla-admin-premium="1"] .vla-donut{width:clamp(180px,11vw,270px)!important;height:clamp(180px,11vw,270px)!important}
 html[data-vla-admin-premium="1"] .vla-donut:after{width:62%!important;height:62%!important}
 html[data-vla-admin-premium="1"] .vla-donut-center strong{font-size:clamp(27px,1.35vw + 10px,48px)!important}
 html[data-vla-admin-premium="1"] .vla-donut-center span{font-size:clamp(11px,.22vw + 8px,16px)!important}
