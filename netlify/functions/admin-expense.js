@@ -1,7 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
-const { requireAdmin } = require('./_auth');
+const { requireAdminCurrent } = require('./_auth');
 const { ensureFinancialWritesAllowed } = require('./_financial_write_lock');
 const { begin, setState } = require('./_operation_guard');
 const { cleanPlainText, deepEscapeStrings, safeDisplayText } = require('./_security_utils');
@@ -39,7 +39,7 @@ function businessKey({ concept, amount, type, mode, frequency, ownerIds }) {
 }
 
 exports.handler = async function(event) {
-  const auth = requireAdmin(event); if (!auth.ok) return auth.response;
+  const auth = await requireAdminCurrent(event); if (!auth.ok) return auth.response;
   if (event.httpMethod !== 'POST') return json(405, { message:'Method Not Allowed' });
   if (!process.env.AIRTABLE_API_TOKEN || !process.env.AIRTABLE_BASE_ID) return json(500, { message:'Airtable no está configurado.' });
 

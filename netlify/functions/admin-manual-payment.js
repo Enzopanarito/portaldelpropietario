@@ -5,7 +5,7 @@
 // El recibo PDF/correo se genera desde backend inmediatamente después de crear el pago.
 // Protección: una operación igual no puede crear dos pagos por doble clic o reintento de red.
 
-const { requireAdmin } = require('./_auth');
+const { requireAdminCurrent } = require('./_auth');
 const { airtableCreateRecord, syncOwnerAccess, TABLES, money } = require('./_access_control');
 const { createAndSendReceipt } = require('./_receipt_service');
 const { begin, setState } = require('./_operation_guard');
@@ -40,7 +40,7 @@ function operationKey(body, ownerId, mode, amountUsdRef, rate, reference) {
 }
 
 exports.handler = async function(event) {
-  const auth = requireAdmin(event);
+  const auth = await requireAdminCurrent(event);
   if (!auth.ok) return auth.response;
   if (event.httpMethod !== 'POST') return json(405, { message: 'Method Not Allowed' });
 

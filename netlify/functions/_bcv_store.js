@@ -2,6 +2,7 @@
 
 const TABLE = 'ControlVersiones';
 const PREFIX = 'BCV_LAST_GOOD|';
+const { begin, setState } = require('./_operation_guard');
 let memory = null;
 let memoryExpiresAt = 0;
 
@@ -53,10 +54,20 @@ async function saveLastGood(payload) {
     timezone: payload.timezone || 'America/Caracas'
   };
   if (current && Number(current.rate) === normalized.rate && current.updatedAt === normalized.updatedAt && current.source === normalized.source) return current;
-  const data = await request('', {
-    method: 'POST',
-    body: JSON.stringify({ records: [{ fields: { Key: PREFIX + encode(normalized), Version: 1 } }], typecast: true })
-  });
+  const guardKey = `${normalized.rate}|${normalized.updatedAt || normalized.venezuelaDate || ''}|${normalized.source}`;
+  const guard = await begin('BCV_PERSIST', guardKey);
+  if (!guard.ok) return (await loadLastGood({ force:true }).catch(() => current)) || current;
+  let data;
+  try {
+    data = await request('', {
+      method: 'POST',
+      body: JSON.stringify({ records: [{ fields: { Key: PREFIX + encode(normalized), Version: 1 } }], typecast: true })
+    });
+    await setState(guard.marker, 'BCV_PERSIST', guardKey, 'DONE', data.records?.[0]?.id || '');
+  } catch (error) {
+    await setState(guard.marker, 'BCV_PERSIST', guardKey, 'ERROR').catch(() => null);
+    throw error;
+  }
   memory = { ...normalized, recordId: data.records?.[0]?.id || null, createdTime: data.records?.[0]?.createdTime || normalized.fetchedAt };
   memoryExpiresAt = Date.now() + 10 * 60 * 1000;
   return memory;

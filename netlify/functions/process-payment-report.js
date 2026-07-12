@@ -3,7 +3,7 @@
 // Al aprobar, crea el pago y genera/envía el recibo PDF desde backend.
 // Protección: bloqueo persistente por reporte para impedir pagos duplicados por concurrencia o reintentos.
 
-const { requireAdmin } = require('./_auth');
+const { requireAdminCurrent } = require('./_auth');
 const { json, money, airtableGetRecord, airtableCreateRecord, airtablePatchRecord, syncOwnerAccess, TABLES } = require('./_access_control');
 const { createAndSendReceipt } = require('./_receipt_service');
 const { begin, setState } = require('./_operation_guard');
@@ -40,7 +40,7 @@ function guardResponse(result) {
 }
 
 exports.handler = async function(event) {
-  const auth = requireAdmin(event);
+  const auth = await requireAdminCurrent(event);
   if (!auth.ok) return auth.response;
   if (event.httpMethod !== 'POST') return json(405, { message: 'Method Not Allowed' });
 

@@ -2,10 +2,10 @@
 // Integración MKJoules: login automático + enable/disable de usuarios por ID.
 // Las credenciales se leen únicamente desde variables privadas de Netlify.
 
-const { requireAdmin } = require('./_auth');
+const { requireAdminCurrent } = require('./_auth');
 
 const TABLE_PROPIETARIOS = 'Propietarios';
-const ALLOWED_ACTIONS = new Set(['enable', 'disable', 'test-login']);
+const ALLOWED_ACTIONS = new Set(['enable', 'disable', 'test-login', 'save-identifiers']);
 
 function json(statusCode, body) {
   return {
@@ -111,12 +111,9 @@ function nowCaracas() {
 }
 
 exports.handler = async function(event) {
-  const auth = requireAdmin(event);
+  const auth = await requireAdminCurrent(event);
   if (!auth.ok) return auth.response;
   if (event.httpMethod !== 'POST') return json(405, { message: 'Method Not Allowed' });
-
-  const missing = requiredEnv();
-  if (missing.length) return json(500, { success: false, message: 'Faltan variables privadas en Netlify.', missing });
 
   let body = {};
   try { body = JSON.parse(event.body || '{}'); } catch (_) { body = {}; }
@@ -124,7 +121,23 @@ exports.handler = async function(event) {
   const action = String(body.action || '').trim();
   if (!ALLOWED_ACTIONS.has(action)) return json(400, { success: false, message: 'Acción inválida.' });
 
+  const required = action === 'save-identifiers'
+    ? ['AIRTABLE_API_TOKEN','AIRTABLE_BASE_ID'].filter(name => !process.env[name])
+    : requiredEnv();
+  if (required.length) return json(500, { success:false, message:'Faltan variables privadas en Netlify.', missing:required });
+
   try {
+    if (action === 'save-identifiers') {
+      const ownerId = String(body.ownerId || '').trim();
+      const mkjUserId = String(body.mkjUserId || '').trim();
+      const mkjEmail = String(body.mkjEmail || '').trim().toLowerCase();
+      if (!/^rec[A-Za-z0-9]{14}$/.test(ownerId)) return json(400, { success:false, message:'Propietario inválido.' });
+      if (mkjUserId && !/^[A-Za-z0-9_-]{1,100}$/.test(mkjUserId)) return json(400, { success:false, message:'MKJ User ID inválido.' });
+      if (mkjEmail && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mkjEmail) || mkjEmail.length > 254)) return json(400, { success:false, message:'Correo MKJ inválido.' });
+      const updated = await airtablePatchOwner(ownerId, { 'MKJ User ID':mkjUserId, 'MKJ Email':mkjEmail });
+      return json(200, { success:true, message:'Identificadores MKJ guardados mediante flujo protegido.', owner:{ id:updated.id, fields:updated.fields } });
+    }
+
     if (action === 'test-login') {
       const login = await mkjLogin();
       return json(200, { success: true, action, message: 'Login MKJoules exitoso.', mkjStatus: login.status });

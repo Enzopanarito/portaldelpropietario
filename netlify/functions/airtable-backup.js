@@ -4,7 +4,7 @@
 'use strict';
 
 const crypto = require('crypto');
-const { requireAdmin } = require('./_auth');
+const { requireAdminCurrent } = require('./_auth');
 const { sha256, sortRecords } = require('./_integrity');
 
 const TABLES = [
@@ -40,7 +40,7 @@ function jsonError(statusCode, message, detail = '') {
 }
 
 exports.handler = async function(event) {
-  const auth = requireAdmin(event);
+  const auth = await requireAdminCurrent(event);
   if (!auth.ok) return auth.response;
   if (event.httpMethod !== 'GET') return jsonError(405, 'Method Not Allowed');
 

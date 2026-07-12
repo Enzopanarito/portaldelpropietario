@@ -1,7 +1,7 @@
 // netlify/functions/api-usage.js
 // Lee el contador mensual de llamadas a Airtable registradas por las funciones del portal.
 
-const { requireAdmin } = require('./_auth');
+const { requireAdminCurrent } = require('./_auth');
 const TABLE = 'ControlVersiones';
 
 const HEADERS = {
@@ -39,7 +39,7 @@ function emptyPayload(month,note,detail){
   return {month,total:0,limit,percent:0,remaining:limit,events:0,bySource:{},lastEvent:null,note,detail:detail||null};
 }
 exports.handler=async function(event){
-  const auth=requireAdmin(event); if(!auth.ok)return auth.response;
+  const auth=await requireAdminCurrent(event); if(!auth.ok)return auth.response;
   const {AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID}=process.env;
   if(!AIRTABLE_API_TOKEN||!AIRTABLE_BASE_ID){
     return{statusCode:200,headers:HEADERS,body:JSON.stringify(emptyPayload(currentMonthCaracas(),'Airtable no está configurado para contador API.'))};

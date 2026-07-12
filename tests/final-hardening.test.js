@@ -47,7 +47,8 @@ assert(netlify.includes('https://upload.wikimedia.org'));
 
 const proxy = source('netlify/functions/airtable-v2.js');
 assert(proxy.includes('GENERIC_WRITE_TABLES'));
-assert(proxy.includes("new Set(['Propietarios','Configuración'])"));
+assert(proxy.includes('const GENERIC_WRITE_TABLES = new Set();'));
+assert(!proxy.includes("new Set(['Propietarios','Configuración'])"));
 assert(!proxy.includes("new Set(['Propietarios','Gastos del Mes','Configuración'])"));
 assert(proxy.includes("Las escrituras directas en ${target.table} están bloqueadas"));
 assert(proxy.includes("'Pagos','Historial de Cargos','Reportes de Pago'"));
@@ -87,11 +88,14 @@ assert(ownerEdge.includes('x-vla-owner-hardening'));
 const adminEdge = source('netlify/edge-functions/admin-monthly-close.js');
 assert(adminEdge.includes('system-health-advanced'));
 assert(adminEdge.includes('/verificar-respaldo.html'));
-assert(adminEdge.includes('/.netlify/functions/admin-expense'));
 assert(adminEdge.includes('x-vla-admin-hardening'));
 const adminHtml = source('admin.html');
-assert(adminHtml.includes("await adminFetch('/.netlify/functions/airtable/'+encodeURIComponent(TABLE_GASTOS),{method:'POST'"));
-assert(adminEdge.includes('oldExpenseCall'));
+assert(adminHtml.includes("/.netlify/functions/admin-expense"));
+assert(adminHtml.includes("/.netlify/functions/admin-manual-payment"));
+assert(adminHtml.includes("/.netlify/functions/process-payment-report"));
+assert(!adminHtml.includes("await adminFetch('/.netlify/functions/airtable/'+encodeURIComponent(TABLE_GASTOS),{method:'POST'"));
+assert(!adminHtml.includes("await adminFetch('/.netlify/functions/airtable/'+encodeURIComponent(TABLE_PAGOS),{method:'POST'"));
+assert(!adminEdge.includes('oldExpenseCall'));
 
 const securityPage = source('seguridad.html');
 assert(securityPage.includes('scrypt'));

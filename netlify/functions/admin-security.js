@@ -4,7 +4,7 @@
 'use strict';
 
 const crypto = require('crypto');
-const { requireAdmin, issueAdminToken } = require('./_auth');
+const { requireAdminCurrent, issueAdminToken } = require('./_auth');
 const { sendMail } = require('./_mailer');
 const {
   loadConfigRecord,
@@ -66,7 +66,7 @@ exports.handler = async function(event) {
 
   try {
     if (action === 'changePassword') {
-      const auth = requireAdmin(event);
+      const auth = await requireAdminCurrent(event);
       if (!auth.ok) return auth.response;
       const passwordError = validateNewPassword(body.newPassword);
       if (!body.currentPassword || passwordError) return json(400, { message: passwordError || 'Debe indicar la contraseña actual.' });
@@ -105,7 +105,7 @@ exports.handler = async function(event) {
       const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
       const nextConfig = {
         ...(config || {}),
-        version: Math.max(1, Number(config?.version || 0) + 1),
+        version: Math.max(1, Number(config?.version || 1)),
         recoveryEmail: RECOVERY_EMAIL,
         resetHash: tokenHash(token),
         resetExpires: expires,

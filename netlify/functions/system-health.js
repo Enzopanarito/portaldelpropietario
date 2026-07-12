@@ -2,7 +2,7 @@
 // Panel de salud protegido para revisar componentes críticos del sistema.
 // Monitorea finanzas, Airtable, BCV, correo oficial, recibos, WhatsApp y control de acceso MKJoules.
 
-const { requireAdmin } = require('./_auth');
+const { requireAdminCurrent } = require('./_auth');
 const { calculateExpiredAccessDebt, getAccessMode } = require('./_access_control');
 const { OFFICIAL_EMAIL } = require('./_mailer');
 
@@ -14,7 +14,8 @@ const TABLES = {
   recibos: 'Recibos de Pago',
   whatsappJobs: 'WhatsApp Jobs',
   whatsappSchedules: 'WhatsApp Programaciones',
-  config: 'Configuración'
+  config: 'Configuración',
+  control: 'ControlVersiones'
 };
 
 function buildUrl(baseId, tableName, query = '') {
@@ -79,11 +80,11 @@ function newestRecords(records, limit = 20) {
 }
 
 exports.handler = async function(event) {
-  const auth = requireAdmin(event);
+  const auth = await requireAdminCurrent(event);
   if (!auth.ok) return auth.response;
 
   const {
-    AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, ADMIN_PASSWORD,
+    AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, ADMIN_PASSWORD, ADMIN_TOKEN_SECRET,
     SMTP_HOST, SMTP_USER, SMTP_SECRET, MAIL_FROM,
     MKJ_BASE_URL, MKJ_ORG_ID, MKJ_ADMIN_EMAIL, MKJ_ADMIN_PASSWORD
   } = process.env;
@@ -100,7 +101,7 @@ exports.handler = async function(event) {
     const officialSender = smtpConfigured && (normalizeEmail(SMTP_USER) === OFFICIAL_EMAIL || normalizeEmail(MAIL_FROM) === OFFICIAL_EMAIL);
 
     add('Token administrativo', true, 'Sesión administrativa válida.');
-    add('ADMIN_PASSWORD', !!ADMIN_PASSWORD, ADMIN_PASSWORD ? 'Configurada.' : 'No configurada.');
+    add('Sesiones revocables', Boolean(ADMIN_TOKEN_SECRET), ADMIN_TOKEN_SECRET ? 'ADMIN_TOKEN_SECRET configurado; los cambios de contraseña invalidan sesiones anteriores.' : 'Falta ADMIN_TOKEN_SECRET.', ADMIN_TOKEN_SECRET ? 'ok' : 'error');
     add('Airtable', isConfigured(AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID), isConfigured(AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID) ? `Base conectada: ${AIRTABLE_BASE_ID}` : 'Faltan AIRTABLE_API_TOKEN o AIRTABLE_BASE_ID.');
     add('Correo SMTP', smtpConfigured, smtpConfigured ? 'Variables SMTP configuradas.' : 'Faltan variables SMTP. Las notificaciones no saldrán.', smtpConfigured ? 'ok' : 'warning');
     add('Remitente oficial', officialSender, officialSender ? `Bloqueado correctamente a ${OFFICIAL_EMAIL}.` : `El sistema solo debe enviar desde ${OFFICIAL_EMAIL}. Revise SMTP_USER o MAIL_FROM en Netlify.`, officialSender ? 'ok' : 'error');
@@ -111,17 +112,32 @@ exports.handler = async function(event) {
       return { statusCode: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify({ ok: false, status: 'error', checks, generatedAt: new Date().toISOString(), apiUsage: counter }) };
     }
 
-    const [propietarios, gastos, pagos, reportes, recibos, whatsappJobs, whatsappSchedules] = await Promise.all([
+    const [propietarios, gastos, pagos, reportes, recibos, whatsappJobs, whatsappSchedules, control] = await Promise.all([
       getAll(TABLES.propietarios, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Propietario', 'Casa', 'Email', 'Deuda Anterior', 'Deuda Anterior USD', 'Deuda Anterior Bs Ref', 'Deuda Restante', 'MKJ User ID', 'MKJ Email', 'Estado Acceso Portón', 'Excepción Acceso', 'Última Sync MKJ', 'Motivo Limitación Acceso']),
       getAll(TABLES.gastos, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Concepto', 'Monto', 'Tipo de Gasto', 'Forma de Pago', 'Propietarios']),
-      getAll(TABLES.pagos, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Propietario que Paga', 'Forma de Pago', 'Monto Pagado', 'Equivalente USD Aplicado', '[x] Aplicado al Cierre']),
+      getAll(TABLES.pagos, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Propietario que Paga', 'Forma de Pago', 'Monto Pagado', 'Equivalente USD Aplicado', 'Fecha de Pago', '[x] Aplicado al Cierre']),
       getAll(TABLES.reportes, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Propietario que Reporta', 'Estado', 'Forma de Pago Reportada', 'Monto Reportado', 'Equivalente USD Reportado']),
-      getAll(TABLES.recibos, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Nro Recibo', 'Fecha', 'Estado Email', 'Correo', 'Log', 'Enviado En']),
+      getAll(TABLES.recibos, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Nro Recibo', 'Pago', 'Fecha', 'Estado Email', 'Correo', 'Log', 'Enviado En']),
       getAll(TABLES.whatsappJobs, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Job ID', 'Estado', 'Creado En', 'Finalizado En', 'Enviados', 'Simulados', 'Errores', 'Log']),
-      getAll(TABLES.whatsappSchedules, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Nombre', 'Activo', 'Hora', 'Día del Mes', 'Modo', 'Última Ejecución', 'Último Job ID'])
+      getAll(TABLES.whatsappSchedules, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Nombre', 'Activo', 'Hora', 'Día del Mes', 'Modo', 'Última Ejecución', 'Último Job ID']),
+      getAll(TABLES.control, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Key','Version'], `filterByFormula=${encodeURIComponent("LEFT({Key},15)='WHATSAPP_AGENT|'")}`)
     ]);
 
     add('Tablas principales Airtable', true, `Propietarios: ${propietarios.length}; Gastos: ${gastos.length}; Pagos: ${pagos.length}; Reportes: ${reportes.length}; Recibos: ${recibos.length}.`);
+
+    const paymentGroups = new Map();
+    for (const payment of pagos) {
+      const f=payment.fields||{}, owner=(f['Propietario que Paga']||[])[0]||'', mode=selectName(f['Forma de Pago']||''), amount=money(f['Equivalente USD Aplicado']||f['Monto Pagado']||0), date=f['Fecha de Pago']||'';
+      const key=`${owner}|${mode}|${amount.toFixed(2)}|${date}`;
+      if(!paymentGroups.has(key))paymentGroups.set(key,[]); paymentGroups.get(key).push(payment);
+    }
+    const duplicatePaymentGroups=[...paymentGroups.values()].filter(group=>group.length>1);
+    add('Pagos potencialmente duplicados', duplicatePaymentGroups.length===0, duplicatePaymentGroups.length ? `${duplicatePaymentGroups.length} grupo(s) histórico(s) con mismo propietario, moneda, monto y fecha requieren revisión manual. No se eliminó nada.` : 'No se detectan pagos duplicados por clave operativa.', duplicatePaymentGroups.length ? 'warning' : 'ok', { groups:duplicatePaymentGroups.length, records:duplicatePaymentGroups.reduce((n,g)=>n+g.length,0) });
+
+    const receiptByPayment=new Map();
+    for(const receipt of recibos){for(const paymentId of ((receipt.fields||{}).Pago||[])){if(!receiptByPayment.has(paymentId))receiptByPayment.set(paymentId,[]);receiptByPayment.get(paymentId).push(receipt);}}
+    const duplicateReceiptGroups=[...receiptByPayment.values()].filter(group=>group.length>1);
+    add('Recibos duplicados por pago', duplicateReceiptGroups.length===0, duplicateReceiptGroups.length?`${duplicateReceiptGroups.length} pago(s) tienen más de un recibo registrado. Los flujos nuevos ya son idempotentes; el histórico no fue alterado.`:'Cada pago tiene como máximo un recibo automático.', duplicateReceiptGroups.length?'warning':'ok', { groups:duplicateReceiptGroups.length });
 
     const legacyCount = gastos.filter(g => String((g.fields || {}).Concepto || '').toLowerCase().includes('(cargo individual)')).length;
     add('Modo contable', true, legacyCount > 0 ? `Transición activa: ${legacyCount} cargo(s) individual(es) legacy.` : 'Modo doble moneda limpio.', legacyCount > 0 ? 'warning' : 'ok');
@@ -185,7 +201,12 @@ exports.handler = async function(event) {
     const pendingJobs = whatsappJobs.filter(r => selectName((r.fields || {}).Estado) === 'Pendiente').length;
     const errorJobs = whatsappJobs.filter(r => Number((r.fields || {}).Errores || 0) > 0 || selectName((r.fields || {}).Estado) === 'Error').length;
     const lastJob = latestByField(whatsappJobs, 'Creado En') || latestByField(whatsappJobs, 'Finalizado En');
-    add('WhatsApp local agent', true, `Programaciones activas: ${activeSchedules}; Jobs pendientes: ${pendingJobs}; Jobs con errores: ${errorJobs}; Último job: ${lastJob ? ((lastJob.fields || {})['Job ID'] || 'sin ID') : 'ninguno'}.`, pendingJobs || errorJobs ? 'warning' : 'ok');
+    const heartbeatRecord=control[0]||null;let heartbeat=null;
+    if(heartbeatRecord){try{heartbeat=JSON.parse(Buffer.from(String(heartbeatRecord.fields?.Key||'').slice('WHATSAPP_AGENT|'.length),'base64url').toString('utf8'))}catch(_){heartbeat=null}}
+    const heartbeatAge=heartbeat?.at?Date.now()-Date.parse(heartbeat.at):Infinity;
+    const heartbeatFresh=Number.isFinite(heartbeatAge)&&heartbeatAge<=10*60*1000;
+    const whatsappOk=activeSchedules===0||heartbeatFresh;
+    add('WhatsApp local agent', whatsappOk, `Programaciones activas: ${activeSchedules}; heartbeat: ${heartbeatFresh?`activo (${Math.round(heartbeatAge/1000)} s)`:'ausente o vencido'}; jobs pendientes: ${pendingJobs}; jobs con errores: ${errorJobs}; último job: ${lastJob ? ((lastJob.fields || {})['Job ID'] || 'sin ID') : 'ninguno'}.`, whatsappOk?(pendingJobs||errorJobs?'warning':'ok'):'error', { heartbeatAt:heartbeat?.at||null });
 
     add('Botón Portón en admin', true, 'Disponible en el panel Admin como 🚪 Portón; abre el selector Automático/Manual, Auto Sync y botones Habilitar/Limitar.');
     add('Botón Auto Sync', true, 'Disponible dentro del módulo Portón. En modo Manual queda bloqueado para evitar ejecuciones accidentales.');
@@ -193,7 +214,7 @@ exports.handler = async function(event) {
 
     try {
       counter.external += 1;
-      const bcv = await fetch(`${event.headers['x-forwarded-proto'] || 'https'}://${event.headers.host}/.netlify/functions/bcv-rate?force=1`).then(r => r.json());
+      const bcv = await fetch(`${event.headers['x-forwarded-proto'] || 'https'}://${event.headers.host}/.netlify/functions/bcv-rate`).then(r => r.json());
       add('Tasa BCV', !!bcv.rate, bcv.rate ? `${bcv.rateFormatted || String(bcv.rate)} · fuente: ${bcv.source || 'N/A'}` : 'No disponible.', bcv.rate ? 'ok' : 'warning');
     } catch (error) {
       add('Tasa BCV', false, error.message, 'warning');

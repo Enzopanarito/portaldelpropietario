@@ -52,6 +52,23 @@ async function getOwner(ownerId){
   }
 }
 
+async function findReceiptByPayment(paymentId){
+  if (!/^rec[A-Za-z0-9]{14}$/.test(String(paymentId || ''))) return null;
+  let offset = null;
+  do {
+    const params = new URLSearchParams({ pageSize:'100' });
+    params.append('fields[]','Pago');
+    params.append('fields[]','Estado Email');
+    params.append('fields[]','Nro Recibo');
+    if (offset) params.set('offset', offset);
+    const data = await airtable(TABLE_RECEIPTS, {}, `?${params.toString()}`);
+    const found = (data.records || []).find(record => Array.isArray(record.fields?.Pago) && record.fields.Pago.includes(paymentId));
+    if (found) return found;
+    offset = data.offset || null;
+  } while (offset);
+  return null;
+}
+
 function buildHtml(payload){
   const owner = escapeHtml(cleanPlainText(payload.ownerName || 'Propietario', 180));
   const casa = escapeHtml(cleanPlainText(payload.casa || '', 30));
@@ -81,6 +98,22 @@ function buildHtml(payload){
 
 async function createAndSendReceipt(input = {}){
   if (!process.env.AIRTABLE_API_TOKEN || !process.env.AIRTABLE_BASE_ID) throw new Error('Airtable no está configurado.');
+
+  if (input.paymentId && input.forceResend !== true) {
+    const existing = await findReceiptByPayment(input.paymentId);
+    if (existing) {
+      const status = String(existing.fields?.['Estado Email'] || 'Registrado');
+      return {
+        success:true,
+        idempotent:true,
+        existing:true,
+        receipt:existing,
+        email:{ sent:status === 'Enviado', status, detail:'No se creó ni envió otro recibo para el mismo pago.' },
+        payload:null,
+        pdf:{ status:'Existente', attachment:'Existente', filename:null }
+      };
+    }
+  }
 
   const owner = await getOwner(input.ownerId);
   const f = owner?.fields || {};
@@ -161,4 +194,4 @@ async function createAndSendReceipt(input = {}){
   return { success:true, receipt: created.records?.[0], email: emailResult, payload, pdf: { status: pdfStatus, attachment: attachmentStatus, filename: attachmentFile || null } };
 }
 
-module.exports = { createAndSendReceipt, buildHtml, money, usd, bs };
+module.exports = { createAndSendReceipt, findReceiptByPayment, buildHtml, money, usd, bs };

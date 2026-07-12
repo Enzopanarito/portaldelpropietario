@@ -2,14 +2,14 @@
 // Reenvía / crea recibo PDF para un pago existente. Útil para reparar casos donde el pago fue creado
 // por un flujo viejo o el correo falló antes de que se registrara el recibo.
 
-const { requireAdmin } = require('./_auth');
+const { requireAdminCurrent } = require('./_auth');
 const { json, airtableGetRecord, TABLES, money } = require('./_access_control');
 const { createAndSendReceipt } = require('./_receipt_service');
 
 function validRecordId(id){ return /^rec[A-Za-z0-9]{14}$/.test(String(id || '')); }
 
 exports.handler = async function(event) {
-  const auth = requireAdmin(event);
+  const auth = await requireAdminCurrent(event);
   if (!auth.ok) return auth.response;
   if (event.httpMethod !== 'POST') return json(405, { message: 'Method Not Allowed' });
 
@@ -35,7 +35,8 @@ exports.handler = async function(event) {
       amountBs,
       date: f['Fecha de Pago'],
       reference: body.reference || `Reenvío de recibo para pago ${f['ID de Pago'] || paymentId}`,
-      concept: body.concept || 'Recibo generado / reenviado por administración'
+      concept: body.concept || 'Recibo generado / reenviado por administración',
+      forceResend: true
     });
 
     return json(200, {
