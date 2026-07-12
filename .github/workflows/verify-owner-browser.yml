@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 jobs:
   verify-owner-portal:
@@ -88,7 +89,7 @@ jobs:
             }
             if (Object.keys(expected).length !== 15) throw new Error(`La fuente oficial devolvió ${Object.keys(expected).length} casas; se esperaban 15.`);
 
-            const response = await page.goto(`${process.env.TARGET_URL}/?browser=${Date.now()}`, { waitUntil: 'networkidle', timeout: 60000 });
+            const response = await page.goto(`${process.env.TARGET_URL}/?browser=${Date.now()}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
             await page.waitForFunction(() => {
               const select = document.getElementById('welcomeSelector') || document.querySelector('select');
               return select && Array.from(select.options).some(option => option.value);
@@ -171,3 +172,27 @@ jobs:
             owner-browser.png
           if-no-files-found: ignore
           retention-days: 7
+
+      - name: Publish successful production status
+        if: success() && github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+            -f state=success \
+            -f context='Owner Portal Production Verification' \
+            -f description='Desglose y saldos de las 15 casas verificados en producción.' \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+      - name: Publish failed production status
+        if: failure() && github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+            -f state=failure \
+            -f context='Owner Portal Production Verification' \
+            -f description='La verificación del portal propietario en producción falló.' \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
