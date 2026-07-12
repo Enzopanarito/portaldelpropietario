@@ -29,6 +29,7 @@ html[data-vla-admin-premium="1"] .vla-brand-copy{font-size:clamp(13px,.34vw + 9p
 
 html[data-vla-admin-premium="1"] #dashboard>.bg-white>.grid{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(min(100%,var(--vla-fluid-card-min)),1fr))!important;gap:var(--vla-fluid-gap)!important;align-items:stretch}
 html[data-vla-admin-premium="1"] #dashboard>.bg-white>.grid>div,html[data-vla-admin-premium="1"] #vla-porton-kpi,html[data-vla-admin-premium="1"] #vla-reports-kpi{min-width:0!important;min-height:clamp(136px,9vw,220px)!important;padding:clamp(17px,1.25vw,30px)!important;display:flex!important;flex-direction:column!important;justify-content:center!important}
+html[data-vla-admin-premium="1"] #dashboard>.bg-white>.grid>div:has(#kpi-api){min-height:clamp(190px,11vw,250px)!important;height:auto!important}
 html[data-vla-admin-premium="1"] #dashboard>.bg-white>.grid>div p:first-child,html[data-vla-admin-premium="1"] .vla-kpi-label{font-size:var(--vla-fluid-label)!important;line-height:1.3!important;white-space:normal!important}
 html[data-vla-admin-premium="1"] #dashboard>.bg-white>.grid>div p[id],html[data-vla-admin-premium="1"] .vla-kpi-value{font-size:var(--vla-fluid-kpi)!important;line-height:1.02!important;letter-spacing:-.035em!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere!important;word-break:normal!important;max-width:100%}
 html[data-vla-admin-premium="1"] #kpi-total,html[data-vla-admin-premium="1"] #kpi-usd,html[data-vla-admin-premium="1"] #kpi-bs,html[data-vla-admin-premium="1"] #kpi-morosos,html[data-vla-admin-premium="1"] #kpi-bcv,html[data-vla-admin-premium="1"] #kpi-api,html[data-vla-admin-premium="1"] #vla-porton-value,html[data-vla-admin-premium="1"] #vla-reports-value{white-space:nowrap!important;overflow-wrap:normal!important;word-break:normal!important}
@@ -82,6 +83,7 @@ html[data-vla-admin-premium="1"] input,html[data-vla-admin-premium="1"] select,h
   html[data-vla-admin-premium="1"] #vla-premium-content{padding:14px 10px 32px!important}
   html[data-vla-admin-premium="1"] #dashboard>.bg-white>.grid{grid-template-columns:1fr!important}
   html[data-vla-admin-premium="1"] #dashboard>.bg-white>.grid>div,html[data-vla-admin-premium="1"] #vla-porton-kpi,html[data-vla-admin-premium="1"] #vla-reports-kpi{min-height:126px!important}
+  html[data-vla-admin-premium="1"] #dashboard>.bg-white>.grid>div:has(#kpi-api){min-height:190px!important}
   html[data-vla-admin-premium="1"] .vla-donut-wrap{grid-template-columns:1fr!important;justify-items:center}
   html[data-vla-admin-premium="1"] .vla-legend{width:100%}
   html[data-vla-admin-premium="1"] .section>.bg-white{padding:16px 13px!important}
