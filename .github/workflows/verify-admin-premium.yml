@@ -1,0 +1,55 @@
+name: Verify Admin Premium
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-admin-premium:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run static admin tests
+        run: |
+          node tests/admin-premium.test.js
+          node tests/final-hardening.test.js
+          node --input-type=module --check < netlify/edge-functions/admin-premium-assets.js
+          node --input-type=module --check < netlify/edge-functions/admin-links.js
+
+      - name: Install Chromium
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.53.0
+          npx playwright install --with-deps chromium
+
+      - name: Run isolated browser test
+        run: node tests/admin-premium-browser.cjs
+
+      - name: Upload visual and technical evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-premium-browser-evidence
+          path: |
+            admin-premium-desktop.png
+            admin-premium-reports.png
+            admin-premium-mobile.png
+            admin-premium-result.json
+            admin-premium-error.txt
+            porton-state.json
+            porton-session.png
+            audit-state.json
+            audit-session.png
+          if-no-files-found: ignore
+          retention-days: 14

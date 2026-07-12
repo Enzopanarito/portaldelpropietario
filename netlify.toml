@@ -7,6 +7,10 @@ function = "pwa-head"
 path = "/*"
 
 [[edge_functions]]
+function = "admin-premium-assets"
+path = "/*"
+
+[[edge_functions]]
 function = "owner-signature"
 path = "/"
 
