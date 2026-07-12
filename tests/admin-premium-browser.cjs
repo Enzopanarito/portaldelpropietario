@@ -22,7 +22,7 @@ const health={ok:true,status:'ok',generatedAt:new Date().toISOString(),checks:[
 function inject(html,isAdmin){
   const bridge='<script src="/admin-session-bridge.js"></script>';
   let extra=bridge;
-  if(isAdmin)extra+='<style>.hidden{display:none!important}.flex{display:flex!important}</style><link rel="stylesheet" href="/admin-premium.css"><script>(function waitForAdmin(){if(window.ready===true){var s=document.createElement("script");s.src="/admin-premium.js";s.onload=function(){var c=document.createElement("script");c.src="/admin-premium-controls.js";document.body.appendChild(c)};document.body.appendChild(s)}else setTimeout(waitForAdmin,30)})();</script>';
+  if(isAdmin)extra+='<style>.hidden{display:none!important}.flex{display:flex}</style><link rel="stylesheet" href="/admin-premium.css"><script>(function waitForAdmin(){if(window.ready===true){var s=document.createElement("script");s.src="/admin-premium.js";s.onload=function(){var c=document.createElement("script");c.src="/admin-premium-controls.js";document.body.appendChild(c)};document.body.appendChild(s)}else setTimeout(waitForAdmin,30)})();</script>';
   return html.replace('</head>',extra+'</head>');
 }
 function fileType(file){if(file.endsWith('.js'))return'application/javascript';if(file.endsWith('.css'))return'text/css';if(file.endsWith('.html'))return'text/html; charset=utf-8';return'application/octet-stream'}
@@ -70,11 +70,12 @@ async function pageState(page,label){
   if(await page.locator('#vla-dashboard-panels').count()!==1)throw new Error('No apareció el tablero premium.');
   if(await page.locator('#vla-reports-value').innerText()!=='1')throw new Error('El KPI de pagos pendientes no coincide.');
   if(!/Automático/.test(await page.locator('#vla-porton-value').innerText()))throw new Error('El estado del portón no se conectó.');
+  await page.screenshot({path:'admin-premium-desktop.png',fullPage:true});
   await page.locator('[data-vla-target="owners"]').click();
   if(!await page.locator('#owners').evaluate(el=>el.classList.contains('active')))throw new Error('La navegación a Propietarios falló.');
   await page.locator('[data-vla-target="reports"]').click();
   if(!await page.locator('#reports').evaluate(el=>el.classList.contains('active')))throw new Error('La navegación a Pagos falló.');
-  await page.screenshot({path:'admin-premium-desktop.png',fullPage:true});
+  await page.screenshot({path:'admin-premium-reports.png',fullPage:true});
   await page.goto(`http://127.0.0.1:${PORT}/mkj-access.html`,{waitUntil:'domcontentloaded'});
   const porton=await pageState(page,'porton');
   if(!porton.hasApp||porton.appDisplay==='none'||String(porton.appClass||'').split(/\s+/).includes('hidden'))throw new Error('Portón no restauró la sesión: '+JSON.stringify(porton));
