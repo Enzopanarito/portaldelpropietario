@@ -54,13 +54,15 @@ jobs:
           required={
             'netlify/functions/process-payment-report.js':['requireAdmin','airtableCreateRecord','createAndSendReceipt','syncOwnerAccess','begin('],
             'netlify/functions/admin-manual-payment.js':['requireAdmin','createAndSendReceipt','syncOwnerAccess'],
-            'netlify/functions/monthly-close.js':['requireAdmin','dryRun','planHash'],
+            'netlify/functions/monthly-close-v4.js':['requireAdmin','dryRun','planHash'],
             'netlify/functions/_receipt_service.js':['sendMail','buildReceiptPdf','TABLE_RECEIPTS'],
             'netlify/functions/_mailer.js':['nodemailer','createTransport','sendMail','OFFICIAL_EMAIL'],
             'netlify/functions/_access_control.js':['MKJ','syncOwnerAccess','calculateExpiredAccessDebt'],
             'netlify/functions/bcv-rate.js':['last-good','FETCH_TIMEOUT_MS'],
             'netlify/functions/airtable-backup.js':['manifestHash','fileContentHash'],
             'netlify/functions/system-health-advanced.js':['Operaciones financieras pendientes','Transparencia pública']}
+          wrapper=(root/'netlify/functions/monthly-close.js').read_text('utf-8')
+          ok('`monthly-close.js` delega en `monthly-close-v4`.') if "require('./monthly-close-v4')" in wrapper else fail('El wrapper mensual no apunta a monthly-close-v4.')
           for filename,markers in required.items():
             p=root/filename
             if not p.exists(): fail(f'Falta archivo crítico `{filename}`.'); continue
