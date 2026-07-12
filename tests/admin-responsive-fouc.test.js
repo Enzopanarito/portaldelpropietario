@@ -10,6 +10,7 @@ const js=read('admin-responsive-v4.js');
 const icon=read('netlify/functions/app-icon.js');
 
 assert(edge.includes('vla-admin-boot-style'),'Falta el CSS crítico contra el parpadeo.');
+assert(edge.includes('#login.hidden{display:none!important}'),'El login puede quedar superpuesto si Tailwind altera el orden de flex/hidden.');
 assert(edge.includes('html[data-vla-admin-page="1"] #app{visibility:hidden'),'El admin heredado no queda oculto antes del render premium.');
 assert(edge.includes('vla-admin-loader'),'Falta la pantalla de carga premium.');
 assert(edge.includes('app-icon?app=portal&size=180'),'La carga no usa el logo oficial VLA.');
