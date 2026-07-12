@@ -46,5 +46,9 @@ jobs:
             admin-premium-mobile.png
             admin-premium-result.json
             admin-premium-error.txt
+            porton-state.json
+            porton-session.png
+            audit-state.json
+            audit-session.png
           if-no-files-found: ignore
           retention-days: 14
