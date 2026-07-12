@@ -1,0 +1,91 @@
+name: Apply Airtable Meter
+
+on:
+  push:
+    branches:
+      - hardening-remove-legacy-writes-2026-07-12
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hardening-remove-legacy-writes-2026-07-12
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install meter in every function entrypoint
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          root=Path('netlify/functions')
+          changed=[]
+          marker="require('./_airtable_usage_meter').install("
+          for p in sorted(root.glob('*.js')):
+              if p.name.startswith('_') or p.name == 'api-usage.js':
+                  continue
+              s=p.read_text('utf-8')
+              if marker in s:
+                  continue
+              line=f"require('./_airtable_usage_meter').install('{p.stem}');"
+              if s.startswith("'use strict';"):
+                  s=s.replace("'use strict';", "'use strict';\n\n"+line, 1)
+              elif s.startswith('"use strict";'):
+                  s=s.replace('"use strict";', '"use strict";\n\n'+line, 1)
+              else:
+                  s=line+'\n\n'+s
+              p.write_text(s,'utf-8')
+              changed.append(str(p))
+          print(f'Instrumented {len(changed)} files')
+          for item in changed: print(item)
+          PY
+      - name: Remove legacy aggregate counter from batch delete
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('netlify/functions/batch-delete-records-v2.js')
+          s=p.read_text('utf-8')
+          s=re.sub(r"\nconst USAGE_TABLE = 'ControlVersiones';",'',s)
+          s=re.sub(r"\nfunction currentMonthCaracas\(\)\{[^\n]*\}",'',s)
+          s=re.sub(r"\nasync function recordApiUsage\([\s\S]*?\}\n\nexports\.handler",'\n\nexports.handler',s,count=1)
+          s=s.replace("    await recordApiUsage('batch-delete-records',airtableCalls,AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID);\n",'')
+          s=s.replace("  }catch(error){await recordApiUsage('batch-delete-records-error',airtableCalls,AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID);return",'  }catch(error){return')
+          s=s.replace("'X-Airtable-Calls':String(airtableCalls+1)","'X-Airtable-Calls':String(airtableCalls)")
+          p.write_text(s,'utf-8')
+          PY
+      - name: Validate syntax and meter coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          find netlify/functions -maxdepth 1 -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+          python - <<'PY'
+          from pathlib import Path
+          missing=[]
+          marker="require('./_airtable_usage_meter').install("
+          for p in sorted(Path('netlify/functions').glob('*.js')):
+              if p.name.startswith('_') or p.name == 'api-usage.js':
+                  continue
+              if marker not in p.read_text('utf-8'):
+                  missing.append(str(p))
+          if missing: raise SystemExit('Missing meter: '+', '.join(missing))
+          print('All function entrypoints are metered')
+          PY
+      - name: Commit instrumentation
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add netlify/functions
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Centralizar contador de llamadas Airtable'
+          git push origin HEAD:hardening-remove-legacy-writes-2026-07-12
