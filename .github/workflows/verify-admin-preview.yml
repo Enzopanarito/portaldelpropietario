@@ -24,25 +24,30 @@ jobs:
           TARGET_URL: ${{ steps.target.outputs.url }}
         shell: bash
         run: |
-          set -euo pipefail
+          set -u -o pipefail
           for attempt in $(seq 1 90); do
+            ready=1
             headers="$(curl --silent --show-error --location --dump-header - --output /tmp/admin.html --max-time 30 "${TARGET_URL}/admin.html?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
             ui="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-admin-ui"{gsub("\r","");print $2}' | tail -1)"
             session="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-admin-session"{gsub("\r","");print $2}' | tail -1)"
-            if [ "$ui" = "premium-v1" ] && [ "$session" = "single-login-v1" ]; then
-              grep -q 'admin-premium.css' /tmp/admin.html
-              grep -q 'admin-session-bridge.js' /tmp/admin.html
-              for asset in admin-premium.css admin-premium-polish.css admin-premium-preflight.js admin-premium.js admin-premium-controls.js admin-session-bridge.js; do
-                code="$(curl --silent --show-error --location --output "/tmp/${asset}" --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/${asset}?verify=${GITHUB_RUN_ID}")"
-                test "$code" = "200"
-                test -s "/tmp/${asset}"
-              done
-              curl --silent --show-error --location --max-time 30 "${TARGET_URL}/mkj-access.html?verify=${GITHUB_RUN_ID}" | grep -q 'admin-session-bridge.js'
-              curl --silent --show-error --location --max-time 30 "${TARGET_URL}/seguridad.html?verify=${GITHUB_RUN_ID}" | grep -q 'admin-session-bridge.js'
+            [ "$ui" = "premium-v1" ] || ready=0
+            [ "$session" = "single-login-v1" ] || ready=0
+            grep -q 'admin-premium.css' /tmp/admin.html 2>/dev/null || ready=0
+            grep -q 'admin-session-bridge.js' /tmp/admin.html 2>/dev/null || ready=0
+            for asset in admin-premium.css admin-premium-polish.css admin-premium-preflight.js admin-premium.js admin-premium-controls.js admin-session-bridge.js; do
+              code="$(curl --silent --show-error --location --output "/tmp/${asset}" --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/${asset}?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+              [ "$code" = "200" ] || ready=0
+              [ -s "/tmp/${asset}" ] || ready=0
+            done
+            porton="$(curl --silent --show-error --location --max-time 30 "${TARGET_URL}/mkj-access.html?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            seguridad="$(curl --silent --show-error --location --max-time 30 "${TARGET_URL}/seguridad.html?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            printf '%s' "$porton" | grep -q 'admin-session-bridge.js' || ready=0
+            printf '%s' "$seguridad" | grep -q 'admin-session-bridge.js' || ready=0
+            if [ "$ready" = "1" ]; then
               echo "Preview exacta disponible en ${TARGET_URL}"
               exit 0
             fi
-            echo "Intento ${attempt}: ui=${ui:-missing}, session=${session:-missing}"
+            echo "Intento ${attempt}: ui=${ui:-missing}, session=${session:-missing}, ready=${ready}"
             sleep 10
           done
           echo "La vista previa exacta no estuvo disponible."
