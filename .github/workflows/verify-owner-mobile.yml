@@ -42,38 +42,23 @@ jobs:
             echo "url=https://villalosapamates.netlify.app" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Wait for mobile, payment and dark contrast release
+      - name: Wait for preview assets
         env:
           TARGET_URL: ${{ steps.target.outputs.url }}
         shell: bash
         run: |
           set -euo pipefail
           for attempt in $(seq 1 90); do
-            headers="$(curl --silent --show-error --location --dump-header - --output /tmp/owner.html --max-time 30 "${TARGET_URL}/?owner-mobile-release=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
-            marker="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-owner-mobile"{gsub("\r","");print $2}' | tail -1)"
-            payment_marker="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-owner-payment-report"{gsub("\r","");print $2}' | tail -1)"
-            dark_marker="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-owner-dark-contrast"{gsub("\r","");print $2}' | tail -1)"
-            ready=1
-            [ "$marker" = "fluid-v2" ] || ready=0
-            [ "$payment_marker" = "smart-v3" ] || ready=0
-            [ "$dark_marker" = "wcag-v1" ] || ready=0
-            grep -q 'owner-payment-report-v3.css' /tmp/owner.html 2>/dev/null || ready=0
-            grep -q 'owner-dark-contrast-v1.css' /tmp/owner.html 2>/dev/null || ready=0
-            grep -q 'owner-payment-report-v3.js' /tmp/owner.html 2>/dev/null || ready=0
-            grep -q 'payment-report-intelligence.js' /tmp/owner.html 2>/dev/null || ready=0
-            for asset in owner-mobile-v2.css owner-payment-report-v3.css owner-dark-contrast-v1.css owner-payment-report-v3.js payment-report-intelligence.js; do
-              code="$(curl --silent --show-error --location --output "/tmp/${asset}" --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/${asset}?v=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
-              [ "$code" = "200" ] || ready=0
-              [ -s "/tmp/${asset}" ] || ready=0
-            done
-            if [ "$ready" = "1" ]; then
-              echo "Owner mobile, reporte smart-v3 y contraste wcag-v1 disponibles en $TARGET_URL"
+            html_code="$(curl --silent --show-error --location --output /tmp/owner.html --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/?owner-release=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            dark_code="$(curl --silent --show-error --location --output /tmp/owner-dark.css --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/owner-dark-contrast-v1.css?v=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            if [ "$html_code" = "200" ] && [ "$dark_code" = "200" ] && grep -q 'Contraste integral modo oscuro wcag-v1' /tmp/owner-dark.css; then
+              echo "Preview y capa de contraste disponibles en $TARGET_URL"
               exit 0
             fi
-            echo "Attempt $attempt: mobile=${marker:-missing} payment=${payment_marker:-missing} dark=${dark_marker:-missing}"
+            echo "Attempt $attempt: html=${html_code:-missing} dark=${dark_code:-missing}"
             sleep 10
           done
-          echo "Expected owner mobile/payment/dark release was not available."
+          echo "La preview o la capa de contraste no estuvieron disponibles."
           exit 1
 
       - name: Install Chromium
