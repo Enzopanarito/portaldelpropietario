@@ -43,6 +43,7 @@ jobs:
           name: admin-premium-browser-evidence
           path: |
             admin-premium-desktop.png
+            admin-premium-reports.png
             admin-premium-mobile.png
             admin-premium-result.json
             admin-premium-error.txt
