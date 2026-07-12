@@ -1,0 +1,4 @@
+html[data-vla-admin-premium="1"] #api-restan{font-size:9px!important;line-height:1.35!important;font-weight:500!important;color:#718096!important;margin-top:7px!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;display:block!important}
+html[data-vla-admin-premium="1"] #api-bar{margin-top:8px!important}
+html[data-vla-admin-premium="1"] #dashboard>.bg-white>.grid>div:has(#kpi-api){justify-content:flex-start!important;padding-top:17px!important}
+@media(max-width:620px){html[data-vla-admin-premium="1"] #dashboard>.bg-white>.grid>div{min-height:112px!important}html[data-vla-admin-premium="1"] #api-restan{font-size:8px!important}}
