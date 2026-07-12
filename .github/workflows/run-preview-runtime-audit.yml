@@ -1,0 +1,39 @@
+name: Run Preview Runtime Audit
+
+on:
+  push:
+    branches:
+      - audit-complete-system-2026-07-11
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Wait for Netlify preview and run read-only audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL='https://deploy-preview-29--villalosapamates.netlify.app/.netlify/functions/runtime-audit-temporary?audit=vla-audit-7f4c2e91d8b6430ab31f'
+          for attempt in $(seq 1 60); do
+            status=$(curl --silent --show-error --location --output runtime-audit-result.json --write-out '%{http_code}' "$URL" || true)
+            echo "Attempt $attempt: HTTP $status"
+            if [ "$status" = '200' ] || [ "$status" = '503' ]; then
+              node -e "const fs=require('fs');const j=JSON.parse(fs.readFileSync('runtime-audit-result.json','utf8'));console.log(JSON.stringify(j,null,2));if(!Array.isArray(j.checks))process.exit(2);"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo '{"ok":false,"error":"Preview audit endpoint unavailable"}' > runtime-audit-result.json
+          exit 1
+
+      - name: Upload sanitized audit result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-runtime-audit-result
+          path: runtime-audit-result.json
+          retention-days: 7
