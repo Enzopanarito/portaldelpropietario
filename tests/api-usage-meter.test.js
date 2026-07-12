@@ -1,6 +1,8 @@
 'use strict';
 
 const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
 
 const originalFetch = global.fetch;
 const originalToken = process.env.AIRTABLE_API_TOKEN;
@@ -18,7 +20,21 @@ process.env.AIRTABLE_BASE_ID = 'app12345678901234';
 delete require.cache[require.resolve('../netlify/functions/_airtable_meter')];
 const meter = require('../netlify/functions/_airtable_meter');
 
+function validateEntrypointCoverage() {
+  const directory = path.join(__dirname, '..', 'netlify', 'functions');
+  const missing = [];
+  for (const filename of fs.readdirSync(directory).filter(name => name.endsWith('.js') && !name.startsWith('_'))) {
+    const source = fs.readFileSync(path.join(directory, filename), 'utf8');
+    const callsAirtableDirectly = source.includes('https://api.airtable.com/v0/');
+    const exposesHandler = source.includes('exports.handler');
+    if (callsAirtableDirectly && exposesHandler && !source.includes('withAirtableUsage(')) missing.push(filename);
+  }
+  assert.deepStrictEqual(missing, [], `Funciones con acceso directo a Airtable sin medidor: ${missing.join(', ')}`);
+}
+
 (async () => {
+  validateEntrypointCoverage();
+
   const wrapped = meter.withAirtableUsage('unit-module', async () => {
     await fetch('https://api.airtable.com/v0/app123/TableA');
     await fetch('https://example.com/not-airtable');
