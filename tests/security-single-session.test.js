@@ -1,0 +1,14 @@
+'use strict';
+const assert=require('assert');
+const fs=require('fs');
+const page=fs.readFileSync('seguridad.html','utf8');
+const backend=fs.readFileSync('netlify/functions/admin-security.js','utf8');
+assert(!page.includes('id="current-password"'),'Seguridad no debe pedir la contraseña actual.');
+assert(page.includes("localStorage.getItem('vla-admin-token')"),'Seguridad debe reutilizar la sesión compartida.');
+assert(page.includes("post({action:'changePassword',newPassword:a})"),'El cambio debe usar el token activo.');
+assert(page.includes("params.get('reset')"),'La recuperación pública debe mantenerse.');
+assert(backend.includes("if (action === 'changePassword')"));
+assert(backend.includes('const auth = requireAdmin(event)'),'El cambio debe exigir token administrativo válido.');
+assert(!backend.includes('verifyPassword(body.currentPassword'),'No debe pedir una segunda contraseña.');
+assert(!backend.includes('Debe indicar la contraseña actual.'));
+console.log('SECURITY_SINGLE_SESSION_OK');
