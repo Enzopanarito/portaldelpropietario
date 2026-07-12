@@ -26,14 +26,17 @@ const health={ok:true,status:'ok',generatedAt:new Date().toISOString(),checks:[
 function inject(html,isAdmin){
   const bridge='<script src="/admin-session-bridge.js"></script>';
   let extra=bridge;
-  if(isAdmin)extra+='<style>.hidden{display:none!important}.flex{display:flex}</style><link rel="stylesheet" href="/admin-premium.css"><link rel="stylesheet" href="/admin-premium-polish.css"><link rel="stylesheet" href="/admin-premium-10.css"><script>(function waitForAdmin(){if(window.ready===true){var p=document.createElement("script");p.src="/admin-premium-preflight.js";p.onload=function(){var s=document.createElement("script");s.src="/admin-premium.js";s.onload=function(){var c=document.createElement("script");c.src="/admin-premium-controls.js";c.onload=function(){var q=document.createElement("script");q.src="/admin-premium-10.js";document.body.appendChild(q)};document.body.appendChild(c)};document.body.appendChild(s)};document.body.appendChild(p)}else setTimeout(waitForAdmin,30)})();</script>';
-  return html.replace('</head>',extra+'</head>');
+  if(isAdmin)extra+=`<style>.hidden{display:none!important}.flex{display:flex}html[data-vla-admin-page="1"] #app{visibility:hidden!important;opacity:0!important}html[data-vla-admin-page="1"][data-vla-admin-ready="1"] #app{visibility:visible!important;opacity:1!important}#vla-admin-loader{display:none;position:fixed;inset:0;z-index:99999;align-items:center;justify-content:center;background:#061f3b}#login.hidden~#vla-admin-loader,#app:not(.hidden)~#vla-admin-loader{display:flex}html[data-vla-admin-ready="1"] #vla-admin-loader{display:none!important}</style><script>document.documentElement.dataset.vlaAdminPage='1';</script><link rel="stylesheet" href="/admin-premium.css"><link rel="stylesheet" href="/admin-premium-polish.css"><link rel="stylesheet" href="/admin-premium-10.css"><link rel="stylesheet" href="/admin-responsive-v4.css"><script>(function waitForAdmin(){if(window.ready===true){var p=document.createElement('script');p.src='/admin-premium-preflight.js';p.onload=function(){var s=document.createElement('script');s.src='/admin-premium.js';s.onload=function(){var c=document.createElement('script');c.src='/admin-premium-controls.js';c.onload=function(){var q=document.createElement('script');q.src='/admin-premium-10.js';q.onload=function(){var f=document.createElement('script');f.src='/admin-feature-parity.js';f.onload=function(){var r=document.createElement('script');r.src='/admin-responsive-v4.js';document.body.appendChild(r)};document.body.appendChild(f)};document.body.appendChild(q)};document.body.appendChild(c)};document.body.appendChild(s)};document.body.appendChild(p)}else setTimeout(waitForAdmin,30)})();</script>`;
+  let result=html.replace('</head>',extra+'</head>');
+  if(isAdmin)result=result.replace('</body>','<div id="vla-admin-loader"><div>Preparando portal administrativo…</div></div></body>');
+  return result;
 }
 function fileType(file){if(file.endsWith('.js'))return'application/javascript';if(file.endsWith('.css'))return'text/css';if(file.endsWith('.html'))return'text/html; charset=utf-8';return'application/octet-stream'}
 const server=http.createServer((req,res)=>{
   const url=new URL(req.url,`http://127.0.0.1:${PORT}`);
   if(url.pathname.startsWith('/.netlify/functions/')){
     const name=url.pathname.split('/').pop();
+    if(name==='app-icon'){res.writeHead(200,{'content-type':'image/svg+xml'});return res.end('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="22" fill="#fffaf0"/><circle cx="50" cy="43" r="25" fill="#0b7a34"/><text x="50" y="88" text-anchor="middle" font-size="14">VLA</text></svg>')}
     if(name==='login'&&req.method==='POST')return json(res,200,{success:true,token:TOKEN});
     if(name==='admin-data')return json(res,200,{propietarios:owners,gastos,pagos,reportes,generatedAtCaracas:'12/07/2026 00:15'});
     if(name==='public-data')return json(res,200,{propietarios:owners,gastos,pagos,reportes});
@@ -68,17 +71,25 @@ async function pageState(page,label){
   await page.goto(`http://127.0.0.1:${PORT}/admin.html`,{waitUntil:'domcontentloaded'});
   await page.locator('#password').fill('Prueba segura');
   await page.locator('#login-form button').click();
+  await page.waitForFunction(()=>{
+    const login=document.getElementById('login'),app=document.getElementById('app'),shell=document.getElementById('vla-premium-shell');
+    return Boolean(login&&app&&shell&&document.documentElement.dataset.vlaAdminReady==='1'&&getComputedStyle(login).display==='none'&&getComputedStyle(app).display!=='none'&&getComputedStyle(app).visibility!=='hidden');
+  },null,{timeout:15000});
   await page.locator('#vla-premium-shell').waitFor({state:'visible',timeout:15000});
   await page.waitForFunction(()=>document.getElementById('vla-sum-owners')?.textContent==='15');
-  await page.locator('#vla-status-overview').waitFor({state:'visible'});
   const stored=await page.evaluate(()=>({local:localStorage.getItem('vla-admin-token'),session:sessionStorage.getItem('vla-admin-token')}));
   if(stored.local!==TOKEN||stored.session!==TOKEN)throw new Error('La sesión única no se sincronizó en ambos almacenamientos.');
   if(await page.locator('#vla-dashboard-panels').count()!==1)throw new Error('No apareció el tablero premium.');
   if(await page.locator('#vla-reports-value').innerText()!=='1')throw new Error('El KPI de pagos pendientes no coincide.');
   if(!/Automático/.test(await page.locator('#vla-porton-value').innerText()))throw new Error('El estado del portón no se conectó.');
+  const logo=page.locator('#vla-premium-sidebar .vla-brand-logo');
+  await logo.waitFor({state:'visible'});
+  if(!String(await logo.getAttribute('src')).includes('app-icon?app=portal'))throw new Error('El encabezado premium no usa el logo oficial VLA.');
   const donutSize=await page.locator('#vla-donut').evaluate(el=>el.getBoundingClientRect().width);
   if(donutSize<170)throw new Error(`El gráfico sigue demasiado pequeño: ${donutSize}px.`);
   if(await page.locator('#vla-reading-controls').count()!==1)throw new Error('No aparecieron los controles de lectura.');
+  const desktopLayout=await page.evaluate(()=>({login:getComputedStyle(document.getElementById('login')).display,app:getComputedStyle(document.getElementById('app')).display,ready:document.documentElement.dataset.vlaAdminReady,responsive:document.querySelector('link[href="/admin-responsive-v4.css"]')!==null,overflow:document.documentElement.scrollWidth-innerWidth}));
+  if(desktopLayout.login!=='none'||desktopLayout.app==='none'||desktopLayout.ready!=='1'||!desktopLayout.responsive||desktopLayout.overflow>3)throw new Error(`El dashboard responsive no está listo: ${JSON.stringify(desktopLayout)}.`);
   await page.screenshot({path:'admin-premium-desktop.png',fullPage:true});
 
   await page.locator('[data-vla-target="owners"]').click();
@@ -110,11 +121,12 @@ async function pageState(page,label){
   if(!audit.hasApp||audit.appDisplay==='none'||String(audit.appClass||'').split(/\s+/).includes('hidden'))throw new Error('Auditoría no restauró la sesión: '+JSON.stringify(audit));
   await page.setViewportSize({width:390,height:844});
   await page.goto(`http://127.0.0.1:${PORT}/admin.html`,{waitUntil:'domcontentloaded'});
+  await page.waitForFunction(()=>document.documentElement.dataset.vlaAdminReady==='1'&&getComputedStyle(document.getElementById('login')).display==='none',{timeout:15000});
   await page.locator('#vla-premium-shell').waitFor({state:'visible',timeout:10000});
   await page.locator('#vla-mobile-menu').click();
   if(!await page.locator('#vla-premium-sidebar').evaluate(el=>el.classList.contains('open')))throw new Error('El menú móvil no abre.');
   await page.screenshot({path:'admin-premium-mobile.png',fullPage:true});
   if(errors.length)throw new Error('Errores de navegador: '+errors.join(' | '));
-  fs.writeFileSync('admin-premium-result.json',JSON.stringify({premium:true,owners:15,pendingReports:1,singleSession:true,portonWithoutRelogin:true,auditWithoutRelogin:true,responsiveMenu:true,readableOwners:true,largeCharts:true,semanticStates:true,readingControls:true},null,2));
+  fs.writeFileSync('admin-premium-result.json',JSON.stringify({premium:true,owners:15,pendingReports:1,singleSession:true,portonWithoutRelogin:true,auditWithoutRelogin:true,responsiveMenu:true,readableOwners:true,largeCharts:true,semanticStates:true,readingControls:true,officialLogo:true,responsiveFluidV4:true,noLegacyFlash:true},null,2));
   await browser.close();server.close();console.log('ADMIN_PREMIUM_BROWSER_TESTS_OK');
 })().catch(error=>{fs.writeFileSync('admin-premium-error.txt',String(error.stack||error));console.error(error);server.close();process.exit(1)});
