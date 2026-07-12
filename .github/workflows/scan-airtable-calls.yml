@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - hardening-remove-legacy-writes-2026-07-12
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
