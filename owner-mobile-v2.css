@@ -1,0 +1,102 @@
+/* Villa Los Apamates · Portal propietario móvil fluid-v2
+   Capa local independiente del Tailwind CDN para conservar legibilidad en Safari/PWA. */
+:root{--vla-owner-mobile-green:#0b7a34;--vla-owner-mobile-navy:#061f3b;--vla-owner-mobile-bg:#f4f7fa;--vla-owner-mobile-ink:#0f172a}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;max-width:100%;overflow-x:hidden}
+body{max-width:100%;overflow-x:hidden}
+.hidden{display:none!important}
+#main:not(.hidden){display:block}
+#modal.flex{display:flex}
+
+@media(max-width:767px){
+  html,body{width:100%;min-width:0;margin:0;background:var(--vla-owner-mobile-bg);color:var(--vla-owner-mobile-ink)}
+  body{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+  #theme-welcome{top:max(10px,env(safe-area-inset-top));right:10px}
+  #theme-welcome button{min-height:42px;padding:8px 13px;font-size:13px;border-radius:999px}
+
+  #welcome{min-height:100svh;width:100%;display:flex;align-items:center;justify-content:center;padding:max(64px,calc(env(safe-area-inset-top) + 46px)) 14px max(22px,env(safe-area-inset-bottom));background:linear-gradient(145deg,#020b17,#061f3b 58%,#06351e)}
+  #welcome>.card{width:100%;max-width:430px;padding:clamp(22px,6vw,30px)!important;border-radius:24px!important;text-align:center}
+  #welcome img{width:88px!important;height:88px!important;margin:0 auto 18px!important;border-radius:24px!important;display:block}
+  #welcome h1{font-size:clamp(25px,7vw,32px)!important;line-height:1.08!important;margin:0!important;letter-spacing:-.03em}
+  #welcome p{font-size:15px;line-height:1.45}
+  #welcome label{font-size:14px!important;line-height:1.35;margin-top:20px}
+  #welcome select,#welcome button{width:100%;min-height:50px;font-size:16px!important;border-radius:16px!important}
+  #welcome select{padding:0 14px!important}
+  #welcome button{padding:12px 16px!important;margin-top:14px!important}
+
+  #main,.app-shell,.app-content{width:100%;max-width:100%;min-width:0;overflow-x:hidden}
+  .desktop-sidebar{display:none!important}
+  .app-content{margin-left:0!important}
+  .app-content>header{position:sticky;top:0;z-index:20;width:100%;background:rgba(255,255,255,.96);backdrop-filter:blur(14px);border-bottom:1px solid rgba(15,23,42,.08)}
+  .app-content>header>div{display:grid!important;grid-template-columns:minmax(0,1fr);gap:12px!important;padding:14px 12px!important}
+  .app-content>header h1{font-size:clamp(20px,5.8vw,27px)!important;line-height:1.08!important;letter-spacing:-.025em;margin:0}
+  .app-content>header p{font-size:13px!important;line-height:1.35;margin-top:4px}
+  .app-content>header .flex{display:flex!important;width:100%;min-width:0;gap:8px!important}
+  #userSelector{width:100%;min-width:0;min-height:48px;padding:0 12px!important;font-size:16px!important;border-radius:15px!important}
+  #theme2{flex:0 0 48px;width:48px;height:48px;padding:0!important;border-radius:15px!important}
+
+  .app-content>main{width:100%;max-width:100%;min-width:0;padding:14px 10px calc(92px + env(safe-area-inset-bottom))!important;margin:0!important}
+  #discount{margin-bottom:14px!important}
+  #estado{display:grid!important;grid-template-columns:1fr!important;gap:12px!important;margin-bottom:14px!important}
+  #estado>.metric{width:100%;min-width:0;min-height:138px;padding:20px!important;border-radius:18px!important}
+  #estado>.metric>p:first-child{font-size:11px!important;line-height:1.25!important;letter-spacing:.05em}
+  #estado>.metric>p[id]{font-size:clamp(31px,10vw,42px)!important;line-height:1!important;white-space:nowrap!important;letter-spacing:-.035em;margin-top:12px!important}
+  #estado>.metric>p:last-child{font-size:13px!important;line-height:1.35!important;margin-top:9px!important}
+  #estado>.metric.metric-white>div{display:flex!important;align-items:center!important;gap:14px!important;min-width:0}
+  .bcv-badge{width:60px!important;height:60px!important;flex:0 0 60px!important}
+  #m-bcv{font-size:clamp(26px,8vw,36px)!important;white-space:nowrap!important}
+
+  #estado+section{display:grid!important;grid-template-columns:1fr!important;gap:14px!important;margin-bottom:14px!important}
+  #estado+section>.card,#estado+section>aside,#estado+section>aside>section{width:100%;min-width:0;max-width:100%}
+  .card{border-radius:18px!important}
+  #estado+section>.card,#estado+section>aside>section,#desglose,#morosos-box,#notas{padding:18px 14px!important}
+  #estado+section h2,#desglose h2,#morosos-box h2{font-size:clamp(18px,5vw,22px)!important;line-height:1.2!important}
+  #summary{display:grid!important;grid-template-columns:1fr!important;gap:10px!important}
+  #summary>div{padding:15px!important;border-radius:16px!important}
+  #summary p,#summary span,#global-summary,#payments-body,#morosos-list{font-size:13px!important;line-height:1.45!important}
+  #summary b,#summary strong{font-size:clamp(21px,6vw,28px)!important;line-height:1.1!important}
+  #rate-card>div{padding:14px!important;border-radius:16px!important}
+  #reportBtn{min-height:52px;font-size:16px!important;border-radius:15px!important;margin-top:16px!important}
+
+  #desglose{margin-bottom:14px!important;overflow:hidden}
+  [data-vla-breakdown-host] .vla-breakdown-wrap,[data-vla-breakdown-host] .vla-breakdown-scroll{width:100%;max-width:100%;overflow-x:hidden!important}
+  [data-vla-breakdown-host] table{width:100%!important;min-width:0!important;table-layout:fixed!important;font-size:12.5px!important}
+  [data-vla-breakdown-host] th{padding:0 4px 10px!important;font-size:11px!important;line-height:1.15!important}
+  [data-vla-breakdown-host] td{padding:10px 4px!important;font-size:12px!important;line-height:1.28!important;overflow-wrap:anywhere}
+  [data-vla-breakdown-host] .vla-concept{font-size:12px!important;line-height:1.28!important}
+  [data-vla-breakdown-host] .vla-total,[data-vla-breakdown-host] .vla-share{font-size:12px!important;white-space:nowrap!important;letter-spacing:-.02em}
+  [data-vla-breakdown-host] col:first-child{width:53%!important}
+  [data-vla-breakdown-host] col:nth-child(2){width:24%!important}
+  [data-vla-breakdown-host] col:nth-child(3){width:23%!important}
+
+  #morosos-box{margin-bottom:14px!important}
+  #morosos-list>div{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:4px 0}
+  #notas{display:grid!important;grid-template-columns:34px minmax(0,1fr);gap:10px!important;border-radius:18px!important;margin-bottom:4px}
+  #notas>div{font-size:26px!important}
+  #notas p{font-size:13px!important;line-height:1.5!important;margin:0}
+
+  .mobile-bottom{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr));position:fixed!important;left:0;right:0;bottom:0;z-index:40;min-height:64px;padding-bottom:env(safe-area-inset-bottom);background:rgba(255,255,255,.97);backdrop-filter:blur(16px);border-top:1px solid rgba(15,23,42,.10)}
+  .mobile-bottom a,.mobile-bottom button{min-width:0;min-height:64px;padding:9px 4px!important;font-size:11px!important;line-height:1.25!important;text-align:center}
+
+  #modal{padding:12px!important;align-items:flex-end!important}
+  #modal>.modal-card{width:100%;max-width:100%;max-height:min(88svh,760px);padding:20px 16px!important;border-radius:24px 24px 16px 16px!important}
+  #modal input,#modal select,#modal button{min-height:48px;font-size:16px!important}
+  #modal h3{font-size:21px!important;line-height:1.2!important}
+
+  .vla-digital-signature-footer{width:100%;max-width:100%;padding:16px 10px calc(94px + env(safe-area-inset-bottom))!important}
+  .vla-digital-signature-footer .vla-signature-card{display:flex!important;max-width:100%;width:100%;flex-wrap:wrap;gap:7px!important;padding:12px 13px!important;border-radius:18px!important;font-size:10px!important;line-height:1.35!important}
+  .vla-digital-signature-footer .vla-signature-seal{font-size:9px!important}
+
+  html.dark .app-content>header,html.dark .mobile-bottom{background:rgba(2,6,23,.96)!important}
+}
+
+@media(max-width:360px){
+  .app-content>main{padding-left:8px!important;padding-right:8px!important}
+  #estado>.metric{padding:18px!important}
+  [data-vla-breakdown-host] td{padding-left:3px!important;padding-right:3px!important;font-size:11.5px!important}
+  [data-vla-breakdown-host] .vla-total,[data-vla-breakdown-host] .vla-share{font-size:11.5px!important}
+}
+
+@media(display-mode:standalone){
+  #welcome{padding-top:max(72px,calc(env(safe-area-inset-top) + 54px))}
+  .app-content>header{padding-top:env(safe-area-inset-top)}
+}
