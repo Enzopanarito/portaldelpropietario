@@ -22,7 +22,7 @@ const health={ok:true,status:'ok',generatedAt:new Date().toISOString(),checks:[
 function inject(html,isAdmin){
   const bridge='<script src="/admin-session-bridge.js"></script>';
   let extra=bridge;
-  if(isAdmin)extra+='<style>.hidden{display:none!important}.flex{display:flex}</style><link rel="stylesheet" href="/admin-premium.css"><script>(function waitForAdmin(){if(window.ready===true){var s=document.createElement("script");s.src="/admin-premium.js";s.onload=function(){var c=document.createElement("script");c.src="/admin-premium-controls.js";document.body.appendChild(c)};document.body.appendChild(s)}else setTimeout(waitForAdmin,30)})();</script>';
+  if(isAdmin)extra+='<style>.hidden{display:none!important}.flex{display:flex}</style><link rel="stylesheet" href="/admin-premium.css"><link rel="stylesheet" href="/admin-premium-polish.css"><script>(function waitForAdmin(){if(window.ready===true){var p=document.createElement("script");p.src="/admin-premium-preflight.js";p.onload=function(){var s=document.createElement("script");s.src="/admin-premium.js";s.onload=function(){var c=document.createElement("script");c.src="/admin-premium-controls.js";document.body.appendChild(c)};document.body.appendChild(s)};document.body.appendChild(p)}else setTimeout(waitForAdmin,30)})();</script>';
   return html.replace('</head>',extra+'</head>');
 }
 function fileType(file){if(file.endsWith('.js'))return'application/javascript';if(file.endsWith('.css'))return'text/css';if(file.endsWith('.html'))return'text/html; charset=utf-8';return'application/octet-stream'}
