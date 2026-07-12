@@ -1,4 +1,7 @@
-html[data-vla-admin-premium="1"] #api-restan{font-size:9px!important;line-height:1.35!important;font-weight:500!important;color:#718096!important;margin-top:7px!important;white-space:normal!important;overflow:hidden!important;text-overflow:clip!important;display:-webkit-box!important;-webkit-line-clamp:2;-webkit-box-orient:vertical;max-height:25px!important}
-html[data-vla-admin-premium="1"] #api-bar{margin-top:8px!important}
-html[data-vla-admin-premium="1"] #dashboard>.bg-white>.grid>div:has(#kpi-api){justify-content:center!important;padding-top:15px!important}
-@media(max-width:620px){html[data-vla-admin-premium="1"] #dashboard>.bg-white>.grid>div{min-height:112px!important}html[data-vla-admin-premium="1"] #api-restan{font-size:8px!important;max-height:22px!important}}
+#login input{font-size:16px!important;min-height:52px!important}
+#login button{font-size:16px!important;min-height:48px!important}
+#login p{font-size:14px!important;line-height:1.5!important}
+html[data-vla-admin-premium="1"] #api-restan{font-size:12px!important;line-height:1.45!important;font-weight:600!important;color:#64748b!important;margin-top:9px!important;white-space:normal!important;overflow:hidden!important;text-overflow:clip!important;display:-webkit-box!important;-webkit-line-clamp:3;-webkit-box-orient:vertical;max-height:54px!important}
+html[data-vla-admin-premium="1"] #api-bar{margin-top:10px!important}
+html[data-vla-admin-premium="1"] #dashboard>.bg-white>.grid>div:has(#kpi-api){justify-content:center!important;padding-top:18px!important}
+@media(max-width:620px){#login input,#login button{font-size:16px!important}html[data-vla-admin-premium="1"] #dashboard>.bg-white>.grid>div{min-height:124px!important}html[data-vla-admin-premium="1"] #api-restan{font-size:11px!important;max-height:50px!important}}
