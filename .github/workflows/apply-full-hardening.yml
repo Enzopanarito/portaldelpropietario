@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - full-system-hardening-2026-07-12
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
