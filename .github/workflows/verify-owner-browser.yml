@@ -91,18 +91,19 @@ jobs:
 
             const response = await page.goto(`${process.env.TARGET_URL}/?browser=${Date.now()}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
             await page.waitForFunction(() => {
-              const select = document.getElementById('welcomeSelector') || document.querySelector('select');
-              return select && Array.from(select.options).some(option => option.value);
+              const select = document.getElementById('welcomeSelector');
+              return select && Array.from(select.options).some(option => String(option.textContent || '').trim().startsWith('Casa 1 -'));
             }, null, { timeout: 30000 });
 
             const welcome = page.locator('#welcomeSelector');
             const firstValue = await welcome.locator('option').evaluateAll(options => {
-              const item = options.find(option => String(option.textContent || '').trim().startsWith('Casa 1 -')) || options.find(option => option.value);
+              const item = options.find(option => String(option.textContent || '').trim().startsWith('Casa 1 -'));
               return item ? item.value : '';
             });
-            if (!firstValue) throw new Error('No se encontró la Casa 1 en el selector inicial.');
+            if (!firstValue) throw new Error('No se encontró una Casa 1 válida después de cargar los propietarios.');
             await welcome.selectOption(firstValue);
             await page.getByRole('button', { name: /Consultar Estado de Cuenta/i }).click();
+            await page.locator('#main').waitFor({ state: 'visible', timeout: 15000 });
 
             const breakdown = page.locator('[data-vla-breakdown-host="2026-07-11-photo-v6"]');
             await breakdown.waitFor({ state: 'visible', timeout: 30000 });
