@@ -9,8 +9,6 @@ const viewports=[
   {name:'large-430',width:430,height:932}
 ];
 
-function number(value){return Number.parseFloat(value)||0}
-
 (async()=>{
   const browser=await chromium.launch({headless:true});
   const page=await browser.newPage({viewport:{width:390,height:844}});
@@ -38,6 +36,7 @@ function number(value){return Number.parseFloat(value)||0}
     const title=document.querySelector('#welcome h1');
     const style=node=>node&&getComputedStyle(node);
     const rect=node=>node&&node.getBoundingClientRect();
+    const num=value=>Number.parseFloat(value)||0;
     return{
       marker:document.documentElement.dataset.vlaOwnerMobile||'',
       stylesheet:Boolean(document.querySelector('link#vla-owner-mobile-v2')),
@@ -45,8 +44,8 @@ function number(value){return Number.parseFloat(value)||0}
       viewport:innerWidth,
       card:rect(card),
       selectHeight:rect(select)?.height||0,
-      selectFont:number(style(select)?.fontSize),
-      titleFont:number(style(title)?.fontSize)
+      selectFont:num(style(select)?.fontSize),
+      titleFont:num(style(title)?.fontSize)
     };
   });
   if(welcomeMetrics.marker!=='fluid-v2')throw new Error('No se activó el marcador móvil fluid-v2.');
@@ -73,6 +72,7 @@ function number(value){return Number.parseFloat(value)||0}
     const metrics=await page.evaluate(()=>{
       const rect=node=>node&&node.getBoundingClientRect();
       const style=node=>node&&getComputedStyle(node);
+      const num=value=>Number.parseFloat(value)||0;
       const cards=[...document.querySelectorAll('#estado>.metric')];
       const values=['m-total','m-vencida','m-corriente'].map(id=>document.getElementById(id)).filter(Boolean);
       const nav=document.querySelector('.mobile-bottom');
@@ -88,7 +88,7 @@ function number(value){return Number.parseFloat(value)||0}
         documentWidth:document.documentElement.scrollWidth,
         mainWidth:rect(document.getElementById('main'))?.width||0,
         cardRects:cards.map(card=>rect(card)),
-        valueFonts:values.map(node=>number(style(node)?.fontSize)),
+        valueFonts:values.map(node=>num(style(node)?.fontSize)),
         nav:{display:style(nav)?.display,position:style(nav)?.position,left:rect(nav)?.left,right:rect(nav)?.right,width:rect(nav)?.width,height:rect(nav)?.height},
         table:{left:rect(table)?.left,right:rect(table)?.right,width:rect(table)?.width,scrollWidth:table?.scrollWidth,clientWidth:table?.clientWidth},
         reportHeight:rect(report)?.height||0,
