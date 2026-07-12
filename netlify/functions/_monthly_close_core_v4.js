@@ -17,7 +17,9 @@ function compactExpense(expense) {
   const f=expense?.fields||{};return{id:expense.id,concepto:String(f.Concepto||''),monto:money(f.Monto),tipo:selectName(f['Tipo de Gasto']),forma:selectName(f['Forma de Pago']||'Bs BCV'),propietarios:[...(Array.isArray(f.Propietarios)?f.Propietarios:[])].sort()};
 }
 function compactPayment(payment) {
-  const f=payment?.fields||{};return{id:payment.id,propietarios:[...(Array.isArray(f['Propietario que Paga'])?f['Propietario que Paga']:[])].sort(),montoPagado:money(f['Monto Pagado']),montoPagadoBs:money(f['Monto Pagado Bs']),tasaBcv:Number(f['Tasa BCV Aplicada']||0),equivalenteUsd:money(f['Equivalente USD Aplicado']),forma:selectName(f['Forma de Pago']||'Bs BCV'),fecha:String(f['Fecha de Pago']||'').slice(0,10),aplicado:f['[x] Aplicado al Cierre']===true};
+  const f=payment?.fields||{};
+  const explicitForm=selectName(f['Forma de Pago']);
+  return{id:payment.id,propietarios:[...(Array.isArray(f['Propietario que Paga'])?f['Propietario que Paga']:[])].sort(),montoPagado:money(f['Monto Pagado']),montoPagadoBs:money(f['Monto Pagado Bs']),tasaBcv:Number(f['Tasa BCV Aplicada']||0),equivalenteUsd:money(f['Equivalente USD Aplicado']),forma:explicitForm||'LEGACY',fecha:String(f['Fecha de Pago']||'').slice(0,10),aplicado:f['[x] Aplicado al Cierre']===true};
 }
 function buildPlan({owners=[],expenses=[],payments=[],month}) {
   const sortedOwners=[...owners].sort((a,b)=>String(a.id).localeCompare(String(b.id)));
