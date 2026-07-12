@@ -15,6 +15,14 @@ function = "admin-auth-version"
 path = "/.netlify/functions/*"
 
 [[edge_functions]]
+function = "owner-mobile-assets"
+path = "/"
+
+[[edge_functions]]
+function = "owner-mobile-assets"
+path = "/index.html"
+
+[[edge_functions]]
 function = "owner-signature"
 path = "/"
 
