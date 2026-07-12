@@ -53,28 +53,50 @@ jobs:
           npm install --no-save --ignore-scripts playwright@1.53.0
           npx playwright install --with-deps chromium
 
-      - name: Verify table and all 15 official balances
+      - name: Verify breakdown and all 15 current canonical balances
         env:
           TARGET_URL: ${{ steps.target.outputs.url }}
+          PRODUCTION_URL: https://villalosapamates.netlify.app
         shell: bash
         run: |
           cat > verify-owner-browser.cjs <<'NODE'
           const { chromium } = require('playwright');
           const fs = require('fs');
 
-          const expected = {
-            1:85, 2:0, 3:157.07, 4:306.40, 5:85, 6:0, 7:85, 8:85,
-            9:-20, 10:298.17, 11:-378.89, 12:109.99, 13:298.17, 14:-50, 15:186.90
-          };
-
+          function money(value) {
+            return Math.round(Number(value || 0) * 100) / 100;
+          }
           function parseMoney(text) {
             const raw = String(text || '').trim();
-            const negative = raw.startsWith('-') || /saldo a favor/i.test(raw);
+            const negative = raw.startsWith('-') || /saldo a favor|a favor/i.test(raw);
             const value = Number(raw.replace(/[^0-9.]/g, '')) || 0;
-            return negative ? -value : value;
+            return money(negative ? -value : value);
+          }
+          function ownerExpected(owner) {
+            const usd = money(owner['Saldo USD Actual'] ?? owner['Deuda Anterior USD'] ?? 0);
+            const bs = money(owner['Saldo Bs Ref Actual'] ?? owner['Deuda Anterior Bs Ref'] ?? owner['Deuda Anterior'] ?? 0);
+            const total = money(owner['Saldo Total Actual'] ?? owner['Deuda Restante'] ?? (usd + bs));
+            return { usd, bs, total };
+          }
+          async function loadProductionBaseline() {
+            const url = `${process.env.PRODUCTION_URL}/.netlify/functions/public-data?force=1&audit=${Date.now()}`;
+            const response = await fetch(url, { headers: { accept: 'application/json' } });
+            if (!response.ok) throw new Error(`No se pudo leer la referencia actual de producción: HTTP ${response.status}.`);
+            const data = await response.json();
+            const owners = Array.isArray(data.propietarios) ? data.propietarios : [];
+            if (owners.length !== 15) throw new Error(`Producción devolvió ${owners.length} propietarios; se esperaban 15.`);
+            const baseline = {};
+            for (const owner of owners) {
+              const house = Number(owner.Casa);
+              if (!Number.isInteger(house) || house < 1 || house > 15) throw new Error(`Casa inválida en producción: ${owner.Casa}`);
+              baseline[house] = ownerExpected(owner);
+            }
+            if (Object.keys(baseline).length !== 15) throw new Error('La referencia de producción no contiene las 15 casas únicas.');
+            return baseline;
           }
 
           (async () => {
+            const baseline = await loadProductionBaseline();
             const browser = await chromium.launch({ headless: true });
             const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
             const pageErrors = [];
@@ -110,7 +132,7 @@ jobs:
 
             const balances = {};
             const selector = page.locator('#userSelector');
-            for (const house of Object.keys(expected).map(Number)) {
+            for (let house = 1; house <= 15; house++) {
               const value = await selector.locator('option').evaluateAll((options, houseNumber) => {
                 const prefix = `Casa ${houseNumber} -`;
                 const item = options.find(option => String(option.textContent || '').trim().startsWith(prefix));
@@ -119,17 +141,27 @@ jobs:
               if (!value) throw new Error(`No se encontró la Casa ${house}.`);
               await selector.selectOption(value);
               await page.waitForTimeout(250);
-              const shown = parseMoney(await page.locator('#m-total').innerText());
-              balances[house] = shown;
-              if (Math.abs(shown - expected[house]) > 0.009) {
-                throw new Error(`Casa ${house}: saldo visible ${shown}, esperado ${expected[house]}.`);
+
+              const shown = {
+                total: parseMoney(await page.locator('#m-total').innerText()),
+                usd: parseMoney(await page.locator('#m-usd').innerText()),
+                bs: parseMoney(await page.locator('#m-bs').innerText())
+              };
+              const expected = baseline[house];
+              balances[house] = { shown, expected };
+              for (const field of ['total', 'usd', 'bs']) {
+                if (Math.abs(shown[field] - expected[field]) > 0.009) {
+                  throw new Error(`Casa ${house}: ${field} visible ${shown[field]}, producción actual ${expected[field]}.`);
+                }
               }
             }
 
             if (pageErrors.length) throw new Error(`Errores JavaScript: ${pageErrors.join(' | ')}`);
             const result = {
               target: process.env.TARGET_URL,
+              baseline: process.env.PRODUCTION_URL,
               status: response ? response.status() : null,
+              housesVerified: Object.keys(balances).length,
               breakdownVisible: true,
               hasCostoTotal: /Costo\s*Total/i.test(breakdownText),
               hasSuParte: /Su\s*Parte/i.test(breakdownText),
