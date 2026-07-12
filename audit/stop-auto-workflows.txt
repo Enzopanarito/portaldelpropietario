@@ -1,1 +1,0 @@
-Los flujos temporales serán eliminados en el commit final de saneamiento.

@@ -1,6 +1,6 @@
 'use strict';
 
-require('./_airtable_usage_meter').install('airtable-v2');
+const { withAirtableUsage } = require('./_airtable_meter');
 
 const { requireAdmin } = require('./_auth');
 const { ensureFinancialWritesAllowed } = require('./_financial_write_lock');
@@ -26,7 +26,7 @@ function clearCache(){cache.clear()}
 function isFinancialWrite(method,table){return method!=='GET'&&['Propietarios','Gastos del Mes','Pagos','Reportes de Pago'].includes(table)}
 function reply(statusCode,body,extra={}){return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...extra},body:JSON.stringify(body)}}
 
-exports.handler=async function(event){
+const handler = async function(event){
  const auth=requireAdmin(event);if(!auth.ok)return auth.response;
  const {AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID}=process.env,{httpMethod,body}=event;
  if(!AIRTABLE_API_TOKEN||!AIRTABLE_BASE_ID)return reply(500,{message:'Variables de entorno de Airtable no configuradas.'});
@@ -48,3 +48,5 @@ exports.handler=async function(event){
    return reply(200,safeData,{'X-Cache':httpMethod==='GET'?'MISS':'BYPASS','X-Airtable-Calls':String(airtableCalls),'Cache-Control':httpMethod==='GET'?'private, max-age=60':'no-store'});
  }catch(error){return reply(503,{message:isFinancialWrite(httpMethod,target.table)?'No se pudo verificar el bloqueo financiero. La escritura fue detenida por seguridad.':'Error en la función del servidor.',detail:safeDisplayText(error.message,500)},{'X-Airtable-Calls':String(airtableCalls)});}
 };
+
+exports.handler = withAirtableUsage('airtable-v2', handler);

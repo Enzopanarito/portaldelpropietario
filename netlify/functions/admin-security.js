@@ -1,9 +1,9 @@
-require('./_airtable_usage_meter').install('admin-security');
-
 // netlify/functions/admin-security.js
 // Cambio y recuperación de contraseña con scrypt, URL confiable y límites persistentes.
 
 'use strict';
+
+const { withAirtableUsage } = require('./_airtable_meter');
 
 const crypto = require('crypto');
 const { requireAdmin, issueAdminToken } = require('./_auth');
@@ -55,7 +55,7 @@ async function rate(scope, identity, max, windowMs) {
   }
 }
 
-exports.handler = async function(event) {
+const handler = async function(event) {
   if (event.httpMethod !== 'POST') return json(405, { message: 'Method Not Allowed' });
   if (!process.env.AIRTABLE_API_TOKEN || !process.env.AIRTABLE_BASE_ID) return json(500, { message: 'Airtable no está configurado.' });
 
@@ -162,3 +162,5 @@ exports.handler = async function(event) {
     return json(500, { message: 'Error en seguridad admin.', detail: String(error.message || '').slice(0, 500) });
   }
 };
+
+exports.handler = withAirtableUsage('admin-security', handler);

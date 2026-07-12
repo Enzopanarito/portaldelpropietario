@@ -1,5 +1,4 @@
-require('./_airtable_usage_meter').install('admin-manual-payment');
-
+const { withAirtableUsage } = require('./_airtable_meter');
 // netlify/functions/admin-manual-payment.js
 // Registra pagos manuales desde el panel admin con validación fuerte y errores claros.
 // Regla contable VLA: el monto ingresado siempre es USD referencial. Si se paga en Bs BCV,
@@ -41,7 +40,7 @@ function operationKey(body, ownerId, mode, amountUsdRef, rate, reference) {
   return `FALLBACK|${ownerId}|${mode}|${amountUsdRef.toFixed(2)}|${Number(rate || 0).toFixed(6)}|${reference}|${window}`;
 }
 
-exports.handler = async function(event) {
+const handler = async function(event) {
   const auth = requireAdmin(event);
   if (!auth.ok) return auth.response;
   if (event.httpMethod !== 'POST') return json(405, { message: 'Method Not Allowed' });
@@ -175,3 +174,5 @@ exports.handler = async function(event) {
     });
   }
 };
+
+exports.handler = withAirtableUsage('admin-manual-payment', handler);

@@ -1,5 +1,3 @@
-require('./_airtable_usage_meter').install('gemini');
-
 // Ruta: netlify/functions/gemini.js (CON CÓDIGO DE DEPURACIÓN)
 
 exports.handler = async (event) => {

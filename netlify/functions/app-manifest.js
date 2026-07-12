@@ -1,5 +1,3 @@
-require('./_airtable_usage_meter').install('app-manifest');
-
 // netlify/functions/app-manifest.js
 // Manifiestos PWA dinámicos para instalar el portal como app en iPhone, Android, PC y Mac.
 

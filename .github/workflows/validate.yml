@@ -19,7 +19,7 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,6 +47,9 @@ jobs:
 
       - name: Validate protected payment approval
         run: node tests/admin-payment-flow.test.js
+
+      - name: Validate centralized Airtable API counter
+        run: node tests/api-usage-meter.test.js
 
       - name: Run security and idempotency tests
         run: node tests/stage1-security.test.js

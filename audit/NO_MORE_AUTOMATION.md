@@ -1,1 +1,0 @@
-Las automatizaciones temporales de migración deben retirarse antes del commit final.
