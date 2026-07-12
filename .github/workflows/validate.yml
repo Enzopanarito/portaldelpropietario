@@ -12,6 +12,7 @@ on:
       - fix-access-balance-engine-2026-07-11
       - fix-official-balances-all-portals-2026-07-11
       - fix-single-source-balances-2026-07-11
+      - agent/admin-10-de-10
 
 permissions:
   contents: read
@@ -71,6 +72,9 @@ jobs:
 
       - name: Run protected visual breakdown tests
         run: node tests/visual-breakdown-v4.test.js
+
+      - name: Validate accessible admin and financial write locks
+        run: node tests/admin-10-quality.test.js
 
       - name: Audit all 15 current house balances
         run: node tests/all-houses-current-balance.test.js
