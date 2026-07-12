@@ -24,8 +24,8 @@
   function layoutReady(){
     return Boolean(
       document.getElementById('vla-premium-shell')&&
-      document.documentElement.dataset.vlaAdminTen==='1'&&
-      document.getElementById('vla-feature-parity')
+      document.getElementById('vla-dashboard-panels')&&
+      document.documentElement.dataset.vlaAdminTen==='1'
     );
   }
 
@@ -58,7 +58,7 @@
         return;
       }
       attempts++;
-      if(attempts<240)requestAnimationFrame(check);else failGracefully();
+      if(attempts<360)requestAnimationFrame(check);else failGracefully();
     };
     check();
   }
