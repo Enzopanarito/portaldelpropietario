@@ -120,7 +120,7 @@ async function auditGradients(page){
   const errors=[];
   page.on('pageerror',error=>errors.push(String(error.stack||error)));
   page.on('console',message=>{if(message.type()==='error'&&!ignored.test(message.text()))errors.push(message.text())});
-  await page.addInitScript(()=>localStorage.setItem('theme','dark'));
+  await page.addInitScript(()=>{try{localStorage.setItem('theme','dark')}catch(_){}});
 
   const response=await page.goto(`${TARGET}/?dark-contrast=${Date.now()}`,{waitUntil:'domcontentloaded',timeout:60000});
   assert(response&&response.status()===200,`Portal respondió ${response&&response.status()}.`);
