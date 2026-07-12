@@ -19,5 +19,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: meter-targets
-          path: netlify/functions/*.js
+          path: |
+            netlify/functions/*.js
+            netlify/edge-functions/*.js
+            tests/*.js
+            admin.html
+            netlify.toml
+            package.json
+            package-lock.json
           retention-days: 7
