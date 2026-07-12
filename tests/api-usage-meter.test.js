@@ -19,6 +19,7 @@ process.env.AIRTABLE_BASE_ID = 'app12345678901234';
 
 delete require.cache[require.resolve('../netlify/functions/_airtable_meter')];
 const meter = require('../netlify/functions/_airtable_meter');
+const usage = require('../netlify/functions/api-usage');
 
 function validateEntrypointCoverage() {
   const directory = path.join(__dirname, '..', 'netlify', 'functions');
@@ -32,8 +33,36 @@ function validateEntrypointCoverage() {
   assert.deepStrictEqual(missing, [], `Funciones con acceso directo a Airtable sin medidor: ${missing.join(', ')}`);
 }
 
+function validateLegacyContinuity() {
+  const legacy = usage.parseLegacyEvent({
+    fields: {
+      Key: 'API_CALL_V2|2026-07|public-data|GET|OK|2026-07-12T02:19:48.134Z|legacy-id',
+      Version: 2
+    },
+    createdTime: '2026-07-12T02:19:49.000Z'
+  });
+  assert(legacy, 'Debe reconocer eventos API_CALL_V2 del contador anterior.');
+  assert.strictEqual(legacy.month, '2026-07');
+  assert.strictEqual(legacy.source, 'public-data');
+  assert.strictEqual(legacy.timestamp, '2026-07-12T02:19:48.134Z');
+  assert.strictEqual(legacy.calls, 2);
+  assert.strictEqual(legacy.legacy, true);
+  assert.strictEqual(usage.parseLegacyEvent({ fields: { Key: 'API_USAGE|2026-07|x' } }), null);
+
+  const current = usage.parseEvent({
+    fields: {
+      Key: 'API_USAGE|2026-07|public-data-v2|2026-07-12T02:46:47.043Z|new-id',
+      Version: 8
+    }
+  });
+  assert(current, 'Debe reconocer eventos API_USAGE del medidor nuevo.');
+  assert.strictEqual(current.calls, 8);
+  assert.strictEqual(current.legacy, false);
+}
+
 (async () => {
   validateEntrypointCoverage();
+  validateLegacyContinuity();
 
   const wrapped = meter.withAirtableUsage('unit-module', async () => {
     await fetch('https://api.airtable.com/v0/app123/TableA');
