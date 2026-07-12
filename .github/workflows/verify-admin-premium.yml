@@ -80,6 +80,7 @@ jobs:
             admin-responsive-large-4k.png
             admin-responsive-result.json
             admin-responsive-error.txt
+            admin-responsive-diagnostic.json
             porton-state.json
             porton-session.png
             audit-state.json
