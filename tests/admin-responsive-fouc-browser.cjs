@@ -52,7 +52,7 @@ const server=http.createServer((req,res)=>{
 });
 
 async function diagnostic(page,label){
-  const state=await page.evaluate(()=>{
+  const state=await page.evaluate((label)=>{
     const login=document.getElementById('login');
     const app=document.getElementById('app');
     const shell=document.getElementById('vla-premium-shell');
@@ -73,7 +73,7 @@ async function diagnostic(page,label){
       errors:window.__vlaBrowserErrors||[],
       bodyText:document.body.innerText.slice(0,500)
     };
-  });
+  },label);
   fs.writeFileSync('admin-responsive-diagnostic.json',JSON.stringify(state,null,2));
   return state;
 }
