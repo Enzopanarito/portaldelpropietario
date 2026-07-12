@@ -11,7 +11,7 @@ permissions:
 jobs:
   verify-admin-premium:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,6 +29,9 @@ jobs:
 
       - name: Validate admin feature parity
         run: node tests/admin-feature-parity.test.js
+
+      - name: Validate responsive admin and flash prevention
+        run: node tests/admin-responsive-fouc.test.js
 
       - name: Validate financial write lock coverage
         run: node tests/financial-write-lock-coverage.test.js
@@ -53,8 +56,11 @@ jobs:
           npm install --no-save --ignore-scripts playwright@1.53.0
           npx playwright install --with-deps chromium
 
-      - name: Run isolated browser test
+      - name: Run isolated premium browser test
         run: node tests/admin-premium-browser.cjs
+
+      - name: Run no-flash responsive browser test
+        run: node tests/admin-responsive-fouc-browser.cjs
 
       - name: Upload visual and technical evidence
         if: always()
@@ -68,6 +74,12 @@ jobs:
             admin-premium-mobile.png
             admin-premium-result.json
             admin-premium-error.txt
+            admin-responsive-mobile.png
+            admin-responsive-laptop-13.png
+            admin-responsive-desktop.png
+            admin-responsive-large-4k.png
+            admin-responsive-result.json
+            admin-responsive-error.txt
             porton-state.json
             porton-session.png
             audit-state.json
