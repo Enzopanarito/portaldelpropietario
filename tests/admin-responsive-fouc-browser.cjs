@@ -13,6 +13,7 @@ const owners=Array.from({length:15},(_,i)=>({id:`recOwner${String(i+1).padStart(
 
 const critical=`<style id="vla-admin-boot-style">
 .hidden{display:none!important}.flex{display:flex!important}
+#login.hidden{display:none!important}
 html[data-vla-admin-page="1"] #app{visibility:hidden!important;opacity:0!important}
 html[data-vla-admin-page="1"][data-vla-admin-ready="1"] #app{visibility:visible!important;opacity:1!important}
 #vla-admin-loader{display:none;position:fixed;inset:0;z-index:99999;align-items:center;justify-content:center;background:#061f3b}
