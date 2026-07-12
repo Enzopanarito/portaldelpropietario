@@ -1,0 +1,109 @@
+name: Verify Admin Production
+
+on:
+  workflow_run:
+    workflows: ["Deploy Netlify Production"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-admin-production:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Wait for production admin release
+        shell: bash
+        run: |
+          set -u -o pipefail
+          TARGET_URL="https://villalosapamates.netlify.app"
+          for attempt in $(seq 1 90); do
+            ready=1
+            headers="$(curl --silent --show-error --location --dump-header - --output /tmp/admin.html --max-time 30 "${TARGET_URL}/admin.html?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            ui="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-admin-ui"{gsub("\r","");print $2}' | tail -1)"
+            session="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-admin-session"{gsub("\r","");print $2}' | tail -1)"
+            [ "$ui" = "premium-v1" ] || ready=0
+            [ "$session" = "single-login-v1" ] || ready=0
+            grep -q 'admin-premium.css' /tmp/admin.html 2>/dev/null || ready=0
+            grep -q 'admin-session-bridge.js' /tmp/admin.html 2>/dev/null || ready=0
+            for asset in admin-premium.css admin-premium-polish.css admin-premium-preflight.js admin-premium.js admin-premium-controls.js admin-session-bridge.js; do
+              code="$(curl --silent --show-error --location --output "/tmp/${asset}" --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/${asset}?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+              [ "$code" = "200" ] || ready=0
+              [ -s "/tmp/${asset}" ] || ready=0
+            done
+            porton="$(curl --silent --show-error --location --max-time 30 "${TARGET_URL}/mkj-access.html?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            seguridad="$(curl --silent --show-error --location --max-time 30 "${TARGET_URL}/seguridad.html?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            printf '%s' "$porton" | grep -q 'admin-session-bridge.js' || ready=0
+            printf '%s' "$seguridad" | grep -q 'admin-session-bridge.js' || ready=0
+            protected="$(curl --silent --show-error --location --output /tmp/protected.json --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/.netlify/functions/admin-data" 2>/dev/null || true)"
+            [ "$protected" = "401" ] || ready=0
+            if [ "$ready" = "1" ]; then
+              echo "Producción administrativa exacta disponible."
+              exit 0
+            fi
+            echo "Intento ${attempt}: ui=${ui:-missing}, session=${session:-missing}, protected=${protected:-missing}"
+            sleep 10
+          done
+          echo "La publicación administrativa exacta no estuvo disponible."
+          exit 1
+
+      - name: Install Chromium
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.53.0
+          npx playwright install --with-deps chromium
+
+      - name: Verify production login rendering
+        shell: bash
+        run: |
+          cat > verify-admin-production.cjs <<'NODE'
+          const { chromium } = require('playwright');
+          const fs = require('fs');
+          (async () => {
+            const target = 'https://villalosapamates.netlify.app';
+            const browser = await chromium.launch({ headless: true });
+            const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+            const pageErrors = [];
+            const consoleErrors = [];
+            page.on('pageerror', error => pageErrors.push(String(error.stack || error.message || error)));
+            page.on('console', message => {
+              const text = message.text();
+              if (message.type() === 'error' && !/app\.netlify\.com|permissions policy/i.test(text)) consoleErrors.push(text);
+            });
+            const response = await page.goto(`${target}/admin.html?browser=${Date.now()}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            if (!response || response.status() !== 200) throw new Error(`Admin respondió ${response && response.status()}.`);
+            await page.locator('#login').waitFor({ state: 'visible', timeout: 20000 });
+            await page.locator('#password').waitFor({ state: 'visible', timeout: 20000 });
+            if (!await page.locator('#vla-admin-premium-css').count()) throw new Error('No se cargó el CSS premium.');
+            if (!await page.locator('#vla-admin-session-bridge').count()) throw new Error('No se cargó el puente de sesión.');
+            if (pageErrors.length) throw new Error(`Errores JavaScript: ${pageErrors.join(' | ')}`);
+            if (consoleErrors.length) throw new Error(`Errores de consola: ${consoleErrors.join(' | ')}`);
+            const result = { target, status: response.status(), loginVisible: true, premiumCss: true, sessionBridge: true, protectedAdminData: true, pageErrors, consoleErrors };
+            fs.writeFileSync('admin-production-result.json', JSON.stringify(result, null, 2));
+            await page.screenshot({ path: 'admin-production-login.png', fullPage: true });
+            console.log(JSON.stringify(result, null, 2));
+            await browser.close();
+          })().catch(error => {
+            fs.writeFileSync('admin-production-error.txt', String(error.stack || error));
+            console.error(error.stack || error);
+            process.exit(1);
+          });
+          NODE
+          node verify-admin-production.cjs
+
+      - name: Upload production evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-production-evidence
+          path: |
+            admin-production-result.json
+            admin-production-error.txt
+            admin-production-login.png
+          if-no-files-found: ignore
+          retention-days: 14
