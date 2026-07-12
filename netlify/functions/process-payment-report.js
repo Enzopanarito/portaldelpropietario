@@ -1,3 +1,5 @@
+require('./_airtable_usage_meter').install('process-payment-report');
+
 // netlify/functions/process-payment-report.js
 // Aprueba o rechaza reportes de pago y sincroniza automáticamente el acceso del portón.
 // Al aprobar, crea el pago y genera/envía el recibo PDF desde backend.

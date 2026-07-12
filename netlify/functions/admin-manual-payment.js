@@ -1,3 +1,5 @@
+require('./_airtable_usage_meter').install('admin-manual-payment');
+
 // netlify/functions/admin-manual-payment.js
 // Registra pagos manuales desde el panel admin con validación fuerte y errores claros.
 // Regla contable VLA: el monto ingresado siempre es USD referencial. Si se paga en Bs BCV,

@@ -1,3 +1,5 @@
+require('./_airtable_usage_meter').install('system-health');
+
 // netlify/functions/system-health.js
 // Panel de salud protegido para revisar componentes críticos del sistema.
 // Monitorea finanzas, Airtable, BCV, correo oficial, recibos, WhatsApp y control de acceso MKJoules.

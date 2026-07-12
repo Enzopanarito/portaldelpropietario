@@ -1,3 +1,5 @@
+require('./_airtable_usage_meter').install('audit-snapshot');
+
 // netlify/functions/audit-snapshot.js
 // Genera o repara el corte de auditoría mensual con USD y Bs BCV.
 // Nunca duplica conceptos existentes y verifica las 10 filas esperadas por propietario.

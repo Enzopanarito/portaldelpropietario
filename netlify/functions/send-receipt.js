@@ -1,3 +1,5 @@
+require('./_airtable_usage_meter').install('send-receipt');
+
 // netlify/functions/send-receipt.js
 // Crea comprobantes de pago y, si hay proveedor configurado, los envía por correo con PDF adjunto.
 // Esta función queda como endpoint manual; el servicio real está centralizado en _receipt_service.

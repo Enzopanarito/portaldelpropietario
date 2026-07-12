@@ -1,3 +1,5 @@
+require('./_airtable_usage_meter').install('airtable-backup');
+
 // netlify/functions/airtable-backup.js
 // Respaldo operativo completo con manifiesto y hashes SHA-256 verificables.
 

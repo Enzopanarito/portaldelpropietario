@@ -1,3 +1,5 @@
+require('./_airtable_usage_meter').install('whatsapp-jobs');
+
 // netlify/functions/whatsapp-jobs.js
 // Módulo liviano e independiente para órdenes de WhatsApp. No afecta admin-data ni contabilidad.
 

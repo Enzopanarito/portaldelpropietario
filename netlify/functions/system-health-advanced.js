@@ -1,5 +1,7 @@
 'use strict';
 
+require('./_airtable_usage_meter').install('system-health-advanced');
+
 const { requireAdmin } = require('./_auth');
 const { loadConfigRecord } = require('./_admin_auth_store');
 const { loadLastGood } = require('./_bcv_store');

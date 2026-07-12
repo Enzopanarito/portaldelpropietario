@@ -1,3 +1,5 @@
+require('./_airtable_usage_meter').install('public-report-payment');
+
 // netlify/functions/public-report-payment.js
 // Reporte público protegido: deduplicación, límites persistentes y notificación administrativa.
 

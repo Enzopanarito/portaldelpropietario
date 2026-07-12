@@ -1,3 +1,5 @@
+require('./_airtable_usage_meter').install('audit-close');
+
 // netlify/functions/audit-close.js
 // Archiva y limpia pagos antiguos ya aplicados al cierre sin alterar saldos operativos.
 // Estrategia: archivo verificable -> consolidado equivalente -> eliminación -> verificación por casa.
