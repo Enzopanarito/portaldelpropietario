@@ -1,0 +1,231 @@
+/* Villa Los Apamates · Admin 10/10
+   Capa de legibilidad, accesibilidad y semántica financiera.
+   Es aditiva: no elimina controles ni reemplaza la lógica existente. */
+:root{
+  --vla-green:#0b7a34;
+  --vla-green-strong:#08652c;
+  --vla-green-soft:#ecf8f0;
+  --vla-red:#c62828;
+  --vla-red-strong:#a91919;
+  --vla-red-soft:#fff0f0;
+  --vla-amber:#b77905;
+  --vla-amber-soft:#fff8e6;
+  --vla-blue:#0b4fb3;
+  --vla-navy:#061f3b;
+  --vla-ink:#0f172a;
+  --vla-muted:#64748b;
+  --vla-line:#dce4ec;
+  --vla-card-radius:22px;
+  --vla-reading-scale:1.08;
+}
+html[data-vla-reading="compact"]{--vla-reading-scale:1}
+html[data-vla-reading="large"]{--vla-reading-scale:1.08}
+html[data-vla-reading="xl"]{--vla-reading-scale:1.16}
+html[data-vla-admin-premium="1"] body{
+  font-size:calc(16px * var(--vla-reading-scale))!important;
+  background:linear-gradient(135deg,#f7fafc 0%,#f8fafc 58%,#eef7f0 100%)!important;
+}
+html[data-vla-admin-premium="1"] #vla-premium-shell{grid-template-columns:280px minmax(0,1fr)!important}
+html[data-vla-admin-premium="1"] #vla-premium-sidebar{width:280px;padding:24px 17px;background:linear-gradient(180deg,var(--vla-navy),#020b17)!important;box-shadow:12px 0 40px rgba(2,6,23,.16)}
+html[data-vla-admin-premium="1"] .vla-brand{gap:14px;padding:2px 11px 24px}
+html[data-vla-admin-premium="1"] .vla-brand-mark{width:52px;height:58px;font-size:13px}
+html[data-vla-admin-premium="1"] .vla-brand-copy{font-size:14px;line-height:1.3}
+html[data-vla-admin-premium="1"] .vla-nav{gap:7px;margin-top:21px}
+html[data-vla-admin-premium="1"] .vla-nav button,
+html[data-vla-admin-premium="1"] .vla-nav a,
+html[data-vla-admin-premium="1"] .vla-side-bottom button,
+html[data-vla-admin-premium="1"] .vla-side-bottom a{
+  min-height:48px;
+  padding:13px 14px;
+  border-radius:14px;
+  font-size:calc(14px * var(--vla-reading-scale));
+  font-weight:750;
+}
+html[data-vla-admin-premium="1"] .vla-nav button.active{
+  background:linear-gradient(135deg,#16833c,#0e6b31)!important;
+  box-shadow:0 12px 26px rgba(11,122,52,.28)!important;
+}
+html[data-vla-admin-premium="1"] .vla-nav .ico{width:23px;font-size:18px}
+html[data-vla-admin-premium="1"] #vla-premium-topbar{height:92px;padding:0 32px}
+html[data-vla-admin-premium="1"] .vla-title{font-size:calc(25px * var(--vla-reading-scale));font-weight:900}
+html[data-vla-admin-premium="1"] .vla-subtitle{font-size:calc(12px * var(--vla-reading-scale));line-height:1.4}
+html[data-vla-admin-premium="1"] .vla-icon-btn{width:46px;height:46px;border-radius:14px;font-size:18px}
+html[data-vla-admin-premium="1"] .vla-search{height:48px;min-width:310px;border-radius:14px;padding:0 15px}
+html[data-vla-admin-premium="1"] .vla-search input{font-size:calc(14px * var(--vla-reading-scale))!important}
+html[data-vla-admin-premium="1"] .vla-avatar{width:44px;height:44px;border-radius:14px;font-size:13px;background:linear-gradient(135deg,#16833c,#0e6b31)}
+html[data-vla-admin-premium="1"] #vla-premium-content{padding:32px 34px 52px;max-width:1840px}
+html[data-vla-admin-premium="1"] .section>.bg-white,
+html[data-vla-admin-premium="1"] .vla-premium-card{
+  border-radius:var(--vla-card-radius)!important;
+  border-color:rgba(15,23,42,.09)!important;
+  box-shadow:0 18px 50px rgba(15,23,42,.07)!important;
+}
+html[data-vla-admin-premium="1"] .section>.bg-white{padding:28px!important}
+html[data-vla-admin-premium="1"] .section h2{font-size:calc(25px * var(--vla-reading-scale))!important;font-weight:900!important}
+html[data-vla-admin-premium="1"] #dashboard>.bg-white>.grid{gap:16px!important;margin-bottom:22px!important}
+html[data-vla-admin-premium="1"] #dashboard>.bg-white>.grid>div,
+html[data-vla-admin-premium="1"] #vla-porton-kpi,
+html[data-vla-admin-premium="1"] #vla-reports-kpi{
+  min-height:150px!important;
+  padding:21px!important;
+  border-radius:20px!important;
+}
+html[data-vla-admin-premium="1"] #dashboard>.bg-white>.grid>div p:first-child,
+html[data-vla-admin-premium="1"] .vla-kpi-label{
+  font-size:calc(11px * var(--vla-reading-scale))!important;
+  letter-spacing:.055em!important;
+}
+html[data-vla-admin-premium="1"] #dashboard>.bg-white>.grid>div p[id],
+html[data-vla-admin-premium="1"] .vla-kpi-value{
+  font-size:calc(28px * var(--vla-reading-scale))!important;
+  font-weight:900!important;
+  margin-top:14px!important;
+}
+html[data-vla-admin-premium="1"] .vla-kpi-meta{font-size:calc(11px * var(--vla-reading-scale));line-height:1.4}
+html[data-vla-admin-premium="1"] .vla-premium-card{padding:25px}
+html[data-vla-admin-premium="1"] .vla-panel-title{font-size:calc(18px * var(--vla-reading-scale));font-weight:900}
+html[data-vla-admin-premium="1"] .vla-panel-sub{font-size:calc(12px * var(--vla-reading-scale));line-height:1.45;margin-top:5px}
+html[data-vla-admin-premium="1"] .vla-panel-head{margin-bottom:21px}
+html[data-vla-admin-premium="1"] #vla-dashboard-panels,
+html[data-vla-admin-premium="1"] #vla-dashboard-lower{gap:21px;margin-bottom:21px}
+html[data-vla-admin-premium="1"] .vla-pill{min-height:30px;padding:6px 11px;font-size:calc(11px * var(--vla-reading-scale));line-height:1.2}
+html[data-vla-admin-premium="1"] .vla-bar-head{font-size:calc(13px * var(--vla-reading-scale));margin-bottom:9px}
+html[data-vla-admin-premium="1"] .vla-bar-track{height:14px}
+html[data-vla-admin-premium="1"] .vla-bars{gap:22px}
+html[data-vla-admin-premium="1"] .vla-donut-wrap{grid-template-columns:190px 1fr;gap:22px}
+html[data-vla-admin-premium="1"] .vla-donut{width:180px;height:180px}
+html[data-vla-admin-premium="1"] .vla-donut:after{width:112px;height:112px}
+html[data-vla-admin-premium="1"] .vla-donut-center strong{font-size:31px}
+html[data-vla-admin-premium="1"] .vla-donut-center span{font-size:12px}
+html[data-vla-admin-premium="1"] .vla-legend{gap:14px}
+html[data-vla-admin-premium="1"] .vla-legend-row{grid-template-columns:10px 1fr auto;gap:9px;font-size:calc(13px * var(--vla-reading-scale))}
+html[data-vla-admin-premium="1"] .vla-dot{width:10px;height:10px}
+html[data-vla-admin-premium="1"] .vla-health-row{grid-template-columns:10px 1fr auto;gap:11px;padding:12px 0;font-size:calc(13px * var(--vla-reading-scale))}
+html[data-vla-admin-premium="1"] .vla-attention-row{grid-template-columns:46px 1fr auto;gap:13px;padding:14px 0}
+html[data-vla-admin-premium="1"] .vla-house{width:44px;height:44px;border-radius:13px;font-size:13px}
+html[data-vla-admin-premium="1"] .vla-mini{font-size:calc(11px * var(--vla-reading-scale));line-height:1.35}
+html[data-vla-admin-premium="1"] .vla-summary-row{padding:14px 0;font-size:calc(13px * var(--vla-reading-scale))}
+
+/* Tablas: lectura cómoda, cabecera fija y objetivos táctiles. */
+html[data-vla-admin-premium="1"] .vla-table-wrap,
+html[data-vla-admin-premium="1"] .overflow-x-auto{border-radius:16px;scrollbar-gutter:stable}
+html[data-vla-admin-premium="1"] table{width:100%;font-variant-numeric:tabular-nums}
+html[data-vla-admin-premium="1"] th,
+html[data-vla-admin-premium="1"] .vla-premium-table th{
+  position:sticky;
+  top:0;
+  z-index:2;
+  font-size:calc(11px * var(--vla-reading-scale))!important;
+  padding:15px 16px!important;
+  line-height:1.35;
+}
+html[data-vla-admin-premium="1"] td,
+html[data-vla-admin-premium="1"] .vla-premium-table td{
+  font-size:calc(14px * var(--vla-reading-scale))!important;
+  padding:16px!important;
+  line-height:1.45;
+  vertical-align:middle;
+}
+html[data-vla-admin-premium="1"] tbody tr{transition:background-color .16s,border-color .16s,transform .16s}
+html[data-vla-admin-premium="1"] tbody tr:hover td{background:#f7fbf8!important}
+html[data-vla-admin-premium="1"] tbody button,
+html[data-vla-admin-premium="1"] tbody a{min-height:38px;padding:8px 13px!important;font-size:calc(12px * var(--vla-reading-scale))!important;font-weight:800!important}
+html[data-vla-admin-premium="1"] input,
+html[data-vla-admin-premium="1"] select,
+html[data-vla-admin-premium="1"] textarea{min-height:48px;font-size:calc(14px * var(--vla-reading-scale))!important;padding:11px 14px!important;border-radius:14px!important}
+html[data-vla-admin-premium="1"] button,
+html[data-vla-admin-premium="1"] a{touch-action:manipulation}
+html[data-vla-admin-premium="1"] button:focus-visible,
+html[data-vla-admin-premium="1"] a:focus-visible,
+html[data-vla-admin-premium="1"] input:focus-visible,
+html[data-vla-admin-premium="1"] select:focus-visible,
+html[data-vla-admin-premium="1"] textarea:focus-visible{outline:3px solid rgba(11,122,52,.36)!important;outline-offset:3px!important}
+
+/* Semáforo financiero: el color nunca aparece sin texto de estado. */
+html[data-vla-admin-premium="1"] #owners-body tr[data-vla-state="debt"]{border-left:5px solid var(--vla-red)}
+html[data-vla-admin-premium="1"] #owners-body tr[data-vla-state="debt"] td{background:linear-gradient(90deg,rgba(198,40,40,.045),transparent 36%)}
+html[data-vla-admin-premium="1"] #owners-body tr[data-vla-state="solvent"],
+html[data-vla-admin-premium="1"] #owners-body tr[data-vla-state="credit"]{border-left:5px solid var(--vla-green)}
+html[data-vla-admin-premium="1"] #owners-body tr[data-vla-state="solvent"] td,
+html[data-vla-admin-premium="1"] #owners-body tr[data-vla-state="credit"] td{background:linear-gradient(90deg,rgba(11,122,52,.055),transparent 36%)}
+.vla-amount-debt{color:var(--vla-red)!important;font-weight:900!important}
+.vla-amount-ok{color:var(--vla-green)!important;font-weight:900!important}
+.vla-status-chip{display:inline-flex;align-items:center;gap:7px;min-height:29px;margin-left:10px;padding:5px 10px;border-radius:999px;font-size:calc(10px * var(--vla-reading-scale));font-weight:900;white-space:nowrap}
+.vla-status-chip:before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor}
+.vla-status-chip.debt{color:var(--vla-red-strong);background:var(--vla-red-soft);border:1px solid #f1c2c2}
+.vla-status-chip.solvent,.vla-status-chip.credit{color:var(--vla-green-strong);background:var(--vla-green-soft);border:1px solid #bfe4c9}
+
+/* Inteligencia de propietarios y filtros ejecutivos. */
+#vla-owner-intelligence{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:0 0 18px}
+.vla-owner-metric{border:1px solid var(--vla-line);border-radius:18px;padding:17px 19px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.055)}
+.vla-owner-metric .label{font-size:calc(11px * var(--vla-reading-scale));font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:var(--vla-muted)}
+.vla-owner-metric .value{display:block;margin-top:8px;font-size:calc(27px * var(--vla-reading-scale));font-weight:950;line-height:1}
+.vla-owner-metric .meta{display:block;margin-top:7px;font-size:calc(11px * var(--vla-reading-scale));color:var(--vla-muted)}
+.vla-owner-metric.ok .value{color:var(--vla-green)}
+.vla-owner-metric.bad .value{color:var(--vla-red)}
+.vla-owner-metric.credit .value{color:var(--vla-green)}
+#vla-owner-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin:0 0 16px;padding:13px 15px;border:1px solid var(--vla-line);border-radius:16px;background:#f8fafc}
+.vla-owner-filters{display:flex;flex-wrap:wrap;gap:8px}
+.vla-owner-filter{min-height:40px!important;padding:8px 14px!important;border:1px solid var(--vla-line)!important;background:#fff!important;color:#334155!important;border-radius:999px!important;font-size:calc(12px * var(--vla-reading-scale))!important;font-weight:850!important}
+.vla-owner-filter.active{background:var(--vla-navy)!important;color:#fff!important;border-color:var(--vla-navy)!important}
+.vla-owner-filter[data-filter="solvent"].active,.vla-owner-filter[data-filter="credit"].active{background:var(--vla-green)!important;border-color:var(--vla-green)!important}
+.vla-owner-filter[data-filter="debt"].active{background:var(--vla-red)!important;border-color:var(--vla-red)!important}
+#vla-owner-visible{font-size:calc(12px * var(--vla-reading-scale));font-weight:800;color:var(--vla-muted)}
+
+/* Vista ejecutiva de solvencia. */
+#vla-status-overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:0 0 22px}
+.vla-status-card{position:relative;overflow:hidden;border-radius:20px;padding:21px 23px;color:#fff;box-shadow:0 18px 45px rgba(2,6,23,.14)}
+.vla-status-card:after{content:"";position:absolute;right:-25px;bottom:-35px;width:120px;height:120px;border:10px solid rgba(255,255,255,.16);border-radius:50%}
+.vla-status-card.ok{background:linear-gradient(135deg,#0b7a34,#073b55)}
+.vla-status-card.bad{background:linear-gradient(135deg,#c62828,#7f1d1d)}
+.vla-status-card.credit{background:linear-gradient(135deg,#16833c,#0b4f77)}
+.vla-status-card .label{position:relative;z-index:1;font-size:calc(11px * var(--vla-reading-scale));font-weight:900;text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,.82)}
+.vla-status-card .value{position:relative;z-index:1;display:block;margin-top:10px;font-size:calc(34px * var(--vla-reading-scale));font-weight:950;line-height:1}
+.vla-status-card .meta{position:relative;z-index:1;display:block;margin-top:9px;font-size:calc(12px * var(--vla-reading-scale));color:rgba(255,255,255,.82)}
+
+/* Control de lectura. */
+#vla-reading-controls{display:flex;align-items:center;gap:5px;padding:4px;border:1px solid var(--vla-line);border-radius:14px;background:#f8fafc}
+#vla-reading-controls button{width:36px;height:36px;min-height:36px;border:0!important;border-radius:10px!important;background:transparent!important;color:#334155;font-size:14px!important;font-weight:900!important}
+#vla-reading-controls button.active{background:var(--vla-navy)!important;color:#fff!important}
+
+html.dark[data-vla-admin-premium="1"] #vla-owner-toolbar,
+html.dark[data-vla-admin-premium="1"] #vla-reading-controls,
+html.dark[data-vla-admin-premium="1"] .vla-owner-metric{background:#0e1b2d!important;border-color:#2b3e55!important}
+html.dark[data-vla-admin-premium="1"] #owners-body tr[data-vla-state] td{background:transparent!important}
+html.dark[data-vla-admin-premium="1"] .vla-owner-filter{background:#112239!important;color:#dbe7f5!important;border-color:#2b3e55!important}
+html.dark[data-vla-admin-premium="1"] #vla-reading-controls button{color:#dbe7f5}
+
+@media(max-width:1450px){
+  html[data-vla-admin-premium="1"] #vla-premium-content{padding:26px 25px 44px}
+  html[data-vla-admin-premium="1"] .vla-search{min-width:250px}
+}
+@media(max-width:1024px){
+  html[data-vla-admin-premium="1"] #vla-premium-shell{grid-template-columns:1fr!important}
+  html[data-vla-admin-premium="1"] #vla-premium-sidebar{left:-300px!important}
+  html[data-vla-admin-premium="1"] #vla-premium-sidebar.open{left:0!important}
+  html[data-vla-admin-premium="1"] #vla-premium-topbar{height:82px;padding:0 18px}
+  html[data-vla-admin-premium="1"] #vla-premium-content{padding:22px 16px 38px}
+  #vla-status-overview,#vla-owner-intelligence{grid-template-columns:1fr 1fr}
+  #vla-status-overview>*:last-child,#vla-owner-intelligence>*:last-child{grid-column:1/-1}
+}
+@media(max-width:700px){
+  html[data-vla-admin-premium="1"]{--vla-reading-scale:1.02}
+  html[data-vla-admin-premium="1"] #vla-premium-content{padding:15px 10px 30px}
+  html[data-vla-admin-premium="1"] .section>.bg-white{padding:18px!important}
+  html[data-vla-admin-premium="1"] #dashboard>.bg-white>.grid{grid-template-columns:1fr 1fr!important}
+  html[data-vla-admin-premium="1"] #dashboard>.bg-white>.grid>div,
+  html[data-vla-admin-premium="1"] #vla-porton-kpi,
+  html[data-vla-admin-premium="1"] #vla-reports-kpi{min-height:132px!important;padding:16px!important}
+  html[data-vla-admin-premium="1"] .vla-donut-wrap{grid-template-columns:1fr}
+  #vla-status-overview,#vla-owner-intelligence{grid-template-columns:1fr}
+  #vla-status-overview>*:last-child,#vla-owner-intelligence>*:last-child{grid-column:auto}
+  #vla-owner-toolbar{align-items:flex-start}
+  #vla-reading-controls{display:none}
+  html[data-vla-admin-premium="1"] th,
+  html[data-vla-admin-premium="1"] .vla-premium-table th{padding:13px!important}
+  html[data-vla-admin-premium="1"] td,
+  html[data-vla-admin-premium="1"] .vla-premium-table td{padding:14px 13px!important;min-width:105px}
+}
+@media(prefers-reduced-motion:reduce){
+  html[data-vla-admin-premium="1"] *,html[data-vla-admin-premium="1"] *:before,html[data-vla-admin-premium="1"] *:after{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}
+}

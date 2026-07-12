@@ -30,11 +30,13 @@ jobs:
             headers="$(curl --silent --show-error --location --dump-header - --output /tmp/admin.html --max-time 30 "${TARGET_URL}/admin.html?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
             ui="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-admin-ui"{gsub("\r","");print $2}' | tail -1)"
             session="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-admin-session"{gsub("\r","");print $2}' | tail -1)"
+            quality="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-admin-quality"{gsub("\r","");print $2}' | tail -1)"
             [ "$ui" = "premium-v1" ] || ready=0
             [ "$session" = "single-login-v1" ] || ready=0
-            grep -q 'admin-premium.css' /tmp/admin.html 2>/dev/null || ready=0
-            grep -q 'admin-session-bridge.js' /tmp/admin.html 2>/dev/null || ready=0
-            for asset in admin-premium.css admin-premium-polish.css admin-premium-preflight.js admin-premium.js admin-premium-controls.js admin-session-bridge.js; do
+            [ "$quality" = "10" ] || ready=0
+            grep -q 'admin-premium-10.css' /tmp/admin.html 2>/dev/null || ready=0
+            grep -q 'vla-admin-quality' /tmp/admin.html 2>/dev/null || ready=0
+            for asset in admin-premium.css admin-premium-polish.css admin-premium-10.css admin-premium-preflight.js admin-premium.js admin-premium-controls.js admin-premium-10.js admin-feature-parity.js admin-session-bridge.js; do
               code="$(curl --silent --show-error --location --output "/tmp/${asset}" --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/${asset}?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
               [ "$code" = "200" ] || ready=0
               [ -s "/tmp/${asset}" ] || ready=0
@@ -47,7 +49,7 @@ jobs:
               echo "Preview exacta disponible en ${TARGET_URL}"
               exit 0
             fi
-            echo "Intento ${attempt}: ui=${ui:-missing}, session=${session:-missing}, ready=${ready}"
+            echo "Intento ${attempt}: ui=${ui:-missing}, session=${session:-missing}, quality=${quality:-missing}, ready=${ready}"
             sleep 10
           done
           echo "La vista previa exacta no estuvo disponible."
@@ -58,7 +60,7 @@ jobs:
           npm install --no-save --ignore-scripts playwright@1.53.0
           npx playwright install --with-deps chromium
 
-      - name: Verify public login rendering
+      - name: Verify public login rendering and accessibility
         env:
           TARGET_URL: ${{ steps.target.outputs.url }}
         shell: bash
@@ -78,11 +80,20 @@ jobs:
             await page.locator('#login').waitFor({ state: 'visible', timeout: 20000 });
             await page.locator('#password').waitFor({ state: 'visible', timeout: 20000 });
             const premiumCss = await page.locator('#vla-admin-premium-css').count();
+            const premiumTenCss = await page.locator('#vla-admin-premium-10-css').count();
             const premiumMarker = await page.locator('meta[name="vla-admin-ui"][content="premium-v1"]').count();
+            const qualityMarker = await page.locator('meta[name="vla-admin-quality"][content="10"]').count();
             const bridge = await page.locator('#vla-admin-session-bridge').count();
-            if (!premiumCss || !premiumMarker || !bridge) throw new Error('Faltan recursos premium o sesión compartida en la vista previa.');
+            if (!premiumCss || !premiumTenCss || !premiumMarker || !qualityMarker || !bridge) throw new Error('Faltan recursos de calidad 10 o sesión compartida en la vista previa.');
+            const metrics = await page.evaluate(() => {
+              const input = document.getElementById('password');
+              const button = document.querySelector('#login-form button');
+              return { inputFont: parseFloat(getComputedStyle(input).fontSize), inputHeight: input.getBoundingClientRect().height, buttonHeight: button.getBoundingClientRect().height };
+            });
+            if (metrics.inputFont < 16) throw new Error(`Texto del login pequeño: ${metrics.inputFont}px.`);
+            if (metrics.inputHeight < 44 || metrics.buttonHeight < 44) throw new Error(`Objetivos táctiles insuficientes: ${JSON.stringify(metrics)}.`);
             if (pageErrors.length) throw new Error(`Errores JavaScript: ${pageErrors.join(' | ')}`);
-            const result = { target: process.env.TARGET_URL, status: response.status(), loginVisible: true, premiumCss: true, sessionBridge: true, pageErrors, consoleErrors };
+            const result = { target: process.env.TARGET_URL, status: response.status(), loginVisible: true, premiumCss: true, premiumTen: true, sessionBridge: true, readableLogin: true, metrics, pageErrors, consoleErrors };
             fs.writeFileSync('admin-preview-result.json', JSON.stringify(result, null, 2));
             await page.screenshot({ path: 'admin-preview-login.png', fullPage: true });
             console.log(JSON.stringify(result, null, 2));
