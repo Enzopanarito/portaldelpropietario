@@ -47,8 +47,45 @@ jobs:
             .hardening/part-14b.patch \
             .hardening/part-14c.patch \
             > /tmp/full-system-hardening.patch
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          patch = Path('/tmp/full-system-hardening.patch')
+          text = patch.read_text()
+          start = text.find('diff --git a/netlify/edge-functions/admin-monthly-close.js')
+          if start < 0:
+              raise SystemExit('No se encontró la sección admin-monthly-close en el paquete.')
+          end = text.find('diff --git ', start + 10)
+          text = text[:start] + (text[end:] if end >= 0 else '')
+          patch.write_text(text)
+          PY
+
           git apply --check /tmp/full-system-hardening.patch
           git apply /tmp/full-system-hardening.patch
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('netlify/edge-functions/admin-monthly-close.js')
+          text = path.read_text()
+          pattern = re.compile(
+              r"\n  const oldExpenseCall = .*?\n"
+              r"  const newExpenseCall = .*?\n"
+              r"  if \(html\.includes\(oldExpenseCall\)\) html = html\.replace\(oldExpenseCall, newExpenseCall\);\n",
+              re.S
+          )
+          updated, count = pattern.subn(
+              "\n  // La creación de gastos usa el endpoint dedicado directamente en admin.html.\n",
+              text,
+              count=1
+          )
+          if count != 1:
+              raise SystemExit(f'Bloque antiguo de gastos no encontrado: {count}')
+          path.write_text(updated)
+          PY
 
       - name: Install dependencies safely
         run: npm install --ignore-scripts --no-audit --no-fund
