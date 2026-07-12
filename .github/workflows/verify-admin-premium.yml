@@ -21,6 +21,9 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Install production dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund
+
       - name: Validate admin premium structure
         run: node tests/admin-premium.test.js
 
