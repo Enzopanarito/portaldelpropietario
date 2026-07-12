@@ -43,7 +43,22 @@ function parseEvent(record) {
     source: parts[2] || 'desconocido',
     timestamp: parts[3] || record.createdTime || '',
     calls: Math.max(0, Number(record?.fields?.Version || 0)),
-    createdTime: record.createdTime || ''
+    createdTime: record.createdTime || '',
+    legacy: false
+  };
+}
+
+function parseLegacyEvent(record) {
+  const key = String(record?.fields?.Key || '');
+  const parts = key.split('|');
+  if (parts[0] !== 'API_CALL_V2' || !parts[1]) return null;
+  return {
+    month: parts[1],
+    source: parts[2] || 'desconocido',
+    timestamp: parts[5] || record.createdTime || '',
+    calls: Math.max(0, Number(record?.fields?.Version || 0)),
+    createdTime: record.createdTime || '',
+    legacy: true
   };
 }
 
@@ -86,7 +101,7 @@ async function handler(event) {
   }
 
   try {
-    const formula = `OR(IFERROR(FIND('API_USAGE|${month}|',{Key}),0),IFERROR(FIND('API_USAGE_BASELINE|${month}|',{Key}),0),IFERROR(FIND('API_USAGE_LIMIT|${month}|',{Key}),0))`;
+    const formula = `OR(IFERROR(FIND('API_USAGE|${month}|',{Key}),0),IFERROR(FIND('API_CALL_V2|${month}|',{Key}),0),IFERROR(FIND('API_USAGE_BASELINE|${month}|',{Key}),0),IFERROR(FIND('API_USAGE_LIMIT|${month}|',{Key}),0))`;
     let records;
     try {
       records = await airtableGetAll(`?pageSize=100&filterByFormula=${encodeURIComponent(formula)}`, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID);
@@ -95,11 +110,13 @@ async function handler(event) {
       const all = await airtableGetAll('?pageSize=100', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID);
       records = all.filter(record => {
         const key = String(record?.fields?.Key || '');
-        return key.startsWith(`API_USAGE|${month}|`) || key.startsWith(`API_USAGE_BASELINE|${month}|`) || key.startsWith(`API_USAGE_LIMIT|${month}|`);
+        return key.startsWith(`API_USAGE|${month}|`) || key.startsWith(`API_CALL_V2|${month}|`) || key.startsWith(`API_USAGE_BASELINE|${month}|`) || key.startsWith(`API_USAGE_LIMIT|${month}|`);
       });
     }
 
-    const events = records.map(parseEvent).filter(eventRow => eventRow && eventRow.month === month && eventRow.calls > 0);
+    const events = records
+      .map(record => parseEvent(record) || parseLegacyEvent(record))
+      .filter(eventRow => eventRow && eventRow.month === month && eventRow.calls > 0);
     const baseline = latest(records.map(record => parseBaseline(record, month)).filter(Boolean));
     const limitRecord = latest(records.map(record => parseLimit(record, month)).filter(Boolean));
     const relevantEvents = baseline
@@ -110,9 +127,15 @@ async function handler(event) {
     let eventCalls = 0;
     let firstEvent = null;
     let lastEvent = null;
+    let legacyEvents = 0;
+    let legacyCalls = 0;
     for (const eventRow of relevantEvents) {
       eventCalls += eventRow.calls;
       bySource[eventRow.source] = (bySource[eventRow.source] || 0) + eventRow.calls;
+      if (eventRow.legacy) {
+        legacyEvents += 1;
+        legacyCalls += eventRow.calls;
+      }
       const stamp = eventRow.timestamp || eventRow.createdTime || null;
       if (stamp && (!firstEvent || stamp < firstEvent)) firstEvent = stamp;
       if (stamp && (!lastEvent || stamp > lastEvent)) lastEvent = stamp;
@@ -147,16 +170,18 @@ async function handler(event) {
         remaining: Math.max(0, limit - total),
         percent,
         events: relevantEvents.length + (current.recordedCalls > 0 ? 1 : 0),
+        legacyEvents,
+        legacyCalls,
         bySource: sortedSources,
         firstEvent,
         lastEvent,
         baseline,
-        coverage: baseline ? 'reconciliado-con-baseline' : 'medición-interna-desde-instalación',
+        coverage: baseline ? 'reconciliado-con-baseline' : 'medición-interna-continua',
         officialCounterAvailableByApi: false,
         officialCounterLocation: 'Airtable → Workspace settings → Usage',
         note: baseline
           ? 'Conteo interno reconciliado con un valor oficial capturado desde la página Usage de Airtable.'
-          : 'Conteo auditado de las llamadas realizadas por este portal. Airtable no expone por API el contador oficial del workspace; puede reconciliarse creando un baseline en ControlVersiones.'
+          : 'Conteo continuo del portal: incluye los eventos históricos API_CALL_V2 del mes y el nuevo medidor central API_USAGE. Airtable no expone por API el contador oficial del workspace.'
       })
     };
   } catch (error) {
@@ -175,4 +200,5 @@ async function handler(event) {
 
 exports.handler = withAirtableUsage('api-usage', handler);
 module.exports.parseEvent = parseEvent;
+module.exports.parseLegacyEvent = parseLegacyEvent;
 module.exports.parseBaseline = parseBaseline;
