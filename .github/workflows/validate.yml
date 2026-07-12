@@ -51,6 +51,9 @@ jobs:
       - name: Validate centralized Airtable API counter
         run: node tests/api-usage-meter.test.js
 
+      - name: Validate single admin session in Security
+        run: node tests/security-single-session.test.js
+
       - name: Run security and idempotency tests
         run: node tests/stage1-security.test.js
 
