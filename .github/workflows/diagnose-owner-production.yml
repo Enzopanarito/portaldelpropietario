@@ -1,0 +1,124 @@
+name: Diagnose Owner Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  diagnose-owner-production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Chromium
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.53.0
+          npx playwright install --with-deps chromium
+
+      - name: Diagnose live owner portal
+        shell: bash
+        run: |
+          cat > diagnose-owner.cjs <<'NODE'
+          const { chromium } = require('playwright');
+          const fs = require('fs');
+          (async () => {
+            const target = 'https://villalosapamates.netlify.app';
+            const browser = await chromium.launch({ headless: true });
+            const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+            const pageErrors = [];
+            const consoleMessages = [];
+            page.on('pageerror', error => pageErrors.push(String(error.stack || error.message || error)));
+            page.on('console', message => consoleMessages.push({ type: message.type(), text: message.text() }));
+            const sourceResponse = await page.request.get(`${target}/.netlify/functions/public-data?diagnose=${Date.now()}`, { timeout: 60000 });
+            const source = await sourceResponse.json();
+            const owners = source.propietarios || [];
+            const response = await page.goto(`${target}/?diagnose=${Date.now()}`, { waitUntil: 'load', timeout: 60000 });
+            await page.waitForFunction(() => {
+              const select = document.getElementById('welcomeSelector');
+              return select && Array.from(select.options).some(option => option.value);
+            }, null, { timeout: 30000 });
+            const welcome = page.locator('#welcomeSelector');
+            const firstValue = await welcome.locator('option').evaluateAll(options => {
+              const item = options.find(option => String(option.textContent || '').trim().startsWith('Casa 1 -')) || options.find(option => option.value);
+              return item ? item.value : '';
+            });
+            await welcome.selectOption(firstValue);
+            await page.screenshot({ path: 'owner-before-enter.png', fullPage: true });
+            await page.locator('#enterBtn').click();
+            await page.locator('#main').waitFor({ state: 'visible', timeout: 15000 });
+            await page.waitForTimeout(3000);
+            const state = await page.evaluate(() => {
+              const host = document.querySelector('[data-vla-breakdown-host="2026-07-11-photo-v6"]');
+              const breakdown = document.getElementById('breakdown');
+              let lexical = {};
+              try { lexical.currentOwnerType = eval('typeof currentOwner'); lexical.currentOwnerId = eval('currentOwner && currentOwner.id'); } catch (error) { lexical.currentOwnerError = String(error); }
+              return {
+                url: location.href,
+                readyState: document.readyState,
+                mainClass: document.getElementById('main')?.className,
+                mainDisplay: getComputedStyle(document.getElementById('main')).display,
+                welcomeValue: document.getElementById('welcomeSelector')?.value,
+                userValue: document.getElementById('userSelector')?.value,
+                visualScript: Boolean(document.getElementById('vla-visual-breakdown-2026-07-11-photo-v6')),
+                visualFlag: window.__VLA_VISUAL_BREAKDOWN || null,
+                drawType: typeof window.__VLA_RENDER_BREAKDOWN,
+                hostExists: Boolean(host),
+                hostOwner: host?.getAttribute('data-vla-breakdown-owner') || null,
+                breakdownAttribute: breakdown?.getAttribute('data-vla-breakdown-host') || null,
+                breakdownText: breakdown?.innerText?.slice(0, 1200) || '',
+                lexical
+              };
+            });
+            state.httpStatus = response && response.status();
+            state.sourceOwners = owners.length;
+            state.pageErrors = pageErrors;
+            state.consoleMessages = consoleMessages;
+            await page.screenshot({ path: 'owner-after-enter.png', fullPage: true });
+            fs.writeFileSync('owner-diagnostic.json', JSON.stringify(state, null, 2));
+            console.log(JSON.stringify(state, null, 2));
+            if (owners.length !== 15) throw new Error(`La fuente devolvió ${owners.length} casas.`);
+            if (pageErrors.length) throw new Error(`Errores JavaScript: ${pageErrors.join(' | ')}`);
+            if (!state.visualScript || state.drawType !== 'function') throw new Error('El script visual del desglose no quedó activo.');
+            if (!state.hostExists) throw new Error('El desglose automático no creó su host después de entrar.');
+            await browser.close();
+          })().catch(error => {
+            fs.writeFileSync('owner-diagnostic-error.txt', String(error.stack || error));
+            console.error(error.stack || error);
+            process.exit(1);
+          });
+          NODE
+          node diagnose-owner.cjs
+
+      - name: Upload diagnosis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: owner-production-diagnostic
+          path: |
+            owner-diagnostic.json
+            owner-diagnostic-error.txt
+            owner-before-enter.png
+            owner-after-enter.png
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Publish diagnostic status
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ job.status }}
+        run: |
+          state=failure
+          description='El diagnóstico del desglose en producción falló.'
+          if [ "$RESULT" = "success" ]; then state=success; description='El desglose automático está activo en producción.'; fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state="$state" \
+            -f context='Owner Portal Production Diagnostic' \
+            -f description="$description" \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
