@@ -48,6 +48,18 @@ jobs:
       - name: Validate protected payment approval
         run: node tests/admin-payment-flow.test.js
 
+      - name: Validate admin feature parity
+        run: node tests/admin-feature-parity.test.js
+
+      - name: Validate financial write lock coverage
+        run: node tests/financial-write-lock-coverage.test.js
+
+      - name: Validate immediate session revocation
+        run: node tests/admin-auth-version.test.js
+
+      - name: Validate legacy payment hashing
+        run: node tests/monthly-close-legacy-hash.test.js
+
       - name: Validate centralized Airtable API counter
         run: node tests/api-usage-meter.test.js
 
@@ -96,4 +108,4 @@ jobs:
           fi
 
       - name: Audit production dependencies
-        run: npm audit --omit=dev --audit-level=critical
+        run: npm audit --omit=dev --audit-level=high
