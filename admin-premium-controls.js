@@ -6,6 +6,7 @@
     items.forEach(([id,tag])=>{if(!document.getElementById(id)){const el=document.createElement(tag);el.id=id;host.appendChild(el)}});
     const login=document.getElementById('login');if(login){login.classList.add('hidden');login.style.display='none'}
     const app=document.getElementById('app');if(app){app.classList.remove('hidden');app.style.display='block'}
+    document.querySelectorAll('a[href="/porton.html"]').forEach(link=>link.setAttribute('href','/mkj-access.html'));
   }
   function bind(){
     ensureLegacyAnchors();
