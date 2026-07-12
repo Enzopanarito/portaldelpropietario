@@ -45,6 +45,20 @@ jobs:
       - name: Validate generated browser scripts
         run: node tests/injected-browser-scripts.test.js
 
+      - name: Validate smart payment amount detection
+        run: node tests/payment-report-intelligence.test.js
+
+      - name: Validate optional payment attachment security
+        run: node tests/payment-report-attachment.test.js
+
+      - name: Validate owner payment report integration
+        run: |
+          node tests/owner-payment-report-v3.test.js
+          node tests/public-report-payment-smart.test.js
+
+      - name: Validate owner gate indicators in admin
+        run: node tests/admin-owner-access-indicator.test.js
+
       - name: Validate protected payment approval
         run: node tests/admin-payment-flow.test.js
 
