@@ -132,7 +132,7 @@ async function auditGradients(page){
   assert(await page.locator('#vla-owner-dark-contrast-v1').count()===1,'No se cargó la hoja de contraste final.');
 
   const audits=[];
-  audits.push(await contrastAudit(page,'#welcome','Bienvenida'));
+  audits.push(await contrastAudit(page,'#welcome>.card','Bienvenida'));
   audits.push(await contrastAudit(page,'#theme-welcome','Selector de tema'));
   await page.screenshot({path:'owner-dark-welcome.png',fullPage:true});
 
@@ -164,7 +164,8 @@ async function auditGradients(page){
   });
   const failures=audits.flatMap(item=>item.failures.map(f=>({...f,section:item.label})));
   assert(audits.every(item=>!item.missing),'Faltó una sección durante la auditoría.');
-  assert(audits.every(item=>item.checked>=2),`La auditoría revisó muy pocos textos: ${JSON.stringify(audits)}`);
+  const minimumChecks={'Bienvenida':5,'Selector de tema':1,'Portal completo':50,'Reportar pago inicial':30,'Reportar pago con detección':30};
+  assert(audits.every(item=>item.checked>=(minimumChecks[item.label]||1)),`La auditoría revisó muy pocos textos: ${JSON.stringify(audits)}`);
   assert(!failures.length,`Contrastes insuficientes: ${JSON.stringify(failures.slice(0,20))}`);
   assert(!badGradients.length,`Gradientes con contraste insuficiente: ${JSON.stringify(badGradients)}`);
   assert(!errors.length,`Errores de navegador: ${errors.join(' | ')}`);

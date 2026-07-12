@@ -193,3 +193,8 @@ html.dark .vla-pay-cancel{background:var(--vla-dark-surface-3)!important;color:v
 html.dark .vla-pay-cancel:hover,
 html.dark .vla-pay-close:hover,
 html.dark .vla-pay-file-button:hover{background:#1e293b!important}
+
+/* Refuerzo de especificidad para textos dinámicos que llegan con utilidades posteriores. */
+html.dark body .app-content .text-slate-500,
+html.dark body .app-content .text-slate-600,
+html.dark body .app-content .text-slate-700{color:var(--vla-dark-text-muted)!important}
