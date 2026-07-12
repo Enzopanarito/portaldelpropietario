@@ -39,9 +39,10 @@ async function contrastAudit(page,rootSelector,label){
       let gradient=false;
       for(const item of chain){
         const s=getComputedStyle(item);
-        if(s.backgroundImage&&s.backgroundImage!=='none')gradient=true;
         const c=parseColor(s.backgroundColor);
-        if(c&&c.a>0)bg=blend(c,bg);
+        if(c&&c.a>=.999){bg=c;gradient=false}
+        else if(c&&c.a>0)bg=blend(c,bg);
+        if(s.backgroundImage&&s.backgroundImage!=='none')gradient=true;
       }
       return {bg,gradient};
     }
