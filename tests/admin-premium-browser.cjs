@@ -8,8 +8,12 @@ const PORT=4173;
 const TOKEN='browser-test-admin-token';
 const read=file=>fs.readFileSync(path.join(ROOT,file));
 const json=(res,status,data)=>{res.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(data))};
-const owners=Array.from({length:15},(_,i)=>({id:`recOwner${String(i+1).padStart(8,'0')}`,Casa:i+1,Propietario:`Propietario ${i+1}`,Alicuota:1/15,'Deuda Anterior USD':i%3===0?85:0,'Deuda Anterior Bs Ref':i%3===1?65:0,'Deuda Anterior':i%3===2?45:0,'Deuda Restante':i%3===0?85:i%3===1?65:45,'Saldo Oficial Activo':true,'Saldo USD Actual':i%3===0?85:0,'Saldo Bs Ref Actual':i%3===1?65:i%3===2?45:0,'Saldo Total Actual':i%3===0?85:i%3===1?65:45,'Estado Acceso Portón':'Habilitado','Última Sync MKJ':'2026-07-12T04:00:00.000Z','MKJ User ID':String(7000+i),'MKJ Email':`casa${i+1}@example.com`,Email:`casa${i+1}@example.com`}));
-const gastos=[{id:'recExpense0000001',fields:{Concepto:'VIGILANCIA',Monto:0,'Tipo de Gasto':'Gasto Común',Frecuencia:'Fijo',Propietarios:owners.map(o=>o.id),'Forma de Pago':'Bs BCV'}}];
+const balances=[85,0,-20,201.25,0,73,0,85,0,248.17,-378.89,109.99,298.17,-50,186.9];
+const owners=Array.from({length:15},(_,i)=>{
+  const total=balances[i];
+  return {id:`recOwner${String(i+1).padStart(8,'0')}`,Casa:i+1,Propietario:`Propietario ${i+1}`,Alicuota:1/15,'Deuda Anterior USD':total>0&&i%2===0?total:0,'Deuda Anterior Bs Ref':total>0&&i%2===1?total:0,'Deuda Anterior':total,'Deuda Restante':total,'Saldo Oficial Activo':true,'Saldo USD Actual':total>0&&i%2===0?total:total<0?total:0,'Saldo Bs Ref Actual':total>0&&i%2===1?total:0,'Saldo Total Actual':total,'Estado Acceso Portón':total>0?'Limitado':'Habilitado','Última Sync MKJ':'2026-07-12T04:00:00.000Z','MKJ User ID':String(7000+i),'MKJ Email':`casa${i+1}@example.com`,Email:`casa${i+1}@example.com`};
+});
+const gastos=[];
 const pagos=[];
 const reportes=[{id:'recReport00000001',fields:{Estado:'Pendiente','Propietario que Reporta':[owners[0].id],'Forma de Pago Reportada':'USD','Monto Reportado':50,Referencia:'TEST-001'}}];
 const health={ok:true,status:'ok',generatedAt:new Date().toISOString(),checks:[
@@ -22,7 +26,7 @@ const health={ok:true,status:'ok',generatedAt:new Date().toISOString(),checks:[
 function inject(html,isAdmin){
   const bridge='<script src="/admin-session-bridge.js"></script>';
   let extra=bridge;
-  if(isAdmin)extra+='<style>.hidden{display:none!important}.flex{display:flex}</style><link rel="stylesheet" href="/admin-premium.css"><link rel="stylesheet" href="/admin-premium-polish.css"><script>(function waitForAdmin(){if(window.ready===true){var p=document.createElement("script");p.src="/admin-premium-preflight.js";p.onload=function(){var s=document.createElement("script");s.src="/admin-premium.js";s.onload=function(){var c=document.createElement("script");c.src="/admin-premium-controls.js";document.body.appendChild(c)};document.body.appendChild(s)};document.body.appendChild(p)}else setTimeout(waitForAdmin,30)})();</script>';
+  if(isAdmin)extra+='<style>.hidden{display:none!important}.flex{display:flex}</style><link rel="stylesheet" href="/admin-premium.css"><link rel="stylesheet" href="/admin-premium-polish.css"><link rel="stylesheet" href="/admin-premium-10.css"><script>(function waitForAdmin(){if(window.ready===true){var p=document.createElement("script");p.src="/admin-premium-preflight.js";p.onload=function(){var s=document.createElement("script");s.src="/admin-premium.js";s.onload=function(){var c=document.createElement("script");c.src="/admin-premium-controls.js";c.onload=function(){var q=document.createElement("script");q.src="/admin-premium-10.js";document.body.appendChild(q)};document.body.appendChild(c)};document.body.appendChild(s)};document.body.appendChild(p)}else setTimeout(waitForAdmin,30)})();</script>';
   return html.replace('</head>',extra+'</head>');
 }
 function fileType(file){if(file.endsWith('.js'))return'application/javascript';if(file.endsWith('.css'))return'text/css';if(file.endsWith('.html'))return'text/html; charset=utf-8';return'application/octet-stream'}
@@ -37,6 +41,7 @@ const server=http.createServer((req,res)=>{
     if(name==='api-usage')return json(res,200,{ok:true,total:245,limit:1000,remaining:755,percent:24.5,lastEvent:new Date().toISOString(),coverage:'interno-auditado'});
     if(name==='system-health'||name==='system-health-advanced')return json(res,200,health);
     if(name==='access-mode')return json(res,200,{mode:'Automático'});
+    if(name==='process-payment-report')return json(res,200,{success:true,message:'Pago procesado en prueba segura.'});
     if(name==='whatsapp-jobs')return json(res,200,url.searchParams.get('resource')==='schedules'?{schedules:[]}:{jobs:[]});
     return json(res,200,{ok:true,message:'Mock seguro'});
   }
@@ -65,14 +70,35 @@ async function pageState(page,label){
   await page.locator('#login-form button').click();
   await page.locator('#vla-premium-shell').waitFor({state:'visible',timeout:15000});
   await page.waitForFunction(()=>document.getElementById('vla-sum-owners')?.textContent==='15');
+  await page.locator('#vla-status-overview').waitFor({state:'visible'});
   const stored=await page.evaluate(()=>({local:localStorage.getItem('vla-admin-token'),session:sessionStorage.getItem('vla-admin-token')}));
   if(stored.local!==TOKEN||stored.session!==TOKEN)throw new Error('La sesión única no se sincronizó en ambos almacenamientos.');
   if(await page.locator('#vla-dashboard-panels').count()!==1)throw new Error('No apareció el tablero premium.');
   if(await page.locator('#vla-reports-value').innerText()!=='1')throw new Error('El KPI de pagos pendientes no coincide.');
   if(!/Automático/.test(await page.locator('#vla-porton-value').innerText()))throw new Error('El estado del portón no se conectó.');
+  const donutSize=await page.locator('#vla-donut').evaluate(el=>el.getBoundingClientRect().width);
+  if(donutSize<170)throw new Error(`El gráfico sigue demasiado pequeño: ${donutSize}px.`);
+  if(await page.locator('#vla-reading-controls').count()!==1)throw new Error('No aparecieron los controles de lectura.');
   await page.screenshot({path:'admin-premium-desktop.png',fullPage:true});
+
   await page.locator('[data-vla-target="owners"]').click();
   if(!await page.locator('#owners').evaluate(el=>el.classList.contains('active')))throw new Error('La navegación a Propietarios falló.');
+  await page.locator('#vla-owner-toolbar').waitFor({state:'visible'});
+  const ownerFont=await page.locator('#owners-body td').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize));
+  if(ownerFont<14)throw new Error(`La lista de propietarios sigue pequeña: ${ownerFont}px.`);
+  for(const state of ['debt','solvent','credit'])if(await page.locator(`#owners-body tr[data-vla-state="${state}"]`).count()<1)throw new Error(`Falta el estado visual ${state}.`);
+  const debtClass=await page.locator('#owners-body tr[data-vla-state="debt"] td').nth(4).getAttribute('class');
+  const solventClass=await page.locator('#owners-body tr[data-vla-state="solvent"] td').nth(4).getAttribute('class');
+  if(!String(debtClass).includes('vla-amount-debt'))throw new Error('El saldo pendiente no está identificado en rojo.');
+  if(!String(solventClass).includes('vla-amount-ok'))throw new Error('El estado solvente no está identificado en verde.');
+  await page.locator('.vla-owner-filter[data-filter="solvent"]').click();
+  const wrongVisible=await page.locator('#owners-body tr[data-vla-state]:not([data-vla-state="solvent"]):visible').count();
+  if(wrongVisible)throw new Error('El filtro de solventes muestra filas incorrectas.');
+  await page.locator('#vla-reading-controls button[data-size="xl"]').click();
+  const reading=await page.evaluate(()=>({dataset:document.documentElement.dataset.vlaReading,stored:localStorage.getItem('vla-admin-reading-size')}));
+  if(reading.dataset!=='xl'||reading.stored!=='xl')throw new Error('El tamaño de lectura no se guardó.');
+  await page.screenshot({path:'admin-premium-owners.png',fullPage:true});
+
   await page.locator('[data-vla-target="reports"]').click();
   if(!await page.locator('#reports').evaluate(el=>el.classList.contains('active')))throw new Error('La navegación a Pagos falló.');
   await page.screenshot({path:'admin-premium-reports.png',fullPage:true});
@@ -89,6 +115,6 @@ async function pageState(page,label){
   if(!await page.locator('#vla-premium-sidebar').evaluate(el=>el.classList.contains('open')))throw new Error('El menú móvil no abre.');
   await page.screenshot({path:'admin-premium-mobile.png',fullPage:true});
   if(errors.length)throw new Error('Errores de navegador: '+errors.join(' | '));
-  fs.writeFileSync('admin-premium-result.json',JSON.stringify({premium:true,owners:15,pendingReports:1,singleSession:true,portonWithoutRelogin:true,auditWithoutRelogin:true,responsiveMenu:true},null,2));
+  fs.writeFileSync('admin-premium-result.json',JSON.stringify({premium:true,owners:15,pendingReports:1,singleSession:true,portonWithoutRelogin:true,auditWithoutRelogin:true,responsiveMenu:true,readableOwners:true,largeCharts:true,semanticStates:true,readingControls:true},null,2));
   await browser.close();server.close();console.log('ADMIN_PREMIUM_BROWSER_TESTS_OK');
 })().catch(error=>{fs.writeFileSync('admin-premium-error.txt',String(error.stack||error));console.error(error);server.close();process.exit(1)});
