@@ -87,11 +87,34 @@ assert(ownerEdge.includes('x-vla-owner-hardening'));
 const adminEdge = source('netlify/edge-functions/admin-monthly-close.js');
 assert(adminEdge.includes('system-health-advanced'));
 assert(adminEdge.includes('/verificar-respaldo.html'));
-assert(adminEdge.includes('/.netlify/functions/admin-expense'));
 assert(adminEdge.includes('x-vla-admin-hardening'));
+const adminLinks = source('netlify/edge-functions/admin-links.js');
 const adminHtml = source('admin.html');
-assert(adminHtml.includes("await adminFetch('/.netlify/functions/airtable/'+encodeURIComponent(TABLE_GASTOS),{method:'POST'"));
-assert(adminEdge.includes('oldExpenseCall'));
+assert(adminHtml.includes('/.netlify/functions/admin-expense'));
+assert(adminHtml.includes('/.netlify/functions/admin-manual-payment'));
+assert(adminHtml.includes('/.netlify/functions/process-payment-report'));
+assert(!adminHtml.includes("/.netlify/functions/airtable/'+encodeURIComponent(TABLE_PAGOS)"));
+assert(!adminHtml.includes("/.netlify/functions/airtable/'+encodeURIComponent(TABLE_REPORTES)"));
+assert(!adminHtml.includes("/.netlify/functions/airtable/'+encodeURIComponent(TABLE_GASTOS)"));
+assert(!adminLinks.includes('reportOld'));
+assert(!adminLinks.includes('manualOld'));
+assert(!adminEdge.includes('oldExpenseCall'));
+
+const meter = source('netlify/functions/_airtable_usage_meter.js');
+const usage = source('netlify/functions/api-usage.js');
+assert(meter.includes("METER_PREFIX = 'API_CALL_V2'"));
+assert(meter.includes('Version: 2'));
+assert(meter.includes('isMeterWrite'));
+assert(usage.includes("PREFIX = 'API_CALL_V2'"));
+assert(usage.includes('legacyEstimatedTotal'));
+assert(usage.includes('Airtable no expone un contador mensual oficial por API'));
+assert(adminHtml.includes('Medición exacta interna'));
+assert(!adminHtml.includes('async function loadUsage(){try'));
+
+for (const filename of fs.readdirSync(path.join(__dirname, '..', 'netlify', 'functions')).filter(name => name.endsWith('.js') && !name.startsWith('_') && name !== 'api-usage.js')) {
+  const text = source(path.join('netlify/functions', filename));
+  assert(text.includes("require('./_airtable_usage_meter').install("), `Falta medidor en ${filename}`);
+}
 
 const securityPage = source('seguridad.html');
 assert(securityPage.includes('scrypt'));
