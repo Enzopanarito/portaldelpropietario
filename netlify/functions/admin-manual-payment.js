@@ -5,11 +5,13 @@ const { withAirtableUsage } = require('./_airtable_meter');
 // el sistema guarda el equivalente en bolívares multiplicando USD ref. x tasa BCV.
 // El recibo PDF/correo se genera desde backend inmediatamente después de crear el pago.
 // Protección: una operación igual no puede crear dos pagos por doble clic o reintento de red.
+// Protección adicional: ninguna escritura financiera se permite durante un cierre mensual activo.
 
 const { requireAdmin } = require('./_auth');
 const { airtableCreateRecord, syncOwnerAccess, TABLES, money } = require('./_access_control');
 const { createAndSendReceipt } = require('./_receipt_service');
 const { begin, setState } = require('./_operation_guard');
+const { ensureFinancialWritesAllowed } = require('./_financial_write_lock');
 const { sanitizeReference, safeDisplayText, deepEscapeStrings } = require('./_security_utils');
 
 const ALLOWED_MODES = new Set(['USD', 'Bs BCV']);
@@ -51,6 +53,9 @@ const handler = async function(event) {
   let writeStage = 0;
 
   try {
+    const lock = await ensureFinancialWritesAllowed();
+    if (!lock.ok) return lock.response;
+
     const body = JSON.parse(event.body || '{}');
     const ownerId = String(body.ownerId || '').trim();
     const mode = String(body.mode || '').trim();
