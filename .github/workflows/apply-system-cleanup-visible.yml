@@ -1,0 +1,76 @@
+name: Apply System Cleanup Visible
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.ref == 'hardening-system-clean-api-meter-2026-07-12'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hardening-system-clean-api-meter-2026-07-12
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Extract and execute the reviewed cleanup patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          lines=Path('.github/workflows/apply-system-cleanup.yml').read_text('utf-8').splitlines()
+          start=None
+          for i,line in enumerate(lines):
+            if line.strip() == '- name: Move protected flows to the source and instrument Airtable calls':
+              start=i
+              break
+          if start is None: raise SystemExit('Cleanup step not found')
+          run_line=None
+          for i in range(start+1,len(lines)):
+            if lines[i].strip() == 'run: |':
+              run_line=i+1
+              break
+          if run_line is None: raise SystemExit('Cleanup run block not found')
+          block=[]
+          for line in lines[run_line:]:
+            if line.startswith('      - name:'):
+              break
+            block.append(line[10:] if line.startswith('          ') else line)
+          Path('/tmp/apply-cleanup.sh').write_text('\n'.join(block)+'\n','utf-8')
+          PY
+          bash /tmp/apply-cleanup.sh
+      - name: Validate complete system
+        shell: bash
+        run: |
+          set -euo pipefail
+          find netlify/functions -maxdepth 1 -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+          while IFS= read -r -d '' file; do node --input-type=module --check < "$file"; done < <(find netlify/edge-functions -maxdepth 1 -type f -name '*.js' -print0)
+          node tests/injected-browser-scripts.test.js
+          node tests/admin-payment-flow.test.js
+          node tests/api-usage-meter.test.js
+          node tests/stage1-security.test.js
+          node tests/stage2-audit-cleanup.test.js
+          node tests/stage3-monthly-close.test.js
+          node tests/final-hardening.test.js
+          node tests/balance-engine-v4.test.js
+          node tests/visual-breakdown-v4.test.js
+          node tests/all-houses-current-balance.test.js
+          node tests/access-balance-engine.test.js
+          node tests/official-balance-sync.test.js
+      - name: Commit functional cleanup
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add admin.html netlify/functions netlify/edge-functions tests .github/workflows/validate.yml
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Sanear flujos financieros y centralizar contador Airtable'
+          git push origin HEAD:hardening-system-clean-api-meter-2026-07-12
