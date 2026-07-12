@@ -12,6 +12,26 @@ const viewports=[
 function transparent(value){return !value||value==='transparent'||value==='rgba(0, 0, 0, 0)'}
 function painted(color,image){return !transparent(color)||Boolean(image&&image!=='none')}
 
+async function loadPortalWithOwners(page){
+  let lastError=null;
+  for(let attempt=1;attempt<=3;attempt++){
+    try{
+      const response=await page.goto(`${TARGET}/?owner-mobile-test=${Date.now()}-${attempt}`,{waitUntil:'domcontentloaded',timeout:60000});
+      if(!response||!response.ok())throw new Error(`El portal respondió ${response&&response.status()}.`);
+      await page.waitForFunction(()=>{
+        const select=document.getElementById('welcomeSelector');
+        return select&&Array.from(select.options).some(option=>/^Casa\s+1\s+-/i.test(String(option.textContent||'').trim()));
+      },null,{timeout:30000});
+      await page.waitForTimeout(300);
+      return response;
+    }catch(error){
+      lastError=error;
+      if(attempt<3)await page.waitForTimeout(attempt*700);
+    }
+  }
+  throw new Error(`No se pudo estabilizar la bienvenida móvil después de la recarga de versión: ${lastError&&lastError.message}`);
+}
+
 (async()=>{
   const browser=await chromium.launch({headless:true});
   const page=await browser.newPage({viewport:{width:390,height:844}});
@@ -27,13 +47,7 @@ function painted(color,image){return !transparent(color)||Boolean(image&&image!=
 
   // Reproduce el escenario vulnerable: el CDN visual no responde en el teléfono.
   await page.route(/https:\/\/cdn\.tailwindcss\.com(?:\/.*)?(?:\?.*)?$/,route=>{blockedTailwind++;return route.abort()});
-  const response=await page.goto(`${TARGET}/?owner-mobile-test=${Date.now()}`,{waitUntil:'domcontentloaded',timeout:60000});
-  if(!response||!response.ok())throw new Error(`El portal respondió ${response&&response.status()}.`);
-
-  await page.waitForFunction(()=>{
-    const select=document.getElementById('welcomeSelector');
-    return select&&Array.from(select.options).some(option=>/^Casa\s+1\s+-/i.test(String(option.textContent||'').trim()));
-  },null,{timeout:30000});
+  const response=await loadPortalWithOwners(page);
 
   const welcomeMetrics=await page.evaluate(()=>{
     const card=document.querySelector('#welcome>.card');
@@ -137,7 +151,7 @@ function painted(color,image){return !transparent(color)||Boolean(image&&image!=
 
   if(pageErrors.length)throw new Error(`Errores JavaScript: ${pageErrors.join(' | ')}`);
   if(consoleErrors.length)throw new Error(`Errores de consola: ${consoleErrors.join(' | ')}`);
-  const output={target:TARGET,tailwindCdnBlocked:true,blockedTailwind,welcome:welcomeMetrics,viewports:results,pageErrors,consoleErrors};
+  const output={target:TARGET,status:response.status(),tailwindCdnBlocked:true,blockedTailwind,welcome:welcomeMetrics,viewports:results,pageErrors,consoleErrors};
   fs.writeFileSync('owner-mobile-result.json',JSON.stringify(output,null,2));
   console.log('OWNER_MOBILE_BROWSER_OK');
   await browser.close();

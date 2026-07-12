@@ -45,6 +45,9 @@ jobs:
       - name: Validate generated browser scripts
         run: node tests/injected-browser-scripts.test.js
 
+      - name: Validate complete owner dark contrast
+        run: node tests/owner-dark-contrast.test.js
+
       - name: Validate smart payment amount detection
         run: node tests/payment-report-intelligence.test.js
 
