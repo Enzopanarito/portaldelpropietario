@@ -12,6 +12,7 @@ on:
       - fix-access-balance-engine-2026-07-11
       - fix-official-balances-all-portals-2026-07-11
       - fix-single-source-balances-2026-07-11
+      - full-system-hardening-2026-07-12
 
 permissions:
   contents: read
@@ -48,6 +49,15 @@ jobs:
       - name: Validate protected payment approval
         run: node tests/admin-payment-flow.test.js
 
+      - name: Validate session revocation
+        run: node tests/auth-version.test.js
+
+      - name: Validate receipt idempotency
+        run: node tests/receipt-idempotency.test.js
+
+      - name: Validate WhatsApp hardening
+        run: node tests/whatsapp-hardening.test.js
+
       - name: Run security and idempotency tests
         run: node tests/stage1-security.test.js
 
@@ -59,6 +69,9 @@ jobs:
 
       - name: Run final hardening tests
         run: node tests/final-hardening.test.js
+
+      - name: Run full system hardening tests
+        run: node tests/full-system-hardening.test.js
 
       - name: Run unified balance and prompt-payment tests
         run: node tests/balance-engine-v4.test.js
