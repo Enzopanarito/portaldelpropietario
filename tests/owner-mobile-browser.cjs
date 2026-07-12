@@ -10,6 +10,7 @@ const viewports=[
 ];
 
 function transparent(value){return !value||value==='transparent'||value==='rgba(0, 0, 0, 0)'}
+function painted(color,image){return !transparent(color)||Boolean(image&&image!=='none')}
 
 (async()=>{
   const browser=await chromium.launch({headless:true});
@@ -54,6 +55,7 @@ function transparent(value){return !value||value==='transparent'||value==='rgba(
       titleFont:num(style(title)?.fontSize),
       buttonHeight:rect(button)?.height||0,
       buttonBackground:style(button)?.backgroundColor,
+      buttonBackgroundImage:style(button)?.backgroundImage,
       buttonColor:style(button)?.color
     };
   });
@@ -64,7 +66,7 @@ function transparent(value){return !value||value==='transparent'||value==='rgba(
   if(!welcomeMetrics.card||welcomeMetrics.card.left<8||welcomeMetrics.card.right>welcomeMetrics.viewport-8)throw new Error('La tarjeta de bienvenida no cabe en el móvil.');
   if(welcomeMetrics.selectHeight<48||welcomeMetrics.selectFont<16)throw new Error('El selector móvil es pequeño o puede activar zoom de iOS.');
   if(welcomeMetrics.titleFont<25)throw new Error('El título móvil quedó demasiado pequeño.');
-  if(welcomeMetrics.buttonHeight<50||transparent(welcomeMetrics.buttonBackground)||welcomeMetrics.buttonColor==='rgb(0, 0, 0)')throw new Error('El botón de entrada perdió su estilo principal.');
+  if(welcomeMetrics.buttonHeight<50||!painted(welcomeMetrics.buttonBackground,welcomeMetrics.buttonBackgroundImage)||welcomeMetrics.buttonColor==='rgb(0, 0, 0)')throw new Error(`El botón de entrada perdió su estilo principal: ${JSON.stringify(welcomeMetrics)}.`);
 
   const ownerValue=await page.locator('#welcomeSelector option').evaluateAll(options=>{
     const option=options.find(item=>/^Casa\s+15\s+-/i.test(String(item.textContent||'').trim()))||options.find(item=>/^Casa\s+1\s+-/i.test(String(item.textContent||'').trim()));
@@ -111,7 +113,7 @@ function transparent(value){return !value||value==='transparent'||value==='rgba(
         summary:{background:style(summaryCard)?.backgroundColor,radius:num(style(summaryCard)?.borderRadius)},
         portonBackground:style(porton)?.backgroundColor,
         rateBackground:style(rateCard)?.backgroundColor,
-        report:{height:rect(report)?.height||0,background:style(report)?.backgroundColor,color:style(report)?.color,radius:num(style(report)?.borderRadius)},
+        report:{height:rect(report)?.height||0,background:style(report)?.backgroundColor,backgroundImage:style(report)?.backgroundImage,color:style(report)?.color,radius:num(style(report)?.borderRadius)},
         nav:{display:style(nav)?.display,position:style(nav)?.position,left:rect(nav)?.left,right:rect(nav)?.right,width:rect(nav)?.width,height:rect(nav)?.height,linkDecoration:style(navLink)?.textDecorationLine},
         table:{left:rect(table)?.left,right:rect(table)?.right,width:rect(table)?.width,scrollWidth:table?.scrollWidth,clientWidth:table?.clientWidth},
         signature:{left:rect(signature)?.left,right:rect(signature)?.right,width:rect(signature)?.width},
@@ -124,7 +126,7 @@ function transparent(value){return !value||value==='transparent'||value==='rgba(
     if(metrics.header.display!=='grid'||metrics.header.titleFont<22||metrics.header.selectorHeight<47||metrics.header.selectorHeight>56)throw new Error(`${viewport.name}: el encabezado móvil perdió su distribución legible: ${JSON.stringify(metrics.header)}.`);
     if(transparent(metrics.summary.background)||metrics.summary.radius<14)throw new Error(`${viewport.name}: las tarjetas de resumen no tienen estilo local.`);
     if(transparent(metrics.portonBackground)||transparent(metrics.rateBackground))throw new Error(`${viewport.name}: portón o BCV perdieron su tarjeta visual.`);
-    if(metrics.report.height<50||transparent(metrics.report.background)||metrics.report.color==='rgb(0, 0, 0)'||metrics.report.radius<14)throw new Error(`${viewport.name}: el botón de reportar pago perdió jerarquía visual.`);
+    if(metrics.report.height<50||!painted(metrics.report.background,metrics.report.backgroundImage)||metrics.report.color==='rgb(0, 0, 0)'||metrics.report.radius<14)throw new Error(`${viewport.name}: el botón de reportar pago perdió jerarquía visual: ${JSON.stringify(metrics.report)}.`);
     if(metrics.nav.display!=='grid'||metrics.nav.position!=='fixed'||Math.abs(metrics.nav.left)>2||Math.abs(metrics.nav.right-viewport.width)>2||metrics.nav.linkDecoration!=='none')throw new Error(`${viewport.name}: la navegación inferior no se adapta al ancho.`);
     if(!metrics.table.width||metrics.table.left<7||metrics.table.right>viewport.width-7||metrics.table.scrollWidth>metrics.table.clientWidth+3)throw new Error(`${viewport.name}: el desglose no cabe correctamente.`);
     if(metrics.signature.width&&((metrics.signature.left<7)||(metrics.signature.right>viewport.width-7)))throw new Error(`${viewport.name}: la firma digital sale de la pantalla.`);
