@@ -1,5 +1,5 @@
 const OWNER_PATHS=['/','/index.html'];
-const MOBILE_RELEASE='owner-mobile-fluid-v2-payment-smart-v3-dark-wcag-v1-r2-2026-07-12';
+const MOBILE_RELEASE='owner-mobile-fluid-v2-payment-smart-v3-dark-wcag-v1-r3-2026-07-12';
 const STYLE_HREF=`/owner-mobile-v2.css?v=${MOBILE_RELEASE}`;
 const LAYOUT_FIX_HREF=`/owner-mobile-v2-layout-fix.css?v=${MOBILE_RELEASE}`;
 const PAYMENT_STYLE_HREF=`/owner-payment-report-v3.css?v=${MOBILE_RELEASE}`;

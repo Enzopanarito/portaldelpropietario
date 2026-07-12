@@ -198,3 +198,4 @@ html.dark .vla-pay-file-button:hover{background:#1e293b!important}
 html.dark body .app-content .text-slate-500,
 html.dark body .app-content .text-slate-600,
 html.dark body .app-content .text-slate-700{color:var(--vla-dark-text-muted)!important}
+html.dark #estado+section h2+p{color:var(--vla-dark-text-muted)!important}
