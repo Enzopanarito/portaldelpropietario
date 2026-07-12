@@ -1,3 +1,5 @@
+require('./_airtable_usage_meter').install('admin-security');
+
 // netlify/functions/admin-security.js
 // Cambio y recuperación de contraseña con scrypt, URL confiable y límites persistentes.
 

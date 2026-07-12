@@ -1,5 +1,7 @@
 'use strict';
 
+require('./_airtable_usage_meter').install('airtable-v2');
+
 const { requireAdmin } = require('./_auth');
 const { ensureFinancialWritesAllowed } = require('./_financial_write_lock');
 const { deepEscapeStrings, safeDisplayText } = require('./_security_utils');

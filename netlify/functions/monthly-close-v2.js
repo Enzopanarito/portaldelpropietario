@@ -1,5 +1,7 @@
 'use strict';
 
+require('./_airtable_usage_meter').install('monthly-close-v2');
+
 const { requireAdmin } = require('./_auth');
 const { buildPlan } = require('./_monthly_close_core');
 const { ACTIVE_LOCK_TTL_MS, loadContext, listCloseMarkers, acquireCloseLock, setCloseMarker } = require('./_monthly_close_store');

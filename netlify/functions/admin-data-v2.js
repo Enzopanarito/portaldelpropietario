@@ -1,5 +1,7 @@
 'use strict';
 
+require('./_airtable_usage_meter').install('admin-data-v2');
+
 const { requireAdmin } = require('./_auth');
 const { deepEscapeStrings, safeDisplayText } = require('./_security_utils');
 const { calculateAllOwners, calculatedFields } = require('./_balance_engine_v4');

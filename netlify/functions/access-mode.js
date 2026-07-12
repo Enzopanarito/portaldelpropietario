@@ -1,3 +1,5 @@
+require('./_airtable_usage_meter').install('access-mode');
+
 // netlify/functions/access-mode.js
 // Lee o actualiza el modo del control de acceso del portón: Automático / Manual.
 

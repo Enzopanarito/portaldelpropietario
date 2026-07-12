@@ -1,3 +1,5 @@
+require('./_airtable_usage_meter').install('login');
+
 // netlify/functions/login.js
 // Login administrativo con scrypt/PBKDF2 compatible, token firmado y límites persistentes de abuso.
 

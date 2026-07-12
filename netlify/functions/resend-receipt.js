@@ -1,3 +1,5 @@
+require('./_airtable_usage_meter').install('resend-receipt');
+
 // netlify/functions/resend-receipt.js
 // Reenvía / crea recibo PDF para un pago existente. Útil para reparar casos donde el pago fue creado
 // por un flujo viejo o el correo falló antes de que se registrara el recibo.

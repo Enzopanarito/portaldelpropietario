@@ -1,0 +1,31 @@
+name: Scan Airtable Calls
+
+on:
+  push:
+    branches:
+      - hardening-remove-legacy-writes-2026-07-12
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Build Airtable call inventory
+        run: node scripts/scan-airtable-calls.js
+      - name: Upload inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: airtable-call-inventory
+          path: airtable-call-inventory.json
+          retention-days: 7

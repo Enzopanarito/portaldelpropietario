@@ -1,5 +1,7 @@
 'use strict';
 
+require('./_airtable_usage_meter').install('public-data-v2');
+
 const { deepEscapeStrings } = require('./_security_utils');
 const { calculateAllOwners, calculatedFields } = require('./_balance_engine_v4');
 const { attachOfficialBalances, officialControlQuery } = require('./_official_balances');

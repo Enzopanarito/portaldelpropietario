@@ -1,3 +1,5 @@
+require('./_airtable_usage_meter').install('bcv-rate');
+
 // netlify/functions/bcv-rate.js
 // Tasa BCV con fuentes redundantes, timeout y último valor válido persistente.
 

@@ -1,5 +1,7 @@
 'use strict';
 
+require('./_airtable_usage_meter').install('admin-expense');
+
 const crypto = require('crypto');
 const { requireAdmin } = require('./_auth');
 const { ensureFinancialWritesAllowed } = require('./_financial_write_lock');

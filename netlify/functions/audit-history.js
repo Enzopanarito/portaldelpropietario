@@ -1,3 +1,5 @@
+require('./_airtable_usage_meter').install('audit-history');
+
 // netlify/functions/audit-history.js
 // Consulta historial auditable con separación USD / Bs BCV.
 // No crea registros técnicos API_USAGE para no consumir el límite de Airtable.

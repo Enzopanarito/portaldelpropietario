@@ -53,7 +53,7 @@ jobs:
           npm install --no-save --ignore-scripts playwright@1.53.0
           npx playwright install --with-deps chromium
 
-      - name: Verify table and all 15 official balances
+      - name: Verify table and all 15 live balances
         env:
           TARGET_URL: ${{ steps.target.outputs.url }}
         shell: bash
@@ -61,11 +61,6 @@ jobs:
           cat > verify-owner-browser.cjs <<'NODE'
           const { chromium } = require('playwright');
           const fs = require('fs');
-
-          const expected = {
-            1:85, 2:0, 3:157.07, 4:306.40, 5:85, 6:0, 7:85, 8:85,
-            9:-20, 10:298.17, 11:-378.89, 12:109.99, 13:298.17, 14:-50, 15:186.90
-          };
 
           function parseMoney(text) {
             const raw = String(text || '').trim();
@@ -81,6 +76,17 @@ jobs:
             const consoleErrors = [];
             page.on('pageerror', error => pageErrors.push(String(error.stack || error.message || error)));
             page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
+
+            const sourceResponse = await page.request.get(`${process.env.TARGET_URL}/.netlify/functions/public-data?browser-source=${Date.now()}`, { timeout: 60000 });
+            if (!sourceResponse.ok()) throw new Error(`La fuente pública respondió ${sourceResponse.status()}.`);
+            const source = await sourceResponse.json();
+            const expected = {};
+            for (const owner of source.propietarios || []) {
+              const house = Number(owner.Casa);
+              const balance = Number(owner['Saldo Total Actual']);
+              if (Number.isFinite(house) && Number.isFinite(balance)) expected[house] = balance;
+            }
+            if (Object.keys(expected).length !== 15) throw new Error(`La fuente oficial devolvió ${Object.keys(expected).length} casas; se esperaban 15.`);
 
             const response = await page.goto(`${process.env.TARGET_URL}/?browser=${Date.now()}`, { waitUntil: 'networkidle', timeout: 60000 });
             await page.waitForFunction(() => {
@@ -110,7 +116,7 @@ jobs:
 
             const balances = {};
             const selector = page.locator('#userSelector');
-            for (const house of Object.keys(expected).map(Number)) {
+            for (const house of Object.keys(expected).map(Number).sort((a, b) => a - b)) {
               const value = await selector.locator('option').evaluateAll((options, houseNumber) => {
                 const prefix = `Casa ${houseNumber} -`;
                 const item = options.find(option => String(option.textContent || '').trim().startsWith(prefix));
@@ -122,7 +128,7 @@ jobs:
               const shown = parseMoney(await page.locator('#m-total').innerText());
               balances[house] = shown;
               if (Math.abs(shown - expected[house]) > 0.009) {
-                throw new Error(`Casa ${house}: saldo visible ${shown}, esperado ${expected[house]}.`);
+                throw new Error(`Casa ${house}: saldo visible ${shown}, fuente oficial ${expected[house]}.`);
               }
             }
 
@@ -130,11 +136,14 @@ jobs:
             const result = {
               target: process.env.TARGET_URL,
               status: response ? response.status() : null,
+              sourceGeneratedAt: source.generatedAt || null,
+              sourceBalanceEngineVersion: source.balanceEngineVersion || null,
               breakdownVisible: true,
               hasCostoTotal: /Costo\s*Total/i.test(breakdownText),
               hasSuParte: /Su\s*Parte/i.test(breakdownText),
               hasVigilancia: /VIGILANCIA/i.test(breakdownText),
               forbiddenRecargoVisible: /Recargo 10% por pérdida del pronto pago/i.test(breakdownText),
+              expected,
               balances,
               pageErrors,
               consoleErrors

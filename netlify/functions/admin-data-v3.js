@@ -1,5 +1,7 @@
 'use strict';
 
+require('./_airtable_usage_meter').install('admin-data-v3');
+
 const previous = require('./admin-data-v2');
 const { calculateAllOwners, calculatedFields } = require('./_balance_engine_v4');
 const { attachOfficialBalances, officialControlQuery } = require('./_official_balances');

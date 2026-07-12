@@ -1,3 +1,5 @@
+require('./_airtable_usage_meter').install('access-auto-sync');
+
 // netlify/functions/access-auto-sync.js
 // Sincronización automática/inteligente del acceso cómodo del portón.
 

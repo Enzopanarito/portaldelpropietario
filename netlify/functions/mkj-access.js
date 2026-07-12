@@ -1,3 +1,5 @@
+require('./_airtable_usage_meter').install('mkj-access');
+
 // netlify/functions/mkj-access.js
 // Integración MKJoules: login automático + enable/disable de usuarios por ID.
 // Las credenciales se leen únicamente desde variables privadas de Netlify.
