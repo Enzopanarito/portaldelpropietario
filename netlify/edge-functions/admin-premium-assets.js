@@ -8,8 +8,8 @@ export default async (request,context)=>{
   let html=await response.text();
   const bridge='<script id="vla-admin-session-bridge" src="/admin-session-bridge.js"></script>';
   if(!html.includes('vla-admin-session-bridge'))html=html.includes('</head>')?html.replace('</head>',bridge+'</head>'):bridge+html;
-  if(path==='/admin'||path==='/admin.html'||path.startsWith('/admin?')){
-    const assets='<meta name="vla-admin-ui" content="premium-v1"><link id="vla-admin-premium-css" rel="stylesheet" href="/admin-premium.css"><script id="vla-admin-premium-v1" src="/admin-premium.js" defer></script>';
+  if(path==='/admin'||path==='/admin.html'){
+    const assets='<meta name="vla-admin-ui" content="premium-v1"><link id="vla-admin-premium-css" rel="stylesheet" href="/admin-premium.css"><script id="vla-admin-premium-v1">(function waitForAdmin(){if(window.ready===true){var s=document.createElement("script");s.src="/admin-premium.js";s.onload=function(){var c=document.createElement("script");c.src="/admin-premium-controls.js";document.body.appendChild(c)};document.body.appendChild(s)}else setTimeout(waitForAdmin,80)})();</script>';
     if(!html.includes('vla-admin-premium-v1'))html=html.includes('</head>')?html.replace('</head>',assets+'</head>'):assets+html;
   }
   const headers=new Headers(response.headers);headers.delete('content-length');headers.delete('content-encoding');headers.set('cache-control','no-store, no-cache, must-revalidate');headers.set('content-type','text/html; charset=utf-8');headers.set('x-vla-admin-session','single-login-v1');if(html.includes('vla-admin-premium-v1'))headers.set('x-vla-admin-ui','premium-v1');
