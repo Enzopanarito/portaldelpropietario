@@ -15,13 +15,15 @@ jobs:
   verify-owner-mobile:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Validate static mobile recovery
-        run: node tests/owner-mobile-v2.test.js
+        run: |
+          node tests/owner-mobile-v2.test.js
+          node tests/owner-dark-contrast.test.js
 
       - name: Validate smart payment report structure
         run: |
@@ -40,7 +42,7 @@ jobs:
             echo "url=https://villalosapamates.netlify.app" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Wait for fluid-v2 and smart payment release
+      - name: Wait for mobile, payment and dark contrast release
         env:
           TARGET_URL: ${{ steps.target.outputs.url }}
         shell: bash
@@ -50,25 +52,28 @@ jobs:
             headers="$(curl --silent --show-error --location --dump-header - --output /tmp/owner.html --max-time 30 "${TARGET_URL}/?owner-mobile-release=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
             marker="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-owner-mobile"{gsub("\r","");print $2}' | tail -1)"
             payment_marker="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-owner-payment-report"{gsub("\r","");print $2}' | tail -1)"
+            dark_marker="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-owner-dark-contrast"{gsub("\r","");print $2}' | tail -1)"
             ready=1
             [ "$marker" = "fluid-v2" ] || ready=0
             [ "$payment_marker" = "smart-v3" ] || ready=0
+            [ "$dark_marker" = "wcag-v1" ] || ready=0
             grep -q 'owner-payment-report-v3.css' /tmp/owner.html 2>/dev/null || ready=0
+            grep -q 'owner-dark-contrast-v1.css' /tmp/owner.html 2>/dev/null || ready=0
             grep -q 'owner-payment-report-v3.js' /tmp/owner.html 2>/dev/null || ready=0
             grep -q 'payment-report-intelligence.js' /tmp/owner.html 2>/dev/null || ready=0
-            for asset in owner-mobile-v2.css owner-payment-report-v3.css owner-payment-report-v3.js payment-report-intelligence.js; do
+            for asset in owner-mobile-v2.css owner-payment-report-v3.css owner-dark-contrast-v1.css owner-payment-report-v3.js payment-report-intelligence.js; do
               code="$(curl --silent --show-error --location --output "/tmp/${asset}" --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/${asset}?v=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
               [ "$code" = "200" ] || ready=0
               [ -s "/tmp/${asset}" ] || ready=0
             done
             if [ "$ready" = "1" ]; then
-              echo "Owner mobile fluid-v2 y reporte smart-v3 disponibles en $TARGET_URL"
+              echo "Owner mobile, reporte smart-v3 y contraste wcag-v1 disponibles en $TARGET_URL"
               exit 0
             fi
-            echo "Attempt $attempt: mobile=${marker:-missing} payment=${payment_marker:-missing}"
+            echo "Attempt $attempt: mobile=${marker:-missing} payment=${payment_marker:-missing} dark=${dark_marker:-missing}"
             sleep 10
           done
-          echo "Expected owner mobile/payment release was not available."
+          echo "Expected owner mobile/payment/dark release was not available."
           exit 1
 
       - name: Install Chromium
@@ -86,6 +91,11 @@ jobs:
           TARGET_URL: ${{ steps.target.outputs.url }}
         run: node tests/owner-payment-report-browser.cjs
 
+      - name: Audit complete dark-mode contrast
+        env:
+          TARGET_URL: ${{ steps.target.outputs.url }}
+        run: node tests/owner-dark-contrast-browser.cjs
+
       - name: Upload mobile evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -99,6 +109,11 @@ jobs:
             owner-payment-report-error.txt
             owner-payment-report-mobile.png
             owner-payment-report-live-casa4.png
+            owner-dark-contrast-result.json
+            owner-dark-contrast-error.txt
+            owner-dark-welcome.png
+            owner-dark-portal.png
+            owner-dark-payment.png
           if-no-files-found: ignore
           retention-days: 14
 
@@ -111,7 +126,7 @@ jobs:
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
             -f state=success \
             -f context='Owner Mobile Production Verification' \
-            -f description='Portal móvil y reporte de pago smart-v3 verificados.' \
+            -f description='Portal móvil, reporte smart-v3 y contraste oscuro wcag-v1 verificados.' \
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
       - name: Publish failed production status
@@ -123,5 +138,5 @@ jobs:
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
             -f state=failure \
             -f context='Owner Mobile Production Verification' \
-            -f description='Falló la verificación móvil o del reporte de pago.' \
+            -f description='Falló la verificación móvil, del reporte o del contraste oscuro.' \
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
