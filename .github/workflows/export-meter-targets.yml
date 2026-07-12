@@ -1,0 +1,23 @@
+name: Export Meter Targets
+
+on:
+  push:
+    branches:
+      - hardening-remove-legacy-writes-2026-07-12
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: meter-targets
+          path: netlify/functions/*.js
+          retention-days: 7
