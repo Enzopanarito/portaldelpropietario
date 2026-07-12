@@ -1,0 +1,103 @@
+name: Verify Admin Preview
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify-admin-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve preview URL
+        id: target
+        run: echo "url=https://deploy-preview-${{ github.event.pull_request.number }}--villalosapamates.netlify.app" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for exact preview assets
+        env:
+          TARGET_URL: ${{ steps.target.outputs.url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 90); do
+            headers="$(curl --silent --show-error --location --dump-header - --output /tmp/admin.html --max-time 30 "${TARGET_URL}/admin.html?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            ui="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-admin-ui"{gsub("\r","");print $2}' | tail -1)"
+            session="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-admin-session"{gsub("\r","");print $2}' | tail -1)"
+            if [ "$ui" = "premium-v1" ] && [ "$session" = "single-login-v1" ]; then
+              grep -q 'admin-premium.css' /tmp/admin.html
+              grep -q 'admin-session-bridge.js' /tmp/admin.html
+              for asset in admin-premium.css admin-premium-polish.css admin-premium-preflight.js admin-premium.js admin-premium-controls.js admin-session-bridge.js; do
+                code="$(curl --silent --show-error --location --output "/tmp/${asset}" --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/${asset}?verify=${GITHUB_RUN_ID}")"
+                test "$code" = "200"
+                test -s "/tmp/${asset}"
+              done
+              curl --silent --show-error --location --max-time 30 "${TARGET_URL}/mkj-access.html?verify=${GITHUB_RUN_ID}" | grep -q 'admin-session-bridge.js'
+              curl --silent --show-error --location --max-time 30 "${TARGET_URL}/seguridad.html?verify=${GITHUB_RUN_ID}" | grep -q 'admin-session-bridge.js'
+              echo "Preview exacta disponible en ${TARGET_URL}"
+              exit 0
+            fi
+            echo "Intento ${attempt}: ui=${ui:-missing}, session=${session:-missing}"
+            sleep 10
+          done
+          echo "La vista previa exacta no estuvo disponible."
+          exit 1
+
+      - name: Install Chromium
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.53.0
+          npx playwright install --with-deps chromium
+
+      - name: Verify public login rendering
+        env:
+          TARGET_URL: ${{ steps.target.outputs.url }}
+        shell: bash
+        run: |
+          cat > verify-admin-preview.cjs <<'NODE'
+          const { chromium } = require('playwright');
+          const fs = require('fs');
+          (async () => {
+            const browser = await chromium.launch({ headless: true });
+            const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+            const pageErrors = [];
+            const consoleErrors = [];
+            page.on('pageerror', error => pageErrors.push(String(error.stack || error.message || error)));
+            page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+            const response = await page.goto(`${process.env.TARGET_URL}/admin.html?browser=${Date.now()}`, { waitUntil: 'networkidle', timeout: 60000 });
+            if (!response || response.status() !== 200) throw new Error(`Admin respondió ${response && response.status()}.`);
+            await page.locator('#login').waitFor({ state: 'visible', timeout: 20000 });
+            await page.locator('#password').waitFor({ state: 'visible', timeout: 20000 });
+            const premiumCss = await page.locator('#vla-admin-premium-css').count();
+            const premiumMarker = await page.locator('meta[name="vla-admin-ui"][content="premium-v1"]').count();
+            const bridge = await page.locator('#vla-admin-session-bridge').count();
+            if (!premiumCss || !premiumMarker || !bridge) throw new Error('Faltan recursos premium o sesión compartida en la vista previa.');
+            if (pageErrors.length) throw new Error(`Errores JavaScript: ${pageErrors.join(' | ')}`);
+            const result = { target: process.env.TARGET_URL, status: response.status(), loginVisible: true, premiumCss: true, sessionBridge: true, pageErrors, consoleErrors };
+            fs.writeFileSync('admin-preview-result.json', JSON.stringify(result, null, 2));
+            await page.screenshot({ path: 'admin-preview-login.png', fullPage: true });
+            console.log(JSON.stringify(result, null, 2));
+            await browser.close();
+          })().catch(error => {
+            fs.writeFileSync('admin-preview-error.txt', String(error.stack || error));
+            console.error(error.stack || error);
+            process.exit(1);
+          });
+          NODE
+          node verify-admin-preview.cjs
+
+      - name: Upload preview evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-preview-evidence
+          path: |
+            admin-preview-result.json
+            admin-preview-error.txt
+            admin-preview-login.png
+          if-no-files-found: ignore
+          retention-days: 14
