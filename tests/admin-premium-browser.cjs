@@ -75,7 +75,7 @@ async function pageState(page,label){
   await page.locator('[data-vla-target="reports"]').click();
   if(!await page.locator('#reports').evaluate(el=>el.classList.contains('active')))throw new Error('La navegación a Pagos falló.');
   await page.screenshot({path:'admin-premium-desktop.png',fullPage:true});
-  await page.goto(`http://127.0.0.1:${PORT}/porton.html`,{waitUntil:'domcontentloaded'});
+  await page.goto(`http://127.0.0.1:${PORT}/mkj-access.html`,{waitUntil:'domcontentloaded'});
   const porton=await pageState(page,'porton');
   if(!porton.hasApp||porton.appDisplay==='none'||String(porton.appClass||'').split(/\s+/).includes('hidden'))throw new Error('Portón no restauró la sesión: '+JSON.stringify(porton));
   await page.goto(`http://127.0.0.1:${PORT}/audit.html`,{waitUntil:'domcontentloaded'});
