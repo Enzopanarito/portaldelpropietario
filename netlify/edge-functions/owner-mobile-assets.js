@@ -1,6 +1,7 @@
 const OWNER_PATHS=['/','/index.html'];
 const MOBILE_RELEASE='owner-mobile-fluid-v2-2026-07-12';
 const STYLE_HREF=`/owner-mobile-v2.css?v=${MOBILE_RELEASE}`;
+const LAYOUT_FIX_HREF=`/owner-mobile-v2-layout-fix.css?v=${MOBILE_RELEASE}`;
 
 const releaseGuard=`<script id="vla-owner-mobile-release">
 (function(){
@@ -34,7 +35,7 @@ export default async (request,context)=>{
   if(!type.toLowerCase().includes('text/html'))return response;
 
   let html=await response.text();
-  const assets=`<meta name="vla-owner-mobile" content="fluid-v2"><link id="vla-owner-mobile-v2" rel="stylesheet" href="${STYLE_HREF}">${releaseGuard}`;
+  const assets=`<meta name="vla-owner-mobile" content="fluid-v2"><link id="vla-owner-mobile-v2" rel="stylesheet" href="${STYLE_HREF}"><link id="vla-owner-mobile-v2-layout-fix" rel="stylesheet" href="${LAYOUT_FIX_HREF}">${releaseGuard}`;
   if(!html.includes('id="vla-owner-mobile-v2"')){
     html=html.includes('</head>')?html.replace('</head>',assets+'</head>'):assets+html;
   }
