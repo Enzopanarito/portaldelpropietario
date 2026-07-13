@@ -70,7 +70,7 @@ const dataset=buildSanitizedDataset({
   control:[{id:'b',fields:{Key:'CURRENT_BALANCE|2026-07|HOUSE=1',Version:20260711}},{id:'c',fields:{Key:'FIN_OP|secret',Version:1}}]
 });
 assert.deepStrictEqual(summarize(dataset),{owners:1,expenses:1,payments:1,reports:1,control:1});
-assert.strictEqual(dataset.reports[0].fields.Referencia,'STG-urce01');
+assert.strictEqual(dataset.reports[0].fields.Referencia,'STG-Source01');
 assert(!JSON.stringify(dataset).includes('REAL-REFERENCE'));
 const linked=mapOwnerLinks(dataset.expenses[0],new Map([[sourceOwner.id,'recTargetOwner001']]),'Propietarios');
 assert.deepStrictEqual(linked.Propietarios,['recTargetOwner001']);
