@@ -1,5 +1,7 @@
 'use strict';
 
+const { assertSafeAirtableContext, isolationResponse } = require('./_environment_guard');
+
 const TABLE = 'ControlVersiones';
 const PREFIX = 'MONTHLY_CLOSE|';
 const ACTIVE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -31,6 +33,7 @@ function parse(record) {
 }
 
 async function getActiveMonthlyClose() {
+  assertSafeAirtableContext({ write: true, allowUnclassified: true });
   if (!process.env.AIRTABLE_API_TOKEN || !process.env.AIRTABLE_BASE_ID) return null;
   const formula = encodeURIComponent(`LEFT({Key}, ${PREFIX.length})='${PREFIX}'`);
   const data = await request(`?filterByFormula=${formula}`);
@@ -49,6 +52,11 @@ async function getActiveMonthlyClose() {
 }
 
 async function ensureFinancialWritesAllowed() {
+  try {
+    assertSafeAirtableContext({ write: true, allowUnclassified: true });
+  } catch (error) {
+    return { ok: false, environmentIsolation: true, response: isolationResponse(error) };
+  }
   const active = await getActiveMonthlyClose();
   if (!active) return { ok: true };
   return {
