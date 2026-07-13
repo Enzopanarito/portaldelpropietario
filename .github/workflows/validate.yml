@@ -74,6 +74,17 @@ jobs:
       - name: Validate financial write lock coverage
         run: node tests/financial-write-lock-coverage.test.js
 
+      - name: Validate strict Airtable environment isolation
+        run: node tests/environment-guard.test.js
+
+      - name: Validate atomic critical-operation idempotency
+        run: node tests/idempotency-store.test.js
+
+      - name: Validate public balance snapshot storage
+        run: |
+          node tests/public-snapshot-store.test.js
+          node tests/public-data-v3.test.js
+
       - name: Validate immediate session revocation
         run: node tests/admin-auth-version.test.js
 
