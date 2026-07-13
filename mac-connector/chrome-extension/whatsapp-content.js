@@ -71,6 +71,9 @@
     }
     return matches;
   }
+  function sendErrorVisible() {
+    return /(message was not sent|mensaje no enviado|no se pudo enviar|retry sending|reintentar env[ií]o)/i.test(bodyText());
+  }
   async function waitUntil(check, timeoutMs, intervalMs = 250) {
     const deadline = Date.now() + timeoutMs;
     let lastError;
@@ -127,7 +130,7 @@
     if (!state) return { ok: true, status: 'verify', clicked: false, errorCode: 'PREPARATION_MISSING', error: 'La preparación no existe en la pestaña activa.' };
     if (Date.now() - state.preparedAt > 120000) {
       prepared.delete(attemptId);
-      return { ok: true, status: 'verify', clicked: false, errorCode: 'PREPARATION_EXPIRED', error: 'La preparación expiró.' };
+      return { ok: true, status: 'failed', clicked: false, errorCode: 'PREPARATION_EXPIRED', error: 'La preparación expiró antes de activar Enviar.' };
     }
     const editor = composer();
     const actual = composerText(editor);
@@ -137,25 +140,30 @@
     const chatPhoneMatch = digits === urlPhone;
     if (!editor || actualHash !== state.messageHash || !chatPhoneMatch) {
       prepared.delete(attemptId);
-      return { ok: true, status: 'verify', clicked: false, errorCode: 'PRE_SEND_STATE_CHANGED', error: 'El destinatario o el texto cambió después de preparar.', evidence: { chatPhoneMatch, composerCleared: false, outgoingBubble: false, messageHash: actualHash } };
+      return { ok: true, status: 'failed', clicked: false, errorCode: 'PRE_SEND_STATE_CHANGED', error: 'El destinatario o el texto cambió después de preparar.', evidence: { chatPhoneMatch, composerCleared: false, outgoingBubble: false, messageHash: actualHash } };
     }
     const button = sendButton();
     if (!button) {
       prepared.delete(attemptId);
-      return { ok: true, status: 'verify', clicked: false, errorCode: 'SEND_CONTROL_MISSING', error: 'No se encontró el control de envío.', evidence: { chatPhoneMatch, composerCleared: false, outgoingBubble: false, messageHash: state.messageHash } };
+      return { ok: true, status: 'failed', clicked: false, errorCode: 'SEND_CONTROL_MISSING', error: 'No se encontró el control de envío antes de hacer clic.', evidence: { chatPhoneMatch, composerCleared: false, outgoingBubble: false, messageHash: state.messageHash } };
     }
     const beforeIds = new Set(state.baseline.outgoingIds || []);
     const beforeCount = Number(state.baseline.outgoingMatchCount || 0);
+
+    // La autorización de clic es de un solo uso. Se consume antes de activar Enviar.
+    // Si Chrome o el script fallan después de este punto, un reintento no podrá volver a hacer clic.
+    prepared.delete(attemptId);
     button.click();
     const evidence = await waitUntil(async () => {
       const cleared = composerText() === '';
       const matches = outgoingMatches(state.text);
       const newMatch = matches.find(item => item.id && !beforeIds.has(item.id));
       const outgoingBubble = Boolean(newMatch) || matches.length > beforeCount;
+      if (sendErrorVisible()) return { failedAfterClick: true, composerCleared: cleared, outgoingBubble, outgoingId: newMatch && newMatch.id || '', chatPhoneMatch, messageHash: state.messageHash };
       if (cleared && outgoingBubble) return { composerCleared: true, outgoingBubble: true, outgoingId: newMatch && newMatch.id || '', chatPhoneMatch, messageHash: state.messageHash };
       return null;
     }, 30000, 300);
-    prepared.delete(attemptId);
+    if (evidence && evidence.failedAfterClick) return { ok: true, status: 'verify', clicked: true, errorCode: 'WHATSAPP_SEND_ERROR_AFTER_CLICK', error: 'WhatsApp mostró un error después de activar Enviar; se requiere verificación humana.', evidence };
     if (evidence) return { ok: true, status: 'sent', clicked: true, evidence };
     const fallback = { composerCleared: composerText() === '', outgoingBubble: false, outgoingId: '', chatPhoneMatch, messageHash: state.messageHash };
     return { ok: true, status: 'verify', clicked: true, errorCode: 'SEND_CONFIRMATION_UNCERTAIN', error: 'Se activó Enviar, pero la burbuja saliente no pudo confirmarse.', evidence: fallback };
