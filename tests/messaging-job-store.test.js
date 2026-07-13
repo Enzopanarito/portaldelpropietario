@@ -3,7 +3,8 @@
 const assert=require('assert');
 const {createJobPayload}=require('../netlify/functions/_messaging_queue_core');
 const {
-  JobConflictError,setStoreFactoryForTests,jobKey,metadataForJob,createJob,readJob,requireJob,compareAndSetJob,listJobs
+  JobConflictError,IdempotencyConflictError,setStoreFactoryForTests,jobKey,idempotencyKey,metadataForJob,
+  createJob,readJob,requireJob,compareAndSetJob,listJobs,claimIdempotencyKeys,releaseIdempotencyKeys
 }=require('../netlify/functions/_messaging_job_store');
 
 class FakeStore{
@@ -12,14 +13,15 @@ class FakeStore{
     const current=this.map.get(key);
     if(options.onlyIfNew&&current)return{modified:false};
     if(options.onlyIfMatch&&(!current||current.etag!==options.onlyIfMatch))return{modified:false};
-    const etag=`\"etag-${++this.counter}\"`;
+    const etag=`"etag-${++this.counter}"`;
     this.map.set(key,{data:JSON.parse(JSON.stringify(data)),etag,metadata:JSON.parse(JSON.stringify(options.metadata||{}))});
     return{modified:true,etag};
   }
   async getWithMetadata(key){const entry=this.map.get(key);return entry?JSON.parse(JSON.stringify(entry)):null;}
   async list({prefix='' }={}){return{blobs:[...this.map.entries()].filter(([key])=>key.startsWith(prefix)).map(([key,value])=>({key,etag:value.etag})),directories:[]};}
+  async delete(key){this.map.delete(key);}
 }
-function snapshot(house){return{sendable:true,errors:[],house,ownerId:`owner-${house}`,ownerName:`P ${house}`,phone:`+5841412300${String(house).padStart(2,'0')}`,phoneMasked:`+********00${String(house).padStart(2,'0')}`,message:`Mensaje ${house}`,messageHash:'b'.repeat(64),snapshotHash:String(house).padStart(64,'a').slice(-64),idempotencyKey:String(house).padStart(64,'c').slice(-64),payableUsd:85,payableBsRef:0,payableTotalRef:85,internalSurchargeBsRef:0,officialCutoff:'2026-07-11T19:10:08.000Z'};}
+function snapshot(house){return{sendable:true,errors:[],house,ownerId:`owner-${house}`,ownerName:`P ${house}`,phone:`+5841412300${String(house).padStart(2,'0')}`,phoneMasked:`+********00${String(house).padStart(2,'0')}`,message:`Mensaje ${house}`,messageHash:'b'.repeat(64),debtIdentityHash:'d'.repeat(64),snapshotHash:String(house).padStart(64,'a').slice(-64),idempotencyKey:String(house).padStart(64,'c').slice(-64),payableUsd:85,payableBsRef:0,payableTotalRef:85,internalSurchargeBsRef:0,officialCutoff:'2026-07-11T19:10:08.000Z'};}
 
 (async()=>{
   const store=new FakeStore();setStoreFactoryForTests(()=>store);
@@ -41,6 +43,20 @@ function snapshot(house){return{sendable:true,errors:[],house,ownerId:`owner-${h
   await assert.rejects(()=>compareAndSetJob(job.jobId,read.etag,stale),error=>error instanceof JobConflictError);
   const latest=await requireJob(job.jobId);
   assert.strictEqual(latest.job.revision,next.revision);
+
+  const ledgerA='1'.repeat(64),ledgerB='2'.repeat(64);
+  const claims=await claimIdempotencyKeys([ledgerA,ledgerB],{jobId:job.jobId,mode:'Simulación',claimedAt:job.createdAt});
+  assert.deepStrictEqual(claims,[ledgerA,ledgerB]);
+  assert(store.map.has(idempotencyKey(ledgerA)));
+  await assert.rejects(()=>claimIdempotencyKeys([ledgerA],{jobId:job.jobId,mode:'Simulación'}),error=>error instanceof IdempotencyConflictError);
+  await releaseIdempotencyKeys([ledgerA,ledgerB]);
+  assert.strictEqual(store.map.has(idempotencyKey(ledgerA)),false);
+
+  // Si una reserva parcial encuentra conflicto, debe deshacer las claves adquiridas en esa misma operación.
+  await claimIdempotencyKeys([ledgerB],{jobId:job.jobId,mode:'Simulación'});
+  const ledgerC='3'.repeat(64);
+  await assert.rejects(()=>claimIdempotencyKeys([ledgerC,ledgerB],{jobId:job.jobId,mode:'Simulación'}),error=>error instanceof IdempotencyConflictError);
+  assert.strictEqual(store.map.has(idempotencyKey(ledgerC)),false);
 
   const newer=createJobPayload({recipients:[snapshot(2)],createdAt:'2026-07-13T12:00:00.000Z'});
   await createJob(newer);
