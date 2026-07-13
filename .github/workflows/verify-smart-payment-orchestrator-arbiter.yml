@@ -1,0 +1,78 @@
+name: Verify Smart Payment Orchestrator and Arbiter
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'netlify/functions/_payment_processing_store.js'
+      - 'netlify/functions/_payment_processing_orchestrator.js'
+      - 'netlify/functions/_payment_deterministic_arbiter.js'
+      - 'tests/payment-processing-store.test.js'
+      - 'tests/payment-processing-orchestrator.test.js'
+      - 'tests/payment-deterministic-arbiter.test.js'
+      - '.github/workflows/verify-smart-payment-orchestrator-arbiter.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'netlify/functions/_payment_processing_store.js'
+      - 'netlify/functions/_payment_processing_orchestrator.js'
+      - 'netlify/functions/_payment_deterministic_arbiter.js'
+      - 'tests/payment-processing-store.test.js'
+      - 'tests/payment-processing-orchestrator.test.js'
+      - 'tests/payment-deterministic-arbiter.test.js'
+      - '.github/workflows/verify-smart-payment-orchestrator-arbiter.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-orchestrator-arbiter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies safely
+        run: npm install --ignore-scripts --no-audit --no-fund
+
+      - name: Check syntax
+        run: |
+          node --check netlify/functions/_payment_processing_store.js
+          node --check netlify/functions/_payment_processing_orchestrator.js
+          node --check netlify/functions/_payment_deterministic_arbiter.js
+          node --check tests/payment-processing-store.test.js
+          node --check tests/payment-processing-orchestrator.test.js
+          node --check tests/payment-deterministic-arbiter.test.js
+
+      - name: Verify durable lease and idempotency
+        run: node tests/payment-processing-store.test.js
+
+      - name: Verify deterministic arbitration
+        run: node tests/payment-deterministic-arbiter.test.js
+
+      - name: Verify isolated processing orchestration
+        run: node tests/payment-processing-orchestrator.test.js
+
+      - name: Re-run secure payment foundations
+        run: |
+          node tests/payment-proof-core.test.js
+          node tests/payment-proof-store.test.js
+          node tests/payment-access-snapshot.test.js
+          node tests/payment-duplicate-core.test.js
+          node tests/payment-ai-contract.test.js
+          node tests/pending-reports-never-enable-access.test.js
+
+      - name: Re-run Airtable V2 contracts
+        run: node tests/smart-payment-airtable-migration.test.js
+
+      - name: Re-run official balances
+        run: |
+          node tests/official-balance-sync.test.js
+          node tests/all-houses-current-balance.test.js
+          node tests/balance-engine-v4.test.js
