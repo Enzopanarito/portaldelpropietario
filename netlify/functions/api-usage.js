@@ -44,7 +44,8 @@ function parseEvent(record) {
     timestamp: parts[3] || record.createdTime || '',
     calls: Math.max(0, Number(record?.fields?.Version || 0)),
     createdTime: record.createdTime || '',
-    legacy: false
+    legacy: false,
+    daily: false
   };
 }
 
@@ -58,7 +59,25 @@ function parseLegacyEvent(record) {
     timestamp: parts[5] || record.createdTime || '',
     calls: Math.max(0, Number(record?.fields?.Version || 0)),
     createdTime: record.createdTime || '',
-    legacy: true
+    legacy: true,
+    daily: false
+  };
+}
+
+function parseDailySummary(record) {
+  const key = String(record?.fields?.Key || '');
+  const parts = key.split('|');
+  const date = parts[0] === 'API_USAGE_DAILY' ? String(parts[1] || '') : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  return {
+    month: date.slice(0, 7),
+    date,
+    source: 'resumen-diario',
+    timestamp: record.createdTime || `${date}T00:00:00.000Z`,
+    calls: Math.max(0, Number(record?.fields?.Version || 0)),
+    createdTime: record.createdTime || '',
+    legacy: false,
+    daily: true
   };
 }
 
@@ -101,7 +120,7 @@ async function handler(event) {
   }
 
   try {
-    const formula = `OR(IFERROR(FIND('API_USAGE|${month}|',{Key}),0),IFERROR(FIND('API_CALL_V2|${month}|',{Key}),0),IFERROR(FIND('API_USAGE_BASELINE|${month}|',{Key}),0),IFERROR(FIND('API_USAGE_LIMIT|${month}|',{Key}),0))`;
+    const formula = `OR(IFERROR(FIND('API_USAGE|${month}|',{Key}),0),IFERROR(FIND('API_CALL_V2|${month}|',{Key}),0),IFERROR(FIND('API_USAGE_DAILY|${month}-',{Key}),0),IFERROR(FIND('API_USAGE_BASELINE|${month}|',{Key}),0),IFERROR(FIND('API_USAGE_LIMIT|${month}|',{Key}),0))`;
     let records;
     try {
       records = await airtableGetAll(`?pageSize=100&filterByFormula=${encodeURIComponent(formula)}`, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID);
@@ -110,18 +129,26 @@ async function handler(event) {
       const all = await airtableGetAll('?pageSize=100', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID);
       records = all.filter(record => {
         const key = String(record?.fields?.Key || '');
-        return key.startsWith(`API_USAGE|${month}|`) || key.startsWith(`API_CALL_V2|${month}|`) || key.startsWith(`API_USAGE_BASELINE|${month}|`) || key.startsWith(`API_USAGE_LIMIT|${month}|`);
+        return key.startsWith(`API_USAGE|${month}|`) ||
+          key.startsWith(`API_CALL_V2|${month}|`) ||
+          key.startsWith(`API_USAGE_DAILY|${month}-`) ||
+          key.startsWith(`API_USAGE_BASELINE|${month}|`) ||
+          key.startsWith(`API_USAGE_LIMIT|${month}|`);
       });
     }
 
-    const events = records
+    const detailEvents = records
       .map(record => parseEvent(record) || parseLegacyEvent(record))
+      .filter(eventRow => eventRow && eventRow.month === month && eventRow.calls > 0);
+    const dailySummaries = records
+      .map(parseDailySummary)
       .filter(eventRow => eventRow && eventRow.month === month && eventRow.calls > 0);
     const baseline = latest(records.map(record => parseBaseline(record, month)).filter(Boolean));
     const limitRecord = latest(records.map(record => parseLimit(record, month)).filter(Boolean));
-    const relevantEvents = baseline
-      ? events.filter(eventRow => String(eventRow.timestamp || eventRow.createdTime) > String(baseline.timestamp || baseline.createdTime))
-      : events;
+    const relevantDetails = baseline
+      ? detailEvents.filter(eventRow => String(eventRow.timestamp || eventRow.createdTime) > String(baseline.timestamp || baseline.createdTime))
+      : detailEvents;
+    const relevantEvents = [...relevantDetails, ...dailySummaries];
 
     const bySource = {};
     let eventCalls = 0;
@@ -141,14 +168,13 @@ async function handler(event) {
       if (stamp && (!lastEvent || stamp > lastEvent)) lastEvent = stamp;
     }
 
-    // Registra también las llamadas consumidas por esta misma consulta.
     const current = await flushCurrentUsage();
-    if (current.logStatus !== 'recorded' && current.calls > 0) {
+    if (!['daily-summary', 'recorded'].includes(current.logStatus) && current.calls > 0) {
       throw new Error(`No se pudo persistir la medición actual (${current.logStatus}${current.logError ? `: ${current.logError}` : ''}).`);
     }
     if (current.recordedCalls > 0) {
       eventCalls += current.recordedCalls;
-      bySource['api-usage'] = (bySource['api-usage'] || 0) + current.recordedCalls;
+      bySource['resumen-diario'] = (bySource['resumen-diario'] || 0) + current.recordedCalls;
       const now = new Date().toISOString();
       if (!firstEvent) firstEvent = now;
       lastEvent = now;
@@ -170,18 +196,18 @@ async function handler(event) {
         remaining: Math.max(0, limit - total),
         percent,
         events: relevantEvents.length + (current.recordedCalls > 0 ? 1 : 0),
+        dailySummaries: dailySummaries.length,
         legacyEvents,
         legacyCalls,
         bySource: sortedSources,
         firstEvent,
         lastEvent,
         baseline,
-        coverage: baseline ? 'reconciliado-con-baseline' : 'medición-interna-continua',
+        coverage: baseline ? 'mensual-consolidado-mas-resumenes-diarios' : 'resumenes-diarios',
+        storageMode: 'daily-rollup-v1',
         officialCounterAvailableByApi: false,
         officialCounterLocation: 'Airtable → Workspace settings → Usage',
-        note: baseline
-          ? 'Conteo interno reconciliado con un valor oficial capturado desde la página Usage de Airtable.'
-          : 'Conteo continuo del portal: incluye los eventos históricos API_CALL_V2 del mes y el nuevo medidor central API_USAGE. Airtable no expone por API el contador oficial del workspace.'
+        note: 'El sistema conserva un resumen diario y consolida los días antiguos en un total mensual. Ya no crea un registro por cada ejecución.'
       })
     };
   } catch (error) {
@@ -201,4 +227,5 @@ async function handler(event) {
 exports.handler = withAirtableUsage('api-usage', handler);
 module.exports.parseEvent = parseEvent;
 module.exports.parseLegacyEvent = parseLegacyEvent;
+module.exports.parseDailySummary = parseDailySummary;
 module.exports.parseBaseline = parseBaseline;

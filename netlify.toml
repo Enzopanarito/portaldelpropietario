@@ -2,8 +2,11 @@
   publish = "."
   functions = "netlify/functions"
 
-[functions."airtable-full-backup-scheduled"]
-  schedule = "*/2 * * * *"
+[functions."controlversiones-telemetry-migrate-scheduled"]
+  schedule = "* * * * *"
+
+[functions."airtable-usage-rollup-scheduled"]
+  schedule = "30 4 * * *"
 
 [[edge_functions]]
 function = "pwa-head"

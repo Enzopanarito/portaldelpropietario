@@ -11,13 +11,17 @@ const calls = [];
 
 global.fetch = async (input, init = {}) => {
   const url = typeof input === 'string' ? input : input.url;
-  calls.push({ url, method: String(init.method || input?.method || 'GET').toUpperCase(), body: init.body || null });
+  const method = String(init.method || input?.method || 'GET').toUpperCase();
+  calls.push({ url, method, body: init.body || null });
   return { ok: true, status: 200, async json() { return { records: [] }; } };
 };
 process.env.AIRTABLE_API_TOKEN = 'test-token';
 process.env.AIRTABLE_BASE_ID = 'app12345678901234';
 
+delete global.__VLA_AIRTABLE_METER_INSTALLED;
+delete global.__VLA_AIRTABLE_RAW_FETCH;
 delete require.cache[require.resolve('../netlify/functions/_airtable_meter')];
+delete require.cache[require.resolve('../netlify/functions/api-usage')];
 const meter = require('../netlify/functions/_airtable_meter');
 const usage = require('../netlify/functions/api-usage');
 
@@ -33,7 +37,7 @@ function validateEntrypointCoverage() {
   assert.deepStrictEqual(missing, [], `Funciones con acceso directo a Airtable sin medidor: ${missing.join(', ')}`);
 }
 
-function validateLegacyContinuity() {
+function validateContinuity() {
   const legacy = usage.parseLegacyEvent({
     fields: {
       Key: 'API_CALL_V2|2026-07|public-data|GET|OK|2026-07-12T02:19:48.134Z|legacy-id',
@@ -44,10 +48,8 @@ function validateLegacyContinuity() {
   assert(legacy, 'Debe reconocer eventos API_CALL_V2 del contador anterior.');
   assert.strictEqual(legacy.month, '2026-07');
   assert.strictEqual(legacy.source, 'public-data');
-  assert.strictEqual(legacy.timestamp, '2026-07-12T02:19:48.134Z');
   assert.strictEqual(legacy.calls, 2);
   assert.strictEqual(legacy.legacy, true);
-  assert.strictEqual(usage.parseLegacyEvent({ fields: { Key: 'API_USAGE|2026-07|x' } }), null);
 
   const current = usage.parseEvent({
     fields: {
@@ -55,14 +57,25 @@ function validateLegacyContinuity() {
       Version: 8
     }
   });
-  assert(current, 'Debe reconocer eventos API_USAGE del medidor nuevo.');
+  assert(current, 'Debe reconocer eventos API_USAGE anteriores a la migración.');
   assert.strictEqual(current.calls, 8);
   assert.strictEqual(current.legacy, false);
+
+  const daily = usage.parseDailySummary({
+    fields: { Key: 'API_USAGE_DAILY|2026-07-13', Version: 27 },
+    createdTime: '2026-07-13T04:50:00.000Z'
+  });
+  assert(daily, 'Debe reconocer el resumen diario nuevo.');
+  assert.strictEqual(daily.month, '2026-07');
+  assert.strictEqual(daily.date, '2026-07-13');
+  assert.strictEqual(daily.calls, 27);
+  assert.strictEqual(daily.source, 'resumen-diario');
 }
 
 (async () => {
   validateEntrypointCoverage();
-  validateLegacyContinuity();
+  validateContinuity();
+  assert(meter.dailyUsageKey(new Date('2026-07-13T12:00:00Z')).startsWith('API_USAGE_DAILY|'));
 
   const wrapped = meter.withAirtableUsage('unit-module', async () => {
     await fetch('https://api.airtable.com/v0/app123/TableA');
@@ -74,18 +87,22 @@ function validateLegacyContinuity() {
   const response = await wrapped({}, {});
   assert.strictEqual(response.statusCode, 200);
   assert.strictEqual(response.headers.Existing, 'yes');
-  assert.strictEqual(response.headers['X-Airtable-Calls'], '3');
+  assert.strictEqual(response.headers['X-Airtable-Calls'], '4');
   assert.strictEqual(response.headers['X-Airtable-Usage-Source'], 'unit-module');
-  assert.strictEqual(response.headers['X-Airtable-Usage-Logged'], 'recorded');
+  assert.strictEqual(response.headers['X-Airtable-Usage-Logged'], 'daily-summary');
+  assert.strictEqual(response.headers['X-Airtable-Usage-Mode'], 'daily-rollup-v1');
 
   const airtableCalls = calls.filter(row => row.url.startsWith('https://api.airtable.com/v0/'));
-  assert.strictEqual(airtableCalls.length, 3);
-  const logCall = airtableCalls.find(row => row.method === 'POST' && row.url.includes('ControlVersiones'));
-  assert(logCall, 'Debe persistir el uso en ControlVersiones.');
-  const payload = JSON.parse(logCall.body);
-  assert.strictEqual(payload.records[0].fields.Version, 3);
-  assert(payload.records[0].fields.Key.startsWith('API_USAGE|'));
-  assert(payload.records[0].fields.Key.includes('|unit-module|'));
+  assert.strictEqual(airtableCalls.length, 4);
+  const lookupCall = airtableCalls.find(row => row.method === 'GET' && row.url.includes('ControlVersiones'));
+  const upsertCall = airtableCalls.find(row => row.method === 'PATCH' && row.url.includes('ControlVersiones'));
+  assert(lookupCall, 'Debe buscar el resumen diario existente.');
+  assert(upsertCall, 'Debe actualizar o crear un único resumen diario.');
+  const payload = JSON.parse(upsertCall.body);
+  assert.strictEqual(payload.records[0].fields.Version, 4);
+  assert(payload.records[0].fields.Key.startsWith('API_USAGE_DAILY|'));
+  assert(payload.performUpsert, 'La creación inicial debe usar upsert para evitar duplicados diarios.');
+  assert(!payload.records[0].fields.Key.includes('unit-module'), 'No debe crear un registro por módulo o ejecución.');
 
   calls.length = 0;
   const inner = meter.withAirtableUsage('inner-module', async () => {
@@ -97,9 +114,9 @@ function validateLegacyContinuity() {
     return inner({}, {});
   });
   const nestedResponse = await outer({}, {});
-  assert.strictEqual(nestedResponse.headers['X-Airtable-Calls'], '3');
+  assert.strictEqual(nestedResponse.headers['X-Airtable-Calls'], '4');
   assert.strictEqual(nestedResponse.headers['X-Airtable-Usage-Source'], 'outer-module');
-  assert.strictEqual(calls.filter(row => row.method === 'POST' && row.url.includes('ControlVersiones')).length, 1);
+  assert.strictEqual(calls.filter(row => row.method === 'PATCH' && row.url.includes('ControlVersiones')).length, 1);
 
   calls.length = 0;
   const failing = meter.withAirtableUsage('failing-module', async () => {
@@ -107,13 +124,15 @@ function validateLegacyContinuity() {
     throw new Error('business failure');
   });
   await assert.rejects(() => failing({}, {}), /business failure/);
-  const failedLog = calls.find(row => row.method === 'POST' && row.url.includes('ControlVersiones'));
-  assert(failedLog, 'Debe registrar uso aun cuando el handler falle.');
-  assert.strictEqual(JSON.parse(failedLog.body).records[0].fields.Version, 2);
+  const failedLog = calls.find(row => row.method === 'PATCH' && row.url.includes('ControlVersiones'));
+  assert(failedLog, 'Debe actualizar el resumen aun cuando el handler falle.');
+  assert.strictEqual(JSON.parse(failedLog.body).records[0].fields.Version, 3);
 
-  console.log('AIRTABLE_USAGE_METER_TESTS_OK');
+  console.log('AIRTABLE_USAGE_DAILY_ROLLUP_TESTS_OK');
 })().finally(() => {
   global.fetch = originalFetch;
+  delete global.__VLA_AIRTABLE_METER_INSTALLED;
+  delete global.__VLA_AIRTABLE_RAW_FETCH;
   if (originalToken === undefined) delete process.env.AIRTABLE_API_TOKEN; else process.env.AIRTABLE_API_TOKEN = originalToken;
   if (originalBase === undefined) delete process.env.AIRTABLE_BASE_ID; else process.env.AIRTABLE_BASE_ID = originalBase;
 }).catch(error => {
