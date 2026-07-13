@@ -86,6 +86,9 @@ jobs:
       - name: Validate complete Airtable backup
         run: node tests/airtable-full-backup.test.js
 
+      - name: Validate ControlVersiones telemetry migration
+        run: node tests/controlversiones-telemetry-migration.test.js
+
       - name: Validate single admin session in Security
         run: node tests/security-single-session.test.js
 
