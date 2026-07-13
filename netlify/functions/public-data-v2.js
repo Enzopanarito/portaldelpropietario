@@ -5,6 +5,7 @@ const { withAirtableUsage } = require('./_airtable_meter');
 const { deepEscapeStrings } = require('./_security_utils');
 const { calculateAllOwners, calculatedFields } = require('./_balance_engine_v4');
 const { attachOfficialBalances, officialControlQuery } = require('./_official_balances');
+const { assertSafeAirtableContext, isolationResponse } = require('./_environment_guard');
 
 let publicCache = null;
 const PUBLIC_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -86,6 +87,8 @@ function compactPago(record) {
   }};
 }
 const handler = async function(event) {
+  try { assertSafeAirtableContext({ write:false, allowUnclassified:true }); }
+  catch (error) { return isolationResponse(error); }
   const { AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID } = process.env;
   if (!AIRTABLE_API_TOKEN || !AIRTABLE_BASE_ID) return { statusCode: 500, headers: responseHeaders(0, 'ERROR'), body: JSON.stringify({ message: 'Airtable no está configurado.' }) };
   const force = event.queryStringParameters?.force === '1';
