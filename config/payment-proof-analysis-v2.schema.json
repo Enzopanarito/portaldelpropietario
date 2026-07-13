@@ -2,9 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://villalosapamates.netlify.app/schemas/payment-proof-analysis-v2.json",
   "title": "VLA Payment Proof Analysis V2",
-  "description": "Salida de extracción. No constituye aprobación, autenticidad ni decisión de acceso.",
+  "description": "Salida de extracción. No constituye aprobación, autenticidad, creación de pago ni decisión de acceso.",
   "type": "object",
   "additionalProperties": false,
+  "minProperties": 17,
+  "maxProperties": 17,
   "required": [
     "method",
     "bank_or_platform",
