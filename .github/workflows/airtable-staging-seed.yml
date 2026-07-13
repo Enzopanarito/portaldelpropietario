@@ -1,0 +1,65 @@
+name: Seed Airtable Staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'plan solo genera el artefacto; apply reemplaza exclusivamente staging'
+        required: true
+        default: 'plan'
+        type: choice
+        options: [plan, apply]
+      confirmation:
+        description: 'Para apply escriba exactamente REPLACE_STAGING_ONLY'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  AIRTABLE_API_TOKEN: ${{ secrets.AIRTABLE_API_TOKEN }}
+  AIRTABLE_PRODUCTION_BASE_ID: ${{ secrets.AIRTABLE_PRODUCTION_BASE_ID }}
+  AIRTABLE_STAGING_BASE_ID: ${{ secrets.AIRTABLE_STAGING_BASE_ID }}
+  STAGING_SYNC_CONFIRM: ${{ inputs.confirmation }}
+
+jobs:
+  staging-plan:
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validate requested mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.mode }}" == "apply" && "${{ inputs.confirmation }}" != "REPLACE_STAGING_ONLY" ]]; then
+            echo "Apply requires the exact confirmation REPLACE_STAGING_ONLY."
+            exit 1
+          fi
+
+      - name: Build sanitized plan
+        if: ${{ inputs.mode == 'plan' }}
+        run: node scripts/airtable-staging-sync.js
+
+      - name: Back up and replace staging
+        if: ${{ inputs.mode == 'apply' }}
+        run: node scripts/airtable-staging-sync.js --apply
+
+      - name: Upload staging artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: airtable-staging-${{ inputs.mode }}-${{ github.run_id }}
+          path: artifacts/staging/*.json
+          if-no-files-found: error
+          retention-days: 14
