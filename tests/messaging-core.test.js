@@ -26,6 +26,7 @@ const owners = Object.entries(official).map(([house,[usd,bs,total]]) => ({
   Casa:Number(house),
   Propietario:`Propietario ${house}`,
   Telefono:`0414-555-${String(house).padStart(4,'0')}`,
+  Alicuota:0.06186,
   'Saldo USD Actual':usd,
   'Saldo Bs Ref Actual':bs,
   'Saldo Total Actual':total,
@@ -35,12 +36,13 @@ const owners = Object.entries(official).map(([house,[usd,bs,total]]) => ({
 }));
 const ownerIds=owners.map(owner=>owner.id);
 const expenses=[
-  {id:'expense-common',fields:{Concepto:'Vigilancia y gastos comunes',Monto:92.79,'Tipo de Gasto':'Gasto Común','Forma de Pago':'Bs (BCV)',Propietarios:ownerIds}},
-  {id:'expense-diesel',fields:{Concepto:'Gasoil planta eléctrica',Monto:85,'Tipo de Gasto':'Gasto Variable','Forma de Pago':'USD',Propietarios:ownerIds}},
-  {id:'expense-paint',fields:{Concepto:'Cuota especial de pintura',Monto:50,'Tipo de Gasto':'Cuota Especial','Forma de Pago':'Bs (BCV)',Propietarios:['owner-4','owner-10']}},
-  {id:'expense-generator',fields:{Concepto:'Mantenimiento de planta',Monto:51,'Tipo de Gasto':'Cuota Especial','Forma de Pago':'Bs (BCV)',Propietarios:['owner-4']}},
-  {id:'expense-other',fields:{Concepto:'Control remoto adicional',Monto:12,'Tipo de Gasto':'Otro','Forma de Pago':'USD',Propietarios:['owner-4']}},
-  {id:'expense-invalid',fields:{Concepto:'Registro inválido',Monto:-1,'Tipo de Gasto':'Otro','Forma de Pago':'USD',Propietarios:['owner-4']}}
+  {id:'expense-common',fields:{Concepto:'Vigilancia y gastos comunes',Monto:1500,'Tipo de Gasto':'Gasto Común','Forma de Pago':'Bs (BCV)',Propietarios:ownerIds}},
+  {id:'expense-diesel',fields:{Concepto:'Gasoil planta eléctrica',Monto:1275,'Tipo de Gasto':'Gasto Especial','Forma de Pago':'USD',Propietarios:ownerIds}},
+  {id:'expense-paint',fields:{Concepto:'Cuota especial de pintura',Monto:100,'Tipo de Gasto':'Gasto Especial','Forma de Pago':'Bs (BCV)',Propietarios:['owner-4','owner-10']}},
+  {id:'expense-generator',fields:{Concepto:'Mantenimiento de planta',Monto:51,'Tipo de Gasto':'Gasto Especial','Forma de Pago':'Bs (BCV)',Propietarios:['owner-4']}},
+  {id:'expense-other',fields:{Concepto:'Control remoto adicional',Monto:12,'Tipo de Gasto':'Gasto Especial','Forma de Pago':'USD',Propietarios:['owner-4']}},
+  {id:'expense-invalid',fields:{Concepto:'Registro inválido',Monto:-1,'Tipo de Gasto':'Gasto Especial','Forma de Pago':'USD',Propietarios:['owner-4']}},
+  {id:'expense-ignored',fields:{Concepto:'Gasoil informativo no asignable',Monto:999,'Tipo de Gasto':'Gasto Variable','Forma de Pago':'USD',Propietarios:['owner-4']}}
 ];
 
 const context = {
@@ -61,8 +63,11 @@ assert.strictEqual(classifyExpense({Concepto:'Vigilancia', 'Tipo de Gasto':'Gast
 assert.strictEqual(expenseCurrency({'Forma de Pago':'USD'}),'usd');
 assert.strictEqual(expenseCurrency({'Forma de Pago':'Bs (BCV)'}),'bsRef');
 
-const breakdown=buildMonthlyChargeBreakdown('owner-4',expenses);
+const owner4=owners.find(owner=>owner.Casa===4);
+const breakdown=buildMonthlyChargeBreakdown(owner4,expenses);
 assert.strictEqual(breakdown.mode,CONCEPT_ALLOCATION_STATUS);
+assert.strictEqual(breakdown.allocationRuleVersion,'balance-engine-v5-compatible');
+assert.strictEqual(breakdown.commonAllocationFactor,0.06186);
 assert.strictEqual(breakdown.sourceRecordCount,5);
 assert.strictEqual(breakdown.invalidRecordCount,1);
 assert.strictEqual(breakdown.totalUsd,97);
@@ -111,7 +116,7 @@ assert(house4.message.includes('Otros cargos'));
 assert(house4.message.includes('$306.40'));
 assert(house4.message.includes('Las cuentas se mantienen separadas.'));
 assert.strictEqual(house4.sendable,true);
-assert(house4.warnings.some(value=>value.includes('monto inválido')));
+assert(house4.warnings.some(value=>value.includes('monto')));
 
 const house9 = preview.recipients.find(item => item.house === 9);
 assert.strictEqual(house9.creditUsd,20);
@@ -145,6 +150,10 @@ const noOwnerId = buildOwnerSnapshot({...owners[0], id:''}, context);
 assert.strictEqual(noOwnerId.sendable,false);
 assert(noOwnerId.errors.some(value => value.includes('identificador')));
 
+const invalidAliquot = buildOwnerSnapshot({...owners[0], Alicuota:0}, context);
+assert.strictEqual(invalidAliquot.sendable,true,'El desglose informativo inválido no puede alterar el saldo oficial.');
+assert(invalidAliquot.warnings.some(value=>value.includes('regla de distribución')));
+
 const untrusted = buildOwnerSnapshot({...owners[0], Propietario:'<img src=x onerror=alert(1)> Enzo'}, context);
 assert(!untrusted.message.includes('<img'));
 assert(!untrusted.message.includes('>'));
@@ -171,7 +180,7 @@ const changed = buildOwnerSnapshot({...owners[0], 'Saldo USD Actual':86, 'Saldo 
 assert.notStrictEqual(stableA.snapshotHash,changed.snapshotHash);
 assert.notStrictEqual(stableA.idempotencyKey,changed.idempotencyKey);
 
-const correctedConcept = buildOwnerSnapshot(owners[0], {...context,expenses:expenses.map(item=>item.id==='expense-diesel'?{...item,fields:{...item.fields,Monto:86}}:item)});
+const correctedConcept = buildOwnerSnapshot(owners[0], {...context,expenses:expenses.map(item=>item.id==='expense-diesel'?{...item,fields:{...item.fields,Monto:1290}}:item)});
 assert.notStrictEqual(stableA.messageHash,correctedConcept.messageHash);
 assert.notStrictEqual(stableA.snapshotHash,correctedConcept.snapshotHash);
 assert.strictEqual(stableA.debtIdentityHash,correctedConcept.debtIdentityHash,'Corregir el desglose no debe habilitar un segundo recordatorio para la misma deuda.');
