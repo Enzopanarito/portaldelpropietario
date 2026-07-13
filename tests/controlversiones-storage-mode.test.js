@@ -21,9 +21,9 @@ for (const filename of retiredFiles) {
   assert.strictEqual(fs.existsSync(path.join(functionsDir, filename)), false, `${filename} era temporal y no debe quedar desplegado.`);
 }
 
-assert(meterSource.includes("const DAILY_PREFIX = 'API_USAGE_DAILY|'"), 'El medidor permanente debe usar una clave diaria.');
-assert(meterSource.includes("performUpsert: { fieldsToMergeOn: ['Key'] }"), 'La creación del resumen diario debe ser idempotente.');
-assert(meterSource.includes("'X-Airtable-Usage-Mode': 'daily-rollup-v1'"), 'Las respuestas deben declarar el modo diario.');
+assert(/const\s+DAILY_PREFIX\s*=\s*'API_USAGE_DAILY\|'/u.test(meterSource), 'El medidor permanente debe usar una clave diaria.');
+assert(/performUpsert\s*:\s*\{\s*fieldsToMergeOn\s*:\s*\[\s*'Key'\s*\]\s*\}/u.test(meterSource), 'La creación del resumen diario debe ser idempotente.');
+assert(/'X-Airtable-Usage-Mode'\s*:\s*'daily-rollup-v1'/u.test(meterSource), 'Las respuestas deben declarar el modo diario.');
 assert(!meterSource.includes('crypto.randomBytes'), 'El medidor permanente no debe generar una clave nueva por ejecución.');
 assert(!meterSource.includes('API_USAGE|${'), 'El medidor no debe volver a crear eventos API_USAGE detallados.');
 
