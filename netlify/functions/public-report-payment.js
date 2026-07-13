@@ -6,6 +6,7 @@
 
 const { withAirtableUsage } = require('./_airtable_meter');
 const { airtableCreateRecord, airtableGetRecord, TABLES, money } = require('./_access_control');
+const { pendingReportAccessDecision } = require('./_pending_report_access_policy');
 const { sendMail } = require('./_mailer');
 const { sanitizeReference, escapeHtml, cleanPlainText, safeDisplayText, deepEscapeStrings } = require('./_security_utils');
 const { consume } = require('./_persistent_rate_limit');
@@ -30,7 +31,6 @@ function optionalText(value,max){return cleanPlainText(String(value||''),max).tr
 function json(statusCode,body,headers={}){return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store, no-cache, must-revalidate','X-Content-Type-Options':'nosniff',...headers},body:JSON.stringify(body)};}
 function airtableUrl(tableName,query=''){return `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}${query}`;}
 function clientIp(event){const h=event.headers||{};return String(h['x-nf-client-connection-ip']||h['X-Nf-Client-Connection-Ip']||h['x-forwarded-for']||h['X-Forwarded-For']||'unknown').split(',')[0].trim().slice(0,120);}
-function pendingReportAccessDecision(reportId){return{reportId:String(reportId||'').trim()||null,skipped:true,action:'pending-review',temporary:false,reason:'Un reporte pendiente no modifica el portón. La administración debe revisarlo antes de cualquier decisión de acceso.'};}
 
 async function rateLimit(scope,identity,max){
   try{return await consume({scope,identity,max,windowMs:ABUSE_WINDOW_MS,countBeforeRecord:true});}
