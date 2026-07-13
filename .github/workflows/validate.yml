@@ -119,6 +119,9 @@ jobs:
       - name: Validate transactional WhatsApp queue
         run: node tests/messaging-queue-core.test.js
 
+      - name: Validate scoped WhatsApp dispatch tokens
+        run: node tests/messaging-dispatch-token.test.js
+
       - name: Validate WhatsApp simulation interface
         run: node tests/whatsapp-preview-ui.test.js
 
