@@ -15,7 +15,7 @@ function linkedIds(value){return Array.isArray(value)?value.map(item=>typeof ite
 function caracasMonth(now=new Date()){const parts=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:'America/Caracas',year:'numeric',month:'2-digit'}).formatToParts(now).map(part=>[part.type,part.value]));return`${parts.year}-${parts.month}`}
 function parseOfficialBalance(record){
  const fields=fieldsOf(record),key=clean(fields.Key),match=key.match(CURRENT_PATTERN);if(!match)return null;
- const cutoffMs=Date.parse(match[7]);if(!Number.isFinite(cutoffMs))return null;
+ const cutoffMs=Date.parse(match[6]);if(!Number.isFinite(cutoffMs))return null;
  const version=Number(fields.Version);if(!Number.isFinite(version)||version<=0)return null;
  return{id:clean(record&&record.id),key,month:match[1],house:Number(match[2]),usd:money(Number(match[3])/100),bsRef:money(Number(match[4])/100),surchargeBasis:money(Number(match[5])/100),cutoff:new Date(cutoffMs).toISOString(),cutoffMs,version};
 }
