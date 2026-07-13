@@ -27,22 +27,30 @@ function publicResult(body, month) {
   };
 }
 async function beginMonthlyClose(month, planHash, env=process.env) {
-  const atomic=await claim({
+  return claim({
     scope:'MONTHLY_CLOSE',
     businessKey:String(month||''),
     payloadHash:closePayloadHash(month,planHash),
     ttlMs:24*60*60*1000,
     env
   });
-  return atomic;
 }
 async function finalizeMonthlyClose(marker,response,month) {
   if (!marker?.ok) return response;
   const body=parseResponseBody(response);
   const result=publicResult(body,month);
-  if (body.success===true) await complete(marker,result);
-  else if (body.partial===true) await partial(marker,result,'MONTHLY_CLOSE_PARTIAL');
-  else await failSafe(marker,result,body.restored===true?'MONTHLY_CLOSE_RESTORED':'MONTHLY_CLOSE_SAFE_ERROR');
+  if (body.success===true) {
+    try { await complete(marker,result); }
+    catch (error) {
+      await partial(marker,{...result,ledgerFinalizeUncertain:true},'LEDGER_FINALIZE_UNCERTAIN').catch(()=>null);
+      error.code=error.code||'LEDGER_FINALIZE_UNCERTAIN';
+      throw error;
+    }
+  } else if (body.partial===true) {
+    await partial(marker,result,'MONTHLY_CLOSE_PARTIAL');
+  } else {
+    await failSafe(marker,result,body.restored===true?'MONTHLY_CLOSE_RESTORED':'MONTHLY_CLOSE_SAFE_ERROR');
+  }
   return response;
 }
 async function releaseMonthlyClose(marker,reason,result={}) {
