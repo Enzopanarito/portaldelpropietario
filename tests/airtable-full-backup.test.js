@@ -41,9 +41,11 @@ try {
   assert.strictEqual(backup.sha256(bytes), expected, 'El checksum debe ser SHA-256 reproducible.');
 
   const source = require('fs').readFileSync(require('path').join(__dirname, '..', 'netlify', 'functions', 'airtable-full-backup-scheduled.js'), 'utf8');
-  assert(source.includes("zlib.gzipSync"), 'El respaldo debe comprimirse antes de enviarse.');
-  assert(source.includes("if (!mail.sent) throw"), 'No debe marcar el respaldo como terminado si el correo falla.');
-  assert(source.indexOf('sendMail({') < source.indexOf('createBackupMarker({'), 'El marcador DONE solo puede escribirse después de enviar el archivo.');
+  assert(source.includes('zlib.gzipSync'), 'El respaldo debe comprimirse antes de enviarse.');
+  assert(source.includes('if (!mail.sent) throw'), 'No debe marcar el respaldo como terminado si el correo falla.');
+  const sendPosition = source.indexOf('const mail = await sendMail({');
+  const markerPosition = source.indexOf('const marker = await createBackupMarker({');
+  assert(sendPosition >= 0 && markerPosition > sendPosition, 'El marcador DONE solo puede escribirse después de enviar el archivo.');
   assert(!source.includes('delete_records'), 'La fase de respaldo no puede eliminar registros.');
 
   console.log('AIRTABLE_FULL_BACKUP_TESTS_OK');
