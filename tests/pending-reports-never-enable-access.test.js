@@ -4,7 +4,7 @@ const assert=require('assert');
 const fs=require('fs');
 const path=require('path');
 const access=require('../netlify/functions/_access_control');
-const reportEndpoint=require('../netlify/functions/public-report-payment');
+const{pendingReportAccessDecision}=require('../netlify/functions/_pending_report_access_policy');
 
 function owner(){return{id:'recOwner00000001',fields:{Casa:4,Propietario:'Propietario de prueba',Alicuota:0,'Deuda Anterior':185,'Deuda Anterior USD':85,'Deuda Anterior Bs Ref':100,'Estado Acceso Portón':'Limitado','MKJ User ID':'mkj-test-owner'}}}
 function pending({id,mode,amount}){return{id,fields:{Estado:'Pendiente','Propietario que Reporta':['recOwner00000001'],'Forma de Pago Reportada':mode,'Monto Reportado':amount,'Equivalente USD Reportado':amount}}}
@@ -29,7 +29,7 @@ function pending({id,mode,amount}){return{id,fields:{Estado:'Pendiente','Propiet
  assert.strictEqual(noDebt.hasExpiredDebt,false);
  assert.strictEqual(noDebt.pendingCoversExpiredDebt,false);
 
- const decision=reportEndpoint.pendingReportAccessDecision('recReport0000001');
+ const decision=pendingReportAccessDecision('recReport0000001');
  assert.deepStrictEqual(decision,{reportId:'recReport0000001',skipped:true,action:'pending-review',temporary:false,reason:'Un reporte pendiente no modifica el portón. La administración debe revisarlo antes de cualquier decisión de acceso.'});
 
  const previousFetch=global.fetch;
@@ -64,7 +64,7 @@ function pending({id,mode,amount}){return{id,fields:{Estado:'Pendiente','Propiet
 
  const endpointSource=fs.readFileSync(path.join(__dirname,'..','netlify','functions','public-report-payment.js'),'utf8');
  assert(!/\bsyncOwnerAccess\b/.test(endpointSource),'El endpoint público no puede importar ni llamar syncOwnerAccess.');
- assert(endpointSource.includes("action:'pending-review'"));
+ assert(endpointSource.includes("require('./_pending_report_access_policy')"));
  const accessSource=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_access_control.js'),'utf8');
  assert(!accessSource.includes('Habilitación temporal automática por reporte de pago pendiente'));
  assert(!accessSource.includes('podrá habilitar <b>automáticamente</b>'));
