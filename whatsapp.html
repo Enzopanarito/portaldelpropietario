@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0b2239">
   <title>Mensajería · Villa Los Apamates</title>
-  <link rel="stylesheet" href="/whatsapp-v2.css?v=preview-v1">
+  <link rel="stylesheet" href="/whatsapp-v2.css?v=queue-v3">
 </head>
 <body>
   <div id="login" class="auth-shell">
@@ -29,7 +29,9 @@
       <nav>
         <button class="nav-item active" data-section="recipients">Destinatarios</button>
         <button class="nav-item" data-section="preview">Vista previa</button>
-        <button class="nav-item" data-section="history" disabled title="Se habilitará con la cola individual">Historial</button>
+        <button class="nav-item" data-section="current">Lote activo</button>
+        <button class="nav-item" data-section="history">Historial</button>
+        <button class="nav-item" data-section="connector">Conector Mac</button>
       </nav>
       <div class="sidebar-bottom">
         <a href="/admin.html">← Portal administrativo</a>
@@ -42,7 +44,7 @@
         <div>
           <p class="eyebrow">COMUNICACIONES</p>
           <h1>Mensajería WhatsApp</h1>
-          <p class="subtitle">Vista previa financiera segura · todavía no envía mensajes</p>
+          <p class="subtitle">Cola auditada · fuente financiera oficial · conector local para Mac</p>
         </div>
         <div class="top-actions">
           <button id="theme" class="icon-button" type="button" aria-label="Cambiar tema">◐</button>
@@ -50,21 +52,21 @@
         </div>
       </header>
 
-      <section class="safety-banner" aria-label="Estado de seguridad">
-        <strong>Modo simulación protegido</strong>
-        <span>Los datos se leen del motor financiero v5. No se crean trabajos, no se modifica Airtable y no se abre WhatsApp.</span>
+      <section id="safety-banner" class="safety-banner" aria-label="Estado de seguridad">
+        <strong id="safety-title">Modo protegido</strong>
+        <span id="safety-copy">El envío real permanece bloqueado hasta certificar el conector Mac y habilitarlo explícitamente.</span>
       </section>
 
       <section class="status-grid" aria-label="Resumen">
         <article class="metric"><span>Casas revisadas</span><strong id="metric-total">—</strong><small>Se exigen las 15</small></article>
         <article class="metric"><span>Elegibles</span><strong id="metric-sendable">—</strong><small>Con obligación y teléfono válido</small></article>
-        <article class="metric"><span>Bloqueadas</span><strong id="metric-blocked">—</strong><small>Requieren corrección</small></article>
-        <article class="metric connector"><span>Conector Mac</span><strong id="connector-state">No vinculado</strong><small>No se intentará enviar</small></article>
+        <article class="metric"><span>Cola</span><strong id="queue-state">No comprobada</strong><small id="queue-state-detail">Sin modificar datos</small></article>
+        <article class="metric connector"><span>Conector Mac</span><strong id="connector-state">No comprobado</strong><small id="connector-detail">Use “Comprobar conector”</small></article>
       </section>
 
       <section id="recipients-section" class="panel active-section">
         <div class="panel-head">
-          <div><h2>Destinatarios</h2><p>Los créditos no se cruzan entre USD y Bs. Solo se seleccionan obligaciones positivas verificadas.</p></div>
+          <div><h2>Destinatarios</h2><p>Los créditos no se cruzan entre USD y Bs. Solo se seleccionan obligaciones positivas verificadas contra ControlVersiones.</p></div>
           <div class="panel-actions">
             <button id="select-all" class="secondary-button" type="button">Seleccionar elegibles</button>
             <button id="clear-selection" class="ghost-button" type="button">Limpiar</button>
@@ -73,7 +75,7 @@
         <div id="global-feedback" class="feedback hidden" role="status" aria-live="polite"></div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th><span class="sr-only">Seleccionar</span></th><th>Casa</th><th>Propietario</th><th>Teléfono</th><th>USD</th><th>Bs Ref.</th><th>Ajuste interno</th><th>Total obligaciones</th><th>Validación</th></tr></thead>
+            <thead><tr><th><span class="sr-only">Seleccionar</span></th><th>Casa</th><th>Propietario</th><th>Teléfono</th><th>Cuenta USD</th><th>Cuenta Bs Ref.</th><th>Ajuste interno</th><th>Total obligaciones</th><th>Validación</th></tr></thead>
             <tbody id="recipients-body"><tr><td colspan="9" class="empty">Cargando fotografía financiera…</td></tr></tbody>
           </table>
         </div>
@@ -81,7 +83,7 @@
 
       <section id="preview-section" class="panel">
         <div class="panel-head">
-          <div><h2>Vista previa exacta</h2><p>Este es el texto que recibirá el propietario cuando el conector esté aprobado.</p></div>
+          <div><h2>Vista previa exacta</h2><p>El texto se genera desde la fotografía oficial. Los conceptos que no puedan reconciliarse con certeza no se inventan.</p></div>
           <select id="preview-selector" aria-label="Seleccionar mensaje para vista previa"></select>
         </div>
         <div id="preview-empty" class="empty-state">Seleccione al menos un destinatario elegible.</div>
@@ -94,14 +96,85 @@
           <pre id="preview-message"></pre>
           <div class="preview-actions">
             <button id="copy-message" class="secondary-button" type="button">Copiar mensaje</button>
-            <button id="export-simulation" class="secondary-button" type="button">Exportar simulación</button>
-            <button id="send-test" class="primary-button" type="button" disabled title="Se habilitará después de vincular y validar el conector Mac">Enviar prueba</button>
+            <button id="export-simulation" class="secondary-button" type="button">Exportar vista previa</button>
+            <button id="create-simulation" class="primary-button" type="button" disabled>Crear lote de simulación</button>
+            <button id="send-test" class="danger-button" type="button" disabled title="Requiere exactamente una casa, cola habilitada, conector certificado y envío real autorizado">Enviar prueba real</button>
+            <button id="send-batch" class="danger-button" type="button" disabled title="Requiere prueba previa y envío real autorizado">Enviar lote real</button>
           </div>
+          <p id="execution-help" class="inline-help">La simulación crea un lote auditado, pero no abre WhatsApp ni envía mensajes.</p>
+        </div>
+      </section>
+
+      <section id="current-section" class="panel">
+        <div class="panel-head">
+          <div><h2>Lote activo</h2><p>Las acciones usan revisión optimista; si el lote cambió, la pantalla obliga a actualizar antes de volver a actuar.</p></div>
+          <div class="panel-actions">
+            <button id="refresh-current" class="secondary-button" type="button">Actualizar lote</button>
+            <button id="export-current" class="ghost-button" type="button" disabled>Exportar</button>
+          </div>
+        </div>
+        <div id="current-empty" class="empty-state">No hay un lote seleccionado. Cree uno o ábralo desde Historial.</div>
+        <div id="current-job" class="job-shell hidden">
+          <div class="job-identity">
+            <div><span>Job ID</span><code id="current-job-id">—</code></div>
+            <div><span>Modo</span><strong id="current-mode">—</strong></div>
+            <div><span>Estado</span><strong id="current-state">—</strong></div>
+            <div><span>Revisión</span><strong id="current-revision">—</strong></div>
+          </div>
+          <div id="current-summary" class="summary-strip"></div>
+          <div class="job-controls" aria-label="Controles del lote">
+            <button id="dispatch-current" class="primary-button" type="button">Ejecutar en Mac</button>
+            <button id="pause-current" class="secondary-button" type="button">Pausar</button>
+            <button id="resume-current" class="secondary-button" type="button">Continuar</button>
+            <button id="retry-current" class="secondary-button" type="button">Reintentar fallidos</button>
+            <button id="cancel-current" class="danger-button" type="button">Cancelar pendientes</button>
+          </div>
+          <div id="job-feedback" class="feedback hidden" role="status" aria-live="polite"></div>
+          <div class="table-wrap compact-table">
+            <table>
+              <thead><tr><th>Casa</th><th>Propietario</th><th>Estado</th><th>Intentos</th><th>Resultado</th><th>Acciones</th></tr></thead>
+              <tbody id="current-messages"></tbody>
+            </table>
+          </div>
+          <details class="event-log"><summary>Bitácora técnica del lote</summary><ol id="current-events"></ol></details>
         </div>
       </section>
 
       <section id="history-section" class="panel">
-        <div class="empty-state">El historial individual se habilitará cuando exista la cola auditada. No se mostrará información inventada.</div>
+        <div class="panel-head">
+          <div><h2>Historial auditado</h2><p>Los datos operativos viven en Netlify Blobs con consistencia fuerte; Airtable conserva un espejo redactado de auditoría.</p></div>
+          <div class="panel-actions">
+            <button id="refresh-history" class="secondary-button" type="button">Actualizar historial</button>
+            <button id="export-history" class="ghost-button" type="button">Exportar listado</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Creado</th><th>Job ID</th><th>Modo</th><th>Estado</th><th>Total</th><th>Enviados</th><th>Verificar</th><th>Fallidos</th><th></th></tr></thead>
+            <tbody id="history-body"><tr><td colspan="9" class="empty">Cargando historial…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="connector-section" class="panel">
+        <div class="panel-head">
+          <div><h2>Conector local para Mac</h2><p>El portal nunca guarda el permiso de despacho. Cada ejecución usa una sesión limitada, vinculada al lote y consumible una sola vez.</p></div>
+          <button id="check-connector" class="primary-button" type="button">Comprobar conector</button>
+        </div>
+        <div class="connector-layout">
+          <article class="connector-card"><span>Extensión Chrome</span><strong id="extension-health">No comprobada</strong><small id="extension-id">—</small></article>
+          <article class="connector-card"><span>Aplicación Mac</span><strong id="native-health">No comprobada</strong><small id="native-version">—</small></article>
+          <article class="connector-card"><span>WhatsApp Web</span><strong id="whatsapp-health">Se valida al preparar</strong><small>Una sola pestaña de Chrome normal</small></article>
+        </div>
+        <div class="connector-notes">
+          <h3>Reglas de seguridad activas</h3>
+          <ul>
+            <li>Una caída después del clic nunca genera un reenvío automático: pasa a <strong>Verificar</strong>.</li>
+            <li>Cancelar antes del clic bloquea el envío; cancelar después conserva el resultado incierto para revisión.</li>
+            <li>Los teléfonos completos, textos y tokens no se copian al espejo de Airtable.</li>
+            <li>El envío real depende de una habilitación explícita del servidor y de una Mac certificada.</li>
+          </ul>
+        </div>
       </section>
 
       <footer class="selection-bar">
@@ -112,6 +185,6 @@
   </div>
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
-  <script src="/whatsapp-v2.js?v=preview-v1" defer></script>
+  <script src="/whatsapp-v2.js?v=queue-v3" defer></script>
 </body>
 </html>
