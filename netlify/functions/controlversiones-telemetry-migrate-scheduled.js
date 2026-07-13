@@ -56,7 +56,7 @@ function signature() {
 function activeLock(records, now = Date.now()) {
   return (records || []).find(record => {
     const key = String(record?.fields?.Key || '');
-    const stamp = key.split('|at=')[1] || record.createdTime || '';
+    const stamp = (key.match(/\|at=([^|]+)/) || [])[1] || record.createdTime || '';
     const time = Date.parse(stamp);
     return !Number.isFinite(time) || now - time < LOCK_TTL_MS;
   }) || null;
