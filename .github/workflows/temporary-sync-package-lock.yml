@@ -34,12 +34,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          changed="$(git diff --name-only)"
+          changed="$(git status --porcelain --untracked-files=all)"
           if [[ -z "$changed" ]]; then
             echo "Lockfile already synchronized."
             exit 0
           fi
-          if [[ "$changed" != "package-lock.json" ]]; then
+          unexpected="$(printf '%s\n' "$changed" | awk '{print $2}' | grep -v '^package-lock.json$' || true)"
+          if [[ -n "$unexpected" ]]; then
             echo "Unexpected files changed:"
             printf '%s\n' "$changed"
             exit 1
@@ -49,7 +50,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --quiet -- package-lock.json; then
+          if [[ -z "$(git status --porcelain -- package-lock.json)" ]]; then
             exit 0
           fi
           git config user.name "github-actions[bot]"
