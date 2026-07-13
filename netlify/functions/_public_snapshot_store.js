@@ -1,7 +1,7 @@
 'use strict';
 
 const crypto=require('crypto');
-const runtimeConfig=require('./_runtime_config.generated');
+const runtimeConfig=require('./_runtime_config_generated');
 
 const STORE_NAME='vla-public-snapshots-v1';
 const SCHEMA_VERSION='vla-public-snapshot-v1';
@@ -63,4 +63,4 @@ function createSnapshotStore({storeFactory=defaultStore,now=()=>Date.now(),confi
  return{read,write,invalidate,claimRefresh,releaseRefresh}
 }
 const defaultSnapshotStore=createSnapshotStore();
-module.exports={STORE_NAME,SCHEMA_VERSION,DEFAULT_MAX_AGE_MS,REFRESH_LEASE_MS,EXPECTED_HOUSES,PRODUCTION_HOSTS,runtimeConfig,parseBoolean,normalizeHost,requestHost,isProductionHost,enabled,environmentForEvent,maxAgeMs,dataEnvironment,namespace,snapshotKey,refreshKey,createMemoryStore,validOwner,validatePayload,buildSnapshot,snapshotExpectedEtag,createSnapshotStore,readPublicSnapshot:env=>defaultSnapshotStore.read(env),writePublicSnapshot:(payload,env,expectedEtag)=>defaultSnapshotStore.write(payload,env,expectedEtag),invalidatePublicSnapshot:(reason,env)=>defaultSnapshotStore.invalidate(reason,env),claimPublicRefresh:env=>defaultSnapshotStore.claimRefresh(env),releasePublicRefresh:(marker,env)=>defaultSnapshotStore.releaseRefresh(marker,env)};
+module.exports={STORE_NAME,SCHEMA_VERSION,DEFAULT_MAX_AGE_MS,REFRESH_LEASE_MS,EXPECTED_HOUSES,PRODUCTION_HOSTS,runtimeConfig,parseBoolean,normalizeHost,requestHost,isProductionHost,enabled,environmentForEvent,maxAgeMs,dataEnvironment,namespace,snapshotKey,refreshKey,createMemoryStore,validOwner,validatePayload,buildSnapshot,snapshotExpectedEtag,createMemoryStore,createSnapshotStore,readPublicSnapshot:env=>defaultSnapshotStore.read(env),writePublicSnapshot:(payload,env,expectedEtag)=>defaultSnapshotStore.write(payload,env,expectedEtag),invalidatePublicSnapshot:(reason,env)=>defaultSnapshotStore.invalidate(reason,env),claimPublicRefresh:env=>defaultSnapshotStore.claimRefresh(env),releasePublicRefresh:(marker,env)=>defaultSnapshotStore.releaseRefresh(marker,env)};
