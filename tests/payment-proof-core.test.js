@@ -41,7 +41,7 @@ function input(name,type,content){return{name,type,base64:content.toString('base
  assert.throws(()=>core.decodeProofInput(input('fake.jpg','image/jpeg',png())),error=>error.code==='MIME_SIGNATURE_MISMATCH');
  assert.throws(()=>core.decodeProofInput({name:'x.gif',type:'image/gif',base64:'AAAA'}),error=>error.code==='UNSUPPORTED_ATTACHMENT_TYPE');
  assert.throws(()=>core.decodeBase64Strict('***'),error=>error.code==='INVALID_BASE64');
- assert.throws(()=>core.decodeProofInput({name:'big.png',type:'image/png',content:Buffer.alloc(core.DEFAULT_MAX_BYTES+1)}),error=>error.code==='MIME_SIGNATURE_MISMATCH'||error.code==='ATTACHMENT_TOO_LARGE');
+ assert.throws(()=>core.decodeProofInput({name:'big.png',type:'image/png',content:Buffer.alloc(core.DEFAULT_MAX_BYTES+1)}),error=>error.code==='ATTACHMENT_TOO_LARGE');
  const a=core.decodeProofInput(input('a.png','image/png',png())),b=core.decodeProofInput(input('renamed.png','image/png',png()));assert.strictEqual(a.sha256,b.sha256,'Renombrar el archivo no cambia el hash exacto.');
  assert.strictEqual(core.buildIdempotencyKey('rec123',a.sha256,'PROMPT_V2'),`rec123|${a.sha256}|PROMPT_V2`);
  assert.throws(()=>core.buildIdempotencyKey('',a.sha256,'PROMPT_V2'));
