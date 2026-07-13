@@ -5,6 +5,7 @@ const { debtFields } = require('./_monthly_close_core');
 const { TABLES, patchBatches, setCloseMarker, createRecord, closeKey } = require('./_monthly_close_store');
 const { createPreparedLog, persistProgress } = require('./_monthly_close_operation');
 const { verifyPlan, restorePlan } = require('./_monthly_close_verify');
+const { invalidateSnapshot } = require('./_public_snapshot_store');
 
 async function executeClose({ month, closeLock, plan, context, token, baseId, counter, json }) {
   let operationLog = null;
@@ -66,6 +67,10 @@ async function executeClose({ month, closeLock, plan, context, token, baseId, co
       } catch (_) {}
     }
 
+    let snapshotWarning = null;
+    try { await invalidateSnapshot(); }
+    catch (error) { snapshotWarning = `No se pudo invalidar la fotografía pública: ${error.message}`; }
+
     const accessErrors = Number(accessSync?.errors || 0);
     const accessWarning = accessSync?.success === false || accessErrors > 0;
     return json(200, {
@@ -78,7 +83,8 @@ async function executeClose({ month, closeLock, plan, context, token, baseId, co
       validation: plan.validation,
       verification,
       accessSync,
-      warning: logWarning || markerWarning || (accessWarning ? 'El cierre contable terminó, pero uno o más accesos requieren revisión.' : null),
+      publicSnapshotInvalidated: !snapshotWarning,
+      warning: logWarning || markerWarning || snapshotWarning || (accessWarning ? 'El cierre contable terminó, pero uno o más accesos requieren revisión.' : null),
       message: accessWarning
         ? 'Cierre mensual completado y verificado. La sincronización del portón terminó con advertencias.'
         : 'Cierre mensual completado, verificado y sincronizado con el portón.'
