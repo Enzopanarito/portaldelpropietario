@@ -38,6 +38,11 @@ const payload = {
   balanceEngineVersion:5, officialBalanceSource:'ControlVersiones', totalOwners:15, sendableCount:10, blockedCount:0, noDebtCount:5,
   recipients:Object.entries(official).map(([house,values])=>recipient(Number(house),values))
 };
+const queuePayload = {
+  jobs:[],queueEnabled:false,realSendEnabled:false,
+  connector:{extensionId:'oopmhhmkihemkkjghmpepgfcmcomplph',nativeHost:'com.villaslosapamates.whatsapp_connector'},
+  storage:'Netlify Blobs strong consistency + ETag CAS + persistent idempotency ledger'
+};
 
 function isDeployPreviewInfrastructureNoise(text) {
   if (!/deploy-preview-\d+--/i.test(TARGET_URL)) return false;
@@ -74,6 +79,7 @@ async function verifyViewport(browser, viewport, label) {
   page.on('pageerror',error=>pageErrors.push(String(error.stack||error.message||error)));
   page.on('console',message=>{if(message.type()==='error')consoleErrors.push(message.text());});
   await page.route('**/.netlify/functions/messaging-preview',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(payload)}));
+  await page.route('**/.netlify/functions/messaging-queue',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(queuePayload)}));
   const response = await page.goto(`${TARGET_URL}/whatsapp.html?browser=${Date.now()}-${label}`,{waitUntil:'networkidle',timeout:60000});
   if(!response||response.status()!==200)throw new Error(`${label}: whatsapp.html respondió ${response&&response.status()}.`);
   await page.locator('#app').waitFor({state:'visible',timeout:20000});
@@ -83,6 +89,8 @@ async function verifyViewport(browser, viewport, label) {
   if(rows!==15)throw new Error(`${label}: se esperaban 15 filas y se obtuvieron ${rows}.`);
   const disabled=await page.locator('#send-test').isDisabled();
   if(!disabled)throw new Error(`${label}: Enviar prueba no está bloqueado.`);
+  const simulationDisabled=await page.locator('#create-simulation').isDisabled();
+  if(!simulationDisabled)throw new Error(`${label}: la cola bloqueada no deshabilitó crear simulación.`);
   await page.locator('#select-all').click();
   const selected=await page.locator('.recipient-check:checked').count();
   if(selected!==10)throw new Error(`${label}: se esperaban 10 elegibles y se seleccionaron ${selected}.`);
@@ -90,6 +98,9 @@ async function verifyViewport(browser, viewport, label) {
   await page.locator('#preview-message').waitFor({state:'visible'});
   const previewText=await page.locator('#preview-message').textContent();
   if(!previewText.includes('TOTAL REFERENCIAL'))throw new Error(`${label}: la vista previa no contiene el total.`);
+  await page.locator('[data-section="history"]').click();
+  await page.locator('#history-body tr').first().waitFor({state:'visible'});
+  await page.locator('[data-section="recipients"]').click();
   const geometry=await page.evaluate(()=>({
     width:document.documentElement.scrollWidth,
     client:document.documentElement.clientWidth,
@@ -110,7 +121,7 @@ async function verifyViewport(browser, viewport, label) {
   if(relevantConsole.length)throw new Error(`${label}: errores de consola: ${relevantConsole.join(' | ')}`);
   await page.screenshot({path:`whatsapp-preview-${label}.png`,fullPage:true});
   await context.close();
-  return {label,viewport,rows,selected,disabled,geometry,dark,pageErrors,consoleErrors:relevantConsole,ignoredPreviewNoise:consoleErrors.filter(isDeployPreviewInfrastructureNoise)};
+  return {label,viewport,rows,selected,disabled,simulationDisabled,geometry,dark,pageErrors,consoleErrors:relevantConsole,ignoredPreviewNoise:consoleErrors.filter(isDeployPreviewInfrastructureNoise)};
 }
 
 (async()=>{
