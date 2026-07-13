@@ -75,7 +75,8 @@ assert.strictEqual(breakdown.totalBsRef,193.79);
 assert.strictEqual(breakdown.categories.find(item=>item.key==='condominium').bsRef,92.79);
 assert.strictEqual(breakdown.categories.find(item=>item.key==='diesel').usd,85);
 assert.strictEqual(breakdown.categories.find(item=>item.key==='special').bsRef,101);
-assert.strictEqual(breakdown.categories.find(item=>item.key==='other').usd,12);
+assert.strictEqual(breakdown.categories.find(item=>item.key==='special').usd,12);
+assert.strictEqual(breakdown.categories.find(item=>item.key==='other').usd,0);
 
 const preview = buildPreviewPayload({
   generatedAt:context.generatedAt,
@@ -112,7 +113,7 @@ assert.strictEqual(house4.payableTotalRef,306.40);
 assert(house4.message.includes('Gastos de condominio'));
 assert(house4.message.includes('Gasoil'));
 assert(house4.message.includes('Cuotas especiales'));
-assert(house4.message.includes('Otros cargos'));
+assert(!house4.message.includes('Otros cargos'));
 assert(house4.message.includes('$306.40'));
 assert(house4.message.includes('Las cuentas se mantienen separadas.'));
 assert.strictEqual(house4.sendable,true);
