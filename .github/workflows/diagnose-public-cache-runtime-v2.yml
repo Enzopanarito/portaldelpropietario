@@ -1,0 +1,66 @@
+name: Diagnose Public Cache Runtime V2
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-public-cache-runtime-v2.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe-production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Capture two redacted responses
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE' > public-cache-runtime.json
+          const endpoint='https://villalosapamates.netlify.app/.netlify/functions/public-data';
+          async function probe(label){
+            const url=new URL(endpoint);
+            url.searchParams.set('force','1');
+            url.searchParams.set('runtime_probe',`${Date.now()}-${label}`);
+            const response=await fetch(url,{headers:{'User-Agent':'VLA-Public-Cache-Runtime-Probe/2.0','Cache-Control':'no-cache'}});
+            const text=await response.text();
+            let payload={};try{payload=JSON.parse(text)}catch(_){payload={message:'NON_JSON'}}
+            return{
+              label,
+              status:response.status,
+              snapshot:response.headers.get('x-public-snapshot'),
+              airtableCalls:response.headers.get('x-airtable-calls'),
+              warning:response.headers.get('x-public-snapshot-warning')||response.headers.get('warning'),
+              engine:payload.balanceEngineVersion??null,
+              source:payload.officialBalanceSource||null,
+              owners:Array.isArray(payload.propietarios)?payload.propietarios.length:null,
+              message:String(payload.message||payload.detail||'').slice(0,240)
+            };
+          }
+          (async()=>{
+            const first=await probe('first');
+            await new Promise(resolve=>setTimeout(resolve,1800));
+            const second=await probe('second');
+            console.log(JSON.stringify({first,second},null,2));
+          })().catch(error=>{console.log(JSON.stringify({error:String(error.message||error)},null,2));process.exitCode=1});
+          NODE
+          cat public-cache-runtime.json
+
+      - name: Upload redacted runtime probe
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-cache-runtime-v2
+          path: public-cache-runtime.json
+          if-no-files-found: error
+          retention-days: 7
