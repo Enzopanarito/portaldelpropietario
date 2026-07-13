@@ -1,8 +1,9 @@
 import Foundation
 
-public final class ConnectorRunner {
+public final class ConnectorRunner: @unchecked Sendable {
     private let messenger: NativeMessenger
     private let deviceID: String
+    private let stateLock = NSLock()
     private var cancelled = false
 
     public init(messenger: NativeMessenger, deviceID: String) {
@@ -19,6 +20,15 @@ public final class ConnectorRunner {
             "deviceId": deviceID,
             "platform": "macOS"
         ]
+    }
+
+    private func isCancelled() -> Bool {
+        stateLock.lock(); defer { stateLock.unlock() }
+        return cancelled
+    }
+
+    private func requestCancellation() {
+        stateLock.lock(); cancelled = true; stateLock.unlock()
     }
 
     public func runDispatch(_ command: [String: Any]) async throws {
@@ -44,59 +54,87 @@ public final class ConnectorRunner {
         }
         try sendProgress(["stage":"claimed"])
 
-        while !cancelled {
-            let next = try await api.post(["action":"next","jobId":jobID,"deviceId":deviceID,"leaseToken":leaseToken])
-            guard let message = next["message"] as? [String: Any] else { break }
-            guard let messageID = message["messageId"] as? String,
-                  let attemptID = message["attemptId"] as? String,
-                  let house = (message["house"] as? NSNumber)?.intValue,
-                  let phone = message["phone"] as? String,
-                  let text = message["text"] as? String,
-                  let messageHash = message["messageHash"] as? String else {
-                throw ConnectorAPIError(statusCode: 0, message: "El servidor entregó un mensaje incompleto.")
-            }
-            try sendProgress(["stage":"preparing","house":house])
+        do {
+            while !isCancelled() {
+                let next = try await api.post(["action":"next","jobId":jobID,"deviceId":deviceID,"leaseToken":leaseToken])
+                guard let message = next["message"] as? [String: Any] else { break }
+                guard let messageID = message["messageId"] as? String,
+                      let attemptID = message["attemptId"] as? String,
+                      let house = (message["house"] as? NSNumber)?.intValue,
+                      let phone = message["phone"] as? String,
+                      let text = message["text"] as? String,
+                      let messageHash = message["messageHash"] as? String else {
+                    throw ConnectorAPIError(statusCode: 0, message: "El servidor entregó un mensaje incompleto.")
+                }
+                try sendProgress(["stage":"preparing","house":house])
 
-            if mode == "Simulación" {
+                if mode == "Simulación" {
+                    _ = try await transition(api: api, jobID: jobID, leaseToken: leaseToken, messageID: messageID, attemptID: attemptID, outcome: "sending")
+                    _ = try await transition(api: api, jobID: jobID, leaseToken: leaseToken, messageID: messageID, attemptID: attemptID, outcome: "sent", evidence: ["simulated":true])
+                    try sendProgress(["stage":"simulated","house":house])
+                    continue
+                }
+
+                let prepareResult = try await requestExtensionWithHeartbeat(
+                    api: api,
+                    jobID: jobID,
+                    leaseToken: leaseToken,
+                    type: "prepare_message",
+                    payload: ["attemptId":attemptID,"house":house,"phone":phone,"text":text,"messageHash":messageHash]
+                )
+                if isCancelled() {
+                    _ = try await transition(api: api, jobID: jobID, leaseToken: leaseToken, messageID: messageID, attemptID: attemptID, outcome: "failed", errorCode: "LOCAL_CANCEL_BEFORE_SEND", errorDetail: "El operador canceló antes de activar Enviar.")
+                    try sendProgress(["stage":"cancelled-before-send","house":house])
+                    break
+                }
+                guard prepareResult["ok"] as? Bool == true else {
+                    let detail = prepareResult["error"] as? String ?? "WhatsApp no pudo preparar el mensaje."
+                    _ = try await transition(api: api, jobID: jobID, leaseToken: leaseToken, messageID: messageID, attemptID: attemptID, outcome: "failed", errorCode: "PREPARE_FAILED", errorDetail: detail)
+                    try sendProgress(["stage":"failed","house":house])
+                    continue
+                }
+
+                if isCancelled() {
+                    _ = try await transition(api: api, jobID: jobID, leaseToken: leaseToken, messageID: messageID, attemptID: attemptID, outcome: "failed", errorCode: "LOCAL_CANCEL_BEFORE_SEND", errorDetail: "El operador canceló después de preparar, pero antes de activar Enviar.")
+                    try sendProgress(["stage":"cancelled-before-send","house":house])
+                    break
+                }
+
                 _ = try await transition(api: api, jobID: jobID, leaseToken: leaseToken, messageID: messageID, attemptID: attemptID, outcome: "sending")
-                _ = try await transition(api: api, jobID: jobID, leaseToken: leaseToken, messageID: messageID, attemptID: attemptID, outcome: "sent", evidence: ["simulated":true])
-                try sendProgress(["stage":"simulated","house":house])
-                continue
+                let commitResult = try await requestExtensionWithHeartbeat(
+                    api: api,
+                    jobID: jobID,
+                    leaseToken: leaseToken,
+                    type: "commit_message",
+                    payload: ["attemptId":attemptID,"house":house]
+                )
+                let browserResult = commitResult["result"] as? [String: Any] ?? [:]
+                if commitResult["ok"] as? Bool == true, browserResult["status"] as? String == "sent" {
+                    let evidence = browserResult["evidence"] as? [String: Any] ?? [:]
+                    _ = try await transition(api: api, jobID: jobID, leaseToken: leaseToken, messageID: messageID, attemptID: attemptID, outcome: "sent", evidence: evidence)
+                    try sendProgress(["stage":"sent","house":house])
+                } else {
+                    let evidence = browserResult["evidence"] as? [String: Any] ?? [:]
+                    let code = browserResult["errorCode"] as? String ?? "SEND_CONFIRMATION_UNCERTAIN"
+                    let detail = browserResult["error"] as? String ?? commitResult["error"] as? String ?? "No fue posible confirmar el resultado."
+                    _ = try await transition(api: api, jobID: jobID, leaseToken: leaseToken, messageID: messageID, attemptID: attemptID, outcome: "verify", evidence: evidence, errorCode: code, errorDetail: detail)
+                    try sendProgress(["stage":"verify","house":house])
+                }
+                if isCancelled() { break }
             }
 
-            let prepareResult = try requestExtension(type: "prepare_message", payload: [
-                "attemptId":attemptID,"house":house,"phone":phone,"text":text,"messageHash":messageHash
-            ])
-            guard prepareResult["ok"] as? Bool == true else {
-                let detail = prepareResult["error"] as? String ?? "WhatsApp no pudo preparar el mensaje."
-                _ = try await transition(api: api, jobID: jobID, leaseToken: leaseToken, messageID: messageID, attemptID: attemptID, outcome: "failed", errorCode: "PREPARE_FAILED", errorDetail: detail)
-                try sendProgress(["stage":"failed","house":house])
-                continue
+            if isCancelled() {
+                _ = try? await api.post(["action":"cancel","jobId":jobID,"deviceId":deviceID,"leaseToken":leaseToken])
             }
-
-            _ = try await transition(api: api, jobID: jobID, leaseToken: leaseToken, messageID: messageID, attemptID: attemptID, outcome: "sending")
-            let commitResult = try requestExtension(type: "commit_message", payload: ["attemptId":attemptID,"house":house])
-            let browserResult = commitResult["result"] as? [String: Any] ?? [:]
-            if commitResult["ok"] as? Bool == true, browserResult["status"] as? String == "sent" {
-                let evidence = browserResult["evidence"] as? [String: Any] ?? [:]
-                _ = try await transition(api: api, jobID: jobID, leaseToken: leaseToken, messageID: messageID, attemptID: attemptID, outcome: "sent", evidence: evidence)
-                try sendProgress(["stage":"sent","house":house])
-            } else {
-                let evidence = browserResult["evidence"] as? [String: Any] ?? [:]
-                let code = browserResult["errorCode"] as? String ?? "SEND_CONFIRMATION_UNCERTAIN"
-                let detail = browserResult["error"] as? String ?? commitResult["error"] as? String ?? "No fue posible confirmar el resultado."
-                _ = try await transition(api: api, jobID: jobID, leaseToken: leaseToken, messageID: messageID, attemptID: attemptID, outcome: "verify", evidence: evidence, errorCode: code, errorDetail: detail)
-                try sendProgress(["stage":"verify","house":house])
-            }
+            _ = try? await api.post(["action":"release","jobId":jobID,"deviceId":deviceID,"leaseToken":leaseToken])
+            let result: [String: Any] = ["cancelled":isCancelled(),"jobId":jobID]
+            try messenger.writeMessage(["type":"dispatch_complete","result":result])
+            ConnectorSupport.log("dispatch_finished", details: ["jobId":jobID,"cancelled":isCancelled()])
+            ConnectorSupport.writeState(["status":isCancelled() ? "Cancelado localmente" : "Disponible","jobId":jobID,"updatedAt":ISO8601DateFormatter().string(from:Date())])
+        } catch {
+            _ = try? await api.post(["action":"release","jobId":jobID,"deviceId":deviceID,"leaseToken":leaseToken])
+            throw error
         }
-
-        if !cancelled {
-            _ = try await api.post(["action":"release","jobId":jobID,"deviceId":deviceID,"leaseToken":leaseToken])
-        }
-        let result: [String: Any] = ["cancelled":cancelled,"jobId":jobID]
-        try messenger.writeMessage(["type":"dispatch_complete","result":result])
-        ConnectorSupport.log("dispatch_finished", details: ["jobId":jobID,"cancelled":cancelled])
-        ConnectorSupport.writeState(["status":cancelled ? "Cancelado localmente" : "Disponible","jobId":jobID,"updatedAt":ISO8601DateFormatter().string(from:Date())])
     }
 
     private func transition(api: ConnectorAPI, jobID: String, leaseToken: String, messageID: String, attemptID: String, outcome: String, evidence: [String: Any] = [:], errorCode: String? = nil, errorDetail: String? = nil) async throws -> [String: Any] {
@@ -104,6 +142,24 @@ public final class ConnectorRunner {
         if let errorCode { body["errorCode"] = errorCode }
         if let errorDetail { body["errorDetail"] = ConnectorSupport.sanitize(errorDetail, maximum: 500) }
         return try await api.post(body)
+    }
+
+    private func requestExtensionWithHeartbeat(api: ConnectorAPI, jobID: String, leaseToken: String, type: String, payload: [String: Any]) async throws -> [String: Any] {
+        let heartbeat = Task { [deviceID] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 25_000_000_000)
+                if Task.isCancelled { break }
+                do {
+                    _ = try await api.post(["action":"heartbeat","jobId":jobID,"deviceId":deviceID,"leaseToken":leaseToken])
+                } catch {
+                    ConnectorSupport.log("heartbeat_error", details: ["jobId":jobID,"error":ConnectorSupport.sanitize(error.localizedDescription, maximum:300)])
+                }
+            }
+        }
+        defer { heartbeat.cancel() }
+        return try await Task.detached { [self] in
+            try requestExtension(type: type, payload: payload)
+        }.value
     }
 
     private func requestExtension(type: String, payload: [String: Any]) throws -> [String: Any] {
@@ -114,7 +170,7 @@ public final class ConnectorRunner {
         try messenger.writeMessage(request)
         while let response = try messenger.readMessage() {
             if response["type"] as? String == "cancel_local" {
-                cancelled = true
+                requestCancellation()
                 continue
             }
             if response["requestId"] as? String == requestID { return response }
