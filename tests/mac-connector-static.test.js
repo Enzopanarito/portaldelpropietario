@@ -84,6 +84,12 @@ assert(rollback.includes('inventory.tsv'));
 assert(rollback.includes('Los componentes ausentes en el respaldo fueron eliminados'));
 assert(rollback.includes('rm -rf "$destination"'));
 assert(uninstall.includes('--purge-data'));
+assert(uninstall.includes('--confirm-purge'));
+assert(uninstall.includes('uninstall-$(date'));
+assert(uninstall.includes('inventory.tsv'));
+assert(uninstall.includes('restore_backup'));
+assert(uninstall.includes('VLA-WhatsApp-Connector-rescate-'));
+assert(uninstall.indexOf('Creando respaldo previo')<uninstall.indexOf('rm -rf "${APP_DIR}"'));
 
 assert(support.includes('posixPermissions: 0o600'));
 assert(support.includes('device-id'));
