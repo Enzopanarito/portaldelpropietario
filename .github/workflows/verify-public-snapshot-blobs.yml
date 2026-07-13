@@ -66,8 +66,11 @@ jobs:
       - name: Verify selective invalidation contracts
         run: node tests/public-snapshot-invalidation.test.js
 
-      - name: Re-run official balance contract
-        run: node tests/official-balance-contract.test.js
+      - name: Re-run official balance synchronization
+        run: node tests/official-balance-sync.test.js
 
-      - name: Re-run 15-house financial suite
-        run: node tests/financial-snapshots.test.js
+      - name: Re-run all 15 current house balances
+        run: node tests/all-houses-current-balance.test.js
+
+      - name: Re-run unified balance engine
+        run: node tests/balance-engine-v4.test.js
