@@ -9,6 +9,7 @@ const { requireAdmin } = require('./_auth');
 const { json, money, airtableGetRecord, airtableCreateRecord, airtablePatchRecord, syncOwnerAccess, TABLES } = require('./_access_control');
 const { createAndSendReceipt } = require('./_receipt_service');
 const { begin, setState } = require('./_operation_guard');
+const { hashPayload } = require('./_idempotency_blobs');
 const { ensureFinancialWritesAllowed } = require('./_financial_write_lock');
 const { safeDisplayText, deepEscapeStrings } = require('./_security_utils');
 
@@ -31,6 +32,14 @@ function guardResponse(result) {
       partial:true,
       paymentId: result.marker?.resultId || null,
       message:'Este reporte tuvo un procesamiento parcial y quedó bloqueado para evitar un pago duplicado. Revise el pago y el reporte antes de continuar.'
+    });
+  }
+  if (result.reason === 'conflict') {
+    return json(409, {
+      success:false,
+      protected:true,
+      idempotencyConflict:true,
+      message:'Este reporte ya tiene otra decisión administrativa en curso o registrada. Actualice el panel antes de continuar.'
     });
   }
   return json(200, {
@@ -76,7 +85,8 @@ const handler = async function(event) {
       return json(200, { success:true, decision:'already-rejected', message:'Este reporte ya estaba rechazado. No se hizo ningún cambio.', report:deepEscapeStrings(report) });
     }
 
-    const guard = await begin('PAYMENT_REPORT', reportId);
+    const payloadHash = hashPayload({ reportId, decision });
+    const guard = await begin('PAYMENT_REPORT', reportId, { payloadHash });
     if (!guard.ok) {
       if (guard.reason === 'done') {
         report = await airtableGetRecord(TABLES.reportes, reportId).catch(() => report);
