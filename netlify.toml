@@ -2,6 +2,9 @@
   publish = "."
   functions = "netlify/functions"
 
+[functions."airtable-full-backup-scheduled"]
+  schedule = "*/2 * * * *"
+
 [[edge_functions]]
 function = "pwa-head"
 path = "/*"
