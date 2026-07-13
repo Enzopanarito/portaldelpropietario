@@ -7,7 +7,8 @@ const { readSnapshot,writeSnapshot }=require('./_public_snapshot_store');
 
 const HEADERS={'Content-Type':'application/json','Cache-Control':'no-store, no-cache, must-revalidate','Pragma':'no-cache'};
 function response(statusCode,body,extra={}){return{statusCode,headers:{...HEADERS,...extra},body:JSON.stringify(body)};}
-function wantsRefresh(event){return event&&event.queryStringParameters&&event.queryStringParameters.force==='1';}
+function requestedRefresh(event){return event&&event.queryStringParameters&&event.queryStringParameters.force==='1';}
+function authorizedRefresh(event){return requestedRefresh(event)&&requireAdmin(event).ok;}
 
 async function buildFromSource(event){
   assertSafeAirtableContext({write:false,allowUnclassified:true});
@@ -20,15 +21,14 @@ async function buildFromSource(event){
 
 const handler=async function(event){
   try{
-    const refresh=wantsRefresh(event);
-    if(refresh){
-      const auth=requireAdmin(event);
-      if(!auth.ok)return response(403,{message:'La reconstrucción manual de la fotografía pública requiere sesión administrativa.'},{'X-Public-Snapshot':'REFRESH-DENIED'});
-      return await buildFromSource(event);
-    }
+    if(authorizedRefresh(event))return await buildFromSource(event);
 
     const snapshot=await readSnapshot();
-    if(snapshot)return response(200,snapshot.payload,{'X-Public-Snapshot':'HIT','X-Airtable-Calls':'0','ETag':snapshot.etag||''});
+    if(snapshot)return response(200,snapshot.payload,{
+      'X-Public-Snapshot':requestedRefresh(event)?'HIT-COMPAT':'HIT',
+      'X-Airtable-Calls':'0',
+      'ETag':snapshot.etag||''
+    });
     return await buildFromSource(event);
   }catch(error){
     if(error&&String(error.code||'').startsWith('AIRTABLE_'))return isolationResponse(error);
@@ -42,3 +42,5 @@ const handler=async function(event){
 
 exports.handler=handler;
 exports.buildFromSource=buildFromSource;
+exports.requestedRefresh=requestedRefresh;
+exports.authorizedRefresh=authorizedRefresh;
