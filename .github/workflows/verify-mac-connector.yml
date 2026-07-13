@@ -1,0 +1,57 @@
+name: Verify Mac Connector
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'mac-connector/**'
+      - 'tests/mac-connector-static.test.js'
+      - '.github/workflows/verify-mac-connector.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'mac-connector/**'
+      - 'tests/mac-connector-static.test.js'
+      - '.github/workflows/verify-mac-connector.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-mac-connector:
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Toolchain versions
+        run: |
+          swift --version
+          node --version
+          bash --version | head -1
+
+      - name: Validate installer scripts
+        run: |
+          bash -n mac-connector/scripts/install.sh
+          bash -n mac-connector/scripts/rollback-latest.sh
+          bash -n mac-connector/scripts/uninstall.sh
+
+      - name: Validate Chrome extension JavaScript
+        run: |
+          node --check mac-connector/chrome-extension/background.js
+          node --check mac-connector/chrome-extension/whatsapp-content.js
+
+      - name: Validate connector static safety contracts
+        run: node tests/mac-connector-static.test.js
+
+      - name: Build and test Swift package
+        run: swift test --package-path mac-connector --parallel
+
+      - name: Build release executables
+        run: swift build --package-path mac-connector -c release
+
+      - name: Verify expected release products
+        run: |
+          test -x mac-connector/.build/release/VLAWhatsAppHost
+          test -x mac-connector/.build/release/VLAWhatsAppMenu
