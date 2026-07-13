@@ -36,7 +36,31 @@ function normalizeEntry(entry) {
   if (!entry || !entry.data) return null;
   return {data:entry.data,etag:entry.etag||'',metadata:entry.metadata||{}};
 }
+function createMemoryStore() {
+  const entries=new Map(); let version=0;
+  const clone=value=>value===undefined?undefined:JSON.parse(JSON.stringify(value));
+  return {
+    async getWithMetadata(key) {
+      const entry=entries.get(key);
+      return entry?{data:clone(entry.data),etag:entry.etag,metadata:clone(entry.metadata)}:null;
+    },
+    async setJSON(key,data,options={}) {
+      const current=entries.get(key);
+      if (options.onlyIfNew && current) return {modified:false,etag:current.etag};
+      if (options.onlyIfMatch && (!current || current.etag!==options.onlyIfMatch)) return {modified:false,etag:current?.etag||''};
+      const etag=`memory-${++version}`;
+      entries.set(key,{data:clone(data),metadata:clone(options.metadata||{}),etag});
+      return {modified:true,etag};
+    }
+  };
+}
+let testMemoryStore=null;
 async function defaultStore() {
+  if (process.env.VLA_IDEMPOTENCY_TEST_MEMORY==='1') {
+    if (process.env.CONTEXT==='production') throw new Error('El almacén idempotente de prueba está prohibido en producción.');
+    if (!testMemoryStore) testMemoryStore=createMemoryStore();
+    return testMemoryStore;
+  }
   const { getStore } = await import('@netlify/blobs');
   return getStore({name:STORE_NAME,consistency:'strong'});
 }
@@ -121,7 +145,7 @@ function createLedger({storeFactory=defaultStore,now=()=>Date.now(),newOperation
 const defaultLedger=createLedger();
 
 module.exports={
-  STORE_NAME,DEFAULT_TTL_MS,MAX_RESULT_BYTES,canonicalJson,sha256,hashPayload,environmentNamespace,ledgerKey,safeResult,createLedger,
+  STORE_NAME,DEFAULT_TTL_MS,MAX_RESULT_BYTES,canonicalJson,sha256,hashPayload,environmentNamespace,ledgerKey,safeResult,createMemoryStore,createLedger,
   claim:options=>defaultLedger.claim(options),
   complete:(marker,result)=>defaultLedger.complete(marker,result),
   partial:(marker,result,errorCode)=>defaultLedger.partial(marker,result,errorCode),
