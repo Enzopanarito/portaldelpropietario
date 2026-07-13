@@ -5,6 +5,7 @@ const { assertPayloadSize, summarize } = require('./_messaging_queue_core');
 
 const STORE_NAME = 'vla-whatsapp-queue-v2';
 const JOB_PREFIX = 'jobs/';
+const IDEMPOTENCY_PREFIX = 'idempotency/';
 const MAX_LIST = 200;
 
 class JobConflictError extends Error {
@@ -15,6 +16,9 @@ class JobConflictError extends Error {
 class JobNotFoundError extends Error {
   constructor(message='Lote no encontrado.') {super(message);this.name='JobNotFoundError';this.code='JOB_NOT_FOUND';this.statusCode=404;}
 }
+class IdempotencyConflictError extends Error {
+  constructor(keys=[]){super('Uno o más destinatarios ya tienen un envío reservado o ejecutado para la misma fotografía oficial.');this.name='IdempotencyConflictError';this.code='IDEMPOTENCY_CONFLICT';this.statusCode=409;this.keys=keys;}
+}
 
 let storeFactoryOverride=null;
 function setStoreFactoryForTests(factory){storeFactoryOverride=factory||null;}
@@ -23,7 +27,13 @@ function validateJobId(jobId){
   if(!/^WA-[A-Z0-9-]{10,80}$/.test(value))throw new Error('Job ID inválido.');
   return value;
 }
+function validateIdempotencyKey(value){
+  const key=String(value||'');
+  if(!/^[a-f0-9]{64}$/.test(key))throw new Error('Clave de idempotencia inválida.');
+  return key;
+}
 function jobKey(jobId){return`${JOB_PREFIX}${validateJobId(jobId)}.json`;}
+function idempotencyKey(value){return`${IDEMPOTENCY_PREFIX}${validateIdempotencyKey(value)}.json`;}
 function contextKind(){return process.env.CONTEXT==='production'?'production':'deploy';}
 async function runtimeStore(){
   if(storeFactoryOverride)return storeFactoryOverride();
@@ -85,6 +95,28 @@ async function listJobs({limit=80}={}){
   }
   return entries.sort((left,right)=>String(right.job.createdAt||'').localeCompare(String(left.job.createdAt||''))).slice(0,safeLimit);
 }
+async function claimIdempotencyKeys(keys,{jobId,mode,claimedAt=new Date().toISOString()}={}){
+  const unique=[...new Set((keys||[]).map(validateIdempotencyKey))].sort();
+  if(!unique.length)throw new Error('No existen claves de idempotencia para reservar.');
+  const id=validateJobId(jobId);const safeMode=cleanPlainText(mode,30);const store=await runtimeStore();const acquired=[];const conflicts=[];
+  try{
+    for(const key of unique){
+      const claim={schemaVersion:'vla-idempotency-claim-v1',key,jobId:id,mode:safeMode,claimedAt};
+      const result=await store.setJSON(idempotencyKey(key),claim,{onlyIfNew:true,metadata:{jobId:id,mode:safeMode,claimedAt}});
+      if(!result||result.modified!==true){conflicts.push(key);break;}
+      acquired.push(key);
+    }
+    if(conflicts.length)throw new IdempotencyConflictError(conflicts);
+    return acquired;
+  }catch(error){
+    await Promise.all(acquired.map(key=>store.delete(idempotencyKey(key)).catch(()=>{})));
+    throw error;
+  }
+}
+async function releaseIdempotencyKeys(keys){
+  const unique=[...new Set((keys||[]).map(validateIdempotencyKey))];const store=await runtimeStore();
+  await Promise.all(unique.map(key=>store.delete(idempotencyKey(key))));
+}
 async function exportJobs(){return listJobs({limit:MAX_LIST});}
 
-module.exports={STORE_NAME,JOB_PREFIX,MAX_LIST,JobConflictError,JobNotFoundError,setStoreFactoryForTests,validateJobId,jobKey,contextKind,metadataForJob,createJob,readJob,requireJob,compareAndSetJob,listJobs,exportJobs};
+module.exports={STORE_NAME,JOB_PREFIX,IDEMPOTENCY_PREFIX,MAX_LIST,JobConflictError,JobNotFoundError,IdempotencyConflictError,setStoreFactoryForTests,validateJobId,validateIdempotencyKey,jobKey,idempotencyKey,contextKind,metadataForJob,createJob,readJob,requireJob,compareAndSetJob,listJobs,claimIdempotencyKeys,releaseIdempotencyKeys,exportJobs};
