@@ -1,0 +1,64 @@
+name: Verify Public Snapshot Activation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'netlify.toml'
+      - 'tests/public-snapshot-activation.test.js'
+      - 'tests/public-snapshot-production-smoke.cjs'
+      - '.github/workflows/verify-public-snapshot-activation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'netlify.toml'
+      - 'tests/public-snapshot-activation.test.js'
+      - 'tests/public-snapshot-production-smoke.cjs'
+      - '.github/workflows/verify-public-snapshot-activation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  activation-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Check activation scripts
+        run: |
+          node --check tests/public-snapshot-activation.test.js
+          node --check tests/public-snapshot-production-smoke.cjs
+
+      - name: Verify production-only activation and rollback
+        run: node tests/public-snapshot-activation.test.js
+
+      - name: Re-run snapshot CAS protection
+        run: node tests/public-snapshot-store.test.js
+
+      - name: Re-run public fallback routes
+        run: node tests/public-data-v3.test.js
+
+  production-smoke:
+    if: github.event_name == 'push'
+    needs: activation-contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Wait for deploy and verify REFRESH then HIT
+        run: node tests/public-snapshot-production-smoke.cjs
