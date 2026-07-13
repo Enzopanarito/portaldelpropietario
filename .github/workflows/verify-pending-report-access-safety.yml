@@ -6,6 +6,7 @@ on:
     paths:
       - 'netlify/functions/public-report-payment.js'
       - 'netlify/functions/_access_control.js'
+      - 'netlify/functions/_pending_report_access_policy.js'
       - 'tests/pending-reports-never-enable-access.test.js'
       - '.github/workflows/verify-pending-report-access-safety.yml'
   push:
@@ -13,6 +14,7 @@ on:
     paths:
       - 'netlify/functions/public-report-payment.js'
       - 'netlify/functions/_access_control.js'
+      - 'netlify/functions/_pending_report_access_policy.js'
       - 'tests/pending-reports-never-enable-access.test.js'
       - '.github/workflows/verify-pending-report-access-safety.yml'
 
@@ -36,6 +38,7 @@ jobs:
         run: |
           node --check netlify/functions/public-report-payment.js
           node --check netlify/functions/_access_control.js
+          node --check netlify/functions/_pending_report_access_policy.js
           node --check tests/pending-reports-never-enable-access.test.js
 
       - name: Prove pending reports never enable access
