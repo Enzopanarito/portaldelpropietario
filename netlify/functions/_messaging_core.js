@@ -4,8 +4,8 @@ const crypto = require('crypto');
 const { money } = require('./_balance_engine');
 const { cleanPlainText, stripControlChars } = require('./_security_utils');
 
-const MESSAGE_SCHEMA_VERSION = 'vla-messaging-snapshot-v1';
-const TEMPLATE_VERSION = 'balance-reminder-account-v1';
+const MESSAGE_SCHEMA_VERSION = 'vla-messaging-snapshot-v2';
+const TEMPLATE_VERSION = 'balance-reminder-account-v2';
 const ENGINE_VERSION = 5;
 const OFFICIAL_SOURCE = 'ControlVersiones';
 const TOLERANCE = 0.01;
@@ -94,7 +94,7 @@ function buildPublicMessage(snapshot) {
   lines.push('', `*TOTAL REFERENCIAL DE OBLIGACIONES: $${formatUsd(snapshot.payableTotalRef)}*`, '', 'Agradecemos su pronta gestión.');
 
   if (snapshot.generatedDay <= 10 && snapshot.payableBsRef > TOLERANCE) {
-    lines.push('', '_El beneficio de pronto pago para obligaciones pagaderas en Bs. está disponible hasta el día 10 del mes._');
+    lines.push('', '_El beneficio de pronto pago para obligaciones elegibles pagaderas en Bs. está disponible hasta el día 10 del mes._');
   }
 
   lines.push('', 'Para más información, visite nuestro portal:', 'https://villalosapamates.netlify.app', '');
@@ -119,6 +119,11 @@ function forbiddenPublicTerms(message) {
   return matches;
 }
 
+function validOfficialCutoff(value) {
+  const text = String(value || '').trim();
+  return text.length >= 10 && text.length <= 80 && Number.isFinite(Date.parse(text));
+}
+
 function buildOwnerSnapshot(owner, context = {}) {
   const generatedAt = context.generatedAt ? new Date(context.generatedAt) : new Date();
   const date = caracasDateParts(generatedAt);
@@ -137,6 +142,9 @@ function buildOwnerSnapshot(owner, context = {}) {
   const payableTotalRef = money(payableUsd + payableBsRef);
   const expectedNet = money(usd + bsRef);
   const internalSurchargeBsRef = money(owner && owner['Recargo Aplicado']);
+  const officialCutoff = cleanPlainText(owner && owner['Corte Saldo Oficial'], 80);
+  const officialSnapshotActive = owner && owner['Saldo Oficial Activo'] === true;
+  const ownerId = cleanPlainText(owner && owner.id, 80);
   const errors = [];
   const warnings = [];
 
@@ -144,7 +152,10 @@ function buildOwnerSnapshot(owner, context = {}) {
   if (officialSource !== OFFICIAL_SOURCE) errors.push('La fuente financiera no es ControlVersiones.');
   if (!Number.isInteger(house) || house < 1 || house > 15) errors.push('Casa inválida.');
   if (!ownerName) errors.push('Propietario sin nombre.');
+  if (!ownerId) errors.push('Propietario sin identificador estable.');
   if (!phone.ok) errors.push(phone.reason);
+  if (!officialSnapshotActive) errors.push('La fotografía oficial de la casa no está activa.');
+  if (!validOfficialCutoff(officialCutoff)) errors.push('El corte oficial es inválido o está ausente.');
   if (![usd, bsRef, totalRef, internalSurchargeBsRef].every(Number.isFinite)) errors.push('Existe un valor financiero no numérico.');
   if (Math.abs(money(expectedNet - totalRef)) > TOLERANCE) errors.push('El total no coincide con la suma de las cuentas USD y Bs.');
   if (payableTotalRef <= TOLERANCE) warnings.push('La propiedad no tiene obligaciones positivas para recordatorio.');
@@ -159,9 +170,9 @@ function buildOwnerSnapshot(owner, context = {}) {
     generatedDay:date.day,
     balanceEngineVersion:engineVersion,
     officialBalanceSource:officialSource,
-    officialCutoff:cleanPlainText(owner && owner['Corte Saldo Oficial'], 80),
-    officialSnapshotActive:owner && owner['Saldo Oficial Activo'] === true,
-    ownerId:cleanPlainText(owner && owner.id, 80),
+    officialCutoff,
+    officialSnapshotActive,
+    ownerId,
     house,
     ownerName,
     phone:phone.e164,
@@ -184,17 +195,15 @@ function buildOwnerSnapshot(owner, context = {}) {
   if (forbidden.length) snapshot.errors.push(`El mensaje público contiene términos internos prohibidos: ${forbidden.join(', ')}.`);
   snapshot.sendable = snapshot.errors.length === 0 && snapshot.payableTotalRef > TOLERANCE;
 
-  const immutablePayload = {
+  const debtIdentityPayload = {
     schemaVersion:snapshot.schemaVersion,
     templateVersion:snapshot.templateVersion,
-    generatedDate:snapshot.generatedDate,
     balanceEngineVersion:snapshot.balanceEngineVersion,
     officialBalanceSource:snapshot.officialBalanceSource,
     officialCutoff:snapshot.officialCutoff,
     officialSnapshotActive:snapshot.officialSnapshotActive,
     ownerId:snapshot.ownerId,
     house:snapshot.house,
-    ownerName:snapshot.ownerName,
     phone:snapshot.phone,
     accountUsd:snapshot.accountUsd,
     accountBsRef:snapshot.accountBsRef,
@@ -204,12 +213,13 @@ function buildOwnerSnapshot(owner, context = {}) {
     payableTotalRef:snapshot.payableTotalRef,
     creditUsd:snapshot.creditUsd,
     creditBsRef:snapshot.creditBsRef,
-    internalSurchargeBsRef:snapshot.internalSurchargeBsRef,
-    message:snapshot.message
+    internalSurchargeBsRef:snapshot.internalSurchargeBsRef
   };
+  const immutablePayload = { ...debtIdentityPayload, generatedDate:snapshot.generatedDate, ownerName:snapshot.ownerName, message:snapshot.message };
   snapshot.messageHash = sha256(snapshot.message);
+  snapshot.debtIdentityHash = sha256(canonicalJson(debtIdentityPayload));
   snapshot.snapshotHash = sha256(canonicalJson(immutablePayload));
-  snapshot.idempotencyKey = sha256(`${snapshot.templateVersion}|${snapshot.generatedDate}|${snapshot.house}|${snapshot.phone}|${snapshot.snapshotHash}`);
+  snapshot.idempotencyKey = sha256(`${snapshot.templateVersion}|${snapshot.house}|${snapshot.phone}|${snapshot.debtIdentityHash}`);
   return snapshot;
 }
 
@@ -248,6 +258,7 @@ module.exports = {
   maskPhone,
   caracasDateParts,
   forbiddenPublicTerms,
+  validOfficialCutoff,
   buildPublicMessage,
   buildOwnerSnapshot,
   buildPreviewPayload
