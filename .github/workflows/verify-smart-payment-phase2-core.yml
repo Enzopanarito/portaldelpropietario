@@ -1,0 +1,60 @@
+name: Verify Smart Payment Phase 2 Core
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'netlify/functions/_payment_proof_core.js'
+      - 'netlify/functions/_payment_proof_store.js'
+      - 'netlify/functions/_payment_access_snapshot.js'
+      - 'netlify/functions/_payment_duplicate_core.js'
+      - 'tests/payment-proof-core.test.js'
+      - 'tests/payment-proof-store.test.js'
+      - 'tests/payment-access-snapshot.test.js'
+      - 'tests/payment-duplicate-core.test.js'
+      - '.github/workflows/verify-smart-payment-phase2-core.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-phase2-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Check syntax
+        run: |
+          node --check netlify/functions/_payment_proof_core.js
+          node --check netlify/functions/_payment_proof_store.js
+          node --check netlify/functions/_payment_access_snapshot.js
+          node --check netlify/functions/_payment_duplicate_core.js
+          node --check tests/payment-proof-core.test.js
+          node --check tests/payment-proof-store.test.js
+          node --check tests/payment-access-snapshot.test.js
+          node --check tests/payment-duplicate-core.test.js
+
+      - name: Verify signatures, limits and exact hash
+        run: node tests/payment-proof-core.test.js
+
+      - name: Verify encrypted private storage
+        run: node tests/payment-proof-store.test.js
+
+      - name: Verify v5 financial snapshots
+        run: node tests/payment-access-snapshot.test.js
+
+      - name: Verify global duplicate rules
+        run: node tests/payment-duplicate-core.test.js
+
+      - name: Re-run unified balance engine
+        run: node tests/balance-engine-v4.test.js
+
+      - name: Re-run all 15 official balances
+        run: node tests/all-houses-current-balance.test.js
