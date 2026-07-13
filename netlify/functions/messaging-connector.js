@@ -6,11 +6,11 @@ const jobStore = require('./_messaging_job_store');
 const queueApi = require('./messaging-queue');
 const {
   JOB_STATES, MESSAGE_STATES, randomToken, nowIso, claimJob, assertLease, extendLease,
-  claimNextMessage, transitionMessage, findMessage, refreshJobState, summarize
+  claimNextMessage, transitionMessage, findMessage, refreshJobState, summarize, requestCancel
 } = require('./_messaging_queue_core');
 
-const HEADERS={'Content-Type':'application/json','Cache-Control':'no-store, no-cache, must-revalidate','X-Content-Type-Options':'nosniff','X-VLA-Connector':'native-v1'};
-const ALLOWED_ACTIONS=new Set(['health','inspect','claim','heartbeat','next','transition','release']);
+const HEADERS={'Content-Type':'application/json','Cache-Control':'no-store, no-cache, must-revalidate','X-Content-Type-Options':'nosniff','X-VLA-Connector':'native-v2'};
+const ALLOWED_ACTIONS=new Set(['health','inspect','claim','heartbeat','next','transition','cancel','release']);
 
 function json(statusCode,body){return{statusCode,headers:HEADERS,body:JSON.stringify(body)}}
 function connectorEnabled(){return process.env.WHATSAPP_CONNECTOR_ENABLED==='true';}
@@ -54,11 +54,17 @@ function transitionFromConnector(job,body,at=new Date()){
   if(outcome==='failed')return transitionMessage(job,messageId,MESSAGE_STATES.FAILED,{attemptId,at,errorCode:body.errorCode||'SAFE_FAILURE',errorDetail:body.errorDetail||'El fallo ocurrió antes de activar Enviar.',evidence});
   throw new Error('Resultado del conector no reconocido.');
 }
-function assertTokenMatchesJob(claims,job,{initial=false}={}){
+function assertTokenMatchesJob(claims,job,{initial=false,deviceId=''}={}){
   if(claims.jobId!==job.jobId)throw new Error('El token no corresponde al lote.');
   if(claims.mode!==job.mode)throw new Error('El modo del token no corresponde al lote.');
+  const session=job.dispatchSession;
+  if(!session||claims.sessionId!==session.id)throw new Error('La sesión de despacho fue sustituida o revocada.');
+  if(!Number.isFinite(Date.parse(session.expiresAt))||Date.parse(session.expiresAt)<=Date.now())throw new Error('La sesión de despacho venció.');
+  if(initial&&session.consumedAt)throw new jobStore.JobConflictError('La sesión de despacho ya fue consumida por un conector.');
   if(initial&&Number(claims.revision)!==Number(job.revision))throw new jobStore.JobConflictError('El lote cambió después de emitir el permiso de despacho. Solicite uno nuevo.');
   if(Number(claims.revision)>Number(job.revision))throw new Error('La revisión del token es inválida.');
+  if(!initial&&session.consumedAt===null)throw new Error('La sesión todavía no fue reclamada.');
+  if(deviceId&&session.deviceId&&session.deviceId!==deviceId)throw new Error('La sesión pertenece a otro conector.');
 }
 async function atomicMutation(jobId,transform,{mirror=false,requestedBy='Conector Mac'}={}){
   const current=await jobStore.requireJob(jobId);const next=clone(current.job);const result=transform(next,current);
@@ -68,7 +74,7 @@ async function atomicMutation(jobId,transform,{mirror=false,requestedBy='Conecto
   return{entry:updated,result,warning};
 }
 function publicConnectorJob(entry,{includeMessages=false}={}){
-  const job=entry.job;const output={jobId:job.jobId,mode:job.mode,state:job.state,revision:job.revision,summary:summarize(job),controls:job.controls,lease:job.lease?{deviceId:job.lease.deviceId,claimedAt:job.lease.claimedAt,expiresAt:job.lease.expiresAt}:null};
+  const job=entry.job;const output={jobId:job.jobId,mode:job.mode,state:job.state,revision:job.revision,summary:summarize(job),controls:job.controls,lease:job.lease?{deviceId:job.lease.deviceId,claimedAt:job.lease.claimedAt,expiresAt:job.lease.expiresAt}:null,dispatchSession:job.dispatchSession?{issuedAt:job.dispatchSession.issuedAt,expiresAt:job.dispatchSession.expiresAt,consumedAt:job.dispatchSession.consumedAt,deviceId:job.dispatchSession.deviceId}:null};
   if(includeMessages)output.messages=job.messages;
   return output;
 }
@@ -82,34 +88,48 @@ exports.handler=async function handler(event){
   try{
     if(!connectorEnabled())return json(503,{message:'El conector local permanece desactivado hasta completar la certificación.'});
     if(auth.claims.mode==='Envío real'&&!realSendEnabled())return json(403,{message:'El envío real permanece bloqueado.'});
-    if(action==='health')return json(200,{ok:true,connectorEnabled:true,realSendEnabled:realSendEnabled(),jobId,mode:auth.claims.mode,serverTime:new Date().toISOString()});
+    if(action==='health'){
+      const entry=await jobStore.requireJob(jobId);assertTokenMatchesJob(auth.claims,entry.job);
+      return json(200,{ok:true,connectorEnabled:true,realSendEnabled:realSendEnabled(),jobId,mode:auth.claims.mode,serverTime:new Date().toISOString(),sessionExpiresAt:entry.job.dispatchSession.expiresAt});
+    }
     if(action==='inspect'){
       const entry=await jobStore.requireJob(jobId);assertTokenMatchesJob(auth.claims,entry.job);return json(200,{job:publicConnectorJob(entry,{includeMessages:false})});
     }
     if(action==='claim'){
       const deviceId=cleanDeviceId(body.deviceId);const leaseToken=randomToken(24);
-      const mutation=await atomicMutation(jobId,job=>{assertTokenMatchesJob(auth.claims,job,{initial:true});const claimed=claimJob(job,{deviceId,leaseToken,at:new Date(),leaseSeconds:120});Object.assign(job,claimed);return leaseToken;},{mirror:true,requestedBy:deviceId});
+      const mutation=await atomicMutation(jobId,job=>{
+        assertTokenMatchesJob(auth.claims,job,{initial:true,deviceId});
+        const claimed=claimJob(job,{deviceId,leaseToken,at:new Date(),leaseSeconds:120});Object.assign(job,claimed);
+        job.dispatchSession.consumedAt=new Date().toISOString();job.dispatchSession.deviceId=deviceId;
+        addConnectorEvent(job,'DISPATCH_SESSION_CONSUMED',{deviceId},new Date());job.revision=Number(job.revision||0)+1;
+        return leaseToken;
+      },{mirror:true,requestedBy:deviceId});
       return json(200,{claimed:true,leaseToken:mutation.result,job:publicConnectorJob(mutation.entry),warning:mutation.warning});
     }
     if(action==='heartbeat'){
       const deviceId=cleanDeviceId(body.deviceId);const leaseToken=cleanLeaseToken(body.leaseToken);
-      const mutation=await atomicMutation(jobId,job=>{assertTokenMatchesJob(auth.claims,job);extendLease(job,{deviceId,leaseToken,at:new Date(),leaseSeconds:120});});
+      const mutation=await atomicMutation(jobId,job=>{assertTokenMatchesJob(auth.claims,job,{deviceId});extendLease(job,{deviceId,leaseToken,at:new Date(),leaseSeconds:120});});
       return json(200,{ok:true,job:publicConnectorJob(mutation.entry)});
     }
     if(action==='next'){
       const deviceId=cleanDeviceId(body.deviceId);const leaseToken=cleanLeaseToken(body.leaseToken);const attemptId=randomToken(12);
-      const mutation=await atomicMutation(jobId,job=>{assertTokenMatchesJob(auth.claims,job);extendLease(job,{deviceId,leaseToken,at:new Date(),leaseSeconds:120});return claimNextMessage(job,{deviceId,leaseToken,attemptId,at:new Date()});});
+      const mutation=await atomicMutation(jobId,job=>{assertTokenMatchesJob(auth.claims,job,{deviceId});extendLease(job,{deviceId,leaseToken,at:new Date(),leaseSeconds:120});return claimNextMessage(job,{deviceId,leaseToken,attemptId,at:new Date()});});
       const message=mutation.result;
       return json(200,{message:message?{messageId:message.messageId,house:message.house,phone:message.phone,text:message.message,messageHash:message.messageHash,attemptId:message.activeAttemptId,mode:mutation.entry.job.mode}:null,job:publicConnectorJob(mutation.entry)});
     }
     if(action==='transition'){
-      let terminal=false;
-      const mutation=await atomicMutation(jobId,job=>{assertTokenMatchesJob(auth.claims,job);const result=transitionFromConnector(job,body,new Date());terminal=[MESSAGE_STATES.SENT,MESSAGE_STATES.VERIFY,MESSAGE_STATES.FAILED].includes(result.state);return result;},{mirror:true,requestedBy:cleanDeviceId(body.deviceId)});
+      let terminal=false;const deviceId=cleanDeviceId(body.deviceId);
+      const mutation=await atomicMutation(jobId,job=>{assertTokenMatchesJob(auth.claims,job,{deviceId});const result=transitionFromConnector(job,body,new Date());terminal=[MESSAGE_STATES.SENT,MESSAGE_STATES.VERIFY,MESSAGE_STATES.FAILED].includes(result.state);return result;},{mirror:true,requestedBy:deviceId});
       return json(200,{updated:true,message:{messageId:mutation.result.messageId,state:mutation.result.state},job:publicConnectorJob(mutation.entry),warning:mutation.warning,terminal});
+    }
+    if(action==='cancel'){
+      const deviceId=cleanDeviceId(body.deviceId);const leaseToken=cleanLeaseToken(body.leaseToken);
+      const mutation=await atomicMutation(jobId,job=>{assertTokenMatchesJob(auth.claims,job,{deviceId});assertLease(job,{deviceId,leaseToken,at:new Date()});requestCancel(job,new Date());},{mirror:true,requestedBy:deviceId});
+      return json(200,{cancelRequested:true,job:publicConnectorJob(mutation.entry),warning:mutation.warning});
     }
     if(action==='release'){
       const deviceId=cleanDeviceId(body.deviceId);const leaseToken=cleanLeaseToken(body.leaseToken);
-      const mutation=await atomicMutation(jobId,job=>{assertTokenMatchesJob(auth.claims,job);releaseLease(job,{deviceId,leaseToken,at:new Date()});},{mirror:true,requestedBy:deviceId});
+      const mutation=await atomicMutation(jobId,job=>{assertTokenMatchesJob(auth.claims,job,{deviceId});releaseLease(job,{deviceId,leaseToken,at:new Date()});},{mirror:true,requestedBy:deviceId});
       return json(200,{released:true,job:publicConnectorJob(mutation.entry),warning:mutation.warning});
     }
     return json(400,{message:'Acción no reconocida.'});
