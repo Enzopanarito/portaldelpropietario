@@ -1,19 +1,31 @@
 'use strict';
 
 const { AsyncLocalStorage } = require('async_hooks');
-const crypto = require('crypto');
 
 const CONTROL_TABLE = 'ControlVersiones';
 const AIRTABLE_PREFIX = 'https://api.airtable.com/v0/';
+const DAILY_PREFIX = 'API_USAGE_DAILY|';
 const DEFAULT_MONTHLY_LIMIT = 1000;
 const storage = new AsyncLocalStorage();
 const rawFetch = globalThis.__VLA_AIRTABLE_RAW_FETCH || globalThis.fetch.bind(globalThis);
 
+function caracasParts(date = new Date()) {
+  return Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(date).map(part => [part.type, part.value]));
+}
+
+function currentDateCaracas(date = new Date()) {
+  const parts = caracasParts(date);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
 function currentMonthCaracas(date = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Caracas', year: 'numeric', month: '2-digit'
-  }).formatToParts(date);
-  return `${parts.find(part => part.type === 'year').value}-${parts.find(part => part.type === 'month').value}`;
+  return currentDateCaracas(date).slice(0, 7);
+}
+
+function dailyUsageKey(date = new Date()) {
+  return `${DAILY_PREFIX}${currentDateCaracas(date)}`;
 }
 
 function safeSource(value) {
@@ -53,8 +65,8 @@ if (!globalThis.__VLA_AIRTABLE_METER_INSTALLED) {
   };
 }
 
-function usageTableUrl() {
-  return `${AIRTABLE_PREFIX}${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(CONTROL_TABLE)}`;
+function usageTableUrl(query = '') {
+  return `${AIRTABLE_PREFIX}${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(CONTROL_TABLE)}${query}`;
 }
 
 function currentUsageSnapshot() {
@@ -64,8 +76,12 @@ function currentUsageSnapshot() {
     source: state.source,
     calls: state.calls,
     byMethod: { ...state.byMethod },
-    projectedRecordedCalls: state.calls > 0 ? state.calls + 1 : 0
+    projectedRecordedCalls: state.calls > 0 ? state.calls + 2 : 0
   };
+}
+
+async function responseJson(response) {
+  return response.json().catch(() => ({}));
 }
 
 async function persistUsage(state) {
@@ -77,31 +93,59 @@ async function persistUsage(state) {
   }
 
   state.logging = true;
-  const month = currentMonthCaracas();
-  const timestamp = new Date().toISOString();
-  const key = `API_USAGE|${month}|${state.source}|${timestamp}|${crypto.randomBytes(4).toString('hex')}`;
+  const key = dailyUsageKey();
   let attempts = 0;
+  let loggingCalls = 0;
 
   try {
     while (attempts < 2) {
       attempts += 1;
-      const recordedCalls = state.calls + attempts;
       try {
-        const response = await rawFetch(usageTableUrl(), {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${process.env.AIRTABLE_API_TOKEN}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ records: [{ fields: { Key: key, Version: recordedCalls } }], typecast: true })
+        const formula = encodeURIComponent(`{Key}='${key}'`);
+        loggingCalls += 1;
+        const lookup = await rawFetch(usageTableUrl(`?filterByFormula=${formula}&maxRecords=1`), {
+          headers: { Authorization: `Bearer ${process.env.AIRTABLE_API_TOKEN}` }
         });
-        if (!response.ok) {
-          const data = await response.json().catch(() => ({}));
-          throw new Error(data.error?.message || data.message || `Airtable respondió ${response.status}.`);
+        const lookupData = await responseJson(lookup);
+        if (!lookup.ok) throw new Error(lookupData.error?.message || lookupData.message || `Airtable respondió ${lookup.status}.`);
+
+        const record = (lookupData.records || [])[0] || null;
+        const current = Math.max(0, Number(record?.fields?.Version || 0));
+        const anticipatedLoggingCalls = loggingCalls + 1;
+        const increment = state.calls + anticipatedLoggingCalls;
+        const fields = { Key: key, Version: current + increment };
+        let response;
+        loggingCalls += 1;
+        if (record?.id) {
+          response = await rawFetch(usageTableUrl(`/${encodeURIComponent(record.id)}`), {
+            method: 'PATCH',
+            headers: {
+              Authorization: `Bearer ${process.env.AIRTABLE_API_TOKEN}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ fields, typecast: true })
+          });
+        } else {
+          response = await rawFetch(usageTableUrl(), {
+            method: 'PATCH',
+            headers: {
+              Authorization: `Bearer ${process.env.AIRTABLE_API_TOKEN}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              performUpsert: { fieldsToMergeOn: ['Key'] },
+              records: [{ fields }],
+              typecast: true
+            })
+          });
         }
-        state.loggingCalls = attempts;
-        state.recordedCalls = recordedCalls;
-        state.logStatus = 'recorded';
+        const data = await responseJson(response);
+        if (!response.ok) throw new Error(data.error?.message || data.message || `Airtable respondió ${response.status}.`);
+
+        state.loggingCalls = loggingCalls;
+        state.recordedCalls = state.calls + loggingCalls;
+        state.logStatus = 'daily-summary';
+        state.dailyKey = key;
         return state;
       } catch (error) {
         state.logError = String(error.message || error).slice(0, 300);
@@ -109,10 +153,10 @@ async function persistUsage(state) {
       }
     }
 
-    state.loggingCalls = attempts;
-    state.recordedCalls = state.calls + attempts;
+    state.loggingCalls = loggingCalls;
+    state.recordedCalls = state.calls + loggingCalls;
     state.logStatus = 'failed';
-    console.warn(`No se pudo registrar uso Airtable para ${state.source}: ${state.logError || 'error desconocido'}`);
+    console.warn(`No se pudo actualizar el resumen diario Airtable para ${state.source}: ${state.logError || 'error desconocido'}`);
     return state;
   } finally {
     state.logging = false;
@@ -126,7 +170,8 @@ function attachUsageHeaders(response, state) {
     ...(response.headers || {}),
     'X-Airtable-Calls': String(attempted),
     'X-Airtable-Usage-Source': state.source,
-    'X-Airtable-Usage-Logged': state.logStatus || 'not-needed'
+    'X-Airtable-Usage-Logged': state.logStatus || 'not-needed',
+    'X-Airtable-Usage-Mode': 'daily-rollup-v1'
   };
   return response;
 }
@@ -136,7 +181,6 @@ function withAirtableUsage(source, handler) {
   const normalizedSource = safeSource(source);
 
   return async function meteredHandler(event, context) {
-    // Los handlers anidados comparten una sola medición y un solo evento agregado.
     if (storage.getStore()) return handler(event, context);
 
     const state = {
@@ -173,6 +217,7 @@ async function flushCurrentUsage() {
     byMethod: { ...state.byMethod },
     logStatus: state.logStatus || 'not-needed',
     recordedCalls: state.recordedCalls || 0,
+    dailyKey: state.dailyKey || null,
     logError: state.logError || null
   };
 }
@@ -188,6 +233,8 @@ module.exports = {
   flushCurrentUsage,
   configuredMonthlyLimit,
   currentMonthCaracas,
+  currentDateCaracas,
+  dailyUsageKey,
   isAirtableUrl,
   _test: { persistUsage, safeSource, rawFetch }
 };
