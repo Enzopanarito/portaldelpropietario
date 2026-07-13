@@ -2,6 +2,11 @@
   publish = "."
   functions = "netlify/functions"
 
+[context.production.environment]
+  PUBLIC_BLOB_CACHE_ENABLED = "true"
+  PUBLIC_BLOB_CACHE_MAX_AGE_MS = "120000"
+  VLA_DATA_ENVIRONMENT = "production"
+
 [functions."airtable-usage-rollup-scheduled"]
   schedule = "30 4 * * *"
 
