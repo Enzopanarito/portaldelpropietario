@@ -5,6 +5,7 @@ const NATIVE_HOST = 'com.villaslosapamates.whatsapp_connector';
 const WHATSAPP_ORIGIN = 'https://web.whatsapp.com';
 const CONNECTOR_ENDPOINT = `${PORTAL_ORIGIN}/.netlify/functions/messaging-connector`;
 const prepared = new Map();
+const consumedCommits = new Set();
 let activeDispatch = null;
 
 function safeError(error) {
@@ -46,9 +47,15 @@ async function waitForTabComplete(tabId, timeoutMs = 60000) {
 }
 async function getWhatsAppTab() {
   const tabs = await chrome.tabs.query({ url: `${WHATSAPP_ORIGIN}/*` });
-  if (tabs.length) return { tab: tabs.sort((a, b) => Number(b.lastAccessed || 0) - Number(a.lastAccessed || 0))[0], existingCount: tabs.length };
+  if (tabs.length) {
+    const ordered = tabs.sort((a, b) => Number(b.lastAccessed || 0) - Number(a.lastAccessed || 0));
+    const keeper = ordered[0];
+    const extras = ordered.slice(1).map(tab => tab.id).filter(Number.isInteger);
+    if (extras.length) await chrome.tabs.remove(extras).catch(() => {});
+    return { tab: keeper, closedExtraTabs: extras.length };
+  }
   const tab = await chrome.tabs.create({ url: WHATSAPP_ORIGIN, active: true });
-  return { tab, existingCount: 0 };
+  return { tab, closedExtraTabs: 0 };
 }
 async function sendTabMessage(tabId, message, timeoutMs = 30000) {
   let lastError;
@@ -71,29 +78,40 @@ async function prepareWhatsApp(command) {
   if (!validAttempt(attemptId) || !validPhone(phone) || !text.trim() || text.length > 12000 || !validHash(messageHash)) {
     throw new Error('La orden de preparación contiene datos inválidos.');
   }
+  if (consumedCommits.has(attemptId)) throw new Error('Este intento ya consumió su autorización de envío.');
   const digits = phone.replace(/\D/g, '');
-  const { tab, existingCount } = await getWhatsAppTab();
+  const { tab, closedExtraTabs } = await getWhatsAppTab();
   const targetUrl = `${WHATSAPP_ORIGIN}/send?phone=${encodeURIComponent(digits)}&text=${encodeURIComponent(text)}&app_absent=0`;
   await chrome.tabs.update(tab.id, { url: targetUrl, active: true });
   await waitForTabComplete(tab.id, 60000);
   const result = await sendTabMessage(tab.id, { type: 'VLA_PREPARE', attemptId, phone: `+${digits}`, text, messageHash }, 45000);
   if (!result || result.ok !== true || result.prepared !== true) throw new Error(result && result.error || 'WhatsApp no confirmó la preparación.');
   prepared.set(attemptId, { tabId: tab.id, messageHash, phone: `+${digits}`, preparedAt: Date.now(), baseline: result.baseline || {} });
-  return { ...result, extraWhatsAppTabs: Math.max(0, existingCount - 1) };
+  return { ...result, closedExtraWhatsAppTabs: closedExtraTabs };
 }
 async function commitWhatsApp(command) {
   const attemptId = String(command.attemptId || '');
   if (!validAttempt(attemptId)) throw new Error('Intento inválido.');
+  if (consumedCommits.has(attemptId)) return { ok: true, status: 'verify', clicked: false, errorCode: 'COMMIT_ALREADY_CONSUMED', error: 'La autorización de clic ya fue consumida; no se repetirá el envío.' };
   const state = prepared.get(attemptId);
-  if (!state) throw new Error('No existe una preparación activa para este intento.');
+  if (!state) return { ok: true, status: 'failed', clicked: false, errorCode: 'PREPARATION_MISSING', error: 'No existe una preparación activa para este intento.' };
   if (Date.now() - state.preparedAt > 120000) {
     prepared.delete(attemptId);
-    throw new Error('La preparación expiró antes de confirmar el envío.');
+    return { ok: true, status: 'failed', clicked: false, errorCode: 'PREPARATION_EXPIRED', error: 'La preparación expiró antes de confirmar el envío.' };
   }
-  const result = await sendTabMessage(state.tabId, { type: 'VLA_COMMIT', attemptId, messageHash: state.messageHash, phone: state.phone, baseline: state.baseline }, 45000);
+
+  // Consumir en memoria antes de hablar con la pestaña. Una caída o timeout posterior
+  // se clasifica como incierto y jamás habilita un segundo clic automático.
   prepared.delete(attemptId);
-  if (!result || result.ok !== true) throw new Error(result && result.error || 'WhatsApp no respondió al confirmar.');
-  return result;
+  consumedCommits.add(attemptId);
+  if (consumedCommits.size > 200) consumedCommits.delete(consumedCommits.values().next().value);
+  try {
+    const result = await sendTabMessage(state.tabId, { type: 'VLA_COMMIT', attemptId, messageHash: state.messageHash, phone: state.phone, baseline: state.baseline }, 45000);
+    if (!result || result.ok !== true) return { ok: true, status: 'verify', clicked: true, errorCode: 'COMMIT_RESPONSE_UNCERTAIN', error: result && result.error || 'WhatsApp no confirmó el resultado después de consumir el clic.' };
+    return result;
+  } catch (error) {
+    return { ok: true, status: 'verify', clicked: true, errorCode: 'COMMIT_TIMEOUT_OR_DISCONNECT', error: safeError(error), evidence: { chatPhoneMatch: false, composerCleared: false, outgoingBubble: false, messageHash: state.messageHash } };
+  }
 }
 function nativeHealth() {
   return withTimeout(new Promise((resolve, reject) => {
