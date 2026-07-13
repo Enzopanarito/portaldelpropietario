@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0b2239">
   <title>Mensajería · Villa Los Apamates</title>
-  <link rel="stylesheet" href="/whatsapp-v2.css?v=preview-v1">
+  <link rel="stylesheet" href="/whatsapp-v2.css?v=queue-v2">
 </head>
 <body>
   <div id="login" class="auth-shell">
@@ -29,7 +29,7 @@
       <nav>
         <button class="nav-item active" data-section="recipients">Destinatarios</button>
         <button class="nav-item" data-section="preview">Vista previa</button>
-        <button class="nav-item" data-section="history" disabled title="Se habilitará con la cola individual">Historial</button>
+        <button class="nav-item" data-section="history">Lotes e historial</button>
       </nav>
       <div class="sidebar-bottom">
         <a href="/admin.html">← Portal administrativo</a>
@@ -42,24 +42,26 @@
         <div>
           <p class="eyebrow">COMUNICACIONES</p>
           <h1>Mensajería WhatsApp</h1>
-          <p class="subtitle">Vista previa financiera segura · todavía no envía mensajes</p>
+          <p class="subtitle">Fotografías oficiales, cola atómica y conector local Mac</p>
         </div>
         <div class="top-actions">
           <button id="theme" class="icon-button" type="button" aria-label="Cambiar tema">◐</button>
-          <button id="refresh" class="secondary-button" type="button">Actualizar datos</button>
+          <button id="connector-check" class="secondary-button" type="button">Revisar conector</button>
+          <button id="refresh" class="secondary-button" type="button">Actualizar todo</button>
         </div>
       </header>
 
-      <section class="safety-banner" aria-label="Estado de seguridad">
-        <strong>Modo simulación protegido</strong>
-        <span>Los datos se leen del motor financiero v5. No se crean trabajos, no se modifica Airtable y no se abre WhatsApp.</span>
+      <section id="safety-banner" class="safety-banner" aria-label="Estado de seguridad">
+        <strong id="safety-title">Comprobando compuertas…</strong>
+        <span id="safety-copy">No se ejecutará ninguna acción hasta validar servidor, cola y conector.</span>
       </section>
 
       <section class="status-grid" aria-label="Resumen">
         <article class="metric"><span>Casas revisadas</span><strong id="metric-total">—</strong><small>Se exigen las 15</small></article>
         <article class="metric"><span>Elegibles</span><strong id="metric-sendable">—</strong><small>Con obligación y teléfono válido</small></article>
         <article class="metric"><span>Bloqueadas</span><strong id="metric-blocked">—</strong><small>Requieren corrección</small></article>
-        <article class="metric connector"><span>Conector Mac</span><strong id="connector-state">No vinculado</strong><small>No se intentará enviar</small></article>
+        <article class="metric connector"><span>Cola segura</span><strong id="queue-state">Consultando</strong><small id="queue-meta">Sin escrituras</small></article>
+        <article class="metric connector"><span>Conector Mac</span><strong id="connector-state">Consultando</strong><small id="connector-meta">Chrome + Native Messaging</small></article>
       </section>
 
       <section id="recipients-section" class="panel active-section">
@@ -81,7 +83,7 @@
 
       <section id="preview-section" class="panel">
         <div class="panel-head">
-          <div><h2>Vista previa exacta</h2><p>Este es el texto que recibirá el propietario cuando el conector esté aprobado.</p></div>
+          <div><h2>Vista previa exacta</h2><p>El servidor recalculará y comparará cada hash antes de crear el lote.</p></div>
           <select id="preview-selector" aria-label="Seleccionar mensaje para vista previa"></select>
         </div>
         <div id="preview-empty" class="empty-state">Seleccione al menos un destinatario elegible.</div>
@@ -94,14 +96,26 @@
           <pre id="preview-message"></pre>
           <div class="preview-actions">
             <button id="copy-message" class="secondary-button" type="button">Copiar mensaje</button>
-            <button id="export-simulation" class="secondary-button" type="button">Exportar simulación</button>
-            <button id="send-test" class="primary-button" type="button" disabled title="Se habilitará después de vincular y validar el conector Mac">Enviar prueba</button>
+            <button id="export-simulation" class="secondary-button" type="button">Exportar vista previa</button>
+            <button id="create-simulation" class="primary-button" type="button" disabled>Crear lote de simulación</button>
           </div>
+          <p id="create-help" class="action-help">La cola debe estar habilitada por el servidor. Esto no envía WhatsApp reales.</p>
         </div>
       </section>
 
       <section id="history-section" class="panel">
-        <div class="empty-state">El historial individual se habilitará cuando exista la cola auditada. No se mostrará información inventada.</div>
+        <div class="panel-head">
+          <div><h2>Lotes e historial</h2><p>Los lotes nuevos usan almacenamiento atómico; los registros antiguos permanecen en modo solo lectura.</p></div>
+          <button id="refresh-jobs" class="secondary-button" type="button">Actualizar lotes</button>
+        </div>
+        <div id="jobs-feedback" class="feedback hidden" role="status" aria-live="polite"></div>
+        <div class="table-wrap">
+          <table class="jobs-table">
+            <thead><tr><th>Lote</th><th>Modo</th><th>Estado</th><th>Mensajes</th><th>Enviados</th><th>Verificar</th><th>Fallidos</th><th>Fecha</th><th>Acciones</th></tr></thead>
+            <tbody id="jobs-body"><tr><td colspan="9" class="empty">Cargando lotes…</td></tr></tbody>
+          </table>
+        </div>
+        <div id="job-details" class="job-details hidden" aria-live="polite"></div>
       </section>
 
       <footer class="selection-bar">
@@ -112,6 +126,6 @@
   </div>
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
-  <script src="/whatsapp-v2.js?v=preview-v1" defer></script>
+  <script src="/whatsapp-v2.js?v=queue-v2" defer></script>
 </body>
 </html>
