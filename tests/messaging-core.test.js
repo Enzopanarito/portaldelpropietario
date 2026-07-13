@@ -52,6 +52,7 @@ assert.strictEqual(preview.blockedCount,0);
 for (const item of preview.recipients) {
   assert.strictEqual(forbiddenPublicTerms(item.message).length,0,`Casa ${item.house}: términos internos`);
   assert(!/10\s*%/.test(item.message),`Casa ${item.house}: porcentaje público`);
+  assert.strictEqual(item.messageHash.length,64);
   assert.strictEqual(item.snapshotHash.length,64);
   assert.strictEqual(item.idempotencyKey.length,64);
   assert.strictEqual(item.phone.includes('*'),false);
@@ -93,9 +94,23 @@ assert(!untrusted.message.includes('>'));
 const stableA = buildOwnerSnapshot(owners[0], context);
 const stableB = buildOwnerSnapshot(owners[0], context);
 assert.strictEqual(stableA.snapshotHash,stableB.snapshotHash);
+assert.strictEqual(stableA.messageHash,stableB.messageHash);
 assert.strictEqual(stableA.idempotencyKey,stableB.idempotencyKey);
+
+// La hora de actualización no puede crear una nueva identidad para el mismo mensaje del día.
+const sameDayLater = buildOwnerSnapshot(owners[0], {...context,generatedAt:'2026-07-12T23:59:00.000Z'});
+assert.notStrictEqual(stableA.generatedAt,sameDayLater.generatedAt);
+assert.strictEqual(stableA.message, sameDayLater.message);
+assert.strictEqual(stableA.snapshotHash,sameDayLater.snapshotHash);
+assert.strictEqual(stableA.idempotencyKey,sameDayLater.idempotencyKey);
+
 const changed = buildOwnerSnapshot({...owners[0], 'Saldo USD Actual':86, 'Saldo Total Actual':86}, context);
 assert.notStrictEqual(stableA.snapshotHash,changed.snapshotHash);
+assert.notStrictEqual(stableA.idempotencyKey,changed.idempotencyKey);
+
+const nextDay = buildOwnerSnapshot(owners[0], {...context,generatedAt:'2026-07-13T16:00:00.000Z'});
+assert.notStrictEqual(stableA.messageHash,nextDay.messageHash);
+assert.notStrictEqual(stableA.idempotencyKey,nextDay.idempotencyKey);
 
 const wrongEngine = buildOwnerSnapshot(owners[0], {...context,balanceEngineVersion:4});
 assert.strictEqual(wrongEngine.sendable,false);
