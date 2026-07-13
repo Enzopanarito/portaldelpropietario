@@ -11,6 +11,8 @@ const { createAndSendReceipt } = require('./_receipt_service');
 const { begin, setState } = require('./_operation_guard');
 const { ensureFinancialWritesAllowed } = require('./_financial_write_lock');
 const { safeDisplayText, deepEscapeStrings } = require('./_security_utils');
+const { invalidateSnapshot } = require('./_public_snapshot_store');
+const { sha256 } = require('./_idempotency_store');
 
 function todayCaracasISO(){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Caracas',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
 function validRecordId(id){return /^rec[A-Za-z0-9]{14}$/.test(String(id||''));}
@@ -76,7 +78,8 @@ const handler = async function(event) {
       return json(200, { success:true, decision:'already-rejected', message:'Este reporte ya estaba rechazado. No se hizo ningún cambio.', report:deepEscapeStrings(report) });
     }
 
-    const guard = await begin('PAYMENT_REPORT', reportId);
+    const requestHash = sha256(JSON.stringify({reportId,decision,ownerId,currentStatus}));
+    const guard = await begin('PAYMENT_REPORT', reportId, { requestHash, actor:'admin' });
     if (!guard.ok) {
       if (guard.reason === 'done') {
         report = await airtableGetRecord(TABLES.reportes, reportId).catch(() => report);
@@ -106,7 +109,7 @@ const handler = async function(event) {
         access = { success:false, warning:safeDisplayText(error.message,500) };
       }
       let guardWarning = null;
-      try { await setState(operation, 'PAYMENT_REPORT', reportId, 'DONE', reportId); }
+      try { operation = await setState(operation, 'PAYMENT_REPORT', reportId, 'DONE', reportId, {decision:'reject',reportId,ownerId}); }
       catch (error) { guardWarning = safeDisplayText(error.message,500); }
       return json(200, {
         success:true,
@@ -122,7 +125,7 @@ const handler = async function(event) {
     const usdEq = money(Number(f['Equivalente USD Reportado'] || f['Monto Reportado'] || 0));
     const amountBs = mode === 'Bs BCV' ? money(Number(f['Monto Reportado Bs'] || 0)) : 0;
     if (!(usdEq > 0)) {
-      await setState(operation, 'PAYMENT_REPORT', reportId, 'ERROR').catch(() => null);
+      operation = await setState(operation, 'PAYMENT_REPORT', reportId, 'ERROR', '', null, 'El reporte no tiene monto válido.').catch(() => operation);
       return json(400, { success:false, message:'El reporte no tiene monto válido.' });
     }
 
@@ -171,8 +174,12 @@ const handler = async function(event) {
     }
 
     let guardWarning = null;
-    try { await setState(operation, 'PAYMENT_REPORT', reportId, 'DONE', paymentId); }
+    try { operation = await setState(operation, 'PAYMENT_REPORT', reportId, 'DONE', paymentId, {decision:'approve',paymentId,ownerId,mode,usdEq}); }
     catch (error) { guardWarning = safeDisplayText(error.message,500); }
+
+    let snapshotWarning = null;
+    try { await invalidateSnapshot(); }
+    catch (error) { snapshotWarning = safeDisplayText(error.message,500); }
 
     const receiptSent = receipt && receipt.email && receipt.email.status === 'Enviado';
     const accessWarning = access && access.success === false;
@@ -184,7 +191,8 @@ const handler = async function(event) {
         : receiptSent
           ? 'Pago confirmado, recibo enviado y acceso sincronizado.'
           : 'Pago confirmado y acceso sincronizado.',
-      warning:guardWarning,
+      warning:guardWarning || (snapshotWarning ? `Pago aprobado; fotografía pública pendiente de actualización: ${snapshotWarning}` : null),
+      publicSnapshotInvalidated:!snapshotWarning,
       report:deepEscapeStrings(patched),
       payment:deepEscapeStrings(payment),
       receipt:deepEscapeStrings(receipt),
@@ -201,7 +209,7 @@ const handler = async function(event) {
   } catch (error) {
     if (operation) {
       const state = writeStage > 0 ? 'PARTIAL' : 'ERROR';
-      await setState(operation, 'PAYMENT_REPORT', reportId, state, paymentId).catch(() => null);
+      await setState(operation, 'PAYMENT_REPORT', reportId, state, paymentId, null, safeDisplayText(error.message,500)).catch(() => null);
     }
     return json(500, {
       success:false,
