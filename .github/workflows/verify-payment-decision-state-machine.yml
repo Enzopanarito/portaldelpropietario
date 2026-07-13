@@ -1,0 +1,58 @@
+name: Verify Payment Decision State Machine
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'netlify/functions/_payment_decision_state_machine.js'
+      - 'tests/payment-decision-state-machine.test.js'
+      - '.github/workflows/verify-payment-decision-state-machine.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'netlify/functions/_payment_decision_state_machine.js'
+      - 'tests/payment-decision-state-machine.test.js'
+      - '.github/workflows/verify-payment-decision-state-machine.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-decision-state-machine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Check syntax
+        run: |
+          node --check netlify/functions/_payment_decision_state_machine.js
+          node --check tests/payment-decision-state-machine.test.js
+      - name: Verify approval, rejection, receipt recovery and exact reversal
+        run: node tests/payment-decision-state-machine.test.js
+      - name: Re-run cash and provisional access contracts
+        run: |
+          node tests/cash-payment-policy.test.js
+          node tests/provisional-access-authorization.test.js
+          node tests/pending-reports-never-enable-access.test.js
+      - name: Re-run processing foundations
+        run: |
+          node tests/payment-processing-store.test.js
+          node tests/payment-processing-orchestrator.test.js
+          node tests/payment-deterministic-arbiter.test.js
+      - name: Re-run secure payment foundations
+        run: |
+          node tests/payment-proof-core.test.js
+          node tests/payment-proof-store.test.js
+          node tests/payment-access-snapshot.test.js
+          node tests/payment-duplicate-core.test.js
+          node tests/payment-ai-contract.test.js
+      - name: Re-run official balances
+        run: |
+          node tests/official-balance-sync.test.js
+          node tests/all-houses-current-balance.test.js
+          node tests/balance-engine-v4.test.js
