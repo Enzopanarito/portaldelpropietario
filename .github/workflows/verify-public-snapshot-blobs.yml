@@ -13,6 +13,7 @@ on:
       - 'tests/public-snapshot-store.test.js'
       - 'tests/public-data-v3.test.js'
       - 'tests/public-snapshot-invalidation.test.js'
+      - 'tests/public-snapshot-host-invalidation.test.js'
       - '.github/workflows/verify-public-snapshot-blobs.yml'
   push:
     branches: [main]
@@ -26,6 +27,7 @@ on:
       - 'tests/public-snapshot-store.test.js'
       - 'tests/public-data-v3.test.js'
       - 'tests/public-snapshot-invalidation.test.js'
+      - 'tests/public-snapshot-host-invalidation.test.js'
       - '.github/workflows/verify-public-snapshot-blobs.yml'
 
 permissions:
@@ -56,15 +58,18 @@ jobs:
           node --check tests/public-snapshot-store.test.js
           node --check tests/public-data-v3.test.js
           node --check tests/public-snapshot-invalidation.test.js
+          node --check tests/public-snapshot-host-invalidation.test.js
 
-      - name: Validate snapshot store and financial invariants
+      - name: Validate snapshot store, host gate and financial invariants
         run: node tests/public-snapshot-store.test.js
 
       - name: Exercise cache, fallback and refresh lease routes
         run: node tests/public-data-v3.test.js
 
       - name: Verify selective invalidation contracts
-        run: node tests/public-snapshot-invalidation.test.js
+        run: |
+          node tests/public-snapshot-invalidation.test.js
+          node tests/public-snapshot-host-invalidation.test.js
 
       - name: Re-run official balance synchronization
         run: node tests/official-balance-sync.test.js
