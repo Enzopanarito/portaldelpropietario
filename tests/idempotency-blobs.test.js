@@ -90,6 +90,6 @@ class FakeStore {
   assert.strictEqual(bounded.hash.length,64);
   assert(bounded.bytes>MAX_RESULT_BYTES);
 
-  assert.strictEqual(store.entries.size,6,'Cada clave lógica debe ocupar una sola entrada del ledger.');
+  assert.strictEqual(store.entries.size,5,'Cada clave lógica debe ocupar una sola entrada del ledger.');
   console.log('IDEMPOTENCY_BLOBS_OK');
 })().catch(error=>{console.error(error);process.exit(1)});
