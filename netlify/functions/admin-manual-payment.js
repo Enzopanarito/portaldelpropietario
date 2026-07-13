@@ -13,6 +13,7 @@ const { createAndSendReceipt } = require('./_receipt_service');
 const { begin, setState } = require('./_operation_guard');
 const { ensureFinancialWritesAllowed } = require('./_financial_write_lock');
 const { sanitizeReference, safeDisplayText, deepEscapeStrings } = require('./_security_utils');
+const { invalidateSnapshot } = require('./_public_snapshot_store');
 
 const ALLOWED_MODES = new Set(['USD', 'Bs BCV']);
 const FALLBACK_WINDOW_MS = 5 * 60 * 1000;
@@ -71,7 +72,8 @@ const handler = async function(event) {
     }
 
     operationBusinessKey = operationKey(body, ownerId, mode, amountUsdRef, rate, reference);
-    const guard = await begin('MANUAL_PAYMENT', operationBusinessKey);
+    const requestHash = require('./_idempotency_store').sha256(JSON.stringify({ownerId,mode,amountUsdRef,rate,reference}));
+    const guard = await begin('MANUAL_PAYMENT', operationBusinessKey, { requestHash, actor:'admin' });
     if (!guard.ok) {
       if (guard.reason === 'done') {
         return json(200, {
@@ -143,8 +145,12 @@ const handler = async function(event) {
     }
 
     let guardWarning = null;
-    try { await setState(operation, 'MANUAL_PAYMENT', operationBusinessKey, 'DONE', paymentId); }
+    try { operation = await setState(operation, 'MANUAL_PAYMENT', operationBusinessKey, 'DONE', paymentId, {paymentId,ownerId,mode,amountUsdRef}); }
     catch (error) { guardWarning = safeDisplayText(error.message, 500); }
+
+    let snapshotWarning = null;
+    try { await invalidateSnapshot(); }
+    catch (error) { snapshotWarning = safeDisplayText(error.message, 500); }
 
     const receiptSent = receipt && receipt.email && receipt.email.status === 'Enviado';
     return json(200, {
@@ -153,7 +159,8 @@ const handler = async function(event) {
       message: receiptSent
         ? 'Pago manual registrado y recibo enviado por correo.'
         : 'Pago manual registrado correctamente.',
-      warning:guardWarning,
+      warning:guardWarning || (snapshotWarning ? `Pago registrado; fotografía pública pendiente de actualización: ${snapshotWarning}` : null),
+      publicSnapshotInvalidated:!snapshotWarning,
       paymentId,
       amount: amountUsdRef,
       amountUsdRef,
@@ -165,7 +172,7 @@ const handler = async function(event) {
     });
   } catch (error) {
     if (operation) {
-      await setState(operation, 'MANUAL_PAYMENT', operationBusinessKey, writeStage > 0 ? 'PARTIAL' : 'ERROR', paymentId).catch(() => null);
+      await setState(operation, 'MANUAL_PAYMENT', operationBusinessKey, writeStage > 0 ? 'PARTIAL' : 'ERROR', paymentId, null, safeDisplayText(error.message,500)).catch(() => null);
     }
     return json(500, {
       success:false,
