@@ -10,6 +10,8 @@ function payment({id='recPay',date='2026-07-12',createdTime='2026-07-12T15:00:00
 (()=>{
  const now=new Date('2026-07-13T12:00:00.000Z'),record=current(),parsed=snapshot.parseOfficialBalance(record);
  assert.strictEqual(parsed.house,4);assert.strictEqual(parsed.month,'2026-07');assert.strictEqual(parsed.usd,85);assert.strictEqual(parsed.bsRef,100);assert.strictEqual(parsed.cutoff,'2026-07-11T19:10:08.000Z');assert.strictEqual(parsed.version,20260711);
+ const officialCents=[[1,8500,0,0],[2,0,0,0],[3,0,14279,14279],[4,8500,20127,20127],[5,8500,0,0],[6,0,0,0],[7,8500,0,0],[8,8500,0,0],[9,-2000,0,0],[10,8500,19379,19379],[11,0,-37889,0],[12,0,9999,9999],[13,8500,19379,19379],[14,-5000,0,0],[15,0,16991,16991]];
+ for(const[house,usdCents,bsCents,surchargeCents]of officialCents){const item=snapshot.parseOfficialBalance({id:`rec${house}`,fields:{Key:`CURRENT_BALANCE|2026-07|HOUSE=${house}|USD_CENTS=${usdCents}|BS_CENTS=${bsCents}|SURCHARGE_CENTS=${surchargeCents}|CUTOFF=2026-07-11T19:10:08.000Z`,Version:20260711}});assert(item,`Casa ${house}: la clave oficial debe parsearse.`);assert.strictEqual(item.house,house);assert.strictEqual(item.usd,usdCents/100);assert.strictEqual(item.bsRef,bsCents/100);assert.strictEqual(item.surchargeBasis,surchargeCents/100);assert.strictEqual(item.cutoff,'2026-07-11T19:10:08.000Z')}
  assert.strictEqual(snapshot.parseOfficialBalance({fields:{Key:'OTHER|x',Version:1}}),null);
  const selected=snapshot.selectOfficialBalance([record],4,{month:'2026-07',now});assert.strictEqual(selected.ok,true);assert.strictEqual(selected.selected.id,'recCurrent');
  assert.strictEqual(snapshot.selectOfficialBalance([],4,{month:'2026-07',now}).reason,'OFFICIAL_BALANCE_MISSING');
