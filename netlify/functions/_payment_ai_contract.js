@@ -19,7 +19,7 @@ function clean(value){return String(value??'').trim()}
 function boundedNumber(value,fallback,min,max){const number=Number(value);return Number.isFinite(number)?Math.min(max,Math.max(min,number)):fallback}
 function nullableString(value,maxLength){if(value===null)return null;if(typeof value!=='string')throw new Error('Debe ser string o null.');const text=value.trim();if(text.length>maxLength)throw new Error(`Excede ${maxLength} caracteres.`);return text||null}
 function normalizeDate(value){if(value===null)return null;if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value))throw new Error('La fecha debe usar YYYY-MM-DD o null.');const date=new Date(`${value}T00:00:00.000Z`);if(Number.isNaN(date.getTime())||date.toISOString().slice(0,10)!==value)throw new Error('La fecha no existe.');return value}
-function normalizeTime(value){if(value===null)return null;if(typeof value!=='string'||!^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(value))throw new Error('La hora debe usar HH:mm:ss o null.');return value}
+function normalizeTime(value){if(value===null)return null;if(typeof value!=='string'||!/^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(value))throw new Error('La hora debe usar HH:mm:ss o null.');return value}
 function parseRawJson(raw,{maxChars=DEFAULT_MAX_RAW_CHARS}={}){
  if(typeof raw!=='string'||!raw.trim())return{ok:false,reason:'EMPTY_OUTPUT',raw:typeof raw==='string'?raw:''};
  if(raw.length>Math.max(1000,Number(maxChars)||DEFAULT_MAX_RAW_CHARS))return{ok:false,reason:'OUTPUT_TOO_LARGE',raw:''};
