@@ -1,0 +1,61 @@
+name: Temporary Sync Package Lock
+
+on:
+  push:
+    branches:
+      - architecture-idempotency-blobs-2026-07-13
+      - architecture-public-snapshot-blobs-2026-07-13
+    paths:
+      - 'package.json'
+      - '.github/workflows/temporary-sync-package-lock.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  sync-lockfile:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Generate lockfile without lifecycle scripts
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Verify only package-lock changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only)"
+          if [[ -z "$changed" ]]; then
+            echo "Lockfile already synchronized."
+            exit 0
+          fi
+          if [[ "$changed" != "package-lock.json" ]]; then
+            echo "Unexpected files changed:"
+            printf '%s\n' "$changed"
+            exit 1
+          fi
+
+      - name: Commit synchronized lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- package-lock.json; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "Sincronizar package-lock para Netlify Blobs"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
