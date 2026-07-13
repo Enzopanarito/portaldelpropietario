@@ -3,20 +3,21 @@
 const { withAirtableUsage } = require('./_airtable_meter');
 const { requireAdmin } = require('./_auth');
 const { cleanPlainText } = require('./_security_utils');
+const { sha256 } = require('./_integrity');
 const { issueDispatchToken } = require('./_messaging_dispatch_token');
 const jobStore = require('./_messaging_job_store');
 const adminData = require('./admin-data-v3');
 const { buildPreviewPayload } = require('./_messaging_core');
 const {
   JOB_SCHEMA_VERSION, JOB_STATES, MESSAGE_STATES, createJobPayload, parsePayload, serializePayload,
-  summarize, requestPause, requestResume, requestCancel, retryFailed, resolveVerify
+  summarize, requestPause, requestResume, requestCancel, retryFailed, resolveVerify, randomToken, nowIso
 } = require('./_messaging_queue_core');
 
 const TABLE = 'WhatsApp Jobs';
 const MAX_RECENT_JOBS = 80;
 const EXTENSION_ID = 'oopmhhmkihemkkjghmpepgfcmcomplph';
 const NATIVE_HOST_NAME = 'com.villaslosapamates.whatsapp_connector';
-const HEADERS = {'Content-Type':'application/json','Cache-Control':'no-store, no-cache, must-revalidate','X-Content-Type-Options':'nosniff','X-VLA-Messaging-Queue':'atomic-v2'};
+const HEADERS = {'Content-Type':'application/json','Cache-Control':'no-store, no-cache, must-revalidate','X-Content-Type-Options':'nosniff','X-VLA-Messaging-Queue':'atomic-v3'};
 
 function json(statusCode,body){return{statusCode,headers:HEADERS,body:JSON.stringify(body)}}
 function airtableUrl(query=''){return`https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(TABLE)}${query}`}
@@ -46,6 +47,21 @@ async function listMirrorRecords(){
   const query=`?maxRecords=${MAX_RECENT_JOBS}&sort%5B0%5D%5Bfield%5D=${encodeURIComponent('Creado En')}&sort%5B0%5D%5Bdirection%5D=desc`;
   return listAirtable(query);
 }
+function auditSafeJob(job){
+  const safe=JSON.parse(JSON.stringify(job||{}));
+  if(safe.lease)delete safe.lease.token;
+  if(safe.dispatchSession){
+    safe.dispatchSession={idHash:sha256(String(safe.dispatchSession.id||'')),issuedAt:safe.dispatchSession.issuedAt||null,expiresAt:safe.dispatchSession.expiresAt||null,consumedAt:safe.dispatchSession.consumedAt||null,deviceId:safe.dispatchSession.deviceId||null};
+  }
+  safe.messages=(safe.messages||[]).map(message=>{
+    const copy={...message};
+    delete copy.phone;
+    delete copy.message;
+    delete copy.activeAttemptId;
+    return copy;
+  });
+  return safe;
+}
 function parseLegacyRecord(record){
   const fields=record&&record.fields||{};
   try{
@@ -57,7 +73,7 @@ function parseLegacyRecord(record){
 }
 function publicRuntimeEntry(entry,{includeMessages=false,includeEvents=false}={}){
   const job=entry.job;
-  const output={jobId:job.jobId,legacy:false,schemaVersion:job.schemaVersion,mode:job.mode,state:job.state,revision:job.revision,etag:entry.etag,createdAt:job.createdAt,updatedAt:job.updatedAt,finishedAt:job.finishedAt||null,controls:job.controls,lease:job.lease?{deviceId:job.lease.deviceId,claimedAt:job.lease.claimedAt,expiresAt:job.lease.expiresAt}:null,summary:summarize(job),auditMirror:job.auditMirror||{status:'Pendiente'}};
+  const output={jobId:job.jobId,legacy:false,schemaVersion:job.schemaVersion,mode:job.mode,state:job.state,revision:job.revision,etag:entry.etag,createdAt:job.createdAt,updatedAt:job.updatedAt,finishedAt:job.finishedAt||null,controls:job.controls,lease:job.lease?{deviceId:job.lease.deviceId,claimedAt:job.lease.claimedAt,expiresAt:job.lease.expiresAt}:null,summary:summarize(job),auditMirror:job.auditMirror||{status:'Pendiente'},dispatchSession:job.dispatchSession?{issuedAt:job.dispatchSession.issuedAt,expiresAt:job.dispatchSession.expiresAt,consumedAt:job.dispatchSession.consumedAt||null,deviceId:job.dispatchSession.deviceId||null}:null};
   if(includeMessages)output.messages=job.messages;
   if(includeEvents)output.events=job.events;
   return output;
@@ -73,18 +89,18 @@ function statusField(job){
   if(job.state===JOB_STATES.ERROR)return'Error';
   return'Pendiente';
 }
-function fieldsForJob(job,requestedBy='Admin'){
+function fieldsForJob(job,requestedBy='Admin autenticado'){
   const counts=summarize(job);const isSimulation=job.mode==='Simulación';
   return{
     'Job ID':job.jobId,Tipo:'Recordatorio morosos',Modo:job.mode,Estado:statusField(job),'Fecha Programada':job.createdAt,'Creado En':job.createdAt,
     'Ejecutado En':job.lease&&job.lease.claimedAt||undefined,'Finalizado En':job.finishedAt||undefined,
     Enviados:isSimulation?0:counts.sent,Simulados:isSimulation?counts.sent:0,Errores:counts.failed+counts.verify,
     'Evitar Duplicados':true,'Forzar Envío':false,'Solicitado Por':requestedBy,'Ejecutado Por':job.lease&&job.lease.deviceId||'',
-    Payload:serializePayload(job),Log:`${job.state} · pendientes ${counts.pending} · enviados ${counts.sent} · verificar ${counts.verify} · fallidos ${counts.failed}`
+    Payload:serializePayload(auditSafeJob(job)),Log:`${job.state} · pendientes ${counts.pending} · enviados ${counts.sent} · verificar ${counts.verify} · fallidos ${counts.failed}`
   };
 }
 function compactFields(fields){const output={};for(const[key,value]of Object.entries(fields)){if(value!==undefined&&value!==null&&value!=='')output[key]=value;}return output}
-async function mirrorJob(job,requestedBy='Admin'){
+async function mirrorJob(job,requestedBy='Admin autenticado'){
   try{
     const existing=await findMirrorRecord(job.jobId);const fields=compactFields(fieldsForJob(job,requestedBy));
     const body=existing?{records:[{id:existing.id,fields}],typecast:true}:{records:[{fields}],typecast:true};
@@ -92,10 +108,10 @@ async function mirrorJob(job,requestedBy='Admin'){
     return{ok:true,recordId:data.records&&data.records[0]&&data.records[0].id||existing&&existing.id||''};
   }catch(error){return{ok:false,error:cleanPlainText(error.message,500)};}
 }
-async function reconcileMirror(entry,requestedBy='Admin'){
+async function reconcileMirror(entry,requestedBy='Admin autenticado'){
   const result=await mirrorJob(entry.job,requestedBy);
   if(result.ok)return{entry,warning:null};
-  return{entry,warning:`El lote quedó guardado de forma atómica, pero el espejo de Airtable requiere reconciliación: ${result.error}`};
+  return{entry,warning:`El lote quedó guardado de forma atómica, pero el espejo redactado de Airtable requiere reconciliación: ${result.error}`};
 }
 async function officialPreview(event){
   const response=await adminData.handler({...event,queryStringParameters:{...(event.queryStringParameters||{}),force:'1'}});
@@ -129,13 +145,29 @@ function existingRiskKeys(entries,mode){
   }
   return keys;
 }
+function ledgerKeysFor(recipients,mode){return recipients.map(item=>sha256(`${mode}|${item.idempotencyKey}`)).sort()}
+function authenticatedActor(auth){
+  const claims=auth&&auth.claims||{};
+  return cleanPlainText(claims.email||claims.sub||claims.role||'Administrador autenticado',80)||'Administrador autenticado';
+}
 function assertQueueEnabled(){if(process.env.WHATSAPP_QUEUE_ENABLED!=='true')throw new Error('La cola permanece desactivada hasta completar el respaldo y la validación administrativa.');}
 function assertRevision(job,body){if(!Number.isInteger(Number(body.expectedRevision))||Number(body.expectedRevision)!==Number(job.revision))throw new jobStore.JobConflictError(`El lote cambió. Revisión actual: ${job.revision}. Actualice e intente de nuevo.`)}
-async function mutateJob(jobId,body,mutator,requestedBy='Admin'){
+async function mutateJob(jobId,body,mutator,requestedBy='Administrador autenticado'){
   const current=await jobStore.requireJob(jobId);assertRevision(current.job,body);
   const next=JSON.parse(JSON.stringify(current.job));mutator(next);
   const updated=await jobStore.compareAndSetJob(jobId,current.etag,next);
   return reconcileMirror(updated,requestedBy);
+}
+async function issueDispatchSession(entry,actor){
+  const now=Date.now();const next=JSON.parse(JSON.stringify(entry.job));
+  const sessionId=randomToken(16);const issuedAt=new Date(now).toISOString();const expiresAt=new Date(now+30*60*1000).toISOString();
+  next.dispatchSession={id:sessionId,issuedAt,expiresAt,consumedAt:null,deviceId:null,issuedBy:actor};
+  next.revision=Number(next.revision||0)+1;next.updatedAt=nowIso(new Date(now));
+  next.events=Array.isArray(next.events)?next.events:[];
+  next.events.push({id:`EV-${randomToken(8)}`,at:issuedAt,type:'DISPATCH_SESSION_ISSUED',detail:{issuedBy:actor,expiresAt}});
+  const updated=await jobStore.compareAndSetJob(next.jobId,entry.etag,next);
+  const dispatchToken=issueDispatchToken({jobId:next.jobId,mode:next.mode,revision:next.revision,sessionId});
+  return{updated,dispatchToken,expiresAt};
 }
 async function listLegacy(runtimeIds){
   try{return(await listMirrorRecords()).filter(record=>!runtimeIds.has(String(record.fields&&record.fields['Job ID']||''))).map(publicLegacyRecord);}catch{return[];}
@@ -148,27 +180,34 @@ const handler=async function(event){
       const params=new URLSearchParams(event.rawQuery||'');const jobId=params.get('jobId');
       if(jobId){const entry=await jobStore.requireJob(jobId);return json(200,{job:publicRuntimeEntry(entry,{includeMessages:true,includeEvents:true}),connector:{extensionId:EXTENSION_ID,nativeHost:NATIVE_HOST_NAME}});}
       const entries=await jobStore.listJobs({limit:MAX_RECENT_JOBS});const runtimeIds=new Set(entries.map(entry=>entry.job.jobId));const legacy=await listLegacy(runtimeIds);
-      return json(200,{jobs:[...entries.map(entry=>publicRuntimeEntry(entry)),...legacy].sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))).slice(0,MAX_RECENT_JOBS),connector:{extensionId:EXTENSION_ID,nativeHost:NATIVE_HOST_NAME},queueEnabled:process.env.WHATSAPP_QUEUE_ENABLED==='true',realSendEnabled:process.env.WHATSAPP_REAL_SEND_ENABLED==='true',storage:'Netlify Blobs strong consistency + ETag CAS'});
+      return json(200,{jobs:[...entries.map(entry=>publicRuntimeEntry(entry)),...legacy].sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))).slice(0,MAX_RECENT_JOBS),connector:{extensionId:EXTENSION_ID,nativeHost:NATIVE_HOST_NAME},queueEnabled:process.env.WHATSAPP_QUEUE_ENABLED==='true',realSendEnabled:process.env.WHATSAPP_REAL_SEND_ENABLED==='true',storage:'Netlify Blobs strong consistency + ETag CAS + persistent idempotency ledger'});
     }
     if(event.httpMethod!=='POST')return json(405,{message:'Method Not Allowed'});
     assertQueueEnabled();
-    const body=JSON.parse(event.body||'{}');const action=String(body.action||'create');const requestedBy=cleanPlainText(body.requestedBy||auth.claims&&auth.claims.role||'Admin',80);
+    const body=JSON.parse(event.body||'{}');const action=String(body.action||'create');const requestedBy=authenticatedActor(auth);
     if(action==='create'){
       const mode=body.mode==='Envío real'?'Envío real':'Simulación';
       if(mode==='Envío real'&&process.env.WHATSAPP_REAL_SEND_ENABLED!=='true')throw new Error('El envío real permanece bloqueado hasta certificar el conector Mac.');
-      const preview=await officialPreview(event);const recipients=selectedSnapshots(preview,body);const recent=await jobStore.listJobs({limit:MAX_RECENT_JOBS});const riskKeys=existingRiskKeys(recent,mode);
-      const job=createJobPayload({recipients,mode,createdAt:new Date(),existingKeys:[...riskKeys]});job.auditMirror={status:'Pendiente',updatedAt:null,error:null};
-      let created;
-      try{created=await jobStore.createJob(job);}catch(error){if(error instanceof jobStore.JobConflictError){const existing=await jobStore.requireJob(job.jobId);return json(200,{duplicateBatch:true,job:publicRuntimeEntry(existing,{includeMessages:true})});}throw error;}
-      const mirrored=await reconcileMirror(created,requestedBy);
-      return json(201,{created:true,job:publicRuntimeEntry(mirrored.entry,{includeMessages:true}),warning:mirrored.warning});
+      const preview=await officialPreview(event);const recipients=selectedSnapshots(preview,body);
+      const job=createJobPayload({recipients,mode,createdAt:new Date(),existingKeys:[]});
+      const ledgerKeys=ledgerKeysFor(recipients,mode);job.idempotencyLedgerKeys=ledgerKeys;job.auditMirror={status:'Pendiente',updatedAt:null,error:null};
+      let claimed=[];
+      try{
+        claimed=await jobStore.claimIdempotencyKeys(ledgerKeys,{jobId:job.jobId,mode,claimedAt:job.createdAt});
+        const created=await jobStore.createJob(job);
+        const mirrored=await reconcileMirror(created,requestedBy);
+        return json(201,{created:true,job:publicRuntimeEntry(mirrored.entry,{includeMessages:true}),warning:mirrored.warning});
+      }catch(error){
+        if(claimed.length)await jobStore.releaseIdempotencyKeys(claimed).catch(()=>{});
+        throw error;
+      }
     }
     const entry=await jobStore.requireJob(body.jobId);assertRevision(entry.job,body);
     if(action==='dispatch'){
       if(entry.job.mode==='Envío real'&&process.env.WHATSAPP_REAL_SEND_ENABLED!=='true')throw new Error('El envío real permanece bloqueado hasta certificar el conector Mac.');
       if(entry.job.state!==JOB_STATES.PENDING)throw new Error(`El lote no puede despacharse en estado ${entry.job.state}.`);
-      const dispatchToken=issueDispatchToken({jobId:entry.job.jobId,mode:entry.job.mode,revision:entry.job.revision});
-      return json(200,{dispatchToken,jobId:entry.job.jobId,mode:entry.job.mode,revision:entry.job.revision,extensionId:EXTENSION_ID,nativeHost:NATIVE_HOST_NAME,expiresInSeconds:3600});
+      const session=await issueDispatchSession(entry,requestedBy);
+      return json(200,{dispatchToken:session.dispatchToken,jobId:session.updated.job.jobId,mode:session.updated.job.mode,revision:session.updated.job.revision,extensionId:EXTENSION_ID,nativeHost:NATIVE_HOST_NAME,expiresAt:session.expiresAt,expiresInSeconds:1800});
     }
     let result;
     if(action==='pause')result=await mutateJob(body.jobId,body,job=>requestPause(job,new Date()),requestedBy);
@@ -180,11 +219,11 @@ const handler=async function(event){
     return json(200,{updated:true,job:publicRuntimeEntry(result.entry,{includeMessages:true,includeEvents:true}),warning:result.warning});
   }catch(error){
     const status=Number(error.statusCode||0)||500;
-    return json(status,{message:status===409?'Conflicto de actualización en la cola.':'No se pudo procesar la cola de mensajería.',code:error.code||'',detail:cleanPlainText(error.message,500)});
+    return json(status,{message:status===409?'Conflicto de actualización o duplicado en la cola.':'No se pudo procesar la cola de mensajería.',code:error.code||'',detail:cleanPlainText(error.message,500)});
   }
 };
 
 exports.handler=withAirtableUsage('messaging-queue',handler);
-exports._test={statusField,fieldsForJob,selectedSnapshots,existingRiskKeys,publicRuntimeEntry,publicLegacyRecord};
+exports._test={statusField,fieldsForJob,auditSafeJob,selectedSnapshots,existingRiskKeys,ledgerKeysFor,authenticatedActor,publicRuntimeEntry,publicLegacyRecord};
 exports._store={mirrorJob,reconcileMirror,publicRuntimeEntry};
 exports.constants={EXTENSION_ID,NATIVE_HOST_NAME,JOB_SCHEMA_VERSION};
