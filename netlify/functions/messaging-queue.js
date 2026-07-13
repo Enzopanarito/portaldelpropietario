@@ -3,6 +3,7 @@
 const { withAirtableUsage } = require('./_airtable_meter');
 const { requireAdmin } = require('./_auth');
 const { cleanPlainText } = require('./_security_utils');
+const { issueDispatchToken } = require('./_messaging_dispatch_token');
 const adminData = require('./admin-data-v3');
 const { buildPreviewPayload } = require('./_messaging_core');
 const {
@@ -12,6 +13,8 @@ const {
 
 const TABLE = 'WhatsApp Jobs';
 const MAX_RECENT_JOBS = 80;
+const EXTENSION_ID = 'oopmhhmkihemkkjghmpepgfcmcomplph';
+const NATIVE_HOST_NAME = 'com.villaslosapamates.whatsapp_connector';
 const HEADERS = {'Content-Type':'application/json','Cache-Control':'no-store, no-cache, must-revalidate','X-Content-Type-Options':'nosniff','X-VLA-Messaging-Queue':'v2'};
 
 function json(statusCode,body){return{statusCode,headers:HEADERS,body:JSON.stringify(body)}}
@@ -108,7 +111,8 @@ function selectedSnapshots(preview,body){
     const item=preview.recipients.find(entry=>entry.house===house);
     if(!item)throw new Error(`Casa ${house} no encontrada.`);
     if(!item.sendable)throw new Error(`Casa ${house} no es elegible: ${(item.errors||item.warnings||[])[0]||'sin obligación positiva'}.`);
-    if(expected[String(house)]&&expected[String(house)]!==item.snapshotHash)throw new Error(`Casa ${house}: los datos cambiaron desde la vista previa. Actualice antes de crear el lote.`);
+    if(!expected[String(house)])throw new Error(`Casa ${house}: falta el hash de la vista previa.`);
+    if(expected[String(house)]!==item.snapshotHash)throw new Error(`Casa ${house}: los datos cambiaron desde la vista previa. Actualice antes de crear el lote.`);
     return item;
   });
 }
@@ -131,8 +135,8 @@ const handler=async function(event){
   try{
     if(event.httpMethod==='GET'){
       const params=new URLSearchParams(event.rawQuery||'');const jobId=params.get('jobId');
-      if(jobId){const record=await findRecordByJobId(jobId);if(!record)return json(404,{message:'Lote no encontrado.'});return json(200,{job:publicJob(record,{includeMessages:true,includeEvents:true})});}
-      const records=await listRecentRecords();return json(200,{jobs:records.map(record=>publicJob(record))});
+      if(jobId){const record=await findRecordByJobId(jobId);if(!record)return json(404,{message:'Lote no encontrado.'});return json(200,{job:publicJob(record,{includeMessages:true,includeEvents:true}),connector:{extensionId:EXTENSION_ID,nativeHost:NATIVE_HOST_NAME}});}
+      const records=await listRecentRecords();return json(200,{jobs:records.map(record=>publicJob(record)),connector:{extensionId:EXTENSION_ID,nativeHost:NATIVE_HOST_NAME},queueEnabled:process.env.WHATSAPP_QUEUE_ENABLED==='true',realSendEnabled:process.env.WHATSAPP_REAL_SEND_ENABLED==='true'});
     }
     if(event.httpMethod!=='POST')return json(405,{message:'Method Not Allowed'});
     assertQueueEnabled();
@@ -149,6 +153,12 @@ const handler=async function(event){
     const record=await findRecordByJobId(body.jobId);if(!record)return json(404,{message:'Lote no encontrado.'});
     const parsed=parseRecord(record);if(parsed.legacy)throw new Error('El lote pertenece al sistema anterior y es de solo lectura.');
     const job=parsed.payload;assertRevision(job,body);
+    if(action==='dispatch'){
+      if(job.mode==='Envío real'&&process.env.WHATSAPP_REAL_SEND_ENABLED!=='true')throw new Error('El envío real permanece bloqueado hasta certificar el conector Mac.');
+      if(![JOB_STATES.PENDING,JOB_STATES.PAUSED].includes(job.state))throw new Error(`El lote no puede despacharse en estado ${job.state}.`);
+      const dispatchToken=issueDispatchToken({jobId:job.jobId,mode:job.mode,revision:job.revision});
+      return json(200,{dispatchToken,jobId:job.jobId,mode:job.mode,revision:job.revision,extensionId:EXTENSION_ID,nativeHost:NATIVE_HOST_NAME,expiresInSeconds:3600});
+    }
     if(action==='pause')requestPause(job,new Date());
     else if(action==='resume')requestResume(job,new Date());
     else if(action==='cancel')requestCancel(job,new Date());
@@ -161,3 +171,5 @@ const handler=async function(event){
 
 exports.handler=withAirtableUsage('messaging-queue',handler);
 exports._test={statusField,fieldsForJob,selectedSnapshots,existingRiskKeys,publicJob};
+exports._store={findRecordByJobId,listRecentRecords,parseRecord,publicJob,updateRecord};
+exports.constants={EXTENSION_ID,NATIVE_HOST_NAME,JOB_SCHEMA_VERSION};
