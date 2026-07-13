@@ -42,10 +42,13 @@ const payload = {
 async function verifyViewport(browser, viewport, label) {
   const context = await browser.newContext({ viewport });
   await context.addInitScript(() => {
-    localStorage.setItem('vla-admin-auth','true');
-    localStorage.setItem('vla-admin-token','test-token');
-    sessionStorage.setItem('vla-admin-auth','true');
-    sessionStorage.setItem('vla-admin-token','test-token');
+    if (window !== window.top) return;
+    try {
+      localStorage.setItem('vla-admin-auth','true');
+      localStorage.setItem('vla-admin-token','test-token');
+      sessionStorage.setItem('vla-admin-auth','true');
+      sessionStorage.setItem('vla-admin-token','test-token');
+    } catch (_) {}
     const removeNetlifyPreviewChrome = () => {
       document.querySelectorAll('[data-netlify-deploy-id], iframe[title="Netlify Drawer"]').forEach(node => {
         const host = node.matches && node.matches('[data-netlify-deploy-id]') ? node : node.closest && node.closest('[data-netlify-deploy-id]');
