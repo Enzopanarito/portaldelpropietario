@@ -92,8 +92,13 @@ function createLedger({storeFactory=defaultStore,now=()=>Date.now(),newOperation
     if (current.data.operationId!==marker.record.operationId) throw new Error('La operación perdió la propiedad del marcador idempotente.');
     const timestamp=now();
     const next={
-      ...current.data,status,updatedAt:timestamp,partial:Boolean(partial),errorCode:cleanSegment(errorCode),
-      result:safeResult(result),expiresAt:expireNow?timestamp:Number(current.data.expiresAt||timestamp+DEFAULT_TTL_MS)
+      ...current.data,
+      status,
+      updatedAt:timestamp,
+      partial:Boolean(partial),
+      errorCode:errorCode?cleanSegment(errorCode):'',
+      result:safeResult(result),
+      expiresAt:expireNow?timestamp:Number(current.data.expiresAt||timestamp+DEFAULT_TTL_MS)
     };
     const updated=await store.setJSON(marker.key,next,{onlyIfMatch:current.etag,metadata:{expiresAt:next.expiresAt,status:next.status,scope:next.scope}});
     if (!updated.modified) {
