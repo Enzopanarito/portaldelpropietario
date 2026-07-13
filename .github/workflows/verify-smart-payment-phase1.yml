@@ -1,0 +1,43 @@
+name: Verify Smart Payment Phase 1
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'config/smart-payment-schema-v2.json'
+      - 'config/payment-proof-analysis-v2.schema.json'
+      - 'config/smart-payment-staging-v2.json'
+      - 'docs/SMART_PAYMENT_REPORTS_V2_PHASE1_AUDIT.md'
+      - 'tests/smart-payment-phase1-schema.test.js'
+      - '.github/workflows/verify-smart-payment-phase1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-phase1-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validate JSON manifests
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('config/smart-payment-schema-v2.json','utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('config/payment-proof-analysis-v2.schema.json','utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('config/smart-payment-staging-v2.json','utf8'))"
+
+      - name: Check test syntax
+        run: node --check tests/smart-payment-phase1-schema.test.js
+
+      - name: Verify safe schema, staging and AI contract
+        run: node tests/smart-payment-phase1-schema.test.js
+
+      - name: Re-run existing deterministic payment parsing
+        run: node tests/payment-report-intelligence.test.js
