@@ -2,12 +2,6 @@
   publish = "."
   functions = "netlify/functions"
 
-[functions."controlversiones-telemetry-migrate-scheduled"]
-  schedule = "* * * * *"
-
-[functions."controlversiones-migrate-background"]
-  background = true
-
 [functions."airtable-usage-rollup-scheduled"]
   schedule = "30 4 * * *"
 
