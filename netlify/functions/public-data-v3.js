@@ -38,6 +38,7 @@ const handler=async function(event){
   if(cached&&cached.ok)return cachedResponse(cached.snapshot,'STALE',{'Warning':'110 - "Respuesta pública temporalmente antigua durante revalidación"'});
   const refreshed=await waitForSnapshot().catch(()=>null);
   if(refreshed)return cachedResponse(refreshed.snapshot,'WAIT_HIT');
+  return response(503,{message:'La fotografía pública se está reconstruyendo. Intente nuevamente en unos segundos.'},{'Retry-After':'3','X-Public-Snapshot':'REFRESH_BUSY'});
  }
 
  try{
