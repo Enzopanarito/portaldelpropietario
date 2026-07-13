@@ -19,6 +19,7 @@ function namespace(env=process.env){return`${environmentName(env)}-${sha256(Buff
 function reportScope(reportId){const value=clean(reportId);if(!value)throw new Error('Falta reportId.');return sha256(Buffer.from(value)).slice(0,24)}
 function proofKey({reportId,attachmentSha,variant='original'},env=process.env){const sha=clean(attachmentSha).toLowerCase();if(!/^[a-f0-9]{64}$/.test(sha))throw new Error('attachmentSha no es válido.');if(!['original','normalized','pdf-page-1'].includes(variant))throw new Error('Variante de comprobante no válida.');return`${namespace(env)}/${reportScope(reportId)}/${sha.slice(0,2)}/${sha}/${variant}`}
 function aadFor({key,contentType,sha}){return Buffer.from(JSON.stringify({schema:'vla-payment-proof-envelope-v2',key,contentType:clean(contentType).toLowerCase(),sha:clean(sha).toLowerCase()}),'utf8')}
+function toArrayBuffer(buffer){return buffer.buffer.slice(buffer.byteOffset,buffer.byteOffset+buffer.byteLength)}
 function encryptBuffer(content,{key,contentType,sha,encryptionKey,randomBytes=crypto.randomBytes}={}){
  if(!Buffer.isBuffer(content)||!content.length)throw new Error('El contenido a cifrar está vacío.');const iv=randomBytes(IV_BYTES),aad=aadFor({key,contentType,sha}),cipher=crypto.createCipheriv('aes-256-gcm',encryptionKey,iv);cipher.setAAD(aad);const ciphertext=Buffer.concat([cipher.update(content),cipher.final()]),tag=cipher.getAuthTag();return Buffer.concat([ENVELOPE_MAGIC,iv,tag,ciphertext])
 }
@@ -34,7 +35,7 @@ function createProofStore({storeFactory=defaultStore,encryptionKey,now=()=>new D
  const keyMaterial=Buffer.isBuffer(encryptionKey)?Buffer.from(encryptionKey):parseEncryptionKey(encryptionKey||process.env.PAYMENT_PROOF_ENCRYPTION_KEY);
  async function put({reportId,content,contentType,attachmentSha,variant='original'},env=process.env){
   const actualSha=sha256(content);if(actualSha!==clean(attachmentSha).toLowerCase())throw Object.assign(new Error('El hash declarado no coincide con el comprobante.'),{code:'PROOF_HASH_MISMATCH'});
-  const key=proofKey({reportId,attachmentSha:actualSha,variant},env),envelope=encryptBuffer(content,{key,contentType,sha:actualSha,encryptionKey:keyMaterial}),store=await storeFactory(),result=await store.set(key,envelope,{onlyIfNew:true,metadata:{schema:'vla-payment-proof-v2',sha256:actualSha,contentType:clean(contentType).toLowerCase(),variant,createdAt:now().toISOString(),encrypted:true}});
+  const key=proofKey({reportId,attachmentSha:actualSha,variant},env),envelope=encryptBuffer(content,{key,contentType,sha:actualSha,encryptionKey:keyMaterial}),store=await storeFactory(),result=await store.set(key,toArrayBuffer(envelope),{onlyIfNew:true,metadata:{schema:'vla-payment-proof-v2',sha256:actualSha,contentType:clean(contentType).toLowerCase(),variant,createdAt:now().toISOString(),encrypted:true}});
   if(result.modified===false){const existing=await store.getWithMetadata(key,{type:'arrayBuffer',consistency:'strong'});if(!existing||existing.metadata?.sha256!==actualSha)throw Object.assign(new Error('Existe un objeto incompatible bajo la misma clave.'),{code:'PROOF_STORE_COLLISION'});return{ok:true,key,sha256:actualSha,created:false,etag:result.etag||existing.etag||''}}
   return{ok:true,key,sha256:actualSha,created:true,etag:result.etag||''};
  }
@@ -42,4 +43,4 @@ function createProofStore({storeFactory=defaultStore,encryptionKey,now=()=>new D
  return{put,get};
 }
 
-module.exports={STORE_NAME,ENVELOPE_MAGIC,IV_BYTES,TAG_BYTES,parseEncryptionKey,environmentName,namespace,reportScope,proofKey,aadFor,encryptBuffer,decryptBuffer,createMemoryStore,createProofStore};
+module.exports={STORE_NAME,ENVELOPE_MAGIC,IV_BYTES,TAG_BYTES,parseEncryptionKey,environmentName,namespace,reportScope,proofKey,aadFor,toArrayBuffer,encryptBuffer,decryptBuffer,createMemoryStore,createProofStore};
