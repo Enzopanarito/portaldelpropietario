@@ -5,7 +5,7 @@
 'use strict';
 
 const { withAirtableUsage } = require('./_airtable_meter');
-const { airtableCreateRecord, airtableGetRecord, syncOwnerAccess, TABLES, money } = require('./_access_control');
+const { airtableCreateRecord, airtableGetRecord, TABLES, money } = require('./_access_control');
 const { sendMail } = require('./_mailer');
 const { sanitizeReference, escapeHtml, cleanPlainText, safeDisplayText, deepEscapeStrings } = require('./_security_utils');
 const { consume } = require('./_persistent_rate_limit');
@@ -30,6 +30,7 @@ function optionalText(value,max){return cleanPlainText(String(value||''),max).tr
 function json(statusCode,body,headers={}){return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store, no-cache, must-revalidate','X-Content-Type-Options':'nosniff',...headers},body:JSON.stringify(body)};}
 function airtableUrl(tableName,query=''){return `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}${query}`;}
 function clientIp(event){const h=event.headers||{};return String(h['x-nf-client-connection-ip']||h['X-Nf-Client-Connection-Ip']||h['x-forwarded-for']||h['X-Forwarded-For']||'unknown').split(',')[0].trim().slice(0,120);}
+function pendingReportAccessDecision(reportId){return{reportId:String(reportId||'').trim()||null,skipped:true,action:'pending-review',temporary:false,reason:'Un reporte pendiente no modifica el portón. La administración debe revisarlo antes de cualquier decisión de acceso.'};}
 
 async function rateLimit(scope,identity,max){
   try{return await consume({scope,identity,max,windowMs:ABUSE_WINDOW_MS,countBeforeRecord:true});}
@@ -113,7 +114,7 @@ const handler = async function(event){
     const fields={'Propietario que Reporta':[ownerId],'Monto Reportado':usdEq,Referencia:reference,Estado:'Pendiente','Fecha del Reporte':todayCaracasISO(),'Forma de Pago Reportada':mode,'Equivalente USD Reportado':usdEq};
     if(mode==='Bs BCV'){fields['Monto Reportado Bs']=amountBs;fields['Tasa BCV Reporte']=rateInfo.rate;}
     const report=await airtableCreateRecord(TABLES.reportes,fields);
-    let access=null;try{access=await syncOwnerAccess(ownerId,{reason:'Habilitación temporal por reporte pendiente suficiente para deuda vencida.',sendEmail:false});}catch(error){access={error:safeDisplayText(error.message,500)};}
+    const access=pendingReportAccessDecision(report?.id);
     let adminNotification=null;try{adminNotification=await notifyAdminPaymentReport({ownerId,mode,enteredCurrency,amountEntered:amount,usdEq,amountBs,reference,rateInfo,reportId:report?.id,access,bank,observations,attachment});}catch(error){adminNotification={sent:false,status:'Error enviando notificación admin',detail:safeDisplayText(error.message,500)};}
     return json(200,deepEscapeStrings({success:true,message:'Pago reportado correctamente. La administración verificará la información en un plazo no mayor de 72 horas.',reportId:report?.id,targetMode:mode,enteredCurrency,amountEntered:amount,amountUsdRef:usdEq,amountBs,rateApplied:rateInfo.rate||null,attachmentIncluded:Boolean(attachment),access,adminNotification}));
   }catch(error){
@@ -123,3 +124,4 @@ const handler = async function(event){
 };
 
 exports.handler = withAirtableUsage('public-report-payment', handler);
+exports.pendingReportAccessDecision = pendingReportAccessDecision;
