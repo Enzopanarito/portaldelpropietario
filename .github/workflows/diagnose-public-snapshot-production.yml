@@ -29,4 +29,16 @@ jobs:
         env:
           PUBLIC_SNAPSHOT_MAX_ATTEMPTS: '8'
           PUBLIC_SNAPSHOT_DELAY_MS: '3000'
-        run: node tests/public-snapshot-production-smoke.cjs
+        shell: bash
+        run: |
+          set -o pipefail
+          node tests/public-snapshot-production-smoke.cjs 2>&1 | tee public-snapshot-diagnostic.log
+
+      - name: Upload compact diagnosis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-snapshot-production-diagnostic
+          path: public-snapshot-diagnostic.log
+          if-no-files-found: error
+          retention-days: 7
