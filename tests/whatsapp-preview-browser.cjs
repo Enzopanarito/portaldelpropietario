@@ -46,6 +46,16 @@ async function verifyViewport(browser, viewport, label) {
     localStorage.setItem('vla-admin-token','test-token');
     sessionStorage.setItem('vla-admin-auth','true');
     sessionStorage.setItem('vla-admin-token','test-token');
+    const removeNetlifyPreviewChrome = () => {
+      document.querySelectorAll('[data-netlify-deploy-id], iframe[title="Netlify Drawer"]').forEach(node => {
+        const host = node.matches && node.matches('[data-netlify-deploy-id]') ? node : node.closest && node.closest('[data-netlify-deploy-id]');
+        (host || node).remove();
+      });
+    };
+    window.addEventListener('DOMContentLoaded', () => {
+      removeNetlifyPreviewChrome();
+      new MutationObserver(removeNetlifyPreviewChrome).observe(document.documentElement, { childList:true, subtree:true });
+    });
   });
   const page = await context.newPage();
   const pageErrors=[];
@@ -57,6 +67,7 @@ async function verifyViewport(browser, viewport, label) {
   if(!response||response.status()!==200)throw new Error(`${label}: whatsapp.html respondió ${response&&response.status()}.`);
   await page.locator('#app').waitFor({state:'visible',timeout:20000});
   await page.locator('#recipients-body tr').first().waitFor({state:'visible',timeout:20000});
+  await page.evaluate(() => document.querySelectorAll('[data-netlify-deploy-id], iframe[title="Netlify Drawer"]').forEach(node => (node.closest('[data-netlify-deploy-id]') || node).remove()));
   const rows=await page.locator('#recipients-body tr').count();
   if(rows!==15)throw new Error(`${label}: se esperaban 15 filas y se obtuvieron ${rows}.`);
   const disabled=await page.locator('#send-test').isDisabled();
@@ -74,7 +85,8 @@ async function verifyViewport(browser, viewport, label) {
     appVisible:!document.getElementById('app').classList.contains('hidden'),
     loginHidden:document.getElementById('login').classList.contains('hidden'),
     buttonHeight:document.getElementById('review-selection').getBoundingClientRect().height,
-    fontSize:parseFloat(getComputedStyle(document.body).fontSize)
+    fontSize:parseFloat(getComputedStyle(document.body).fontSize),
+    previewChromeCount:document.querySelectorAll('[data-netlify-deploy-id], iframe[title="Netlify Drawer"]').length
   }));
   if(geometry.width>geometry.client+1)throw new Error(`${label}: desbordamiento horizontal ${geometry.width}/${geometry.client}.`);
   if(!geometry.appVisible||!geometry.loginHidden)throw new Error(`${label}: estado de sesión visual incorrecto.`);
