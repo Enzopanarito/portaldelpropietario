@@ -103,6 +103,7 @@ const handler = async function(event) {
     const payload = deepEscapeStrings({
       generatedAt: new Date().toISOString(), generatedAtCaracas: nowCaracasLabel(),
       balanceEngineVersion: 5,
+      officialBalanceSource: 'ControlVersiones',
       propietarios: officialOwners.map(record => compactOwner(record, balances.get(record.id))).sort((a,b)=>(a.Casa||0)-(b.Casa||0)),
       gastos: expenses.map(compactGasto), pagos: payments.map(compactPago)
     });

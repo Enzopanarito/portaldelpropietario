@@ -6,6 +6,13 @@ const CONTROL_TABLE = 'ControlVersiones';
 const AIRTABLE_PREFIX = 'https://api.airtable.com/v0/';
 const DAILY_PREFIX = 'API_USAGE_DAILY|';
 const DEFAULT_MONTHLY_LIMIT = 1000;
+const PUBLIC_SNAPSHOT_MUTATION_SOURCES = new Set([
+  'admin-manual-payment',
+  'process-payment-report',
+  'admin-expense',
+  'batch-delete-records',
+  'monthly-close-v2'
+]);
 const storage = new AsyncLocalStorage();
 const rawFetch = globalThis.__VLA_AIRTABLE_RAW_FETCH || globalThis.fetch.bind(globalThis);
 
@@ -163,6 +170,34 @@ async function persistUsage(state) {
   }
 }
 
+function parseResponseBody(response) {
+  try { return JSON.parse(response && response.body || '{}'); }
+  catch (_) { return {}; }
+}
+
+function shouldInvalidatePublicSnapshot(source, event, response) {
+  if (!PUBLIC_SNAPSHOT_MUTATION_SOURCES.has(source)) return false;
+  if (String(event && event.httpMethod || 'GET').toUpperCase() === 'GET') return false;
+  const status = Number(response && response.statusCode || 0);
+  if (status < 200 || status >= 300) return false;
+  const body = parseResponseBody(response);
+  if (source === 'monthly-close-v2' && body.dryRun === true) return false;
+  return body.success !== false;
+}
+
+async function invalidatePublicSnapshotAfterMutation(source, event, response, state) {
+  if (!shouldInvalidatePublicSnapshot(source, event, response)) return;
+  try {
+    const { invalidatePublicSnapshot } = require('./_public_snapshot_store');
+    const result = await invalidatePublicSnapshot(`mutation-${source}`);
+    state.snapshotInvalidation = result && result.skipped ? 'disabled' : 'invalidated';
+  } catch (error) {
+    state.snapshotInvalidation = 'failed';
+    state.snapshotInvalidationError = String(error.message || error).slice(0, 300);
+    console.warn(`No se pudo invalidar la fotografía pública después de ${source}: ${state.snapshotInvalidationError}`);
+  }
+}
+
 function attachUsageHeaders(response, state) {
   if (!response || typeof response !== 'object' || Array.isArray(response)) return response;
   const attempted = state.recordedCalls || state.calls || 0;
@@ -171,7 +206,9 @@ function attachUsageHeaders(response, state) {
     'X-Airtable-Calls': String(attempted),
     'X-Airtable-Usage-Source': state.source,
     'X-Airtable-Usage-Logged': state.logStatus || 'not-needed',
-    'X-Airtable-Usage-Mode': 'daily-rollup-v1'
+    'X-Airtable-Usage-Mode': 'daily-rollup-v1',
+    ...(state.snapshotInvalidation ? { 'X-Public-Snapshot-Invalidation': state.snapshotInvalidation } : {}),
+    ...(state.snapshotInvalidationError ? { 'X-Public-Snapshot-Warning': state.snapshotInvalidationError } : {})
   };
   return response;
 }
@@ -200,6 +237,7 @@ function withAirtableUsage(source, handler) {
       } catch (error) {
         thrown = error;
       }
+      if (!thrown) await invalidatePublicSnapshotAfterMutation(normalizedSource, event, response, state);
       await persistUsage(state);
       if (thrown) throw thrown;
       return attachUsageHeaders(response, state);
@@ -218,7 +256,9 @@ async function flushCurrentUsage() {
     logStatus: state.logStatus || 'not-needed',
     recordedCalls: state.recordedCalls || 0,
     dailyKey: state.dailyKey || null,
-    logError: state.logError || null
+    logError: state.logError || null,
+    snapshotInvalidation: state.snapshotInvalidation || null,
+    snapshotInvalidationError: state.snapshotInvalidationError || null
   };
 }
 
@@ -236,5 +276,5 @@ module.exports = {
   currentDateCaracas,
   dailyUsageKey,
   isAirtableUrl,
-  _test: { persistUsage, safeSource, rawFetch }
+  _test: { persistUsage, safeSource, rawFetch, parseResponseBody, shouldInvalidatePublicSnapshot, PUBLIC_SNAPSHOT_MUTATION_SOURCES }
 };
