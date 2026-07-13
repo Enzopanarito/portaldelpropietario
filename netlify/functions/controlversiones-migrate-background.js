@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const { sendMail } = require('./_mailer');
+const { withAirtableUsage } = require('./_airtable_meter');
 
 const CONTROL_TABLE = 'ControlVersiones';
 const MIGRATION_ID = 'CONTROLVERSIONES_TELEMETRY_V1';
@@ -311,7 +312,7 @@ const handler = async function (event) {
   }
 };
 
-exports.handler = handler;
+exports.handler = withAirtableUsage('controlversiones-migrate-background', handler);
 exports.runMigration = runMigration;
 exports.batchHash = batchHash;
 exports.batchAdditions = batchAdditions;
