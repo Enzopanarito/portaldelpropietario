@@ -1,0 +1,48 @@
+name: Verify Staging Foundation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'netlify/functions/_data_environment.js'
+      - 'scripts/airtable-staging-sync.js'
+      - 'tests/staging-isolation.test.js'
+      - 'tests/monthly-close-legacy-hash.test.js'
+      - '.github/workflows/verify-staging-foundation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'netlify/functions/_data_environment.js'
+      - 'scripts/airtable-staging-sync.js'
+      - 'tests/staging-isolation.test.js'
+      - 'tests/monthly-close-legacy-hash.test.js'
+      - '.github/workflows/verify-staging-foundation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-staging-foundation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Check JavaScript syntax
+        run: |
+          node --check netlify/functions/_data_environment.js
+          node --check scripts/airtable-staging-sync.js
+          node --check tests/staging-isolation.test.js
+          node --check tests/monthly-close-legacy-hash.test.js
+
+      - name: Verify staging isolation contracts
+        run: node tests/staging-isolation.test.js
+
+      - name: Verify monthly payment-mode semantics
+        run: node tests/monthly-close-legacy-hash.test.js
