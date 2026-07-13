@@ -14,6 +14,7 @@ const report=source('netlify/functions/process-payment-report.js');
 const close=source('netlify/functions/monthly-close-v2.js');
 const closeAtomic=source('netlify/functions/_monthly_close_idempotency.js');
 const pkg=JSON.parse(source('package.json'));
+const lock=JSON.parse(source('package-lock.json'));
 
 assert(wrapper.includes("require('./_operation_guard_v3')"),'La ruta principal debe usar la guardia v3.');
 assert(guard.indexOf('blobs.claim')<guard.indexOf('legacy.begin'),'El candado Blobs debe adquirirse antes de escribir la bitácora Airtable.');
@@ -22,7 +23,9 @@ assert(guard.includes('blobs.complete'));
 assert(guard.includes('blobs.partial'));
 assert(guard.includes('blobs.failSafe'));
 
-assert.strictEqual(pkg.dependencies['@netlify/blobs'],'^8.1.2');
+assert.strictEqual(pkg.dependencies['@netlify/blobs'],'^10.7.9');
+const installedBlobs=String(lock.packages?.['node_modules/@netlify/blobs']?.version||'');
+assert(/^10\./.test(installedBlobs),`La versión instalada de @netlify/blobs debe ser 10.x y fue ${installedBlobs||'ausente'}.`);
 assert(ledger.includes("consistency:'strong'"));
 assert(ledger.includes('onlyIfNew:true'));
 assert(ledger.includes('onlyIfMatch:current.etag'));
