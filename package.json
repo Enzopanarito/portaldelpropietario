@@ -2,6 +2,9 @@
   "name": "portal-villa-los-apamates",
   "private": true,
   "version": "1.0.0",
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@netlify/blobs": "^8.1.2",
     "nodemailer": "^9.0.3",
