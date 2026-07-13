@@ -78,7 +78,9 @@ assert.deepStrictEqual(linked.Propietarios,['recTargetOwner001']);
 const script=fs.readFileSync(path.join(__dirname,'..','scripts','airtable-staging-sync.js'),'utf8');
 assert(script.includes("confirmation:process.env.STAGING_SYNC_CONFIRM"));
 assert(script.includes("apply:args.apply"));
-assert(script.indexOf('const targetBackup=await loadBase')<script.indexOf('applyDataset({targetBaseId'),'El respaldo del target debe ocurrir antes de reemplazar.');
+const backupPosition=script.indexOf('const targetBackup=await loadBase');
+const replacePosition=script.indexOf('const result=await applyDataset({targetBaseId');
+assert(backupPosition>0&&replacePosition>backupPosition,'El respaldo del target debe ocurrir antes de reemplazar.');
 assert(!script.includes('AIRTABLE_BASE_ID='),'El script no debe reescribir variables de producción.');
 
 console.log('STAGING_ISOLATION_OK');
