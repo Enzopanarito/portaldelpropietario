@@ -4,6 +4,7 @@ const assert=require('assert');
 const snapshotStore=require('../netlify/functions/_public_snapshot_store');
 const meter=require('../netlify/functions/_airtable_meter');
 
+// Esta prueba se ejecuta también sobre el merge sintético actual de main.
 (async()=>{
  const original=snapshotStore.invalidatePublicSnapshot;
  const calls=[];
