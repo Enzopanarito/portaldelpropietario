@@ -59,16 +59,16 @@ restore_backup(){
   fi
 }
 on_error(){
-  local line="${1:-?}" status=$?
+  local line="${1:-?}" status="${2:-1}"
   trap - ERR
-  printf 'ERROR: desinstalación interrumpida en la línea %s.\n' "$line" >&2
+  printf 'ERROR: desinstalación interrumpida en la línea %s (código %s).\n' "$line" "$status" >&2
   if [[ "${BACKUP_READY}" == "true" && "${UNINSTALL_COMMITTED}" != "true" ]]; then
     printf 'Restaurando automáticamente los componentes retirados.\n' >&2
     restore_backup || printf 'ADVERTENCIA: use rollback-latest.sh con %s\n' "${BACKUP_DIR}" >&2
   fi
   exit "$status"
 }
-trap 'on_error $LINENO' ERR
+trap 'status=$?; on_error "$LINENO" "$status"' ERR
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
