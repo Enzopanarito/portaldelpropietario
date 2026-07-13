@@ -56,7 +56,7 @@ assert.strictEqual(second.state,MESSAGE_STATES.PENDING);
 
 requestPause(claimed,'2026-07-12T12:01:20.000Z');
 assert.strictEqual(claimed.state,JOB_STATES.PAUSED);
-assert.throws(()=>claimNextMessage(claimed,{deviceId:'mac-enzo',leaseToken:'lease-1',at:'2026-07-12T12:01:30.000Z'}),/reserva expiró|pausado|reserva/i);
+assert.strictEqual(claimNextMessage(claimed,{deviceId:'mac-enzo',leaseToken:'lease-1',at:'2026-07-12T12:01:30.000Z'}),null);
 requestResume(claimed,'2026-07-12T12:01:40.000Z');
 assert.strictEqual(claimed.controls.pauseRequested,false);
 
