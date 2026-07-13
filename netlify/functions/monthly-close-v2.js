@@ -187,8 +187,22 @@ const handler = async function(event) {
     return finalizeMonthlyClose(atomicClose, response, month);
   } catch (error) {
     if (closeLock && !handedOff) await setCloseMarker(closeLock, month, 'ERROR_SAFE', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter).catch(() => null);
-    if (atomicClose?.ok) await releaseMonthlyClose(atomicClose, handedOff ? 'EXECUTOR_THROWN' : 'PREPARE_THROWN', { month }).catch(() => null);
-    return json(500, { success: false, protected: true, month, message: handedOff ? 'El ejecutor del cierre devolvió un error inesperado. Revise el estado antes de repetir.' : 'Error preparando la ejecución del cierre. No se aplicaron cambios.', detail: error.message }, counter);
+    if (atomicClose?.ok) {
+      if (handedOff) await blockMonthlyClose(atomicClose, 'EXECUTOR_THROWN_UNCERTAIN', { month, closeOperationId:closeLock?.operationId||'', detail:String(error.message||'').slice(0,300) }).catch(() => null);
+      else await releaseMonthlyClose(atomicClose, 'PREPARE_THROWN', { month }).catch(() => null);
+    }
+    return json(handedOff ? 409 : 500, {
+      success:false,
+      protected:true,
+      partial:handedOff,
+      repairAvailable:handedOff,
+      repairOperationId:handedOff ? closeLock?.operationId||null : null,
+      month,
+      message:handedOff
+        ? 'El ejecutor del cierre devolvió un error inesperado después de recibir la operación. El mes quedó bloqueado para revisión; no repita el cierre.'
+        : 'Error preparando la ejecución del cierre. No se aplicaron cambios.',
+      detail:error.message
+    }, counter);
   }
 };
 
