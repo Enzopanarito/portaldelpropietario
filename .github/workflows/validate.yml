@@ -116,6 +116,9 @@ jobs:
       - name: Validate secure WhatsApp messaging snapshots
         run: node tests/messaging-core.test.js
 
+      - name: Validate WhatsApp simulation interface
+        run: node tests/whatsapp-preview-ui.test.js
+
       - name: Validate JSON files
         run: |
           node -e "JSON.parse(require('fs').readFileSync('package.json','utf8'))"
