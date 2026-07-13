@@ -1,0 +1,73 @@
+name: Verify Public Snapshot Blobs
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'package.json'
+      - 'netlify/functions/_public_snapshot_store.js'
+      - 'netlify/functions/public-data.js'
+      - 'netlify/functions/public-data-v2.js'
+      - 'netlify/functions/public-data-v3.js'
+      - 'netlify/functions/_airtable_meter.js'
+      - 'tests/public-snapshot-store.test.js'
+      - 'tests/public-data-v3.test.js'
+      - 'tests/public-snapshot-invalidation.test.js'
+      - '.github/workflows/verify-public-snapshot-blobs.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'package.json'
+      - 'netlify/functions/_public_snapshot_store.js'
+      - 'netlify/functions/public-data.js'
+      - 'netlify/functions/public-data-v2.js'
+      - 'netlify/functions/public-data-v3.js'
+      - 'netlify/functions/_airtable_meter.js'
+      - 'tests/public-snapshot-store.test.js'
+      - 'tests/public-data-v3.test.js'
+      - 'tests/public-snapshot-invalidation.test.js'
+      - '.github/workflows/verify-public-snapshot-blobs.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-public-snapshot-blobs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies safely
+        run: npm install --ignore-scripts --no-audit --no-fund
+
+      - name: Check JavaScript syntax
+        run: |
+          node --check netlify/functions/_public_snapshot_store.js
+          node --check netlify/functions/public-data-v2.js
+          node --check netlify/functions/public-data-v3.js
+          node --check netlify/functions/_airtable_meter.js
+          node --check tests/public-snapshot-store.test.js
+          node --check tests/public-data-v3.test.js
+          node --check tests/public-snapshot-invalidation.test.js
+
+      - name: Validate snapshot store and financial invariants
+        run: node tests/public-snapshot-store.test.js
+
+      - name: Exercise cache, fallback and refresh lease routes
+        run: node tests/public-data-v3.test.js
+
+      - name: Verify selective invalidation contracts
+        run: node tests/public-snapshot-invalidation.test.js
+
+      - name: Re-run official balance contract
+        run: node tests/official-balance-contract.test.js
+
+      - name: Re-run 15-house financial suite
+        run: node tests/financial-snapshots.test.js
