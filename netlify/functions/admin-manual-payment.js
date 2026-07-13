@@ -11,6 +11,7 @@ const { requireAdmin } = require('./_auth');
 const { airtableCreateRecord, syncOwnerAccess, TABLES, money } = require('./_access_control');
 const { createAndSendReceipt } = require('./_receipt_service');
 const { begin, setState } = require('./_operation_guard');
+const { hashPayload } = require('./_idempotency_blobs');
 const { ensureFinancialWritesAllowed } = require('./_financial_write_lock');
 const { sanitizeReference, safeDisplayText, deepEscapeStrings } = require('./_security_utils');
 
@@ -40,6 +41,15 @@ function operationKey(body, ownerId, mode, amountUsdRef, rate, reference) {
   if (validOperationId(supplied)) return `CLIENT|${supplied}`;
   const window = Math.floor(Date.now() / FALLBACK_WINDOW_MS);
   return `FALLBACK|${ownerId}|${mode}|${amountUsdRef.toFixed(2)}|${Number(rate || 0).toFixed(6)}|${reference}|${window}`;
+}
+function operationPayload(ownerId, mode, amountUsdRef, rate, reference) {
+  return {
+    ownerId,
+    mode,
+    amountUsdRef: money(amountUsdRef),
+    rate: mode === 'Bs BCV' ? Number(Number(rate || 0).toFixed(6)) : 0,
+    reference
+  };
 }
 
 const handler = async function(event) {
@@ -71,7 +81,8 @@ const handler = async function(event) {
     }
 
     operationBusinessKey = operationKey(body, ownerId, mode, amountUsdRef, rate, reference);
-    const guard = await begin('MANUAL_PAYMENT', operationBusinessKey);
+    const payloadHash = hashPayload(operationPayload(ownerId, mode, amountUsdRef, rate, reference));
+    const guard = await begin('MANUAL_PAYMENT', operationBusinessKey, { payloadHash });
     if (!guard.ok) {
       if (guard.reason === 'done') {
         return json(200, {
@@ -89,6 +100,14 @@ const handler = async function(event) {
           partial:true,
           paymentId:guard.marker?.resultId||null,
           message:'Esta operación tuvo un resultado parcial y quedó bloqueada para evitar duplicados. Revise el pago antes de intentar nuevamente.'
+        });
+      }
+      if (guard.reason === 'conflict') {
+        return json(409, {
+          success:false,
+          protected:true,
+          idempotencyConflict:true,
+          message:'El identificador de esta operación ya fue utilizado con datos financieros diferentes. Recargue el panel y cree una operación nueva.'
         });
       }
       return json(409, {
