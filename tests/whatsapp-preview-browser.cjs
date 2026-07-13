@@ -33,10 +33,15 @@ function recipient(house, values) {
   };
 }
 
-const payload = {
+const previewPayload = {
   schemaVersion:'vla-messaging-snapshot-v1', templateVersion:'balance-reminder-account-v1', generatedAt:'2026-07-12T16:00:00.000Z',
   balanceEngineVersion:5, officialBalanceSource:'ControlVersiones', totalOwners:15, sendableCount:10, blockedCount:0, noDebtCount:5,
   recipients:Object.entries(official).map(([house,values])=>recipient(Number(house),values))
+};
+const queuePayload = {
+  jobs:[], queueEnabled:false, realSendEnabled:false,
+  connector:{extensionId:'oopmhhmkihemkkjghmpepgfcmcomplph',nativeHost:'com.villaslosapamates.whatsapp_connector'},
+  storage:'Netlify Blobs strong consistency + ETag CAS'
 };
 
 async function verifyViewport(browser, viewport, label) {
@@ -65,7 +70,8 @@ async function verifyViewport(browser, viewport, label) {
   const consoleErrors=[];
   page.on('pageerror',error=>pageErrors.push(String(error.stack||error.message||error)));
   page.on('console',message=>{if(message.type()==='error')consoleErrors.push(message.text());});
-  await page.route('**/.netlify/functions/messaging-preview',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(payload)}));
+  await page.route('**/.netlify/functions/messaging-preview',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(previewPayload)}));
+  await page.route('**/.netlify/functions/messaging-queue',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(queuePayload)}));
   const response = await page.goto(`${TARGET_URL}/whatsapp.html?browser=${Date.now()}-${label}`,{waitUntil:'networkidle',timeout:60000});
   if(!response||response.status()!==200)throw new Error(`${label}: whatsapp.html respondió ${response&&response.status()}.`);
   await page.locator('#app').waitFor({state:'visible',timeout:20000});
@@ -73,15 +79,20 @@ async function verifyViewport(browser, viewport, label) {
   await page.evaluate(() => document.querySelectorAll('[data-netlify-deploy-id], iframe[title="Netlify Drawer"]').forEach(node => (node.closest('[data-netlify-deploy-id]') || node).remove()));
   const rows=await page.locator('#recipients-body tr').count();
   if(rows!==15)throw new Error(`${label}: se esperaban 15 filas y se obtuvieron ${rows}.`);
-  const disabled=await page.locator('#send-test').isDisabled();
-  if(!disabled)throw new Error(`${label}: Enviar prueba no está bloqueado.`);
+  if(!(await page.locator('#create-simulation').isDisabled()))throw new Error(`${label}: la creación no quedó bloqueada con la cola apagada.`);
+  if((await page.locator('#queue-state').textContent()).trim()!=='Bloqueada')throw new Error(`${label}: el estado de cola no refleja el bloqueo.`);
   await page.locator('#select-all').click();
   const selected=await page.locator('.recipient-check:checked').count();
   if(selected!==10)throw new Error(`${label}: se esperaban 10 elegibles y se seleccionaron ${selected}.`);
+  if(!(await page.locator('#create-simulation').isDisabled()))throw new Error(`${label}: seleccionar destinatarios habilitó una cola bloqueada.`);
   await page.locator('#review-selection').click();
   await page.locator('#preview-message').waitFor({state:'visible'});
   const previewText=await page.locator('#preview-message').textContent();
   if(!previewText.includes('TOTAL REFERENCIAL'))throw new Error(`${label}: la vista previa no contiene el total.`);
+  await page.locator('[data-section="history"]').click();
+  await page.locator('#jobs-body tr').first().waitFor({state:'visible'});
+  const historyText=await page.locator('#jobs-body').textContent();
+  if(!historyText.includes('No existen lotes'))throw new Error(`${label}: el historial vacío no se representa correctamente.`);
   const geometry=await page.evaluate(()=>({
     width:document.documentElement.scrollWidth,
     client:document.documentElement.clientWidth,
@@ -102,7 +113,7 @@ async function verifyViewport(browser, viewport, label) {
   if(relevantConsole.length)throw new Error(`${label}: errores de consola: ${relevantConsole.join(' | ')}`);
   await page.screenshot({path:`whatsapp-preview-${label}.png`,fullPage:true});
   await context.close();
-  return {label,viewport,rows,selected,disabled,geometry,dark,pageErrors,consoleErrors:relevantConsole};
+  return {label,viewport,rows,selected,queueBlocked:true,geometry,dark,pageErrors,consoleErrors:relevantConsole};
 }
 
 (async()=>{
