@@ -20,7 +20,7 @@ function recipient(house, values) {
   const payableTotalRef = Math.round((payableUsd+payableBsRef)*100)/100;
   const sendable = payableTotalRef > 0;
   return {
-    schemaVersion:'vla-messaging-snapshot-v1', templateVersion:'balance-reminder-account-v1',
+    schemaVersion:'vla-messaging-snapshot-v2', templateVersion:'balance-reminder-account-v2',
     generatedAt:'2026-07-12T16:00:00.000Z', generatedDate:'2026-07-12', generatedDateLong:'12 de julio de 2026', generatedDay:12,
     balanceEngineVersion:5, officialBalanceSource:'ControlVersiones', officialCutoff:'2026-07-11T19:10:08.000Z', officialSnapshotActive:true,
     ownerId:`owner-${house}`, house, ownerName:`Propietario ${house}`, phone:`+58414555${String(house).padStart(4,'0')}`,
@@ -29,15 +29,23 @@ function recipient(house, values) {
     internalSurchargeBsRef:[3,4,10,12,13,15].includes(house)?10:0,
     errors:[], warnings:sendable?[]:['La propiedad no tiene obligaciones positivas para recordatorio.'],
     message:`*Asunto: Recordatorio de Saldo Pendiente*\n\nEstimado/a *Propietario ${house}*,\n\nTOTAL REFERENCIAL DE OBLIGACIONES: $${payableTotalRef.toFixed(2)}`,
-    messageHash:'a'.repeat(64), snapshotHash:String(house).padStart(64,'0'), idempotencyKey:'b'.repeat(64), sendable
+    messageHash:'a'.repeat(64), debtIdentityHash:'d'.repeat(64), snapshotHash:String(house).padStart(64,'0'), idempotencyKey:'b'.repeat(64), sendable
   };
 }
 
 const payload = {
-  schemaVersion:'vla-messaging-snapshot-v1', templateVersion:'balance-reminder-account-v1', generatedAt:'2026-07-12T16:00:00.000Z',
+  schemaVersion:'vla-messaging-snapshot-v2', templateVersion:'balance-reminder-account-v2', generatedAt:'2026-07-12T16:00:00.000Z',
   balanceEngineVersion:5, officialBalanceSource:'ControlVersiones', totalOwners:15, sendableCount:10, blockedCount:0, noDebtCount:5,
   recipients:Object.entries(official).map(([house,values])=>recipient(Number(house),values))
 };
+
+function isDeployPreviewInfrastructureNoise(text) {
+  if (!/deploy-preview-\d+--/i.test(TARGET_URL)) return false;
+  const value = String(text || '');
+  if (value.includes("Refused to frame 'https://app.netlify.com/'") && value.includes('Content Security Policy')) return true;
+  if (/Potential permissions policy violation: (camera|microphone) is not allowed in this document\./i.test(value)) return true;
+  return false;
+}
 
 async function verifyViewport(browser, viewport, label) {
   const context = await browser.newContext({ viewport });
@@ -98,11 +106,11 @@ async function verifyViewport(browser, viewport, label) {
   const dark=await page.evaluate(()=>document.documentElement.dataset.theme);
   if(dark!=='dark')throw new Error(`${label}: modo oscuro no se activó.`);
   if(pageErrors.length)throw new Error(`${label}: errores JavaScript: ${pageErrors.join(' | ')}`);
-  const relevantConsole=consoleErrors.filter(text=>!text.includes('favicon'));
+  const relevantConsole=consoleErrors.filter(text=>!text.includes('favicon')&&!isDeployPreviewInfrastructureNoise(text));
   if(relevantConsole.length)throw new Error(`${label}: errores de consola: ${relevantConsole.join(' | ')}`);
   await page.screenshot({path:`whatsapp-preview-${label}.png`,fullPage:true});
   await context.close();
-  return {label,viewport,rows,selected,disabled,geometry,dark,pageErrors,consoleErrors:relevantConsole};
+  return {label,viewport,rows,selected,disabled,geometry,dark,pageErrors,consoleErrors:relevantConsole,ignoredPreviewNoise:consoleErrors.filter(isDeployPreviewInfrastructureNoise)};
 }
 
 (async()=>{
