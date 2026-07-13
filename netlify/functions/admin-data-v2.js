@@ -5,6 +5,7 @@ const { withAirtableUsage } = require('./_airtable_meter');
 const { requireAdmin } = require('./_auth');
 const { deepEscapeStrings, safeDisplayText } = require('./_security_utils');
 const { calculateAllOwners, calculatedFields } = require('./_balance_engine_v4');
+const { assertSafeAirtableContext, isolationResponse } = require('./_environment_guard');
 
 let adminCache = null;
 const ADMIN_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -28,6 +29,7 @@ function onlyPendingReports(records){return(records||[]).filter(record=>String(r
 function flattenOwner(record,balance){return Object.assign({id:record.id},record.fields||{},calculatedFields(balance,record))}
 const handler = async function(event){
   const auth=requireAdmin(event);if(!auth.ok)return auth.response;
+  try{assertSafeAirtableContext({write:false,allowUnclassified:true});}catch(error){return isolationResponse(error);}
   const token=process.env.AIRTABLE_API_TOKEN,baseId=process.env.AIRTABLE_BASE_ID;
   if(!token||!baseId)return{statusCode:500,headers:NO_STORE_HEADERS,body:JSON.stringify({message:'Airtable no está configurado.'})};
   const force=(event.queryStringParameters||{}).force==='1';
