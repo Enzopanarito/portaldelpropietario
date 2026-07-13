@@ -26,11 +26,21 @@ function normalizeReason(reason){return reason==='error'?'running':reason;}
 async function begin(scope,key,options={}){
   if(CLOSE_SENSITIVE_SCOPES.has(scope)){
     const lock=await ensureFinancialWritesAllowed();
-    if(!lock.ok)return {ok:false,reason:'running',monthlyClose:true,activeClose:lock.active,marker:null};
+    if(!lock.ok)return {ok:false,reason:'running',monthlyClose:true,environmentIsolation:!!lock.environmentIsolation,activeClose:lock.active,marker:null,response:lock.response};
   }
-  const result=await atomic.begin(scope,key,options);
-  if(result.ok)await mirror(result.marker,scope,key,'RUNNING').catch(()=>null);
-  return {...result,reason:normalizeReason(result.reason)};
+  try{
+    const result=await atomic.begin(scope,key,options);
+    if(result.ok)await mirror(result.marker,scope,key,'RUNNING').catch(()=>null);
+    return {...result,reason:normalizeReason(result.reason)};
+  }catch(error){
+    if(error&&error.code==='IDEMPOTENCY_PAYLOAD_MISMATCH'){
+      return {ok:false,reason:'payload-mismatch',marker:null,code:error.code,message:error.message};
+    }
+    if(error&&error.code==='IDEMPOTENCY_CONFLICT'){
+      return {ok:false,reason:'running',marker:null,code:error.code,message:error.message};
+    }
+    throw error;
+  }
 }
 async function setState(marker,scope,key,state,resultId='',result=null,error=null){
   const updated=await atomic.setState(marker,scope,key,state,resultId,result,error);
