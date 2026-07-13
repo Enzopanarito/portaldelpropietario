@@ -4,12 +4,12 @@ const crypto = require('crypto');
 const { cleanPlainText } = require('./_security_utils');
 const { sha256, stableStringify } = require('./_integrity');
 
-const JOB_SCHEMA_VERSION = 'vla-whatsapp-job-v2';
+const JOB_SCHEMA_VERSION = 'vla-whatsapp-job-v3';
 const MAX_PAYLOAD_BYTES = 90000;
 const DEFAULT_LEASE_SECONDS = 120;
 
 const JOB_STATES = Object.freeze({
-  PENDING:'Pendiente', RUNNING:'Ejecutando', PAUSED:'Pausado', COMPLETED:'Completado',
+  PENDING:'Pendiente', RUNNING:'Ejecutando', PAUSED:'Pausado', REVIEW:'Verificar', COMPLETED:'Completado',
   CANCELLED:'Cancelado', ERROR:'Error'
 });
 const MESSAGE_STATES = Object.freeze({
@@ -78,9 +78,12 @@ function validateSnapshots(recipients) {
     if (houses.has(Number(item.house))) throw new Error(`Casa ${item.house} repetida.`);
     houses.add(Number(item.house));
     if (!/^[a-f0-9]{64}$/.test(String(item.snapshotHash||''))) throw new Error(`Casa ${item.house}: snapshotHash inválido.`);
+    if (!/^[a-f0-9]{64}$/.test(String(item.debtIdentityHash||''))) throw new Error(`Casa ${item.house}: debtIdentityHash inválido.`);
     if (!/^[a-f0-9]{64}$/.test(String(item.idempotencyKey||''))) throw new Error(`Casa ${item.house}: idempotencyKey inválida.`);
     if (!/^\+[1-9]\d{7,14}$/.test(String(item.phone||''))) throw new Error(`Casa ${item.house}: teléfono inválido.`);
     if (!String(item.message||'').trim()) throw new Error(`Casa ${item.house}: mensaje vacío.`);
+    if (!String(item.ownerId||'').trim()) throw new Error(`Casa ${item.house}: propietario sin identidad estable.`);
+    if (!Number.isFinite(Date.parse(String(item.officialCutoff||'')))) throw new Error(`Casa ${item.house}: corte oficial inválido.`);
   }
 }
 function createJobPayload({ recipients, mode='Simulación', createdAt=new Date(), existingKeys=[] } = {}) {
@@ -94,7 +97,7 @@ function createJobPayload({ recipients, mode='Simulación', createdAt=new Date()
     return {
       messageId:messageId(snapshot), house:Number(snapshot.house), ownerId:String(snapshot.ownerId||''), ownerName:String(snapshot.ownerName||''),
       phone:String(snapshot.phone||''), phoneMasked:String(snapshot.phoneMasked||''), message:String(snapshot.message||''), messageHash:String(snapshot.messageHash||''),
-      snapshotHash:String(snapshot.snapshotHash||''), idempotencyKey:String(snapshot.idempotencyKey||''), payableUsd:Number(snapshot.payableUsd||0),
+      debtIdentityHash:String(snapshot.debtIdentityHash||''), snapshotHash:String(snapshot.snapshotHash||''), idempotencyKey:String(snapshot.idempotencyKey||''), payableUsd:Number(snapshot.payableUsd||0),
       payableBsRef:Number(snapshot.payableBsRef||0), payableTotalRef:Number(snapshot.payableTotalRef||0), internalSurchargeBsRef:Number(snapshot.internalSurchargeBsRef||0),
       officialCutoff:String(snapshot.officialCutoff||''), state:duplicate?MESSAGE_STATES.DUPLICATE:MESSAGE_STATES.PENDING,
       attempts:0, activeAttemptId:null, preparedAt:null, sendTriggeredAt:null, finishedAt:duplicate?at:null,
@@ -149,40 +152,60 @@ function summarize(job) {
 function refreshJobState(job,at=new Date()) {
   const counts=summarize(job);
   if(counts.preparing||counts.sending)job.state=JOB_STATES.RUNNING;
+  else if(counts.verify>0)job.state=JOB_STATES.REVIEW;
   else if(job.controls&&job.controls.cancelRequested&&counts.pending===0&&counts.failed===0)job.state=JOB_STATES.CANCELLED;
   else if(counts.pending>0||counts.failed>0)job.state=job.controls&&job.controls.pauseRequested?JOB_STATES.PAUSED:JOB_STATES.PENDING;
   else job.state=JOB_STATES.COMPLETED;
   job.summary=counts;
   job.updatedAt=nowIso(at);
   if([JOB_STATES.COMPLETED,JOB_STATES.CANCELLED].includes(job.state)&&!job.finishedAt)job.finishedAt=job.updatedAt;
+  if(![JOB_STATES.COMPLETED,JOB_STATES.CANCELLED].includes(job.state))job.finishedAt=null;
   return job.state;
 }
 function leaseExpired(job,at=new Date()) {
   return Boolean(job.lease&&Date.parse(job.lease.expiresAt)<=new Date(at).getTime());
+}
+function cancelUnsentMessages(job,at=new Date()) {
+  let count=0;
+  for(const message of job.messages||[]){
+    if([MESSAGE_STATES.PENDING,MESSAGE_STATES.PREPARING,MESSAGE_STATES.FAILED].includes(message.state)){
+      message.state=MESSAGE_STATES.CANCELLED;message.finishedAt=nowIso(at);message.activeAttemptId=null;count++;
+    }
+  }
+  return count;
 }
 function recoverExpiredLease(input,at=new Date()) {
   const job=clone(input);
   if(!job.lease||!leaseExpired(job,at))return job;
   for(const message of job.messages||[]){
     if(message.state===MESSAGE_STATES.PREPARING){
-      const previous=message.state;message.state=MESSAGE_STATES.PENDING;message.activeAttemptId=null;message.preparedAt=null;message.sendTriggeredAt=null;
+      const previous=message.state;
+      if(job.controls&&job.controls.cancelRequested){message.state=MESSAGE_STATES.CANCELLED;message.finishedAt=nowIso(at);}
+      else{message.state=MESSAGE_STATES.PENDING;message.finishedAt=null;}
+      message.activeAttemptId=null;message.preparedAt=null;message.sendTriggeredAt=null;
       event(job,'LEASE_RECOVERY_SAFE',{messageId:message.messageId,house:message.house,from:previous,to:message.state},at);
     }else if(message.state===MESSAGE_STATES.SENDING){
       const previous=message.state;message.state=MESSAGE_STATES.VERIFY;message.finishedAt=nowIso(at);message.lastErrorCode='CONNECTOR_LOST_AFTER_SEND_TRIGGER';message.lastErrorDetail='El conector perdió la reserva después de activar el envío; se requiere verificación humana.';
       event(job,'LEASE_RECOVERY_UNCERTAIN',{messageId:message.messageId,house:message.house,from:previous,to:message.state},at);
     }
   }
+  if(job.controls&&job.controls.cancelRequested){
+    const cancelled=cancelUnsentMessages(job,at);
+    if(cancelled)event(job,'CANCEL_RECOVERED_AFTER_LEASE_EXPIRY',{cancelled},at);
+  }
   event(job,'LEASE_EXPIRED',{deviceId:job.lease.deviceId||''},at);
   job.lease=null;job.revision=Number(job.revision||0)+1;refreshJobState(job,at);assertPayloadSize(job);return job;
 }
 function claimJob(input,{deviceId,leaseToken=randomToken(),at=new Date(),leaseSeconds=DEFAULT_LEASE_SECONDS}={}) {
   const job=recoverExpiredLease(input,at);
+  const safeDeviceId=cleanPlainText(deviceId,100);
+  if(!/^[A-Za-z0-9._-]{3,100}$/.test(safeDeviceId))throw new Error('Identificador del conector inválido.');
   if(job.lease&&!leaseExpired(job,at))throw new Error('El lote ya está reservado por otro conector.');
   if(job.controls&&job.controls.cancelRequested)throw new Error('El lote está cancelado.');
   if(job.controls&&job.controls.pauseRequested)throw new Error('El lote está pausado.');
   if(!(job.messages||[]).some(item=>item.state===MESSAGE_STATES.PENDING))throw new Error('No hay mensajes pendientes para reclamar.');
   const start=new Date(at).getTime();
-  job.lease={deviceId:cleanPlainText(deviceId,100),token:leaseToken,claimedAt:nowIso(at),expiresAt:new Date(start+Math.max(30,Number(leaseSeconds||0))*1000).toISOString()};
+  job.lease={deviceId:safeDeviceId,token:leaseToken,claimedAt:nowIso(at),expiresAt:new Date(start+Math.max(30,Number(leaseSeconds||0))*1000).toISOString()};
   job.state=JOB_STATES.RUNNING;job.revision=Number(job.revision||0)+1;event(job,'JOB_CLAIMED',{deviceId:job.lease.deviceId,expiresAt:job.lease.expiresAt},at);assertPayloadSize(job);return job;
 }
 function assertLease(job,{deviceId,leaseToken,at=new Date()}={}) {
@@ -193,7 +216,7 @@ function assertLease(job,{deviceId,leaseToken,at=new Date()}={}) {
 function extendLease(job,{deviceId,leaseToken,at=new Date(),leaseSeconds=DEFAULT_LEASE_SECONDS}={}) {
   assertLease(job,{deviceId,leaseToken,at});
   job.lease.expiresAt=new Date(new Date(at).getTime()+Math.max(30,Number(leaseSeconds||0))*1000).toISOString();
-  job.revision=Number(job.revision||0)+1;event(job,'LEASE_EXTENDED',{deviceId,expiresAt:job.lease.expiresAt},at);assertPayloadSize(job);return job;
+  job.revision=Number(job.revision||0)+1;event(job,'LEASE_EXTENDED',{deviceId,expiresAt:job.lease.expiresAt},at);refreshJobState(job,at);assertPayloadSize(job);return job;
 }
 function claimNextMessage(job,{deviceId,leaseToken,attemptId=randomToken(12),at=new Date()}={}) {
   assertLease(job,{deviceId,leaseToken,at});
@@ -208,8 +231,8 @@ function requestPause(job,at=new Date()) {job.controls=job.controls||{};job.cont
 function requestResume(job,at=new Date()) {job.controls=job.controls||{};job.controls.pauseRequested=false;job.revision=Number(job.revision||0)+1;event(job,'RESUME_REQUESTED',{},at);refreshJobState(job,at);return job;}
 function applyCancel(job,at=new Date()) {
   job.controls=job.controls||{};job.controls.cancelRequested=true;
-  for(const message of job.messages||[]){if([MESSAGE_STATES.PENDING,MESSAGE_STATES.PREPARING,MESSAGE_STATES.FAILED].includes(message.state)){message.state=MESSAGE_STATES.CANCELLED;message.finishedAt=nowIso(at);message.activeAttemptId=null;}}
-  job.revision=Number(job.revision||0)+1;event(job,'CANCEL_APPLIED',{},at);refreshJobState(job,at);return job;
+  const cancelled=cancelUnsentMessages(job,at);
+  job.revision=Number(job.revision||0)+1;event(job,'CANCEL_APPLIED',{cancelled},at);refreshJobState(job,at);return job;
 }
 function requestCancel(job,at=new Date()) {job.controls=job.controls||{};job.controls.cancelRequested=true;job.revision=Number(job.revision||0)+1;event(job,'CANCEL_REQUESTED',{},at);if(!(job.messages||[]).some(item=>item.state===MESSAGE_STATES.SENDING))applyCancel(job,at);else refreshJobState(job,at);return job;}
 function retryFailed(job,at=new Date()) {let count=0;for(const message of job.messages||[]){if(message.state===MESSAGE_STATES.FAILED){transitionMessage(job,message.messageId,MESSAGE_STATES.PENDING,{manual:true,at});count++;}}event(job,'FAILED_RETRY_REQUESTED',{count},at);refreshJobState(job,at);return count;}
@@ -217,10 +240,12 @@ function resolveVerify(job,messageIdValue,resolution,{reason='',at=new Date()}={
   const next=resolution==='sent'?MESSAGE_STATES.SENT:resolution==='failed'?MESSAGE_STATES.FAILED:null;
   if(!next)throw new Error('Resolución inválida.');
   const message=transitionMessage(job,messageIdValue,next,{manual:true,at,errorCode:next===MESSAGE_STATES.FAILED?'MANUAL_VERIFY_FAILED':'',errorDetail:reason,evidence:{manualResolution:true,reason}});
-  event(job,'VERIFY_RESOLVED',{messageId:message.messageId,house:message.house,resolution,reason},at);return message;
+  event(job,'VERIFY_RESOLVED',{messageId:message.messageId,house:message.house,resolution,reason},at);
+  if(job.controls&&job.controls.cancelRequested)applyCancel(job,at);else refreshJobState(job,at);
+  return message;
 }
 function serializePayload(job) {assertPayloadSize(job);return JSON.stringify(job);}
 function parsePayload(value) {const job=typeof value==='string'?JSON.parse(value||'{}'):clone(value||{});if(job.schemaVersion!==JOB_SCHEMA_VERSION)throw new Error('Versión de lote no compatible.');if(!Array.isArray(job.messages))throw new Error('Lote sin mensajes.');return job;}
 function payloadDigest(job) {return sha256(stableStringify(job));}
 
-module.exports={JOB_SCHEMA_VERSION,MAX_PAYLOAD_BYTES,DEFAULT_LEASE_SECONDS,JOB_STATES,MESSAGE_STATES,TERMINAL_MESSAGE_STATES,ALLOWED_TRANSITIONS,nowIso,randomToken,cleanEvidence,assertPayloadSize,computeBatchKey,jobIdFromKey,createJobPayload,findMessage,transitionMessage,summarize,refreshJobState,leaseExpired,recoverExpiredLease,claimJob,assertLease,extendLease,claimNextMessage,requestPause,requestResume,requestCancel,applyCancel,retryFailed,resolveVerify,serializePayload,parsePayload,payloadDigest};
+module.exports={JOB_SCHEMA_VERSION,MAX_PAYLOAD_BYTES,DEFAULT_LEASE_SECONDS,JOB_STATES,MESSAGE_STATES,TERMINAL_MESSAGE_STATES,ALLOWED_TRANSITIONS,nowIso,randomToken,cleanEvidence,assertPayloadSize,computeBatchKey,jobIdFromKey,createJobPayload,findMessage,transitionMessage,summarize,refreshJobState,leaseExpired,cancelUnsentMessages,recoverExpiredLease,claimJob,assertLease,extendLease,claimNextMessage,requestPause,requestResume,requestCancel,applyCancel,retryFailed,resolveVerify,serializePayload,parsePayload,payloadDigest};
