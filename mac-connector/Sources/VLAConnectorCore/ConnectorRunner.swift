@@ -109,10 +109,18 @@ public final class ConnectorRunner: @unchecked Sendable {
                     payload: ["attemptId":attemptID,"house":house]
                 )
                 let browserResult = commitResult["result"] as? [String: Any] ?? [:]
-                if commitResult["ok"] as? Bool == true, browserResult["status"] as? String == "sent" {
+                let browserStatus = browserResult["status"] as? String ?? ""
+                let clicked = browserResult["clicked"] as? Bool ?? false
+                if commitResult["ok"] as? Bool == true, browserStatus == "sent" {
                     let evidence = browserResult["evidence"] as? [String: Any] ?? [:]
                     _ = try await transition(api: api, jobID: jobID, leaseToken: leaseToken, messageID: messageID, attemptID: attemptID, outcome: "sent", evidence: evidence)
                     try sendProgress(["stage":"sent","house":house])
+                } else if commitResult["ok"] as? Bool == true, browserStatus == "failed", clicked == false {
+                    let evidence = browserResult["evidence"] as? [String: Any] ?? [:]
+                    let code = browserResult["errorCode"] as? String ?? "SAFE_PRE_SEND_FAILURE"
+                    let detail = browserResult["error"] as? String ?? "El envío se detuvo antes de activar Enviar."
+                    _ = try await transition(api: api, jobID: jobID, leaseToken: leaseToken, messageID: messageID, attemptID: attemptID, outcome: "failed", evidence: evidence, errorCode: code, errorDetail: detail)
+                    try sendProgress(["stage":"failed-before-send","house":house])
                 } else {
                     let evidence = browserResult["evidence"] as? [String: Any] ?? [:]
                     let code = browserResult["errorCode"] as? String ?? "SEND_CONFIRMATION_UNCERTAIN"
