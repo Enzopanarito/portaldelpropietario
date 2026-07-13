@@ -1,18 +1,44 @@
 'use strict';
 
 const crypto=require('crypto');
-const runtimeConfig=require('./_runtime_config.generated');
+const runtimeConfig=require('./_runtime_config_generated');
 
 const STORE_NAME='vla-public-snapshots-v1';
 const SCHEMA_VERSION='vla-public-snapshot-v1';
 const DEFAULT_MAX_AGE_MS=2*60*1000;
 const REFRESH_LEASE_MS=30*1000;
 const EXPECTED_HOUSES=15;
+const PRODUCTION_HOSTS=new Set(['villalosapamates.netlify.app']);
 
 function sha256(value){return crypto.createHash('sha256').update(String(value||''),'utf8').digest('hex')}
 function clean(value){return String(value||'').trim()}
 function parseBoolean(value){const normalized=clean(value).toLowerCase();if(normalized==='true')return true;if(normalized==='false')return false;return null}
-function enabled(env=process.env,config=runtimeConfig){const explicit=parseBoolean(env.PUBLIC_BLOB_CACHE_ENABLED);return explicit===null?config.publicBlobCacheEnabled===true:explicit}
+function normalizeHost(value){return clean(value).toLowerCase().split(',')[0].trim().replace(/:\d+$/,'')}
+function requestHost(event){
+ const headers=event&&event.headers||{};
+ const direct=headers.host||headers.Host||headers['x-forwarded-host']||headers['X-Forwarded-Host']||'';
+ if(direct)return normalizeHost(direct);
+ try{return normalizeHost(new URL(String(event&&event.rawUrl||'')).host)}catch(_){return''}
+}
+function isProductionHost(host){return PRODUCTION_HOSTS.has(normalizeHost(host))}
+function enabled(env=process.env,config=runtimeConfig,host=''){
+ const normalizedHost=normalizeHost(host);
+ const explicit=parseBoolean(env.PUBLIC_BLOB_CACHE_ENABLED);
+ if(normalizedHost){
+  if(!isProductionHost(normalizedHost))return false;
+  return explicit===false?false:true;
+ }
+ return explicit===null?config.publicBlobCacheEnabled===true:explicit;
+}
+function environmentForEvent(event,env=process.env){
+ const host=requestHost(event);
+ if(isProductionHost(host)){
+  const explicit=parseBoolean(env.PUBLIC_BLOB_CACHE_ENABLED);
+  return{...env,PUBLIC_BLOB_CACHE_ENABLED:explicit===false?'false':'true',VLA_DATA_ENVIRONMENT:'production'};
+ }
+ if(host)return{...env,PUBLIC_BLOB_CACHE_ENABLED:'false',VLA_DATA_ENVIRONMENT:'staging'};
+ return env;
+}
 function maxAgeMs(env=process.env,config=runtimeConfig){const parsed=Number(env.PUBLIC_BLOB_CACHE_MAX_AGE_MS||config.publicBlobCacheMaxAgeMs||DEFAULT_MAX_AGE_MS);return Math.min(15*60*1000,Math.max(30*1000,Number.isFinite(parsed)?parsed:DEFAULT_MAX_AGE_MS))}
 function dataEnvironment(env=process.env,config=runtimeConfig){return clean(env.VLA_DATA_ENVIRONMENT||config.dataEnvironment||'legacy').replace(/[^A-Za-z0-9._-]/g,'_')||'legacy'}
 function namespace(env=process.env,config=runtimeConfig){return`${dataEnvironment(env,config)}-${sha256(env.AIRTABLE_BASE_ID||'missing-base').slice(0,16)}`}
@@ -37,4 +63,4 @@ function createSnapshotStore({storeFactory=defaultStore,now=()=>Date.now(),confi
  return{read,write,invalidate,claimRefresh,releaseRefresh}
 }
 const defaultSnapshotStore=createSnapshotStore();
-module.exports={STORE_NAME,SCHEMA_VERSION,DEFAULT_MAX_AGE_MS,REFRESH_LEASE_MS,EXPECTED_HOUSES,runtimeConfig,parseBoolean,enabled,maxAgeMs,dataEnvironment,namespace,snapshotKey,refreshKey,createMemoryStore,validOwner,validatePayload,buildSnapshot,snapshotExpectedEtag,createSnapshotStore,readPublicSnapshot:env=>defaultSnapshotStore.read(env),writePublicSnapshot:(payload,env,expectedEtag)=>defaultSnapshotStore.write(payload,env,expectedEtag),invalidatePublicSnapshot:(reason,env)=>defaultSnapshotStore.invalidate(reason,env),claimPublicRefresh:env=>defaultSnapshotStore.claimRefresh(env),releasePublicRefresh:(marker,env)=>defaultSnapshotStore.releaseRefresh(marker,env)};
+module.exports={STORE_NAME,SCHEMA_VERSION,DEFAULT_MAX_AGE_MS,REFRESH_LEASE_MS,EXPECTED_HOUSES,PRODUCTION_HOSTS,runtimeConfig,parseBoolean,normalizeHost,requestHost,isProductionHost,enabled,environmentForEvent,maxAgeMs,dataEnvironment,namespace,snapshotKey,refreshKey,createMemoryStore,validOwner,validatePayload,buildSnapshot,snapshotExpectedEtag,createSnapshotStore,readPublicSnapshot:env=>defaultSnapshotStore.read(env),writePublicSnapshot:(payload,env,expectedEtag)=>defaultSnapshotStore.write(payload,env,expectedEtag),invalidatePublicSnapshot:(reason,env)=>defaultSnapshotStore.invalidate(reason,env),claimPublicRefresh:env=>defaultSnapshotStore.claimRefresh(env),releasePublicRefresh:(marker,env)=>defaultSnapshotStore.releaseRefresh(marker,env)};

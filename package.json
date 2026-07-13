@@ -6,7 +6,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@netlify/blobs": "^8.1.2",
+    "@netlify/blobs": "^10.7.9",
     "nodemailer": "^9.0.3",
     "pdfkit": "^0.15.0"
   }
