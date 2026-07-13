@@ -1,0 +1,55 @@
+name: Verify Cash Payment Policies
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'netlify/functions/_cash_payment_policy.js'
+      - 'tests/cash-payment-policy.test.js'
+      - '.github/workflows/verify-cash-payment-policies.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'netlify/functions/_cash_payment_policy.js'
+      - 'tests/cash-payment-policy.test.js'
+      - '.github/workflows/verify-cash-payment-policies.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-cash-policies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Check syntax
+        run: |
+          node --check netlify/functions/_cash_payment_policy.js
+          node --check tests/cash-payment-policy.test.js
+      - name: Verify direct, security-pending and contingency rules
+        run: node tests/cash-payment-policy.test.js
+      - name: Re-run payment processing foundations
+        run: |
+          node tests/payment-processing-store.test.js
+          node tests/payment-processing-orchestrator.test.js
+          node tests/payment-deterministic-arbiter.test.js
+          node tests/provisional-access-authorization.test.js
+          node tests/pending-reports-never-enable-access.test.js
+      - name: Re-run secure payment foundations
+        run: |
+          node tests/payment-proof-core.test.js
+          node tests/payment-proof-store.test.js
+          node tests/payment-access-snapshot.test.js
+          node tests/payment-duplicate-core.test.js
+          node tests/payment-ai-contract.test.js
+      - name: Re-run official balances
+        run: |
+          node tests/official-balance-sync.test.js
+          node tests/all-houses-current-balance.test.js
+          node tests/balance-engine-v4.test.js
