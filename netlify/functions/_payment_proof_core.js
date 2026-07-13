@@ -75,6 +75,8 @@ function decodeProofInput(input,{maxBytes=DEFAULT_MAX_BYTES}={}){
  if(!input||typeof input!=='object')throw Object.assign(new Error('El comprobante adjunto no es válido.'),{code:'INVALID_ATTACHMENT'});
  const declaredType=clean(input.type).toLowerCase();if(!ALLOWED_TYPES.has(declaredType))throw Object.assign(new Error('El comprobante debe ser JPG, PNG, WebP, HEIC o PDF.'),{code:'UNSUPPORTED_ATTACHMENT_TYPE'});
  const content=Buffer.isBuffer(input.content)?Buffer.from(input.content):decodeBase64Strict(input.base64,maxBytes);
+ if(!content.length)throw Object.assign(new Error('El comprobante está vacío.'),{code:'EMPTY_ATTACHMENT'});
+ if(content.length>maxBytes)throw Object.assign(new Error('El comprobante supera el tamaño permitido.'),{code:'ATTACHMENT_TOO_LARGE'});
  const format=detectFormat(content),expected=expectedFormat(declaredType);if(!format||format!==expected)throw Object.assign(new Error('El contenido del comprobante no coincide con el formato declarado.'),{code:'MIME_SIGNATURE_MISMATCH',detectedFormat:format,expectedFormat:expected});
  const dimensions=imageDimensions(content,format),quality=preliminaryQuality(content,format,dimensions);
  return{filename:safeFilename(input.name,declaredType),originalName:clean(input.name||'comprobante'),content,contentType:declaredType,format,size:content.length,sha256:sha256(content),dimensions,quality,requiresConversion:['heic','heif'].includes(format),pdfImageExtractionCandidate:format==='pdf'};
