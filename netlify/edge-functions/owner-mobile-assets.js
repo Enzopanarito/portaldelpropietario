@@ -52,6 +52,8 @@ export default async (request,context)=>{
     if(extras)html=html.includes('</head>')?html.replace('</head>',extras+'</head>'):html+extras;
   }
 
+  html=html.split('/.netlify/functions/public-data?force=1').join('/.netlify/functions/public-data');
+
   const headers=new Headers(response.headers);
   headers.delete('content-length');
   headers.delete('content-encoding');
@@ -60,5 +62,6 @@ export default async (request,context)=>{
   headers.set('x-vla-owner-mobile','fluid-v2');
   headers.set('x-vla-owner-payment-report','smart-v3');
   headers.set('x-vla-owner-dark-contrast','wcag-v1');
+  headers.set('x-vla-public-data-route','snapshot-capable');
   return new Response(html,{status:response.status,statusText:response.statusText,headers});
 };
