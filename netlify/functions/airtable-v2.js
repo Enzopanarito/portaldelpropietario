@@ -4,6 +4,7 @@ const { withAirtableUsage } = require('./_airtable_meter');
 
 const { requireAdmin } = require('./_auth');
 const { ensureFinancialWritesAllowed } = require('./_financial_write_lock');
+const { invalidatePublicSnapshot } = require('./_public_snapshot_store');
 const { deepEscapeStrings, safeDisplayText } = require('./_security_utils');
 
 const cache = new Map();
@@ -43,9 +44,12 @@ const handler = async function(event){
    const response=await fetch(url,{method:httpMethod,headers:{Authorization:`Bearer ${AIRTABLE_API_TOKEN}`,'Content-Type':'application/json'},body:httpMethod!=='GET'?body:undefined});
    const data=await response.json().catch(()=>({}));
    if(!response.ok)return reply(response.status,{message:data.error?.message||data.message||'Airtable rechazó la operación.'},{'X-Airtable-Calls':String(airtableCalls)});
-   const safeData=deepEscapeStrings(data);
-   if(httpMethod==='GET')cache.set(cacheKey,{data:safeData,expiresAt:Date.now()+getCacheTtl(airtablePath)});else clearCache();
-   return reply(200,safeData,{'X-Cache':httpMethod==='GET'?'MISS':'BYPASS','X-Airtable-Calls':String(airtableCalls),'Cache-Control':httpMethod==='GET'?'private, max-age=60':'no-store'});
+   const safeData=deepEscapeStrings(data);let snapshotWarning='';
+   if(httpMethod==='GET')cache.set(cacheKey,{data:safeData,expiresAt:Date.now()+getCacheTtl(airtablePath)});else{
+     clearCache();
+     try{await invalidatePublicSnapshot(`airtable-${httpMethod.toLowerCase()}-${target.table}`)}catch(error){snapshotWarning=safeDisplayText(error.message,300)}
+   }
+   return reply(200,safeData,{'X-Cache':httpMethod==='GET'?'MISS':'BYPASS','X-Airtable-Calls':String(airtableCalls),'Cache-Control':httpMethod==='GET'?'private, max-age=60':'no-store',...(snapshotWarning?{'X-Public-Snapshot-Warning':snapshotWarning}:{})});
  }catch(error){return reply(503,{message:isFinancialWrite(httpMethod,target.table)?'No se pudo verificar el bloqueo financiero. La escritura fue detenida por seguridad.':'Error en la función del servidor.',detail:safeDisplayText(error.message,500)},{'X-Airtable-Calls':String(airtableCalls)});}
 };
 
