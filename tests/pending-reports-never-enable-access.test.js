@@ -3,6 +3,8 @@
 const assert=require('assert');
 const fs=require('fs');
 const path=require('path');
+const mailerPath=require.resolve('../netlify/functions/_mailer');
+require.cache[mailerPath]={id:mailerPath,filename:mailerPath,loaded:true,exports:{sendMail:async()=>({sent:false,status:'Doble de prueba'})}};
 const access=require('../netlify/functions/_access_control');
 const{pendingReportAccessDecision}=require('../netlify/functions/_pending_report_access_policy');
 
