@@ -6,12 +6,14 @@ on:
     paths:
       - 'mac-connector/**'
       - 'tests/mac-connector-static.test.js'
+      - 'tests/mac-install-rollback.test.sh'
       - '.github/workflows/verify-mac-connector.yml'
   push:
     branches: [main]
     paths:
       - 'mac-connector/**'
       - 'tests/mac-connector-static.test.js'
+      - 'tests/mac-install-rollback.test.sh'
       - '.github/workflows/verify-mac-connector.yml'
 
 permissions:
@@ -36,6 +38,7 @@ jobs:
           bash -n mac-connector/scripts/install.sh
           bash -n mac-connector/scripts/rollback-latest.sh
           bash -n mac-connector/scripts/uninstall.sh
+          bash -n tests/mac-install-rollback.test.sh
 
       - name: Validate Chrome extension JavaScript
         run: |
@@ -44,6 +47,9 @@ jobs:
 
       - name: Validate connector static safety contracts
         run: node tests/mac-connector-static.test.js
+
+      - name: Execute transactional rollback scenarios
+        run: bash tests/mac-install-rollback.test.sh
 
       - name: Build and test Swift package
         run: swift test --package-path mac-connector --parallel
