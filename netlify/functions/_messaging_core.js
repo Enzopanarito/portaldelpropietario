@@ -106,30 +106,65 @@ function expenseCurrency(fields) {
 function emptyConceptBreakdown() {
   return {
     mode:CONCEPT_ALLOCATION_STATUS,
+    allocationRuleVersion:'balance-engine-v5-compatible',
     source:'Gastos del Mes',
     sourceRecordCount:0,
     invalidRecordCount:0,
+    commonAllocationFactor:0,
     categories:CONCEPTS.map(item => ({ ...item, usd:0, bsRef:0 })),
     totalUsd:0,
     totalBsRef:0,
     hasData:false
   };
 }
-function buildMonthlyChargeBreakdown(ownerId, expenses = []) {
+function buildMonthlyChargeBreakdown(owner, expenses = []) {
   const output = emptyConceptBreakdown();
-  const byKey = Object.fromEntries(output.categories.map(item => [item.key,item]));
+  const ownerFields = fieldsOf(owner);
+  const ownerId = cleanPlainText(owner && owner.id ? owner.id : owner, 80);
+  const aliquot = Number(ownerFields.Alicuota ?? ownerFields['Alícuota'] ?? 0);
+  output.commonAllocationFactor = Number.isFinite(aliquot) ? aliquot : 0;
+  const commonRaw = Object.fromEntries(CONCEPTS.map(item => [item.key,{usd:0,bsRef:0}]));
+  const specialAllocated = Object.fromEntries(CONCEPTS.map(item => [item.key,{usd:0,bsRef:0}]));
+
   for (const record of Array.isArray(expenses) ? expenses : []) {
     const fields = fieldsOf(record);
-    if (!linkedOwnerIds(fields.Propietarios).includes(ownerId)) continue;
-    const amount = money(fields.Monto);
-    if (!Number.isFinite(amount) || amount <= 0) {
+    const type = normalizeMatch(fields['Tipo de Gasto']);
+    if (type !== 'gasto comun' && type !== 'gasto especial') continue;
+    const owners = linkedOwnerIds(fields.Propietarios);
+    const isCommon = type === 'gasto comun';
+    const applies = isCommon ? (owners.length === 0 || owners.includes(ownerId)) : owners.includes(ownerId);
+    if (!applies) continue;
+    const amount = Number(fields.Monto);
+    if (!Number.isFinite(amount) || amount <= 0 || (isCommon && (!Number.isFinite(aliquot) || aliquot <= 0)) || (!isCommon && owners.length === 0)) {
       output.invalidRecordCount += 1;
       continue;
     }
     const category = classifyExpense(fields);
     const currency = expenseCurrency(fields);
-    byKey[category][currency] = money(byKey[category][currency] + amount);
+    if (isCommon) commonRaw[category][currency] += amount * aliquot;
+    else specialAllocated[category][currency] = money(specialAllocated[category][currency] + money(amount / owners.length));
     output.sourceRecordCount += 1;
+  }
+
+  const commonRounded = Object.fromEntries(CONCEPTS.map(item => [item.key,{usd:0,bsRef:0}]));
+  for (const currency of ['usd','bsRef']) {
+    const relevant = CONCEPTS.filter(item => commonRaw[item.key][currency] > TOLERANCE);
+    const target = money(relevant.reduce((sum,item) => sum + commonRaw[item.key][currency], 0));
+    let roundedSum = 0;
+    for (const item of relevant) {
+      commonRounded[item.key][currency] = money(commonRaw[item.key][currency]);
+      roundedSum = money(roundedSum + commonRounded[item.key][currency]);
+    }
+    const adjustment = money(target - roundedSum);
+    if (relevant.length && Math.abs(adjustment) > 0) {
+      const last = relevant[relevant.length - 1].key;
+      commonRounded[last][currency] = money(commonRounded[last][currency] + adjustment);
+    }
+  }
+
+  for (const item of output.categories) {
+    item.usd = money(commonRounded[item.key].usd + specialAllocated[item.key].usd);
+    item.bsRef = money(commonRounded[item.key].bsRef + specialAllocated[item.key].bsRef);
   }
   output.totalUsd = money(output.categories.reduce((sum,item) => sum + item.usd, 0));
   output.totalBsRef = money(output.categories.reduce((sum,item) => sum + item.bsRef, 0));
@@ -164,18 +199,10 @@ function buildPublicMessage(snapshot) {
   }
 
   lines.push(`La propiedad, Casa ${snapshot.house}, presenta el siguiente saldo pendiente oficial por cuenta:`);
-  if (snapshot.payableUsd > TOLERANCE) {
-    lines.push(`• Cuenta pagadera en divisas: $${formatUsd(snapshot.payableUsd)}`);
-  }
-  if (snapshot.payableBsRef > TOLERANCE) {
-    lines.push(`• Cuenta pagadera en Bs. a tasa BCV: equivalente referencial de $${formatUsd(snapshot.payableBsRef)}`);
-  }
-  if (snapshot.creditUsd > TOLERANCE) {
-    lines.push(`• Saldo a favor en la cuenta USD: $${formatUsd(snapshot.creditUsd)}`);
-  }
-  if (snapshot.creditBsRef > TOLERANCE) {
-    lines.push(`• Saldo a favor en la cuenta Bs. BCV: equivalente referencial de $${formatUsd(snapshot.creditBsRef)}`);
-  }
+  if (snapshot.payableUsd > TOLERANCE) lines.push(`• Cuenta pagadera en divisas: $${formatUsd(snapshot.payableUsd)}`);
+  if (snapshot.payableBsRef > TOLERANCE) lines.push(`• Cuenta pagadera en Bs. a tasa BCV: equivalente referencial de $${formatUsd(snapshot.payableBsRef)}`);
+  if (snapshot.creditUsd > TOLERANCE) lines.push(`• Saldo a favor en la cuenta USD: $${formatUsd(snapshot.creditUsd)}`);
+  if (snapshot.creditBsRef > TOLERANCE) lines.push(`• Saldo a favor en la cuenta Bs. BCV: equivalente referencial de $${formatUsd(snapshot.creditBsRef)}`);
 
   lines.push('', `*TOTAL REFERENCIAL DE OBLIGACIONES: $${formatUsd(snapshot.payableTotalRef)}*`, '', 'Agradecemos su pronta gestión.');
 
@@ -231,7 +258,7 @@ function buildOwnerSnapshot(owner, context = {}) {
   const officialCutoff = cleanPlainText(owner && owner['Corte Saldo Oficial'], 80);
   const officialSnapshotActive = owner && owner['Saldo Oficial Activo'] === true;
   const ownerId = cleanPlainText(owner && owner.id, 80);
-  const monthlyChargeBreakdown = buildMonthlyChargeBreakdown(ownerId, context.expenses);
+  const monthlyChargeBreakdown = buildMonthlyChargeBreakdown(owner, context.expenses);
   const errors = [];
   const warnings = [];
 
@@ -248,7 +275,7 @@ function buildOwnerSnapshot(owner, context = {}) {
   if (payableTotalRef <= TOLERANCE) warnings.push('La propiedad no tiene obligaciones positivas para recordatorio.');
   if (creditUsd > TOLERANCE || creditBsRef > TOLERANCE) warnings.push('La propiedad posee saldo a favor en una cuenta; no se cruza entre monedas.');
   if (!monthlyChargeBreakdown.hasData) warnings.push('No se encontró un desglose informativo de cargos del período para esta casa.');
-  if (monthlyChargeBreakdown.invalidRecordCount) warnings.push('Uno o más cargos del período fueron omitidos del desglose por tener un monto inválido.');
+  if (monthlyChargeBreakdown.invalidRecordCount) warnings.push('Uno o más cargos del período fueron omitidos del desglose por tener un monto o una regla de distribución inválida.');
 
   const snapshot = {
     schemaVersion:MESSAGE_SCHEMA_VERSION,
