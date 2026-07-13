@@ -7,6 +7,7 @@ const { buildPlan } = require('./_monthly_close_core');
 const { ACTIVE_LOCK_TTL_MS, loadContext, listCloseMarkers, acquireCloseLock, setCloseMarker } = require('./_monthly_close_store');
 const { repairOperation } = require('./_monthly_close_repair');
 const { executeClose } = require('./_monthly_close_execute');
+const { assertSafeAirtableContext, isolationResponse } = require('./_environment_guard');
 
 function json(statusCode, body, counter = null) {
   const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store, no-cache, must-revalidate' };
@@ -34,6 +35,8 @@ const handler = async function(event) {
   const auth = requireAdmin(event);
   if (!auth.ok) return auth.response;
   if (event.httpMethod !== 'POST') return json(405, { message: 'Method Not Allowed' });
+  try { assertSafeAirtableContext({ write:true, allowUnclassified:true }); }
+  catch (error) { return isolationResponse(error); }
 
   const { AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID } = process.env;
   const counter = { calls: 0 };
