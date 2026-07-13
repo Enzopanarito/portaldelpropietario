@@ -45,7 +45,8 @@ function parseEvent(record) {
     calls: Math.max(0, Number(record?.fields?.Version || 0)),
     createdTime: record.createdTime || '',
     legacy: false,
-    daily: false
+    daily: false,
+    migration: false
   };
 }
 
@@ -60,7 +61,24 @@ function parseLegacyEvent(record) {
     calls: Math.max(0, Number(record?.fields?.Version || 0)),
     createdTime: record.createdTime || '',
     legacy: true,
-    daily: false
+    daily: false,
+    migration: false
+  };
+}
+
+function parseMigrationChunk(record) {
+  const key = String(record?.fields?.Key || '');
+  const parts = key.split('|');
+  if (parts[0] !== 'API_USAGE_MIGRATION_CHUNK' || !/^\d{4}-\d{2}$/.test(parts[1] || '')) return null;
+  return {
+    month: parts[1],
+    source: 'migración-histórica',
+    timestamp: record.createdTime || '',
+    calls: Math.max(0, Number(record?.fields?.Version || 0)),
+    createdTime: record.createdTime || '',
+    legacy: false,
+    daily: false,
+    migration: true
   };
 }
 
@@ -77,7 +95,8 @@ function parseDailySummary(record) {
     calls: Math.max(0, Number(record?.fields?.Version || 0)),
     createdTime: record.createdTime || '',
     legacy: false,
-    daily: true
+    daily: true,
+    migration: false
   };
 }
 
@@ -120,7 +139,7 @@ async function handler(event) {
   }
 
   try {
-    const formula = `OR(IFERROR(FIND('API_USAGE|${month}|',{Key}),0),IFERROR(FIND('API_CALL_V2|${month}|',{Key}),0),IFERROR(FIND('API_USAGE_DAILY|${month}-',{Key}),0),IFERROR(FIND('API_USAGE_BASELINE|${month}|',{Key}),0),IFERROR(FIND('API_USAGE_LIMIT|${month}|',{Key}),0))`;
+    const formula = `OR(IFERROR(FIND('API_USAGE|${month}|',{Key}),0),IFERROR(FIND('API_CALL_V2|${month}|',{Key}),0),IFERROR(FIND('API_USAGE_MIGRATION_CHUNK|${month}|',{Key}),0),IFERROR(FIND('API_USAGE_DAILY|${month}-',{Key}),0),IFERROR(FIND('API_USAGE_BASELINE|${month}|',{Key}),0),IFERROR(FIND('API_USAGE_LIMIT|${month}|',{Key}),0))`;
     let records;
     try {
       records = await airtableGetAll(`?pageSize=100&filterByFormula=${encodeURIComponent(formula)}`, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID);
@@ -131,6 +150,7 @@ async function handler(event) {
         const key = String(record?.fields?.Key || '');
         return key.startsWith(`API_USAGE|${month}|`) ||
           key.startsWith(`API_CALL_V2|${month}|`) ||
+          key.startsWith(`API_USAGE_MIGRATION_CHUNK|${month}|`) ||
           key.startsWith(`API_USAGE_DAILY|${month}-`) ||
           key.startsWith(`API_USAGE_BASELINE|${month}|`) ||
           key.startsWith(`API_USAGE_LIMIT|${month}|`);
@@ -138,7 +158,7 @@ async function handler(event) {
     }
 
     const detailEvents = records
-      .map(record => parseEvent(record) || parseLegacyEvent(record))
+      .map(record => parseEvent(record) || parseLegacyEvent(record) || parseMigrationChunk(record))
       .filter(eventRow => eventRow && eventRow.month === month && eventRow.calls > 0);
     const dailySummaries = records
       .map(parseDailySummary)
@@ -156,6 +176,7 @@ async function handler(event) {
     let lastEvent = null;
     let legacyEvents = 0;
     let legacyCalls = 0;
+    let migrationChunks = 0;
     for (const eventRow of relevantEvents) {
       eventCalls += eventRow.calls;
       bySource[eventRow.source] = (bySource[eventRow.source] || 0) + eventRow.calls;
@@ -163,6 +184,7 @@ async function handler(event) {
         legacyEvents += 1;
         legacyCalls += eventRow.calls;
       }
+      if (eventRow.migration) migrationChunks += 1;
       const stamp = eventRow.timestamp || eventRow.createdTime || null;
       if (stamp && (!firstEvent || stamp < firstEvent)) firstEvent = stamp;
       if (stamp && (!lastEvent || stamp > lastEvent)) lastEvent = stamp;
@@ -197,6 +219,7 @@ async function handler(event) {
         percent,
         events: relevantEvents.length + (current.recordedCalls > 0 ? 1 : 0),
         dailySummaries: dailySummaries.length,
+        migrationChunks,
         legacyEvents,
         legacyCalls,
         bySource: sortedSources,
@@ -227,5 +250,6 @@ async function handler(event) {
 exports.handler = withAirtableUsage('api-usage', handler);
 module.exports.parseEvent = parseEvent;
 module.exports.parseLegacyEvent = parseLegacyEvent;
+module.exports.parseMigrationChunk = parseMigrationChunk;
 module.exports.parseDailySummary = parseDailySummary;
 module.exports.parseBaseline = parseBaseline;
