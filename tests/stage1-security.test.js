@@ -54,6 +54,8 @@ global.fetch = async function(url, options = {}) {
 
 process.env.AIRTABLE_API_TOKEN = 'test-token';
 process.env.AIRTABLE_BASE_ID = 'appTEST';
+process.env.VLA_IDEMPOTENCY_TEST_MEMORY = '1';
+process.env.CONTEXT = 'test';
 
 const guard = require(path.join(__dirname, '..', 'netlify', 'functions', '_operation_guard'));
 

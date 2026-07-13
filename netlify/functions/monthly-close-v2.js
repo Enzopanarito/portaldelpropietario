@@ -7,6 +7,12 @@ const { buildPlan } = require('./_monthly_close_core');
 const { ACTIVE_LOCK_TTL_MS, loadContext, listCloseMarkers, acquireCloseLock, setCloseMarker } = require('./_monthly_close_store');
 const { repairOperation } = require('./_monthly_close_repair');
 const { executeClose } = require('./_monthly_close_execute');
+const {
+  beginMonthlyClose,
+  finalizeMonthlyClose,
+  releaseMonthlyClose,
+  blockMonthlyClose
+} = require('./_monthly_close_idempotency');
 
 function json(statusCode, body, counter = null) {
   const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store, no-cache, must-revalidate' };
@@ -28,6 +34,48 @@ function lockMessage(result, month) {
     'partial-error': `Existe un cierre parcial de ${month}. Debe repararse antes de ejecutar otro cierre.`
   };
   return messages[result.status] || 'El cierre está protegido.';
+}
+function atomicResponse(result, month, counter) {
+  if (result.reason === 'done') {
+    return json(200, {
+      success:true,
+      protected:true,
+      idempotent:true,
+      closeStatus:'already-closed',
+      month,
+      closeOperationId:result.result?.closeOperationId||null,
+      message:`El mes ${month} ya fue cerrado por esta operación. No se ejecutó nuevamente.`
+    }, counter);
+  }
+  if (result.reason === 'partial') {
+    return json(409, {
+      success:false,
+      protected:true,
+      partial:true,
+      closeStatus:'partial-error',
+      month,
+      repairAvailable:true,
+      repairOperationId:result.result?.repairOperationId||result.result?.closeOperationId||null,
+      message:`Existe un cierre parcial de ${month}. Debe revisarse o repararse antes de otro intento.`
+    }, counter);
+  }
+  if (result.reason === 'conflict') {
+    return json(409, {
+      success:false,
+      protected:true,
+      idempotencyConflict:true,
+      staleSimulation:true,
+      month,
+      message:'La misma operación mensual ya fue utilizada con otra huella financiera. Vuelva a simular y revise el estado del cierre.'
+    }, counter);
+  }
+  return json(409, {
+    success:false,
+    protected:true,
+    closeStatus:'in-progress',
+    month,
+    message:`Ya existe un cierre atómico de ${month} en proceso. Espere y actualice el panel.`
+  }, counter);
 }
 
 const handler = async function(event) {
@@ -82,20 +130,32 @@ const handler = async function(event) {
     return json(400, { success: false, protected: true, message: 'La simulación no tiene una huella válida. Vuelva a simular.' }, counter);
   }
 
+  let atomicClose = null;
   let closeLock = null;
   let handedOff = false;
   try {
+    atomicClose = await beginMonthlyClose(month, submittedPlanHash);
+    if (!atomicClose.ok) return atomicResponse(atomicClose, month, counter);
+
     const lockResult = await acquireCloseLock(month, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
     if (!lockResult.ok) {
-      return json(409, {
-        success: false,
+      const response = json(lockResult.status === 'already-closed' ? 200 : 409, {
+        success: lockResult.status === 'already-closed',
         protected: true,
         closeStatus: lockResult.status,
         month,
         repairAvailable: lockResult.status === 'partial-error',
         repairOperationId: lockResult.marker?.operationId || null,
+        closeOperationId: lockResult.marker?.operationId || null,
         message: lockMessage(lockResult, month)
       }, counter);
+      if (lockResult.status === 'already-closed') return finalizeMonthlyClose(atomicClose, response, month);
+      if (lockResult.status === 'partial-error') {
+        await blockMonthlyClose(atomicClose, 'AIRTABLE_CLOSE_PARTIAL', { month, repairOperationId:lockResult.marker?.operationId||'' });
+        return response;
+      }
+      await releaseMonthlyClose(atomicClose, 'AIRTABLE_CLOSE_IN_PROGRESS', { month });
+      return response;
     }
 
     closeLock = lockResult.marker;
@@ -105,10 +165,12 @@ const handler = async function(event) {
 
     if (plan.planHash !== submittedPlanHash) {
       await setCloseMarker(closeLock, month, 'ABORTED', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter).catch(() => null);
+      await releaseMonthlyClose(atomicClose, 'STALE_SIMULATION', { month, submittedPlanHash, currentPlanHash:plan.planHash });
       return json(409, { success: false, protected: true, staleSimulation: true, month, newPlanHash: plan.planHash, message: 'Los pagos, gastos o saldos cambiaron después de la simulación. No se modificó nada. Vuelva a simular.' }, counter);
     }
     if (!context.snapshotComplete) {
       await setCloseMarker(closeLock, month, 'ABORTED', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter).catch(() => null);
+      await releaseMonthlyClose(atomicClose, 'SNAPSHOT_INCOMPLETE', { month, snapshotCount:context.snapshotCount, expectedSnapshotCount:context.expectedSnapshotCount });
       return json(409, {
         success: false,
         protected: true,
@@ -121,10 +183,26 @@ const handler = async function(event) {
     }
 
     handedOff = true;
-    return await executeClose({ month, closeLock, plan, context, token: AIRTABLE_API_TOKEN, baseId: AIRTABLE_BASE_ID, counter, json });
+    const response = await executeClose({ month, closeLock, plan, context, token: AIRTABLE_API_TOKEN, baseId: AIRTABLE_BASE_ID, counter, json });
+    return finalizeMonthlyClose(atomicClose, response, month);
   } catch (error) {
     if (closeLock && !handedOff) await setCloseMarker(closeLock, month, 'ERROR_SAFE', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter).catch(() => null);
-    return json(500, { success: false, protected: true, month, message: 'Error preparando la ejecución del cierre. No se aplicaron cambios.', detail: error.message }, counter);
+    if (atomicClose?.ok) {
+      if (handedOff) await blockMonthlyClose(atomicClose, 'EXECUTOR_THROWN_UNCERTAIN', { month, closeOperationId:closeLock?.operationId||'', detail:String(error.message||'').slice(0,300) }).catch(() => null);
+      else await releaseMonthlyClose(atomicClose, 'PREPARE_THROWN', { month }).catch(() => null);
+    }
+    return json(handedOff ? 409 : 500, {
+      success:false,
+      protected:true,
+      partial:handedOff,
+      repairAvailable:handedOff,
+      repairOperationId:handedOff ? closeLock?.operationId||null : null,
+      month,
+      message:handedOff
+        ? 'El ejecutor del cierre devolvió un error inesperado después de recibir la operación. El mes quedó bloqueado para revisión; no repita el cierre.'
+        : 'Error preparando la ejecución del cierre. No se aplicaron cambios.',
+      detail:error.message
+    }, counter);
   }
 };
 
