@@ -71,7 +71,8 @@ assert(install.includes('inventory.tsv'));
 assert(install.includes('BACKUP_READY'));
 assert(install.includes('INSTALL_COMMITTED'));
 assert(install.includes('restore_backup'));
-assert(install.includes("trap 'on_error $LINENO' ERR"));
+assert(install.includes("trap 'status=$?; on_error \"$LINENO\" \"$status\"' ERR"));
+assert(install.includes('local line="${1:-?}" status="${2:-1}"'));
 assert(install.includes('mktemp -d'));
 assert(install.includes('codesign --verify'));
 assert(install.includes('plutil -lint'));
@@ -88,6 +89,8 @@ assert(uninstall.includes('--confirm-purge'));
 assert(uninstall.includes('uninstall-$(date'));
 assert(uninstall.includes('inventory.tsv'));
 assert(uninstall.includes('restore_backup'));
+assert(uninstall.includes("trap 'status=$?; on_error \"$LINENO\" \"$status\"' ERR"));
+assert(uninstall.includes('local line="${1:-?}" status="${2:-1}"'));
 assert(uninstall.includes('VLA-WhatsApp-Connector-rescate-'));
 assert(uninstall.indexOf('Creando respaldo previo')<uninstall.indexOf('rm -rf "${APP_DIR}"'));
 
