@@ -2,7 +2,7 @@
 
 // Motor central del control automático de acceso cómodo al portón.
 // Regla: el acceso se decide exclusivamente por deuda anterior vencida,
-// nunca por cargos corrientes ni por el recargo del mes en curso.
+// nunca por cargos corrientes ni por reportes pendientes sin validar.
 
 const { sendMail } = require('./_mailer');
 const { calculateOwnerBalance, money } = require('./_balance_engine_v4');
@@ -163,55 +163,33 @@ function ownerLinkIncludes(record, fieldName, ownerId) {
   return Array.isArray(links) && links.includes(ownerId);
 }
 
-function equivalentUsd(fields, primary, fallback) {
-  return money(Number(fields[primary] || fields[fallback] || 0));
-}
-
 function calculateExpiredAccessDebt(owner, pagos, reportes) {
-  // Se reutiliza el mismo motor auditado del portal/admin/cierre, pero sin gastos del mes.
-  // Así solo sobreviven las bolsas de deuda anterior después de aplicar los pagos activos.
+  // Solo los pagos definitivos afectan la deuda vencida. Los reportes pendientes
+  // se conservan para auditoría, pero nunca cubren deuda ni habilitan el portón.
   const balance = calculateOwnerBalance(owner, [], pagos || []);
   const expiredUsd = money(Math.max(0, balance.expiredUsd));
   const expiredBsRef = money(Math.max(0, balance.expiredBsRef));
+  const ignoredPendingReportIds = (reportes || [])
+    .filter(report => (report.fields || {}).Estado === 'Pendiente')
+    .filter(report => ownerLinkIncludes(report, 'Propietario que Reporta', owner.id))
+    .map(report => String(report.id || '').trim())
+    .filter(Boolean)
+    .sort();
 
-  let pendingUsd = 0;
-  let pendingBsRef = 0;
-  let pendingLegacy = 0;
-  for (const report of reportes || []) {
-    const fields = report.fields || {};
-    if (fields.Estado !== 'Pendiente') continue;
-    if (!ownerLinkIncludes(report, 'Propietario que Reporta', owner.id)) continue;
-    const mode = String(fields['Forma de Pago Reportada'] || '').trim();
-    const amount = equivalentUsd(fields, 'Equivalente USD Reportado', 'Monto Reportado');
-    if (mode === 'USD') pendingUsd = money(pendingUsd + amount);
-    else if (mode === 'Bs BCV') pendingBsRef = money(pendingBsRef + amount);
-    else pendingLegacy = money(pendingLegacy + amount);
-  }
-
-  // Reportes históricos sin moneda conservan el mismo orden que los pagos históricos:
-  // primero deuda Bs y luego deuda USD. Los reportes explícitos nunca cruzan monedas.
-  let missingBsRef = money(Math.max(0, expiredBsRef - pendingBsRef));
-  let legacyRemaining = pendingLegacy;
-  const legacyToBs = Math.min(missingBsRef, legacyRemaining);
-  missingBsRef = money(missingBsRef - legacyToBs);
-  legacyRemaining = money(legacyRemaining - legacyToBs);
-  let missingUsd = money(Math.max(0, expiredUsd - pendingUsd));
-  const legacyToUsd = Math.min(missingUsd, legacyRemaining);
-  missingUsd = money(missingUsd - legacyToUsd);
-
-  const pendingTotal = money(pendingUsd + pendingBsRef + pendingLegacy);
   return {
     expiredUsd,
     expiredBsRef,
     expiredTotal: money(expiredUsd + expiredBsRef),
-    pendingUsd,
-    pendingBsRef,
-    pendingLegacy,
-    pendingTotal,
+    pendingUsd: 0,
+    pendingBsRef: 0,
+    pendingLegacy: 0,
+    pendingTotal: 0,
+    ignoredPendingReports: ignoredPendingReportIds.length,
+    ignoredPendingReportIds,
     hasExpiredDebt: expiredUsd > TOLERANCE || expiredBsRef > TOLERANCE,
-    pendingCoversExpiredDebt: missingUsd <= TOLERANCE && missingBsRef <= TOLERANCE,
-    missingUsd,
-    missingBsRef
+    pendingCoversExpiredDebt: false,
+    missingUsd: expiredUsd,
+    missingBsRef: expiredBsRef
   };
 }
 
@@ -239,7 +217,7 @@ function limitationEmailHtml(owner, calc) {
     <p>Por medio del presente le informamos que, de acuerdo con nuestros registros administrativos, su inmueble presenta una deuda vencida pendiente con el condominio Villas Los Apamates.</p>
     <p>Por tal motivo, el sistema administrativo ha limitado <b>automáticamente</b> el acceso cómodo al portón eléctrico mediante control, aplicación o sistema automatizado.</p>
     <p>Esta medida no impide el acceso a la urbanización, pero sí restringe el uso del sistema cómodo de apertura hasta tanto sea regularizada la situación administrativa.</p>
-    <p>Una vez reportado el pago correspondiente a la deuda vencida, el sistema podrá habilitar <b>automáticamente</b> el acceso cómodo mientras la administración verifica el pago.</p>
+    <p>El reporte de un pago queda sujeto a revisión administrativa y, por sí solo, no modifica el estado del portón. El acceso se reevaluará únicamente después de registrar un pago definitivo o una autorización específica, auditada y vigente.</p>
     <p>Le agradecemos ponerse al día lo antes posible o reportar su pago a través del portal para que podamos validar la información y solventar la situación.</p>
     <p style="font-size:13px;color:#475569"><b>Referencia administrativa:</b> Casa ${house}. Deuda vencida registrada: ${escapeHtml(accessDebtText(calc))}.</p>
     <p>Atentamente,</p>
@@ -302,15 +280,12 @@ async function syncOwnerAccess(ownerId, options = {}, context = null) {
   let desiredAction = 'enable';
   let desiredStatus = 'Habilitado';
   let reason = 'Sin deuda vencida pendiente. Acceso cómodo habilitado.';
-  let temporary = false;
+  const temporary = false;
 
-  if (calc.hasExpiredDebt && calc.pendingCoversExpiredDebt) {
-    temporary = true;
-    reason = `Habilitación temporal automática por reporte de pago pendiente suficiente para cubrir deuda vencida (${accessDebtText(calc)}).`;
-  } else if (calc.hasExpiredDebt) {
+  if (calc.hasExpiredDebt) {
     desiredAction = 'disable';
     desiredStatus = 'Limitado';
-    reason = options.reason || `Limitación automática por deuda vencida pendiente (${accessDebtText(calc)}).`;
+    reason = options.reason || `Limitación automática por deuda vencida pendiente (${accessDebtText(calc)}). Los reportes pendientes no modifican el acceso.`;
   }
 
   let mkjResult = null;
