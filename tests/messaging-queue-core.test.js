@@ -12,7 +12,7 @@ function snapshot(house,overrides={}){
   return {
     sendable:true,errors:[],house,ownerId:`owner-${house}`,ownerName:`Propietario ${house}`,
     phone:`+58414123${String(house).padStart(4,'0')}`,phoneMasked:`+********${String(house).padStart(4,'0')}`,
-    message:`Mensaje casa ${house}`,messageHash:'b'.repeat(64),snapshotHash:hash,idempotencyKey:String(house).padStart(64,'c').slice(-64),
+    message:`Mensaje casa ${house}`,messageHash:'b'.repeat(64),debtIdentityHash:'d'.repeat(64),snapshotHash:hash,idempotencyKey:String(house).padStart(64,'c').slice(-64),
     payableUsd:house===1?85:0,payableBsRef:house===2?100:0,payableTotalRef:house===1?85:100,
     internalSurchargeBsRef:0,officialCutoff:'2026-07-11T19:10:08.000Z',...overrides
   };
@@ -25,7 +25,7 @@ const keyB=computeBatchKey([s2,s1],'Simulación','2026-07-12');
 assert.strictEqual(keyA,keyB,'La selección ordenada distinto debe producir la misma identidad de lote.');
 
 const job=createJobPayload({recipients:[s2,s1,s3],mode:'Simulación',createdAt,existingKeys:[s3.idempotencyKey]});
-assert.strictEqual(job.schemaVersion,'vla-whatsapp-job-v2');
+assert.strictEqual(job.schemaVersion,'vla-whatsapp-job-v3');
 assert.strictEqual(job.messages.length,3);
 assert.strictEqual(job.messages[0].house,1);
 assert.strictEqual(job.messages[2].state,MESSAGE_STATES.DUPLICATE);
@@ -68,6 +68,8 @@ const recovered=recoverExpiredLease(uncertainClaim,'2026-07-12T12:01:00.000Z');
 assert.strictEqual(recovered.messages[0].state,MESSAGE_STATES.VERIFY,'Nunca debe reenviarse automáticamente tras perder conexión después de Enviar.');
 assert.strictEqual(recovered.messages[0].lastErrorCode,'CONNECTOR_LOST_AFTER_SEND_TRIGGER');
 assert.strictEqual(recovered.lease,null);
+assert.strictEqual(recovered.state,JOB_STATES.REVIEW,'Un mensaje por verificar jamás puede figurar como completado.');
+assert.strictEqual(recovered.finishedAt,null);
 assert.throws(()=>transitionMessage(recovered,recovered.messages[0].messageId,MESSAGE_STATES.FAILED,{at:'2026-07-12T12:01:10.000Z'}),/decisión humana/);
 resolveVerify(recovered,recovered.messages[0].messageId,'failed',{reason:'Revisión humana: no apareció la burbuja.',at:'2026-07-12T12:01:20.000Z'});
 assert.strictEqual(recovered.messages[0].state,MESSAGE_STATES.FAILED);
@@ -85,8 +87,24 @@ requestCancel(cancelled,'2026-07-12T12:02:00.000Z');
 assert(cancelled.messages.every(item=>item.state===MESSAGE_STATES.CANCELLED));
 assert.strictEqual(cancelled.state,JOB_STATES.CANCELLED);
 
+// Cancelación solicitada durante el clic: la casa incierta queda Verificar y las demás se cancelan.
+const cancelDuringSend=createJobPayload({recipients:[s1,s2],mode:'Envío real',createdAt});
+const cancelClaim=claimJob(cancelDuringSend,{deviceId:'mac-enzo',leaseToken:'lease-c',at:'2026-07-12T12:00:00.000Z',leaseSeconds:30});
+const cancelMessage=claimNextMessage(cancelClaim,{deviceId:'mac-enzo',leaseToken:'lease-c',attemptId:'attempt-c',at:'2026-07-12T12:00:05.000Z'});
+transitionMessage(cancelClaim,cancelMessage.messageId,MESSAGE_STATES.SENDING,{attemptId:'attempt-c',at:'2026-07-12T12:00:10.000Z'});
+requestCancel(cancelClaim,'2026-07-12T12:00:12.000Z');
+const cancelRecovered=recoverExpiredLease(cancelClaim,'2026-07-12T12:01:00.000Z');
+assert.strictEqual(cancelRecovered.messages[0].state,MESSAGE_STATES.VERIFY);
+assert.strictEqual(cancelRecovered.messages[1].state,MESSAGE_STATES.CANCELLED);
+assert.strictEqual(cancelRecovered.state,JOB_STATES.REVIEW);
+resolveVerify(cancelRecovered,cancelRecovered.messages[0].messageId,'failed',{reason:'No salió.',at:'2026-07-12T12:02:00.000Z'});
+assert(cancelRecovered.messages.every(item=>item.state===MESSAGE_STATES.CANCELLED));
+assert.strictEqual(cancelRecovered.state,JOB_STATES.CANCELLED);
+
 assert.throws(()=>createJobPayload({recipients:[s1,{...s1}]}),/repetida/);
 assert.throws(()=>createJobPayload({recipients:[{...s1,sendable:false}]}),/no es elegible/);
+assert.throws(()=>createJobPayload({recipients:[{...s1,debtIdentityHash:'bad'}]}),/debtIdentityHash/);
+assert.throws(()=>claimJob(job,{deviceId:'x',leaseToken:'bad'}),/Identificador/);
 assert.throws(()=>parsePayload('{}'),/no compatible/);
 
 console.log('MESSAGING_QUEUE_CORE_TESTS_OK');
