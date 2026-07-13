@@ -184,11 +184,31 @@ function buildOwnerSnapshot(owner, context = {}) {
   if (forbidden.length) snapshot.errors.push(`El mensaje público contiene términos internos prohibidos: ${forbidden.join(', ')}.`);
   snapshot.sendable = snapshot.errors.length === 0 && snapshot.payableTotalRef > TOLERANCE;
 
-  const hashPayload = { ...snapshot };
-  delete hashPayload.errors;
-  delete hashPayload.warnings;
-  delete hashPayload.sendable;
-  snapshot.snapshotHash = sha256(canonicalJson(hashPayload));
+  const immutablePayload = {
+    schemaVersion:snapshot.schemaVersion,
+    templateVersion:snapshot.templateVersion,
+    generatedDate:snapshot.generatedDate,
+    balanceEngineVersion:snapshot.balanceEngineVersion,
+    officialBalanceSource:snapshot.officialBalanceSource,
+    officialCutoff:snapshot.officialCutoff,
+    officialSnapshotActive:snapshot.officialSnapshotActive,
+    ownerId:snapshot.ownerId,
+    house:snapshot.house,
+    ownerName:snapshot.ownerName,
+    phone:snapshot.phone,
+    accountUsd:snapshot.accountUsd,
+    accountBsRef:snapshot.accountBsRef,
+    netTotalRef:snapshot.netTotalRef,
+    payableUsd:snapshot.payableUsd,
+    payableBsRef:snapshot.payableBsRef,
+    payableTotalRef:snapshot.payableTotalRef,
+    creditUsd:snapshot.creditUsd,
+    creditBsRef:snapshot.creditBsRef,
+    internalSurchargeBsRef:snapshot.internalSurchargeBsRef,
+    message:snapshot.message
+  };
+  snapshot.messageHash = sha256(snapshot.message);
+  snapshot.snapshotHash = sha256(canonicalJson(immutablePayload));
   snapshot.idempotencyKey = sha256(`${snapshot.templateVersion}|${snapshot.generatedDate}|${snapshot.house}|${snapshot.phone}|${snapshot.snapshotHash}`);
   return snapshot;
 }
