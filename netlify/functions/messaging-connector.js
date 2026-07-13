@@ -54,16 +54,16 @@ function transitionFromConnector(job,body,at=new Date()){
   if(outcome==='failed')return transitionMessage(job,messageId,MESSAGE_STATES.FAILED,{attemptId,at,errorCode:body.errorCode||'SAFE_FAILURE',errorDetail:body.errorDetail||'El fallo ocurrió antes de activar Enviar.',evidence});
   throw new Error('Resultado del conector no reconocido.');
 }
-function assertTokenMatchesJob(claims,job,{initial=false,deviceId=''}={}){
+function assertTokenMatchesJob(claims,job,{initial=false,deviceId='',allowUnclaimed=false,now=Date.now()}={}){
   if(claims.jobId!==job.jobId)throw new Error('El token no corresponde al lote.');
   if(claims.mode!==job.mode)throw new Error('El modo del token no corresponde al lote.');
   const session=job.dispatchSession;
   if(!session||claims.sessionId!==session.id)throw new Error('La sesión de despacho fue sustituida o revocada.');
-  if(!Number.isFinite(Date.parse(session.expiresAt))||Date.parse(session.expiresAt)<=Date.now())throw new Error('La sesión de despacho venció.');
+  if(!Number.isFinite(Date.parse(session.expiresAt))||Date.parse(session.expiresAt)<=Number(now))throw new Error('La sesión de despacho venció.');
   if(initial&&session.consumedAt)throw new jobStore.JobConflictError('La sesión de despacho ya fue consumida por un conector.');
   if(initial&&Number(claims.revision)!==Number(job.revision))throw new jobStore.JobConflictError('El lote cambió después de emitir el permiso de despacho. Solicite uno nuevo.');
   if(Number(claims.revision)>Number(job.revision))throw new Error('La revisión del token es inválida.');
-  if(!initial&&session.consumedAt===null)throw new Error('La sesión todavía no fue reclamada.');
+  if(!initial&&!allowUnclaimed&&session.consumedAt===null)throw new Error('La sesión todavía no fue reclamada.');
   if(deviceId&&session.deviceId&&session.deviceId!==deviceId)throw new Error('La sesión pertenece a otro conector.');
 }
 async function atomicMutation(jobId,transform,{mirror=false,requestedBy='Conector Mac'}={}){
@@ -89,11 +89,11 @@ exports.handler=async function handler(event){
     if(!connectorEnabled())return json(503,{message:'El conector local permanece desactivado hasta completar la certificación.'});
     if(auth.claims.mode==='Envío real'&&!realSendEnabled())return json(403,{message:'El envío real permanece bloqueado.'});
     if(action==='health'){
-      const entry=await jobStore.requireJob(jobId);assertTokenMatchesJob(auth.claims,entry.job);
+      const entry=await jobStore.requireJob(jobId);assertTokenMatchesJob(auth.claims,entry.job,{allowUnclaimed:true});
       return json(200,{ok:true,connectorEnabled:true,realSendEnabled:realSendEnabled(),jobId,mode:auth.claims.mode,serverTime:new Date().toISOString(),sessionExpiresAt:entry.job.dispatchSession.expiresAt});
     }
     if(action==='inspect'){
-      const entry=await jobStore.requireJob(jobId);assertTokenMatchesJob(auth.claims,entry.job);return json(200,{job:publicConnectorJob(entry,{includeMessages:false})});
+      const entry=await jobStore.requireJob(jobId);assertTokenMatchesJob(auth.claims,entry.job,{allowUnclaimed:true});return json(200,{job:publicConnectorJob(entry,{includeMessages:false})});
     }
     if(action==='claim'){
       const deviceId=cleanDeviceId(body.deviceId);const leaseToken=randomToken(24);
