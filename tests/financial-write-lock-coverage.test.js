@@ -11,8 +11,9 @@ global.fetch=async (input,init={})=>{
   const url=String(input&&input.url||input||'');
   const method=String(init.method||'GET').toUpperCase();
   if(url.includes('/ControlVersiones')){
+    if(method==='GET'&&url.includes('API_USAGE_DAILY'))return new Response(JSON.stringify({records:[]}),{status:200,headers:{'content-type':'application/json'}});
     if(method==='GET')return new Response(JSON.stringify({records:[{id:'recLock0000000001',createdTime:new Date().toISOString(),fields:{Key:'MONTHLY_CLOSE|2026-07|LOCKED|test-lock',Version:1}}]}),{status:200,headers:{'content-type':'application/json'}});
-    if(method==='POST')return new Response(JSON.stringify({records:[{id:'recUsage000000001',fields:{Key:'API_USAGE|test',Version:2}}]}),{status:200,headers:{'content-type':'application/json'}});
+    if(method==='PATCH')return new Response(JSON.stringify({records:[{id:'recUsage000000001',fields:{Key:'API_USAGE_DAILY|2026-07-13',Version:3}}]}),{status:200,headers:{'content-type':'application/json'}});
   }
   unexpected.push({url,method});
   return new Response(JSON.stringify({message:'Unexpected business request in lock test'}),{status:500,headers:{'content-type':'application/json'}});
