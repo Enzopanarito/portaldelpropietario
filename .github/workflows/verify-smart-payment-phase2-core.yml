@@ -48,7 +48,19 @@ jobs:
         run: node tests/payment-proof-store.test.js
 
       - name: Verify v5 financial snapshots
-        run: node tests/payment-access-snapshot.test.js
+        shell: bash
+        run: |
+          set -o pipefail
+          node tests/payment-access-snapshot.test.js 2>&1 | tee phase2-snapshot-diagnostic.txt
+
+      - name: Upload snapshot diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2-snapshot-diagnostic
+          path: phase2-snapshot-diagnostic.txt
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Verify global duplicate rules
         run: node tests/payment-duplicate-core.test.js
