@@ -4,11 +4,19 @@ const crypto = require('crypto');
 const { money } = require('./_balance_engine');
 const { cleanPlainText, stripControlChars } = require('./_security_utils');
 
-const MESSAGE_SCHEMA_VERSION = 'vla-messaging-snapshot-v2';
-const TEMPLATE_VERSION = 'balance-reminder-account-v2';
+const MESSAGE_SCHEMA_VERSION = 'vla-messaging-snapshot-v3';
+const TEMPLATE_VERSION = 'balance-reminder-account-v3';
 const ENGINE_VERSION = 5;
 const OFFICIAL_SOURCE = 'ControlVersiones';
 const TOLERANCE = 0.01;
+const CONCEPT_ALLOCATION_STATUS = 'INFORMATIVE_CURRENT_CHARGES_NOT_PAYMENT_ALLOCATION';
+
+const CONCEPTS = Object.freeze([
+  { key:'condominium', label:'Gastos de condominio' },
+  { key:'diesel', label:'Gasoil' },
+  { key:'special', label:'Cuotas especiales' },
+  { key:'other', label:'Otros cargos' }
+]);
 
 function canonicalJson(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
@@ -66,6 +74,75 @@ function formatUsd(value) {
 
 function positive(value) { return money(Math.max(0, Number(value || 0))); }
 function credit(value) { return money(Math.max(0, -Number(value || 0))); }
+function fieldsOf(record) { return record && typeof record === 'object' ? (record.fields || record) : {}; }
+function displayValue(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return cleanPlainText(value.name || value.label || '', 160);
+  return cleanPlainText(value, 160);
+}
+function normalizeMatch(value) {
+  return displayValue(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+function linkedOwnerIds(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map(item => {
+    if (typeof item === 'string') return item;
+    if (item && typeof item === 'object') return item.id || item.recordId || '';
+    return '';
+  }).filter(Boolean);
+}
+function classifyExpense(fields) {
+  const concept = normalizeMatch(fields.Concepto);
+  const type = normalizeMatch(fields['Tipo de Gasto']);
+  const combined = `${concept} ${type}`;
+  if (/gasoil|diesel/.test(combined)) return 'diesel';
+  if (/cuota especial|pintura|mantenimiento.*planta|planta.*mantenimiento/.test(combined) || /especial/.test(type)) return 'special';
+  if (/gasto comun|condominio|vigilancia|jardiner|limpieza|contador|motor|basura|desecho|caja chica/.test(combined)) return 'condominium';
+  return 'other';
+}
+function expenseCurrency(fields) {
+  const form = normalizeMatch(fields['Forma de Pago']);
+  return /usd|divisa|dolar/.test(form) ? 'usd' : 'bsRef';
+}
+function emptyConceptBreakdown() {
+  return {
+    mode:CONCEPT_ALLOCATION_STATUS,
+    source:'Gastos del Mes',
+    sourceRecordCount:0,
+    invalidRecordCount:0,
+    categories:CONCEPTS.map(item => ({ ...item, usd:0, bsRef:0 })),
+    totalUsd:0,
+    totalBsRef:0,
+    hasData:false
+  };
+}
+function buildMonthlyChargeBreakdown(ownerId, expenses = []) {
+  const output = emptyConceptBreakdown();
+  const byKey = Object.fromEntries(output.categories.map(item => [item.key,item]));
+  for (const record of Array.isArray(expenses) ? expenses : []) {
+    const fields = fieldsOf(record);
+    if (!linkedOwnerIds(fields.Propietarios).includes(ownerId)) continue;
+    const amount = money(fields.Monto);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      output.invalidRecordCount += 1;
+      continue;
+    }
+    const category = classifyExpense(fields);
+    const currency = expenseCurrency(fields);
+    byKey[category][currency] = money(byKey[category][currency] + amount);
+    output.sourceRecordCount += 1;
+  }
+  output.totalUsd = money(output.categories.reduce((sum,item) => sum + item.usd, 0));
+  output.totalBsRef = money(output.categories.reduce((sum,item) => sum + item.bsRef, 0));
+  output.hasData = output.totalUsd > TOLERANCE || output.totalBsRef > TOLERANCE;
+  return output;
+}
+
+function chargeLine(item) {
+  const parts = [];
+  if (item.usd > TOLERANCE) parts.push(`$${formatUsd(item.usd)} USD`);
+  if (item.bsRef > TOLERANCE) parts.push(`equivalente referencial de $${formatUsd(item.bsRef)} pagadero en Bs. BCV`);
+  return parts.length ? `• ${item.label}: ${parts.join(' + ')}` : '';
+}
 
 function buildPublicMessage(snapshot) {
   const lines = [
@@ -74,15 +151,24 @@ function buildPublicMessage(snapshot) {
     `📅 _Mensaje generado el ${snapshot.generatedDateLong}_`,
     '',
     `Estimado/a *${snapshot.ownerName}*,`,
-    '',
-    `Le contactamos para informarle que su propiedad, Casa ${snapshot.house}, presenta las siguientes obligaciones:`
+    ''
   ];
 
+  if (snapshot.monthlyChargeBreakdown && snapshot.monthlyChargeBreakdown.hasData) {
+    lines.push('*Cargos informativos del período (antes de pagos y créditos):*');
+    for (const item of snapshot.monthlyChargeBreakdown.categories) {
+      const line = chargeLine(item);
+      if (line) lines.push(line);
+    }
+    lines.push('_Este desglose identifica los cargos emitidos. El saldo pendiente se controla por cuenta y no se reparte automáticamente entre conceptos._', '');
+  }
+
+  lines.push(`La propiedad, Casa ${snapshot.house}, presenta el siguiente saldo pendiente oficial por cuenta:`);
   if (snapshot.payableUsd > TOLERANCE) {
-    lines.push(`• Obligación pagadera en divisas: $${formatUsd(snapshot.payableUsd)}`);
+    lines.push(`• Cuenta pagadera en divisas: $${formatUsd(snapshot.payableUsd)}`);
   }
   if (snapshot.payableBsRef > TOLERANCE) {
-    lines.push(`• Obligación pagadera en Bs. a tasa BCV: equivalente referencial de $${formatUsd(snapshot.payableBsRef)}`);
+    lines.push(`• Cuenta pagadera en Bs. a tasa BCV: equivalente referencial de $${formatUsd(snapshot.payableBsRef)}`);
   }
   if (snapshot.creditUsd > TOLERANCE) {
     lines.push(`• Saldo a favor en la cuenta USD: $${formatUsd(snapshot.creditUsd)}`);
@@ -145,6 +231,7 @@ function buildOwnerSnapshot(owner, context = {}) {
   const officialCutoff = cleanPlainText(owner && owner['Corte Saldo Oficial'], 80);
   const officialSnapshotActive = owner && owner['Saldo Oficial Activo'] === true;
   const ownerId = cleanPlainText(owner && owner.id, 80);
+  const monthlyChargeBreakdown = buildMonthlyChargeBreakdown(ownerId, context.expenses);
   const errors = [];
   const warnings = [];
 
@@ -160,6 +247,8 @@ function buildOwnerSnapshot(owner, context = {}) {
   if (Math.abs(money(expectedNet - totalRef)) > TOLERANCE) errors.push('El total no coincide con la suma de las cuentas USD y Bs.');
   if (payableTotalRef <= TOLERANCE) warnings.push('La propiedad no tiene obligaciones positivas para recordatorio.');
   if (creditUsd > TOLERANCE || creditBsRef > TOLERANCE) warnings.push('La propiedad posee saldo a favor en una cuenta; no se cruza entre monedas.');
+  if (!monthlyChargeBreakdown.hasData) warnings.push('No se encontró un desglose informativo de cargos del período para esta casa.');
+  if (monthlyChargeBreakdown.invalidRecordCount) warnings.push('Uno o más cargos del período fueron omitidos del desglose por tener un monto inválido.');
 
   const snapshot = {
     schemaVersion:MESSAGE_SCHEMA_VERSION,
@@ -186,6 +275,8 @@ function buildOwnerSnapshot(owner, context = {}) {
     creditUsd,
     creditBsRef,
     internalSurchargeBsRef,
+    conceptAllocationStatus:CONCEPT_ALLOCATION_STATUS,
+    monthlyChargeBreakdown,
     errors,
     warnings
   };
@@ -215,7 +306,13 @@ function buildOwnerSnapshot(owner, context = {}) {
     creditBsRef:snapshot.creditBsRef,
     internalSurchargeBsRef:snapshot.internalSurchargeBsRef
   };
-  const immutablePayload = { ...debtIdentityPayload, generatedDate:snapshot.generatedDate, ownerName:snapshot.ownerName, message:snapshot.message };
+  const immutablePayload = {
+    ...debtIdentityPayload,
+    generatedDate:snapshot.generatedDate,
+    ownerName:snapshot.ownerName,
+    monthlyChargeBreakdown:snapshot.monthlyChargeBreakdown,
+    message:snapshot.message
+  };
   snapshot.messageHash = sha256(snapshot.message);
   snapshot.debtIdentityHash = sha256(canonicalJson(debtIdentityPayload));
   snapshot.snapshotHash = sha256(canonicalJson(immutablePayload));
@@ -227,7 +324,8 @@ function buildPreviewPayload(adminPayload, options = {}) {
   const context = {
     generatedAt: options.generatedAt || adminPayload.generatedAt || new Date().toISOString(),
     balanceEngineVersion: adminPayload.balanceEngineVersion,
-    officialBalanceSource: adminPayload.officialBalanceSource
+    officialBalanceSource: adminPayload.officialBalanceSource,
+    expenses:adminPayload.gastos || []
   };
   const snapshots = (adminPayload.propietarios || [])
     .map(owner => buildOwnerSnapshot(owner, context))
@@ -238,6 +336,7 @@ function buildPreviewPayload(adminPayload, options = {}) {
     generatedAt:context.generatedAt,
     balanceEngineVersion:context.balanceEngineVersion,
     officialBalanceSource:context.officialBalanceSource,
+    conceptAllocationStatus:CONCEPT_ALLOCATION_STATUS,
     totalOwners:snapshots.length,
     sendableCount:snapshots.filter(item => item.sendable).length,
     blockedCount:snapshots.filter(item => item.errors.length).length,
@@ -252,11 +351,18 @@ module.exports = {
   ENGINE_VERSION,
   OFFICIAL_SOURCE,
   TOLERANCE,
+  CONCEPT_ALLOCATION_STATUS,
+  CONCEPTS,
   canonicalJson,
   sha256,
   normalizePhone,
   maskPhone,
   caracasDateParts,
+  normalizeMatch,
+  linkedOwnerIds,
+  classifyExpense,
+  expenseCurrency,
+  buildMonthlyChargeBreakdown,
   forbiddenPublicTerms,
   validOfficialCutoff,
   buildPublicMessage,
