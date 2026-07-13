@@ -1,0 +1,37 @@
+name: Diagnose Atomic Integration V10
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-atomic-integration-v10.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  locate-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Locate workflow step and integration test
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo '=== WORKFLOW ==='
+            grep -R -n -B 4 -A 8 "Verify integration order and fail-closed contracts" .github/workflows || true
+            echo '=== TEST CANDIDATES ==='
+            grep -R -n -B 5 -A 18 "fail-closed\|atomic ledger\|IDEMPOTENCY\|onlyIfNew\|onlyIfMatch" tests netlify/functions | head -n 700 || true
+          } | tee atomic-integration-v10-diagnostic.txt
+
+      - name: Upload diagnostic
+        uses: actions/upload-artifact@v4
+        with:
+          name: atomic-integration-v10-diagnostic
+          path: atomic-integration-v10-diagnostic.txt
+          if-no-files-found: error
+          retention-days: 7
