@@ -1,4 +1,5 @@
 [build]
+  command = "node scripts/generate-netlify-runtime-config.js"
   publish = "."
   functions = "netlify/functions"
 
@@ -6,6 +7,21 @@
   PUBLIC_BLOB_CACHE_ENABLED = "true"
   PUBLIC_BLOB_CACHE_MAX_AGE_MS = "120000"
   VLA_DATA_ENVIRONMENT = "production"
+
+[context.deploy-preview.environment]
+  PUBLIC_BLOB_CACHE_ENABLED = "false"
+  PUBLIC_BLOB_CACHE_MAX_AGE_MS = "120000"
+  VLA_DATA_ENVIRONMENT = "staging"
+
+[context.branch-deploy.environment]
+  PUBLIC_BLOB_CACHE_ENABLED = "false"
+  PUBLIC_BLOB_CACHE_MAX_AGE_MS = "120000"
+  VLA_DATA_ENVIRONMENT = "staging"
+
+[context.dev.environment]
+  PUBLIC_BLOB_CACHE_ENABLED = "false"
+  PUBLIC_BLOB_CACHE_MAX_AGE_MS = "120000"
+  VLA_DATA_ENVIRONMENT = "local"
 
 [functions."airtable-usage-rollup-scheduled"]
   schedule = "30 4 * * *"
