@@ -79,7 +79,7 @@ restore_backup() {
 }
 
 on_error() {
-  local line="${1:-?}" status=$?
+  local line="${1:-?}" status="${2:-1}"
   trap - ERR
   printf '\nERROR: instalación interrumpida en la línea %s (código %s).\n' "$line" "$status" >&2
   if [[ "${BACKUP_READY}" == "true" && "${INSTALL_COMMITTED}" != "true" ]]; then
@@ -91,7 +91,7 @@ on_error() {
 
 cleanup() { rm -rf "${STAGE_DIR}"; }
 trap cleanup EXIT
-trap 'on_error $LINENO' ERR
+trap 'status=$?; on_error "$LINENO" "$status"' ERR
 
 [[ "$(uname -s)" == "Darwin" ]] || fail "Este instalador solo funciona en macOS."
 command -v swift >/dev/null 2>&1 || fail "Swift no está disponible. Instale las herramientas de línea de comandos de Xcode."
