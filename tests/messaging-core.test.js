@@ -53,6 +53,7 @@ for (const item of preview.recipients) {
   assert.strictEqual(forbiddenPublicTerms(item.message).length,0,`Casa ${item.house}: términos internos`);
   assert(!/10\s*%/.test(item.message),`Casa ${item.house}: porcentaje público`);
   assert.strictEqual(item.messageHash.length,64);
+  assert.strictEqual(item.debtIdentityHash.length,64);
   assert.strictEqual(item.snapshotHash.length,64);
   assert.strictEqual(item.idempotencyKey.length,64);
   assert.strictEqual(item.phone.includes('*'),false);
@@ -71,7 +72,7 @@ const house9 = preview.recipients.find(item => item.house === 9);
 assert.strictEqual(house9.creditUsd,20);
 assert.strictEqual(house9.payableTotalRef,0);
 assert.strictEqual(house9.sendable,false);
-assert(house9.warnings.some(value => value.includes('no tiene obligaciones')));
+assert(house9.warnings.some(value => value.includes('no tiene obligaciones'));
 
 const early = buildOwnerSnapshot(owners.find(owner => owner.Casa === 3), {
   ...context, generatedAt:'2026-07-05T16:00:00.000Z'
@@ -81,11 +82,23 @@ assert(!house4.message.includes('beneficio de pronto pago'));
 
 const mismatch = buildOwnerSnapshot({...owners[0], 'Saldo Total Actual':999}, context);
 assert.strictEqual(mismatch.sendable,false);
-assert(mismatch.errors.some(value => value.includes('no coincide')));
+assert(mismatch.errors.some(value => value.includes('no coincide'));
 
 const invalidPhone = buildOwnerSnapshot({...owners[0], Telefono:'xx'}, context);
 assert.strictEqual(invalidPhone.sendable,false);
-assert(invalidPhone.errors.some(value => value.includes('teléfono')));
+assert(invalidPhone.errors.some(value => value.includes('teléfono'));
+
+const inactive = buildOwnerSnapshot({...owners[0], 'Saldo Oficial Activo':false}, context);
+assert.strictEqual(inactive.sendable,false);
+assert(inactive.errors.some(value => value.includes('no está activa'));
+
+const noCutoff = buildOwnerSnapshot({...owners[0], 'Corte Saldo Oficial':''}, context);
+assert.strictEqual(noCutoff.sendable,false);
+assert(noCutoff.errors.some(value => value.includes('corte oficial'));
+
+const noOwnerId = buildOwnerSnapshot({...owners[0], id:''}, context);
+assert.strictEqual(noOwnerId.sendable,false);
+assert(noOwnerId.errors.some(value => value.includes('identificador'));
 
 const untrusted = buildOwnerSnapshot({...owners[0], Propietario:'<img src=x onerror=alert(1)> Enzo'}, context);
 assert(!untrusted.message.includes('<img'));
@@ -108,9 +121,16 @@ const changed = buildOwnerSnapshot({...owners[0], 'Saldo USD Actual':86, 'Saldo 
 assert.notStrictEqual(stableA.snapshotHash,changed.snapshotHash);
 assert.notStrictEqual(stableA.idempotencyKey,changed.idempotencyKey);
 
+// El texto cambia de fecha, pero la identidad de deuda permanece estable mientras el corte y los saldos no cambien.
 const nextDay = buildOwnerSnapshot(owners[0], {...context,generatedAt:'2026-07-13T16:00:00.000Z'});
 assert.notStrictEqual(stableA.messageHash,nextDay.messageHash);
-assert.notStrictEqual(stableA.idempotencyKey,nextDay.idempotencyKey);
+assert.notStrictEqual(stableA.snapshotHash,nextDay.snapshotHash);
+assert.strictEqual(stableA.debtIdentityHash,nextDay.debtIdentityHash);
+assert.strictEqual(stableA.idempotencyKey,nextDay.idempotencyKey);
+
+const nextCutoff = buildOwnerSnapshot({...owners[0], 'Corte Saldo Oficial':'2026-08-11T19:10:08.000Z'}, context);
+assert.notStrictEqual(stableA.debtIdentityHash,nextCutoff.debtIdentityHash);
+assert.notStrictEqual(stableA.idempotencyKey,nextCutoff.idempotencyKey);
 
 const wrongEngine = buildOwnerSnapshot(owners[0], {...context,balanceEngineVersion:4});
 assert.strictEqual(wrongEngine.sendable,false);
