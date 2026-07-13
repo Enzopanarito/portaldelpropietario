@@ -45,7 +45,7 @@ function snapshot(payload,expiresAt=Date.now()+60000){return{ok:true,fresh:expir
   readPublicSnapshot:async()=>({ok:false,reason:'missing'}),
   claimPublicRefresh:async()=>({ok:true,key:'lease',lease:{operationId:'op'}}),
   releasePublicRefresh:async()=>{releases+=1},
-  writePublicSnapshot:async payload=>{writes+=1;assert.strictEqual(payload,freshPayload)},
+  writePublicSnapshot:async payload=>{writes+=1;assert.deepStrictEqual(payload,freshPayload)},
   previousHandler:async received=>{previousCalls+=1;assert.strictEqual(received.queryStringParameters.force,'1');return apiResponse(200,freshPayload,{'X-Airtable-Calls':'4'})}
  });
  const refreshResult=await refresh({httpMethod:'GET',queryStringParameters:{}});
