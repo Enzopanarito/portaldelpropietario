@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "Villas Los Apamates · Conector WhatsApp",
+  "version": "1.0.0",
+  "description": "Conector local autorizado para ejecutar lotes de mensajería desde el portal administrativo.",
+  "minimum_chrome_version": "120",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwFh5edrKGP7+TvooH4yWLcCFQF0xidCdeEzCKdR1uCLNzXW3nIBwGtfZp8Aju1kwLDHZzYxarY7PXwkkugu5X3ssWdMfn2Yc2Sbhc1AkYKTUrGW8tKp49FEkzF7YTrhGnt75icYwBW1cnzuUelJ+lVJQvUMiKnmQ+6sLQas7t3xuYRRNpyFJJYxlXCt4fJdAPhc9nRZjeV1NTXFlyPzzUH7cDA+lWTCjU2J6uowxfb7Jqyoaz6q73SKk3mZoUWdDj5ux6dd6Ps8oXjeZrtrCBFhQn0LkOJEt4BuwH2xs9O4YfN81KEmkVb4s/THzRtKS3jPrX3tvbWt8nDTgnaYCmwIDAQAB",
+  "permissions": [
+    "nativeMessaging",
+    "tabs",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://web.whatsapp.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "js": ["whatsapp-content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "externally_connectable": {
+    "matches": [
+      "https://villalosapamates.netlify.app/*"
+    ]
+  },
+  "action": {
+    "default_title": "Villas Los Apamates · WhatsApp"
+  }
+}

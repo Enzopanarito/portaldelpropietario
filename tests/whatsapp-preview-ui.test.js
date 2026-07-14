@@ -1,0 +1,51 @@
+'use strict';
+
+const assert = require('assert');
+const fs = require('fs');
+
+const html = fs.readFileSync('whatsapp.html','utf8');
+const js = fs.readFileSync('whatsapp-v2.js','utf8');
+const css = fs.readFileSync('whatsapp-v2.css','utf8');
+
+assert(html.includes('/whatsapp-v2.css'));
+assert(html.includes('/whatsapp-v2.js'));
+assert(html.includes('Modo protegido'));
+assert(html.includes('id="send-test"') && html.includes('disabled'));
+assert(html.includes('id="send-batch"') && html.includes('disabled'));
+assert(html.includes('id="create-simulation"') && html.includes('disabled'));
+assert(html.includes('id="connector-state"'));
+assert(html.includes('id="recipients-body"'));
+assert(html.includes('id="preview-message"'));
+assert(html.includes('id="current-messages"'));
+assert(html.includes('id="history-body"'));
+assert(html.includes('id="check-connector"'));
+assert(html.includes('Verificar'));
+assert(html.includes('Cancelar pendientes'));
+assert(html.includes('Reintentar fallidos'));
+assert(js.includes('/.netlify/functions/messaging-preview'));
+assert(js.includes('/.netlify/functions/messaging-queue'));
+assert(js.includes("action:'create'"));
+assert(js.includes("action:'dispatch'"));
+assert(js.includes("mutateCurrent('pause')"));
+assert(js.includes("mutateCurrent('resume')"));
+assert(js.includes("mutateCurrent('retryFailed')"));
+assert(js.includes('VLA_CANCEL_LOCAL'));
+assert(js.includes('VLA_HEALTH'));
+assert(js.includes('VLA_DISPATCH'));
+assert(js.includes('expectedRevision'));
+assert(js.includes('snapshotHashes'));
+assert(js.includes('realTestCutoff'));
+assert(!js.includes('pywhatkit'));
+assert(!js.includes('pyautogui'));
+assert(js.includes('totalOwners!==15'));
+assert(js.includes('state.selected'));
+assert(js.includes('SIMULACION_SIN_ENVIO'));
+assert(css.includes('@media(max-width:640px)'));
+assert(css.includes('overflow:auto'));
+assert(css.includes('min-height:44px'));
+assert(css.includes('.job-shell'));
+assert(css.includes('.connector-layout'));
+assert(!html.includes('cdn.tailwindcss.com'));
+assert(!html.includes('http://127.0.0.1'));
+
+console.log('WHATSAPP_QUEUE_UI_TESTS_OK');

@@ -116,6 +116,37 @@ jobs:
       - name: Validate official balances in all portals
         run: node tests/official-balance-sync.test.js
 
+      - name: Validate secure WhatsApp messaging snapshots
+        id: messaging_core
+        shell: bash
+        run: |
+          set -o pipefail
+          node tests/messaging-core.test.js 2>&1 | tee messaging-core-test.log
+
+      - name: Upload messaging snapshot diagnostics
+        if: failure() && steps.messaging_core.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: messaging-core-diagnostics
+          path: messaging-core-test.log
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Validate transactional WhatsApp queue
+        run: node tests/messaging-queue-core.test.js
+
+      - name: Validate atomic WhatsApp job storage
+        run: node tests/messaging-job-store.test.js
+
+      - name: Validate scoped WhatsApp dispatch tokens
+        run: node tests/messaging-dispatch-token.test.js
+
+      - name: Validate Mac connector state evidence
+        run: node tests/messaging-connector.test.js
+
+      - name: Validate WhatsApp simulation interface
+        run: node tests/whatsapp-preview-ui.test.js
+
       - name: Validate JSON files
         run: |
           node -e "JSON.parse(require('fs').readFileSync('package.json','utf8'))"
