@@ -14,10 +14,27 @@ function publicMarker(result) {
     blobKey: result?.key || ''
   };
 }
+function isBlobsConfigurationError(error) {
+  const message = String(error?.message || error || '');
+  return /environment has not been configured to use Netlify Blobs/i.test(message)
+    || /supply the following properties when creating a store:\s*siteID,\s*token/i.test(message)
+    || String(error?.code || '') === 'BLOBS_CONTEXT_MISSING';
+}
 
 async function begin(scope,key,options={}) {
   const payloadHash=options.payloadHash || blobs.hashPayload({scope,key});
-  const atomic=await blobs.claim({scope,businessKey:key,payloadHash,ttlMs:options.ttlMs,env:options.env||process.env});
+  let atomic;
+  try {
+    atomic=await blobs.claim({scope,businessKey:key,payloadHash,ttlMs:options.ttlMs,env:options.env||process.env});
+  } catch (error) {
+    if (!isBlobsConfigurationError(error)) throw error;
+    const fallback=await legacy.begin(scope,key);
+    if (fallback && typeof fallback==='object') {
+      fallback.degradedProtection=true;
+      fallback.warning='Netlify Blobs no está configurado; se utilizó la protección idempotente persistente de Airtable.';
+    }
+    return fallback;
+  }
   if (!atomic.ok) return {ok:false,reason:atomic.reason,marker:publicMarker(atomic),atomic};
 
   let audit;
@@ -63,4 +80,4 @@ async function setState(marker,scope,key,state,resultId='') {
   return {atomic:atomicResult,audit:auditResult};
 }
 
-module.exports={begin,setState};
+module.exports={begin,setState,isBlobsConfigurationError};
