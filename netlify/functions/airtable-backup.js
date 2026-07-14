@@ -8,6 +8,7 @@ const { withAirtableUsage } = require('./_airtable_meter');
 const crypto = require('crypto');
 const { requireAdmin } = require('./_auth');
 const { sha256, sortRecords } = require('./_integrity');
+const jobStore = require('./_messaging_job_store');
 
 const TABLES = [
   'Propietarios','Gastos del Mes','Configuración','Pagos','Historial de Cargos','Reportes de Pago',
@@ -37,6 +38,31 @@ async function airtableGetAll(tableName, token, baseId) {
   } while (offset);
   return sortRecords(records);
 }
+function sanitizeQueueJobForBackup(entry) {
+  const copy = JSON.parse(JSON.stringify(entry.job || {}));
+  if (copy.lease) {
+    delete copy.lease.token;
+    copy.lease.restoreRequiresNewLease = true;
+  }
+  return {
+    key: jobStore.jobKey(copy.jobId),
+    etag: String(entry.etag || ''),
+    metadata: entry.metadata || {},
+    job: copy
+  };
+}
+async function queueBackup() {
+  const entries = await jobStore.exportJobs();
+  const jobs = entries.map(sanitizeQueueJobForBackup).sort((left, right) => String(left.job.jobId).localeCompare(String(right.job.jobId)));
+  return {
+    storage: 'Netlify Blobs vla-whatsapp-queue-v2',
+    consistency: 'strong',
+    recordCount: jobs.length,
+    sha256: sha256(jobs),
+    leaseTokensExcluded: true,
+    records: jobs
+  };
+}
 function jsonError(statusCode, message, detail = '') {
   return { statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }, body: JSON.stringify({ message, detail }) };
 }
@@ -52,15 +78,16 @@ const handler = async function(event) {
   try {
     const generatedAt = new Date().toISOString();
     const backup = {
-      backupType: 'airtable-full-operational-backup',
-      schemaVersion: 3,
+      backupType: 'vla-full-operational-backup',
+      schemaVersion: 4,
       generatedAt,
       generatedAtCaracas: todayCaracasISO(),
       baseId: AIRTABLE_BASE_ID,
       source: 'VLA Portal Administrativo',
       tableCount: TABLES.length,
       tables: {},
-      integrity: { algorithm: 'SHA-256', canonicalization: 'sorted-object-keys-and-record-id', tableHashes: {}, manifestHash: null }
+      resources: {},
+      integrity: { algorithm: 'SHA-256', canonicalization: 'sorted-object-keys-and-record-id', tableHashes: {}, resourceHashes: {}, manifestHash: null }
     };
 
     for (const tableName of TABLES) {
@@ -70,20 +97,29 @@ const handler = async function(event) {
       backup.integrity.tableHashes[tableName] = tableHash;
     }
 
-    backup.totalRecords = Object.values(backup.tables).reduce((sum, table) => sum + Number(table.recordCount || 0), 0);
+    const queue = await queueBackup();
+    backup.resources.messagingQueue = queue;
+    backup.integrity.resourceHashes.messagingQueue = queue.sha256;
+
+    backup.totalTableRecords = Object.values(backup.tables).reduce((sum, table) => sum + Number(table.recordCount || 0), 0);
+    backup.totalResourceRecords = Object.values(backup.resources).reduce((sum, resource) => sum + Number(resource.recordCount || 0), 0);
+    backup.totalRecords = backup.totalTableRecords + backup.totalResourceRecords;
     const manifestInput = {
       backupType: backup.backupType,
       schemaVersion: backup.schemaVersion,
       generatedAt: backup.generatedAt,
       baseId: backup.baseId,
       tableCount: backup.tableCount,
+      totalTableRecords: backup.totalTableRecords,
+      totalResourceRecords: backup.totalResourceRecords,
       totalRecords: backup.totalRecords,
-      tableHashes: backup.integrity.tableHashes
+      tableHashes: backup.integrity.tableHashes,
+      resourceHashes: backup.integrity.resourceHashes
     };
     backup.integrity.manifestHash = sha256(manifestInput);
     backup.integrity.fileContentHash = sha256({ ...backup, integrity: { ...backup.integrity, fileContentHash: null } });
 
-    const filename = `airtable-backup-vla-${todayCaracasISO()}-${crypto.randomBytes(3).toString('hex')}.json`;
+    const filename = `vla-full-backup-${todayCaracasISO()}-${crypto.randomBytes(3).toString('hex')}.json`;
     return {
       statusCode: 200,
       headers: {
@@ -92,13 +128,15 @@ const handler = async function(event) {
         'Cache-Control': 'no-store, no-cache, must-revalidate',
         'X-Content-Type-Options': 'nosniff',
         'X-VLA-Backup-Manifest-SHA256': backup.integrity.manifestHash,
-        'X-VLA-Backup-Records': String(backup.totalRecords)
+        'X-VLA-Backup-Records': String(backup.totalRecords),
+        'X-VLA-Backup-Queue-Jobs': String(queue.recordCount)
       },
       body: JSON.stringify(backup, null, 2)
     };
   } catch (error) {
-    return jsonError(500, 'Error generando respaldo de Airtable.', String(error.message || '').slice(0, 500));
+    return jsonError(500, 'Error generando respaldo operativo completo.', String(error.message || '').slice(0, 500));
   }
 };
 
 exports.handler = withAirtableUsage('airtable-backup', handler);
+exports._test = { sanitizeQueueJobForBackup, queueBackup };
