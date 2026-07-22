@@ -1,8 +1,0 @@
-{
-  "purpose": "Trigger verified Netlify production deployment after repository secrets were configured",
-  "release": "2026-07-11-v6",
-  "requestedAt": "2026-07-11T20:15:00Z",
-  "expectedHouses": 15,
-  "touchesAirtable": false,
-  "runsMonthlyClose": false
-}
