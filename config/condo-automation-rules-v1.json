@@ -12,7 +12,7 @@
   },
   "access": {
     "automaticEnabled": false,
-    "restrictionDay": 11,
+    "restrictionDay": 1,
     "warningDaysBefore": [7, 3, 1, 0],
     "onlyExpiredDebt": true,
     "failSafeOnStaleData": true

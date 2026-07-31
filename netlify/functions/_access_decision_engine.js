@@ -23,7 +23,7 @@ function evaluateAccessDecision({rules,balance,currentStatus='Sin configurar',ha
  if(cycle.daysUntilRestriction>0){
   return{...base,state:base.pendingReports?'PAGO_EN_VERIFICACION':'ADVERTENCIA',reasonCode:base.pendingReports?'PENDING_PAYMENT_REPORT':'RESTRICTION_NOT_DUE',reason:base.pendingReports?'Existe un pago reportado en verificación. El acceso no cambia hasta validar el pago.':`La deuda vence antes de la limitación programada para ${cycle.restrictionDate}.`,cycle};
  }
- return{...base,state:base.pendingReports?'PAGO_EN_VERIFICACION_LIMITADO':'LIMITADO',action:'DISABLE',desiredStatus:'Limitado',reasonCode:base.pendingReports?'PENDING_REPORT_DOES_NOT_SETTLE_DEBT':'EXPIRED_DEBT',reason:base.pendingReports?'La deuda sigue vencida mientras el pago reportado se verifica.':'Existe deuda vencida y ya llegó la fecha de limitación.',cycle};
+ return{...base,state:base.pendingReports?'PAGO_EN_VERIFICACION_LIMITADO':'LIMITADO',action:'DISABLE',desiredStatus:'Limitado',reasonCode:base.pendingReports?'PENDING_REPORT_DOES_NOT_SETTLE_DEBT':'EXPIRED_DEBT',reason:base.pendingReports?'La deuda del mes anterior sigue vencida mientras el pago reportado se verifica.':'Existe deuda vencida de un mes anterior; el monto corriente del nuevo mes no participa en esta decisión.',cycle};
 }
 
 module.exports={TOLERANCE,clean,money,evaluateAccessDecision};

@@ -136,7 +136,10 @@ function calculateOfficialBalance(owner, expenses, payments, clock, snapshot,opt
     ...chargesAfterCutoff.expenseLinesBs
   ];
 
-  const expiredUsd=clock.day>dueDay?money(Math.max(0,usd)):0,expiredBsRef=clock.day>dueDay?money(Math.max(0,bsRef)):0,currentUsd=clock.day>dueDay?money(Math.min(0,usd)):usd,currentBsRef=clock.day>dueDay?money(Math.min(0,bsRef)):bsRef;
+  // Este corte oficial representa el saldo corriente del mes. Aunque haya
+  // terminado el pronto pago, no se convierte en deuda vencida hasta que el
+  // cierre lo traslade a los campos de deuda anterior.
+  const expiredUsd=0,expiredBsRef=0,currentUsd=usd,currentBsRef=bsRef;
   return {
     ownerId,
     month: clock.month,

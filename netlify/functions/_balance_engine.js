@@ -249,10 +249,10 @@ function calculateOwnerBalance(owner, expenses = [], payments = [], options = {}
   let currentUsd = money(state.currentUsd.value - state.creditUsd);
   let currentBsRef = money(state.currentBs.value - state.creditBs);
   const usd = money(expiredUsd + currentUsd),bsRef = money(expiredBsRef + currentBsRef);
-  if(clock.day>dueDay){
-    expiredUsd=money(Math.max(0,usd));currentUsd=money(Math.min(0,usd));
-    expiredBsRef=money(Math.max(0,bsRef));currentBsRef=money(Math.min(0,bsRef));
-  }
+
+  // El día 10 solo termina el beneficio de pronto pago y puede generar el
+  // recargo corriente en Bs. Los cargos del mes jamás pasan a vencidos por
+  // esa fecha: se vuelven deuda anterior únicamente durante el cierre mensual.
 
   return {
     ownerId,

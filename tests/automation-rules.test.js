@@ -9,7 +9,7 @@ test('las reglas seguras nacen apagadas y exigen confirmación',()=>{
  assert.equal(rules.masterEnabled,false);
  assert.equal(rules.rulesConfirmed,false);
  assert.equal(rules.payment.dueDay,10);
- assert.equal(rules.access.restrictionDay,11);
+ assert.equal(rules.access.restrictionDay,1);
  assert.equal(rulesModule.validateRules(rules).ok,true);
 });
 
@@ -27,8 +27,14 @@ test('normaliza configuración Airtable sin permitir rangos peligrosos',()=>{
  assert.equal(rules.payment.dueDay,28);
  assert.equal(rules.payment.surchargeRate,0.1);
  assert.equal(rules.access.restrictionDay,1);
- assert.equal(rulesModule.validateRules(rules).ok,false);
- assert(rulesModule.validateRules(rules).issues.some(issue=>issue.code==='RESTRICTION_BEFORE_DUE'));
+ assert.equal(rulesModule.validateRules(rules).ok,true);
+});
+
+test('rechaza cualquier política que intente limitar por la cuota corriente o después del cierre',()=>{
+ const wrongDay=rulesModule.mergeConfig({fields:{'Día de Limitación Portón':11}});
+ const wrongPolicy={...rulesModule.mergeConfig({}),access:{...rulesModule.mergeConfig({}).access,onlyExpiredDebt:false}};
+ assert(rulesModule.validateRules(wrongDay).issues.some(issue=>issue.code==='ACCESS_NOT_AT_MONTH_CLOSE'));
+ assert(rulesModule.validateRules(wrongPolicy).issues.some(issue=>issue.code==='ACCESS_CURRENT_DEBT_FORBIDDEN'));
 });
 
 test('calcula vencimiento, limitación y próximo mes en hora Caracas',()=>{
@@ -36,12 +42,13 @@ test('calcula vencimiento, limitación y próximo mes en hora Caracas',()=>{
  const cycle=rulesModule.cycleStatus(rules,new Date('2026-07-08T15:00:00.000Z'));
  assert.equal(cycle.clock.date,'2026-07-08');
  assert.equal(cycle.dueDate,'2026-07-10');
- assert.equal(cycle.restrictionDate,'2026-07-11');
+ assert.equal(cycle.restrictionDate,'2026-07-01');
  assert.equal(cycle.daysUntilDue,2);
- assert.equal(cycle.daysUntilRestriction,3);
+ assert.equal(cycle.daysUntilRestriction,-7);
  assert.equal(cycle.nextMonth,'2026-08');
  assert.equal(cycle.nextDueDate,'2026-08-10');
- assert.equal(cycle.nextRestrictionDate,'2026-08-11');
+ assert.equal(cycle.nextRestrictionDate,'2026-08-01');
+ assert.equal(cycle.daysUntilNextRestriction,24);
 });
 
 test('el calendario público nunca anuncia como próximo un vencimiento ya pasado',()=>{
@@ -50,7 +57,8 @@ test('el calendario público nunca anuncia como próximo un vencimiento ya pasad
  assert.equal(publicCalendar.dueDate,'2026-07-10');
  assert.equal(publicCalendar.daysUntilDue,-21);
  assert.equal(publicCalendar.nextDueDate,'2026-08-10');
- assert.equal(publicCalendar.nextRestrictionDate,'2026-08-11');
+ assert.equal(publicCalendar.nextRestrictionDate,'2026-08-01');
+ assert.equal(publicCalendar.daysUntilNextRestriction,1);
 });
 
 test('el cierre conserva una ventana segura de recuperación sin duplicar',()=>{

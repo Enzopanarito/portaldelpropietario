@@ -32,12 +32,12 @@ async function sendScheduledReminders(rules,cycle,context){
   const calc=calculateExpiredAccessDebt(owner,context.pagos,context.reportes,{expenses:context.gastos||[],dueDay:rules.payment.dueDay,surchargeRate:rules.payment.surchargeRate});
   const types=[];
   if(calc.hasOutstandingBalance&&rules.notifications.dueReminderDaysBefore.includes(cycle.daysUntilDue))types.push('due');
-  if(calc.hasExpiredDebt&&rules.notifications.restrictionReminderDaysBefore.includes(cycle.daysUntilRestriction))types.push('restriction');
+  if(calc.hasOutstandingBalance&&rules.notifications.restrictionReminderDaysBefore.includes(cycle.daysUntilNextRestriction))types.push('restriction');
   for(const type of types){
    considered+=1;
    const key=`${cycle.clock.date}|${owner.id}|${type}`,guard=await begin('OWNER_REMINDER',key);
    if(!guard.ok)continue;
-   try{const result=await sendOwnerDebtReminder({owner,calc,cycle,type});if(result.sent)sent+=1;else failed+=1;await setState(guard.marker,'OWNER_REMINDER',key,'DONE',owner.id)}
+   try{const reminderCycle=type==='restriction'?{...cycle,restrictionDate:cycle.nextRestrictionDate}:cycle,result=await sendOwnerDebtReminder({owner,calc,cycle:reminderCycle,type});if(result.sent)sent+=1;else failed+=1;await setState(guard.marker,'OWNER_REMINDER',key,'DONE',owner.id)}
    catch(error){failed+=1;await setState(guard.marker,'OWNER_REMINDER',key,'ERROR').catch(()=>null)}
   }
  }

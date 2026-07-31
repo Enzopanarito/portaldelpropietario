@@ -55,7 +55,8 @@ function validateRules(rules){
  const add=(code,message,severity='error')=>issues.push({code,message,severity});
  if(rules.schemaVersion!==1)add('SCHEMA_VERSION','La versión de reglas no es compatible.');
  if(rules.masterEnabled&&!rules.rulesConfirmed)add('RULES_NOT_CONFIRMED','El piloto automático no puede operar hasta confirmar las reglas.');
- if(rules.access.restrictionDay<=rules.payment.dueDay)add('RESTRICTION_BEFORE_DUE','La limitación del portón debe ocurrir después del vencimiento.');
+ if(rules.access.restrictionDay!==rules.monthlyClose.day)add('ACCESS_NOT_AT_MONTH_CLOSE','La limitación del portón debe coincidir con el cierre mensual del día 1.');
+ if(rules.access.onlyExpiredDebt!==true)add('ACCESS_CURRENT_DEBT_FORBIDDEN','El portón solo puede considerar deuda vencida de meses anteriores.');
  if(rules.payment.automaticApprovalEnabled&&rules.payment.minimumAutomaticConfidence<0.95)add('AUTO_PAYMENT_CONFIDENCE','La aprobación automática exige una confianza mínima de 95%.');
  if(rules.monthlyClose.day!==1||rules.monthlyClose.hour!==0)add('MONTHLY_CLOSE_TIME','El cierre automático debe quedar programado para el día 1 a medianoche de Caracas.');
  if(!Array.isArray(rules.monthlyClose.retryDays)||rules.monthlyClose.retryDays.some(day=>![2,3].includes(Number(day))))add('MONTHLY_CLOSE_RETRY','Los reintentos de recuperación solo pueden ocurrir los días 2 y 3.');
@@ -94,6 +95,7 @@ function cycleStatus(rules,now=new Date()){
   nextRestrictionDate,
   daysUntilDue:calendarDayDifference(clock.date,dueDate),
   daysUntilRestriction:calendarDayDifference(clock.date,restrictionDate),
+  daysUntilNextRestriction:calendarDayDifference(clock.date,nextRestrictionDate),
   isPreloadWindow:lastDay-clock.day<rules.expensePreload.leadDays,
   nextMonth:upcomingMonth,
   isPrimaryCloseWindow:clock.day===rules.monthlyClose.day,
@@ -108,7 +110,7 @@ function publicRules(rules,now=new Date()){
   timezone:rules.timezone,
   payment:{dueDay:rules.payment.dueDay,surchargeRate:rules.payment.surchargeRate,maximumReviewHours:rules.payment.maximumReviewHours},
   access:{restrictionDay:rules.access.restrictionDay,onlyExpiredDebt:rules.access.onlyExpiredDebt},
-  cycle:{month:cycle.clock.monthKey,today:cycle.clock.date,dueDate:cycle.dueDate,restrictionDate:cycle.restrictionDate,nextMonth:cycle.nextMonth,nextDueDate:cycle.nextDueDate,nextRestrictionDate:cycle.nextRestrictionDate,daysUntilDue:cycle.daysUntilDue,daysUntilRestriction:cycle.daysUntilRestriction}
+  cycle:{month:cycle.clock.monthKey,today:cycle.clock.date,dueDate:cycle.dueDate,promptPaymentEndDate:cycle.dueDate,restrictionDate:cycle.restrictionDate,nextMonth:cycle.nextMonth,nextDueDate:cycle.nextDueDate,nextPromptPaymentEndDate:cycle.nextDueDate,nextRestrictionDate:cycle.nextRestrictionDate,daysUntilDue:cycle.daysUntilDue,daysUntilRestriction:cycle.daysUntilRestriction,daysUntilNextRestriction:cycle.daysUntilNextRestriction}
  };
 }
 

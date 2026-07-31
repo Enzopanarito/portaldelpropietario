@@ -58,7 +58,7 @@ async function bootDiagnostic(page){
   const page=await browser.newPage({viewport:{width:1366,height:768}});
   const errors=[];
   page.on('pageerror',error=>errors.push(String(error.stack||error)));
-  page.on('console',message=>{if(message.type()==='error'&&!/cdn\.tailwindcss|fonts\.googleapis/i.test(message.text()))errors.push(message.text())});
+  page.on('console',message=>{if(message.type()==='error'){const url=String(message.location().url||'');if(/cdn\.tailwindcss|fonts\.googleapis|fonts\.gstatic/i.test(url))return;errors.push(message.text())}});
   await page.goto(`http://127.0.0.1:${PORT}/admin.html`,{waitUntil:'domcontentloaded'});
   await page.locator('#password').waitFor({state:'visible'});
   await page.waitForFunction(()=>typeof window.showApp==='function'&&typeof document.getElementById('login-form')?.onsubmit==='function');

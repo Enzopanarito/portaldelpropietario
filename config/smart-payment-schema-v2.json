@@ -240,7 +240,7 @@
         "Aprobación Automática de Pagos":false,
         "Confianza Mínima Autopago":0.97,
         "Control Automático Inteligente":false,
-        "Día de Limitación Portón":11,
+        "Día de Limitación Portón":1,
         "Cierre Mensual Automático":false,
         "Precarga Automática":false,
         "Avisos Automáticos":false,

@@ -14,16 +14,16 @@ function rules(){
 }
 function debt(){return{expiredUsd:25,expiredBsRef:10}}
 
-test('antes de la fecha solo advierte y conserva el estado físico',()=>{
+test('una deuda anterior ya vencida limita durante todo el mes',()=>{
  const result=evaluateAccessDecision({rules:rules(),balance:debt(),currentStatus:'Habilitado',now:new Date('2026-07-08T16:00:00Z')});
- assert.equal(result.state,'ADVERTENCIA');
- assert.equal(result.action,'NONE');
- assert.equal(result.desiredStatus,'Habilitado');
- assert.equal(result.cycle.restrictionDate,'2026-07-11');
+ assert.equal(result.state,'LIMITADO');
+ assert.equal(result.action,'DISABLE');
+ assert.equal(result.desiredStatus,'Limitado');
+ assert.equal(result.cycle.restrictionDate,'2026-07-01');
 });
 
 test('en la fecha programada limita por deuda vencida',()=>{
- const result=evaluateAccessDecision({rules:rules(),balance:debt(),currentStatus:'Habilitado',now:new Date('2026-07-11T04:05:00Z')});
+ const result=evaluateAccessDecision({rules:rules(),balance:debt(),currentStatus:'Habilitado',now:new Date('2026-08-01T04:05:00Z')});
  assert.equal(result.state,'LIMITADO');
  assert.equal(result.action,'DISABLE');
  assert.equal(result.desiredStatus,'Limitado');

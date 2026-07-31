@@ -18,9 +18,9 @@
      </div>
      <h3>Calendario financiero</h3>
      <div class="vla-auto-fields">
-      <label>Día de vencimiento<input id="auto-due" type="number" min="1" max="28"></label>
+      <label>Último día de pronto pago<input id="auto-due" type="number" min="1" max="28"></label>
       <label>Recargo (%)<input id="auto-surcharge" type="number" min="0" max="100" step="0.01"></label>
-      <label>Día de limitación<input id="auto-restrict" type="number" min="1" max="28"></label>
+      <label>Limitación al cierre<input id="auto-restrict" type="number" min="1" max="1" readonly></label>
       <label>Confianza autopago (%)<input id="auto-confidence" type="number" min="95" max="100" step="0.1"></label>
      </div>
      <h3>Motores autónomos</h3>
@@ -49,7 +49,7 @@
  function setValue(id,value){const node=$(id);if(!node)return;if(node.type==='checkbox')node.checked=value===true;else node.value=value??''}
  function renderPreflight(data){
   const rules=data.rules||{},cycle=data.cycle||{},validation=data.validation||{},activation=data.activationPreflight||{},preflight=data.paymentPreflight||{},issues=[...(validation.issues||[]),...(activation.blockers||[]),...(preflight.blockers||[])];
-  $('vla-auto-status').innerHTML=`<div><span>Mes operativo</span><b>${esc(cycle.clock?.monthKey||'—')}</b></div><div><span>Vence</span><b>${esc(cycle.dueDate||'—')}</b></div><div><span>Limita</span><b>${esc(cycle.restrictionDate||'—')}</b></div><div><span>Próximo mes</span><b>${esc(cycle.nextMonth||'—')}</b></div>`;
+  $('vla-auto-status').innerHTML=`<div><span>Mes operativo</span><b>${esc(cycle.clock?.monthKey||'—')}</b></div><div><span>Pronto pago hasta</span><b>${esc(cycle.dueDate||'—')}</b></div><div><span>Próximo cierre y corte</span><b>${esc(cycle.daysUntilRestriction>=0?cycle.restrictionDate:cycle.nextRestrictionDate||'—')}</b></div><div><span>Próximo mes</span><b>${esc(cycle.nextMonth||'—')}</b></div>`;
   const ok=validation.ok!==false&&activation.ok!==false&&preflight.ok!==false;
   $('vla-auto-preflight').className='vla-auto-preflight '+(ok?'ok':'bad');
   $('vla-auto-preflight').innerHTML=`<b>${ok?'✓ Preparación consistente':'⚠ Hay requisitos pendientes'}</b>${issues.length?`<ul>${issues.map(item=>`<li>${esc(item.message||item.detail||item.code)}</li>`).join('')}</ul>`:'<p>Las reglas actuales no presentan bloqueos conocidos.</p>'}`;

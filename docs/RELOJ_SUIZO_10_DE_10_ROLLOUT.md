@@ -7,7 +7,7 @@ Estado: preparado en la rama `feature/reloj-suizo-10-de-10`. No desplegar ni act
 ### Portal de propietarios
 
 - Conserva visible la morosidad del condominio y la deuda por casa.
-- Muestra vencimiento, cuenta regresiva y fecha de limitación del acceso cómodo.
+- Muestra el plazo de pronto pago y explica que el saldo corriente solo vence al cambiar el mes.
 - Explica que un reporte no cambia deuda ni portón hasta ser validado.
 - Muestra historial completo de pagos, moneda, condición activa/cerrada y última sincronización del portón.
 - Permite reportar pagos con comprobante obligatorio cuando la casa está limitada.
@@ -28,8 +28,8 @@ Estado: preparado en la rama `feature/reloj-suizo-10-de-10`. No desplegar ni act
 - Recuperación segura los días 2 y 3 si Airtable o Netlify estuvieron lentos.
 - Doble simulación, huella financiera, corte de auditoría, bloqueo de escrituras y restauración verificada.
 - Rotación de gastos: cierra el mes anterior y activa únicamente la precarga del nuevo mes.
-- Recordatorios por correo antes del vencimiento y antes de la limitación.
-- Recalculo del portón después de un pago definitivo; un reporte pendiente nunca habilita acceso.
+- Recordatorios por correo antes de finalizar el pronto pago y antes del cierre mensual.
+- Recalculo del portón después de un pago definitivo; el día 1 solo considera deuda anterior vencida en USD o Bs y excluye por completo la cuota del mes nuevo.
 - Análisis de comprobantes en segundo plano, recuperación horaria y aprobación solo mediante reglas determinísticas.
 - Detección de duplicados por archivo, huella financiera y referencia.
 
@@ -156,7 +156,7 @@ node scripts/expense-lifecycle-backfill.js verify
 
 Desde `Piloto automático`:
 
-1. Confirmar vencimiento, recargo y día de limitación.
+1. Confirmar pronto pago hasta el día 10, recargo corriente y limitación al cierre del día 1.
 2. Habilitar analizador de comprobantes y probar primero con aprobación automática apagada.
 3. Revisar varios reportes reales y comparar la extracción.
 4. Habilitar aprobación automática con confianza mínima de 97% o superior.
