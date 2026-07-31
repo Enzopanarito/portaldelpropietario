@@ -1,5 +1,5 @@
 const OWNER_PATHS=['/','/index.html'];
-const MOBILE_RELEASE='owner-mobile-fluid-v2-payment-smart-v3-dark-wcag-v1-r3-2026-07-12';
+const MOBILE_RELEASE='owner-mobile-fluid-v2-payment-smart-v4-dark-wcag-v1-r1-2026-07-31';
 const STYLE_HREF=`/owner-mobile-v2.css?v=${MOBILE_RELEASE}`;
 const LAYOUT_FIX_HREF=`/owner-mobile-v2-layout-fix.css?v=${MOBILE_RELEASE}`;
 const PAYMENT_STYLE_HREF=`/owner-payment-report-v3.css?v=${MOBILE_RELEASE}`;
@@ -40,7 +40,7 @@ export default async (request,context)=>{
   if(!type.toLowerCase().includes('text/html'))return response;
 
   let html=await response.text();
-  const assets=`<meta name="vla-owner-mobile" content="fluid-v2"><meta name="vla-owner-payment-report" content="smart-v3"><meta name="vla-owner-dark-contrast" content="wcag-v1"><link id="vla-owner-mobile-v2" rel="stylesheet" href="${STYLE_HREF}"><link id="vla-owner-mobile-v2-layout-fix" rel="stylesheet" href="${LAYOUT_FIX_HREF}"><link id="vla-owner-payment-report-v3-css" rel="stylesheet" href="${PAYMENT_STYLE_HREF}"><link id="vla-owner-dark-contrast-v1" rel="stylesheet" href="${DARK_STYLE_HREF}"><script id="vla-payment-intelligence" defer src="${PAYMENT_LOGIC_HREF}"></script><script id="vla-owner-payment-report-v3" defer src="${PAYMENT_UI_HREF}"></script>${releaseGuard}`;
+  const assets=`<meta name="vla-owner-mobile" content="fluid-v2"><meta name="vla-owner-payment-report" content="smart-v4"><meta name="vla-owner-dark-contrast" content="wcag-v1"><link id="vla-owner-mobile-v2" rel="stylesheet" href="${STYLE_HREF}"><link id="vla-owner-mobile-v2-layout-fix" rel="stylesheet" href="${LAYOUT_FIX_HREF}"><link id="vla-owner-payment-report-v3-css" rel="stylesheet" href="${PAYMENT_STYLE_HREF}"><link id="vla-owner-dark-contrast-v1" rel="stylesheet" href="${DARK_STYLE_HREF}"><script id="vla-payment-intelligence" defer src="${PAYMENT_LOGIC_HREF}"></script><script id="vla-owner-payment-report-v3" defer src="${PAYMENT_UI_HREF}"></script>${releaseGuard}`;
   if(!html.includes('id="vla-owner-mobile-v2"')){
     html=html.includes('</head>')?html.replace('</head>',assets+'</head>'):assets+html;
   }else{
@@ -58,7 +58,7 @@ export default async (request,context)=>{
   headers.set('cache-control','no-store, no-cache, must-revalidate');
   headers.set('content-type','text/html; charset=utf-8');
   headers.set('x-vla-owner-mobile','fluid-v2');
-  headers.set('x-vla-owner-payment-report','smart-v3');
+  headers.set('x-vla-owner-payment-report','smart-v4');
   headers.set('x-vla-owner-dark-contrast','wcag-v1');
   return new Response(html,{status:response.status,statusText:response.statusText,headers});
 };
