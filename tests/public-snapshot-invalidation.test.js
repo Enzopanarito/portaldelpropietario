@@ -9,13 +9,17 @@ const{shouldInvalidatePublicSnapshot,PUBLIC_SNAPSHOT_MUTATION_SOURCES}=meter._te
 function result(statusCode,body){return{statusCode,body:JSON.stringify(body)}}
 function event(method='POST'){return{httpMethod:method}}
 
-for(const source of ['admin-manual-payment','process-payment-report','admin-expense','batch-delete-records','monthly-close-v2'])assert(PUBLIC_SNAPSHOT_MUTATION_SOURCES.has(source),`${source} debe invalidar la fotografía.`);
+for(const source of ['admin-manual-payment','process-payment-report','admin-expense','admin-expense-action','batch-delete-records','monthly-close-v2','monthly-close-v4','automation-settings','access-auto-sync','mkj-access'])assert(PUBLIC_SNAPSHOT_MUTATION_SOURCES.has(source),`${source} debe invalidar la fotografía.`);
 assert.strictEqual(PUBLIC_SNAPSHOT_MUTATION_SOURCES.has('whatsapp-connector'),false);
 assert.strictEqual(PUBLIC_SNAPSHOT_MUTATION_SOURCES.has('api-usage'),false);
 assert.strictEqual(PUBLIC_SNAPSHOT_MUTATION_SOURCES.has('system-health'),false);
 assert.strictEqual(shouldInvalidatePublicSnapshot('admin-manual-payment',event(),result(200,{success:true})),true);
 assert.strictEqual(shouldInvalidatePublicSnapshot('process-payment-report',event(),result(200,{success:true,decision:'approve'})),true);
 assert.strictEqual(shouldInvalidatePublicSnapshot('admin-expense',event(),result(200,{success:true})),true);
+assert.strictEqual(shouldInvalidatePublicSnapshot('automation-settings',event(),result(200,{success:true})),true);
+assert.strictEqual(shouldInvalidatePublicSnapshot('access-auto-sync',event(),result(200,{success:true})),true);
+assert.strictEqual(shouldInvalidatePublicSnapshot('mkj-access',event(),result(200,{success:true,action:'test-login'})),false);
+assert.strictEqual(shouldInvalidatePublicSnapshot('monthly-close-v4',event(),result(200,{success:true,dryRun:true})),false);
 assert.strictEqual(shouldInvalidatePublicSnapshot('batch-delete-records',event(),result(200,{success:true,deletedCount:2})),true);
 assert.strictEqual(shouldInvalidatePublicSnapshot('monthly-close-v2',event(),result(200,{success:true,dryRun:false})),true);
 assert.strictEqual(shouldInvalidatePublicSnapshot('monthly-close-v2',event(),result(200,{success:true,dryRun:true})),false,'La simulación del cierre no cambia datos.');

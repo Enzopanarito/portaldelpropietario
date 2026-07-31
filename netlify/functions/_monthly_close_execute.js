@@ -5,6 +5,8 @@ const { debtFields } = require('./_monthly_close_core');
 const { TABLES, patchBatches, setCloseMarker, createRecord, closeKey } = require('./_monthly_close_store');
 const { createPreparedLog, persistProgress } = require('./_monthly_close_operation');
 const { verifyPlan, restorePlan } = require('./_monthly_close_verify');
+const { rotateExpenses } = require('./_expense_lifecycle_store');
+const { nextMonth } = require('./_expense_lifecycle');
 
 async function executeClose({ month, closeLock, plan, context, token, baseId, counter, json }) {
   let operationLog = null;
@@ -44,6 +46,14 @@ async function executeClose({ month, closeLock, plan, context, token, baseId, co
     payload.state = 'VERIFIED';
     await persistProgress(operationLog.id, payload, token, baseId, counter);
 
+    let expenseRotation = null;
+    try {
+      expenseRotation = await rotateExpenses({ closingMonth:month, targetMonth:nextMonth(month), token, baseId, counter });
+    } catch (error) {
+      expenseRotation = { success:false, error:error.message, retryable:true };
+    }
+    payload.expenseRotation = expenseRotation;
+
     let accessSync = null;
     try { accessSync = await autoSyncAll({ sendEmail: true }); }
     catch (error) { accessSync = { success: false, error: error.message }; }
@@ -68,6 +78,7 @@ async function executeClose({ month, closeLock, plan, context, token, baseId, co
 
     const accessErrors = Number(accessSync?.errors || 0);
     const accessWarning = accessSync?.success === false || accessErrors > 0;
+    const rotationWarning = expenseRotation?.success === false;
     return json(200, {
       success: true,
       month,
@@ -77,9 +88,12 @@ async function executeClose({ month, closeLock, plan, context, token, baseId, co
       paymentsClosedCount: plan.paymentIds.length,
       validation: plan.validation,
       verification,
+      expenseRotation,
       accessSync,
-      warning: logWarning || markerWarning || (accessWarning ? 'El cierre contable terminó, pero uno o más accesos requieren revisión.' : null),
-      message: accessWarning
+      warning: logWarning || markerWarning || (rotationWarning ? 'El cierre contable terminó, pero la rotación de gastos debe reintentarse.' : null) || (accessWarning ? 'El cierre contable terminó, pero uno o más accesos requieren revisión.' : null),
+      message: rotationWarning
+        ? 'Cierre mensual completado y verificado. La activación de gastos del nuevo mes quedó en reintento seguro.'
+        : accessWarning
         ? 'Cierre mensual completado y verificado. La sincronización del portón terminó con advertencias.'
         : 'Cierre mensual completado, verificado y sincronizado con el portón.'
     }, counter);

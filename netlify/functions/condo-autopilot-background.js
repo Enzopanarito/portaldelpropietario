@@ -1,0 +1,106 @@
+'use strict';
+
+const crypto=require('crypto');
+const {issueAdminToken}=require('./_auth');
+const {begin,setState}=require('./_operation_guard');
+const {getAccessMode,getAutomationRules,loadAccessContext,calculateExpiredAccessDebt,autoSyncAll}=require('./_access_control');
+const {cycleStatus,validateRules}=require('./_automation_rules');
+const {nextMonth}=require('./_expense_lifecycle');
+const {preloadExpenses,rotateExpenses}=require('./_expense_lifecycle_store');
+const {evaluateClosePreflight}=require('./_autopilot_preflight');
+const {sendOwnerDebtReminder,sendAdminAutopilotAlert}=require('./_automation_notifications');
+const {ensureFinancialWritesAllowed}=require('./_financial_write_lock');
+const {verify}=require('./_internal_job_auth');
+const auditSnapshot=require('./audit-snapshot');
+const monthlyClose=require('./monthly-close');
+const bcvRate=require('./bcv-rate');
+
+function response(statusCode,body){return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:JSON.stringify(body)}}
+function parse(result){try{return JSON.parse(result?.body||'{}')}catch(_){return{}}}
+function previousMonth(month){const match=/^(\d{4})-(\d{2})$/.exec(String(month||''));if(!match)return'';const date=new Date(Date.UTC(Number(match[1]),Number(match[2])-2,1));return`${date.getUTCFullYear()}-${String(date.getUTCMonth()+1).padStart(2,'0')}`}
+function internalEvent(token,body){return{httpMethod:'POST',headers:{authorization:`Bearer ${token}`},body:JSON.stringify(body),queryStringParameters:{}}}
+async function alertOnce(date,code,details){
+ const key=`${date}|${code}|${crypto.createHash('sha256').update(JSON.stringify(details||[])).digest('hex').slice(0,16)}`,guard=await begin('AUTOPILOT_ALERT',key);
+ if(!guard.ok)return{sent:false,skipped:true,reason:guard.reason};
+ try{const sent=await sendAdminAutopilotAlert({subject:`Piloto automático detenido: ${code}`,summary:'Una protección del sistema evitó continuar automáticamente.',details});await setState(guard.marker,'AUTOPILOT_ALERT',key,'DONE',date);return sent}
+ catch(error){await setState(guard.marker,'AUTOPILOT_ALERT',key,'ERROR').catch(()=>null);return{sent:false,error:error.message}}
+}
+async function sendScheduledReminders(rules,cycle,context){
+ if(!rules.notifications.automaticEnabled)return{sent:0,skipped:true};
+ let sent=0,failed=0,considered=0;
+ for(const owner of context.owners||[]){
+  const calc=calculateExpiredAccessDebt(owner,context.pagos,context.reportes,{expenses:context.gastos||[],dueDay:rules.payment.dueDay,surchargeRate:rules.payment.surchargeRate});
+  const types=[];
+  if(calc.hasOutstandingBalance&&rules.notifications.dueReminderDaysBefore.includes(cycle.daysUntilDue))types.push('due');
+  if(calc.hasExpiredDebt&&rules.notifications.restrictionReminderDaysBefore.includes(cycle.daysUntilRestriction))types.push('restriction');
+  for(const type of types){
+   considered+=1;
+   const key=`${cycle.clock.date}|${owner.id}|${type}`,guard=await begin('OWNER_REMINDER',key);
+   if(!guard.ok)continue;
+   try{const result=await sendOwnerDebtReminder({owner,calc,cycle,type});if(result.sent)sent+=1;else failed+=1;await setState(guard.marker,'OWNER_REMINDER',key,'DONE',owner.id)}
+   catch(error){failed+=1;await setState(guard.marker,'OWNER_REMINDER',key,'ERROR').catch(()=>null)}
+  }
+ }
+ return{considered,sent,failed};
+}
+async function syncAccessCycle(rules,cycle){
+ if(!rules.access.automaticEnabled||cycle.daysUntilRestriction>0)return{skipped:true,reason:'restriction-not-due'};
+ const key=cycle.clock.monthKey,guard=await begin('ACCESS_CYCLE_SYNC',key);
+ if(!guard.ok)return{skipped:true,reason:guard.reason};
+ try{const result=await autoSyncAll({sendEmail:true});if(result.errors)throw new Error(`${result.errors} acceso(s) no pudieron sincronizarse.`);await setState(guard.marker,'ACCESS_CYCLE_SYNC',key,'DONE',key);return result}
+ catch(error){await setState(guard.marker,'ACCESS_CYCLE_SYNC',key,'ERROR').catch(()=>null);throw error}
+}
+async function executeAutomaticClose({rules,cycle,context,adminToken}){
+ if(!rules.monthlyClose.automaticEnabled||!cycle.isCloseWindow)return{skipped:true,reason:'close-not-due'};
+ const closingMonth=previousMonth(cycle.clock.monthKey);
+ const pendingReports=(context.reportes||[]).filter(record=>String(record?.fields?.Estado||'')==='Pendiente').length;
+ const writes=await ensureFinancialWritesAllowed(),pendingFinancialOperations=writes.ok?0:1;
+ if(pendingReports||pendingFinancialOperations){
+  const blockers=[...(pendingReports?[{code:'NO_PENDING_REPORTS',detail:`${pendingReports} reporte(s) pendiente(s).`}]:[]),...(pendingFinancialOperations?[{code:'NO_PENDING_FINANCIAL_OPS',detail:'Existe una operación financiera en curso.'}]:[])];
+  await alertOnce(cycle.clock.date,'PREFLIGHT',blockers);
+  return{success:false,blocked:true,blockers};
+ }
+ const auditResult=await auditSnapshot.handler(internalEvent(adminToken,{month:closingMonth,date:cycle.clock.date})),audit=parse(auditResult);
+ if(auditResult.statusCode!==200||audit.complete!==true){
+  const blockers=[{code:'AUDIT_SNAPSHOT',detail:audit.detail||audit.message||'Corte de auditoría incompleto.'}];await alertOnce(cycle.clock.date,'AUDIT_SNAPSHOT',blockers);return{success:false,blocked:true,blockers};
+ }
+ const dryResult=await monthlyClose.handler(internalEvent(adminToken,{dryRun:true,month:closingMonth})),dryRun=parse(dryResult);
+ if(dryResult.statusCode===200&&dryRun.closeStatus==='already-closed')return{success:true,skipped:true,reason:'already-closed',month:closingMonth};
+ const bcvResult=await bcvRate.handler({httpMethod:'GET',headers:{},queryStringParameters:{force:'1'}}),bcv=parse(bcvResult);
+ const preflight=evaluateClosePreflight({rules,dryRun,pendingReports,bcv,pendingFinancialOperations,now:new Date()});
+ if(!preflight.ok){await alertOnce(cycle.clock.date,'MONTHLY_CLOSE',preflight.blockers);return{success:false,blocked:true,preflight}}
+ const finalDryResult=await monthlyClose.handler(internalEvent(adminToken,{dryRun:true,month:closingMonth})),finalDry=parse(finalDryResult);
+ if(finalDry.planHash!==dryRun.planHash){
+  const blockers=[{code:'PLAN_CHANGED',detail:'Los datos cambiaron entre las dos verificaciones.'}];await alertOnce(cycle.clock.date,'PLAN_CHANGED',blockers);return{success:false,blocked:true,blockers};
+ }
+ const closeResult=await monthlyClose.handler(internalEvent(adminToken,{confirmed:true,month:closingMonth,planHash:finalDry.planHash})),close=parse(closeResult);
+ if(closeResult.statusCode!==200||close.success!==true){const blockers=[{code:'CLOSE_FAILED',detail:close.detail||close.message||'El cierre no terminó.'}];await alertOnce(cycle.clock.date,'CLOSE_FAILED',blockers);return{success:false,blocked:true,blockers,response:close}}
+ return close;
+}
+const handler=async function(event){
+ const rawBody=event?.body||'{}';
+ if(!verify(rawBody,event?.headers||{}))return response(401,{success:false,message:'Trabajo interno no autorizado.'});
+ const counter={calls:0},token=process.env.AIRTABLE_API_TOKEN,baseId=process.env.AIRTABLE_BASE_ID;
+ if(!token||!baseId)return response(500,{success:false,message:'Airtable no está configurado.'});
+ try{
+  const modeInfo=await getAccessMode(),automation=await getAutomationRules(modeInfo),rules=automation.rules,validation=validateRules(rules),cycle=cycleStatus(rules),results={generatedAt:new Date().toISOString(),cycle,configured:automation.configured,validation,actions:{}};
+  if(!automation.configured||!rules.masterEnabled||!validation.ok)return response(200,{...results,skipped:true,reason:!automation.configured?'not-configured':!rules.masterEnabled?'master-disabled':'rules-invalid'});
+  let context=await loadAccessContext();
+  if(rules.expensePreload.automaticEnabled&&cycle.isPreloadWindow)results.actions.preload=await preloadExpenses({closingMonth:cycle.clock.monthKey,targetMonth:cycle.nextMonth,token,baseId,counter});
+  const adminToken=issueAdminToken({authVersion:0});
+  results.actions.monthlyClose=await executeAutomaticClose({rules,cycle,context,adminToken});
+  if(cycle.clock.day<=3&&rules.expensePreload.automaticEnabled){
+   results.actions.rotationRetry=await rotateExpenses({closingMonth:previousMonth(cycle.clock.monthKey),targetMonth:cycle.clock.monthKey,token,baseId,counter}).catch(error=>({success:false,error:error.message,retryable:true}));
+   if(results.actions.rotationRetry?.success===true)await require('./_public_snapshot_store').invalidatePublicSnapshot('automation-rotation-retry',process.env).catch(()=>null);
+  }
+  if((results.actions.monthlyClose&&!results.actions.monthlyClose.skipped)||results.actions.rotationRetry?.success===true)context=await loadAccessContext();
+  results.actions.reminders=await sendScheduledReminders(rules,cycle,context);
+  results.actions.access=await syncAccessCycle(rules,cycle).catch(async error=>{await alertOnce(cycle.clock.date,'ACCESS_SYNC',[{code:'ACCESS_SYNC',detail:error.message}]);return{success:false,error:error.message}});
+  return response(200,{success:true,...results,airtableCalls:counter.calls});
+ }catch(error){await alertOnce(new Date().toISOString().slice(0,10),'UNHANDLED',[{code:'UNHANDLED',detail:error.message}]).catch(()=>null);return response(500,{success:false,message:'El piloto automático encontró una excepción y se detuvo sin forzar decisiones.',detail:String(error.message||'').slice(0,500)})}
+};
+
+exports.handler=handler;
+exports.previousMonth=previousMonth;
+exports.sendScheduledReminders=sendScheduledReminders;
+exports.executeAutomaticClose=executeAutomaticClose;

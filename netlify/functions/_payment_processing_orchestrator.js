@@ -6,6 +6,7 @@ function clean(value){return String(value??'').trim()}
 function sha256(value){return crypto.createHash('sha256').update(typeof value==='string'?value:JSON.stringify(value)).digest('hex')}
 function codedError(message,code,extra={}){return Object.assign(new Error(message),{code,...extra})}
 function safeNoAction(result={}){return{...result,automaticApproval:false,paymentAction:'NONE',accessAction:'NONE',canCreatePayment:false,canEnableAccess:false,requiresAdminDecision:true}}
+function decisionActions(result={},decision={}){return{...result,automaticApproval:decision.automaticApproval===true,paymentAction:decision.paymentAction||'NONE',accessAction:decision.accessAction||'NONE',canCreatePayment:decision.canCreatePayment===true,canEnableAccess:false,requiresAdminDecision:decision.requiresAdminDecision!==false}}
 function failureResult(reason,detail='',extra={}){return safeNoAction({ok:false,processingState:'Revisión manual urgente',resultValidation:'Revisión manual urgente',reason:clean(reason)||'PROCESSING_FAILED',detail:clean(detail).slice(0,500),...extra})}
 function defaults(){
  const proofCore=require('./_payment_proof_core');
@@ -35,7 +36,7 @@ function createOrchestrator(deps={}){
    const stored=await proofStore.put({reportId,content:proof.content,contentType:proof.contentType,attachmentSha:proof.sha256,variant:'original'},env);
    const duplicateData={reports:input.duplicateReports||[],payments:input.duplicatePayments||input.payments||[],history:input.duplicateHistory||[],excludeIds:[reportId]};
    const exactDuplicate=duplicateCore.findDuplicateMatches(duplicateInput(proof,null,''),duplicateData);
-   if(exactDuplicate.isDuplicate){const decision=arbiter.evaluatePaymentReport({report,owner:input.owner,attachment:{valid:true,sha256:proof.sha256},analysis:null,snapshot:null,snapshotValidation:null,duplicate:exactDuplicate,authorizedAccounts:input.authorizedAccounts||[],config:{minimumConfidence:config.minimumConfidence},now:now()});const result=safeNoAction({ok:true,processingState:decision.processingState,resultValidation:decision.resultValidation,proof:{key:stored.key,sha256:proof.sha256,contentType:proof.contentType,size:proof.size},duplicate:exactDuplicate,analysis:null,snapshot:null,decision});await processingStore.complete(marker,result);return result}
+   if(exactDuplicate.isDuplicate){const decision=arbiter.evaluatePaymentReport({report,owner:input.owner,attachment:{valid:true,sha256:proof.sha256},analysis:null,snapshot:null,snapshotValidation:null,duplicate:exactDuplicate,authorizedAccounts:input.authorizedAccounts||[],config:{minimumConfidence:config.minimumConfidence,automaticApprovalEnabled:false},now:now()});const result=safeNoAction({ok:true,processingState:decision.processingState,resultValidation:decision.resultValidation,proof:{key:stored.key,sha256:proof.sha256,contentType:proof.contentType,size:proof.size},duplicate:exactDuplicate,analysis:null,snapshot:null,decision});await processingStore.complete(marker,result);return result}
    let analysisResult=null,rawPrimary='',rawSecondary='',aiAudit=[];
    if(!config.aiEnabled||!config.primaryModel||typeof analysisRunner!=='function')analysisResult={ok:false,reason:'AI_NOT_CONFIGURED',raw:''};
    else{
@@ -50,23 +51,23 @@ function createOrchestrator(deps={}){
       const raw=await analysisRunner({role:secondary?'secondary':'primary',model,attempt:secondary?secondaryAttempts:primaryAttempts,proof:{filename:proof.filename,content:proof.content,contentType:proof.contentType,sha256:proof.sha256},report,owner:input.owner,promptVersion});
       if(secondary)rawSecondary=String(raw??'');else rawPrimary=String(raw??'');
       const evaluated=aiContract.evaluateRawOutput(String(raw??''),{minimumConfidence:config.minimumConfidence});
-      aiAudit.push(aiContract.analysisAudit({provider:'Airtable AI',model,promptVersion,startedAt,completedAt:now(),attempt:secondary?secondaryAttempts:primaryAttempts,secondary,result:evaluated}));
+      aiAudit.push(aiContract.analysisAudit({provider:'Gemini API',model,promptVersion,startedAt,completedAt:now(),attempt:secondary?secondaryAttempts:primaryAttempts,secondary,result:evaluated}));
       if(evaluated.ok){analysisResult=evaluated;break}
       lastFailure=evaluated.reason;analysisResult=evaluated;
-     }catch(error){lastFailure=aiFailureCode(error);const failed={ok:false,reason:lastFailure,raw:''};aiAudit.push(aiContract.analysisAudit({provider:'Airtable AI',model,promptVersion,startedAt,completedAt:now(),attempt:secondary?secondaryAttempts:primaryAttempts,secondary,result:failed}));analysisResult=failed}
+     }catch(error){lastFailure=aiFailureCode(error);const failed={ok:false,reason:lastFailure,raw:''};aiAudit.push(aiContract.analysisAudit({provider:'Gemini API',model,promptVersion,startedAt,completedAt:now(),attempt:secondary?secondaryAttempts:primaryAttempts,secondary,result:failed}));analysisResult=failed}
     }
    }
    const analysis=analysisResult&&analysisResult.ok?analysisResult.normalized:null;
    const fingerprint=analysis?duplicateCore.fingerprintHash(duplicateCore.canonicalFingerprint(analysis)):'';
    const duplicate=duplicateCore.findDuplicateMatches(duplicateInput(proof,analysis,fingerprint),duplicateData);
    let snapshot=null,snapshotValidation=null;
-   if(input.owner){snapshot=snapshotCore.buildAccessSnapshot({owner:input.owner,expenses:input.expenses||[],payments:input.payments||[],officialRecords:input.officialRecords||[],bcvRate:input.bcvRate,bcvSource:input.bcvSource||'Configuración',now:now(),maxAgeMs:input.maxSnapshotAgeMs});snapshotValidation=snapshotCore.validateSnapshotStillCurrent(snapshot,{owner:input.owner,expenses:input.expenses||[],payments:input.payments||[],officialRecords:input.officialRecords||[],bcvRate:input.bcvRate,bcvSource:input.bcvSource||'Configuración',now:now(),maxAgeMs:input.maxSnapshotAgeMs})}
-   const decision=arbiter.evaluatePaymentReport({report,owner:input.owner,attachment:{valid:proof.quality.acceptable!==false,sha256:proof.sha256},analysis,snapshot,snapshotValidation,duplicate,authorizedAccounts:input.authorizedAccounts||[],config:{minimumConfidence:config.minimumConfidence},now:now()});
-   const result=safeNoAction({ok:true,processingState:decision.processingState,resultValidation:decision.resultValidation,proof:{key:stored.key,sha256:proof.sha256,contentType:proof.contentType,size:proof.size,quality:proof.quality},analysis:{ok:Boolean(analysis),normalized:analysis,rawPrimary,rawSecondary,audit:aiAudit,failureReason:analysisResult&&analysisResult.ok?'':clean(analysisResult?.reason)},financialFingerprint:fingerprint,duplicate,snapshot,decision});
+   if(input.owner){const dueDay=input.rules?.payment?.dueDay||10,surchargeRate=input.rules?.payment?.surchargeRate??0.10;snapshot=snapshotCore.buildAccessSnapshot({owner:input.owner,expenses:input.expenses||[],payments:input.payments||[],officialRecords:input.officialRecords||[],bcvRate:input.bcvRate,bcvSource:input.bcvSource||'Configuración',now:now(),maxAgeMs:input.maxSnapshotAgeMs,dueDay,surchargeRate});snapshotValidation=snapshotCore.validateSnapshotStillCurrent(snapshot,{owner:input.owner,expenses:input.expenses||[],payments:input.payments||[],officialRecords:input.officialRecords||[],bcvRate:input.bcvRate,bcvSource:input.bcvSource||'Configuración',now:now(),maxAgeMs:input.maxSnapshotAgeMs,dueDay,surchargeRate})}
+   const decision=arbiter.evaluatePaymentReport({report,owner:input.owner,attachment:{valid:proof.quality.acceptable!==false,sha256:proof.sha256},analysis,snapshot,snapshotValidation,duplicate,authorizedAccounts:input.authorizedAccounts||[],config:{minimumConfidence:config.minimumConfidence,automaticApprovalEnabled:config.automaticApprovalEnabled,minimumAutomaticConfidence:config.minimumAutomaticConfidence},now:now()});
+   const result=decisionActions({ok:true,processingState:decision.processingState,resultValidation:decision.resultValidation,proof:{key:stored.key,sha256:proof.sha256,contentType:proof.contentType,size:proof.size,quality:proof.quality},analysis:{ok:Boolean(analysis),normalized:analysis,rawPrimary,rawSecondary,audit:aiAudit,failureReason:analysisResult&&analysisResult.ok?'':clean(analysisResult?.reason)},financialFingerprint:fingerprint,duplicate,snapshot,decision},decision);
    await processingStore.complete(marker,result);return result;
   }catch(error){const result=failureResult(error.code||'PROCESSING_FAILED',error.message,{proofSha:clean(input?.attachmentSha)});if(marker)await processingStore.fail(marker,error,{result}).catch(()=>null);return result}
  }
  return{run};
 }
 
-module.exports={clean,sha256,codedError,safeNoAction,failureResult,defaults,aiFailureCode,duplicateInput,createOrchestrator};
+module.exports={clean,sha256,codedError,safeNoAction,decisionActions,failureResult,defaults,aiFailureCode,duplicateInput,createOrchestrator};

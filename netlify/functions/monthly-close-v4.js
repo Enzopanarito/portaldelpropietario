@@ -46,7 +46,7 @@ const handler = async function(event) {
     try {
       const context = await loadContext(month, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
       if (!context.owners.length) throw new Error('No se encontraron propietarios para cerrar el mes.');
-      const plan = buildPlan({ owners: context.owners, expenses: context.expenses, payments: context.payments, month });
+      const plan = buildPlan({ owners: context.owners, expenses: context.expenses, payments: context.payments, month,dueDay:context.automationRules?.payment?.dueDay,surchargeRate:context.automationRules?.payment?.surchargeRate });
       const markers = await listCloseMarkers(month, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
       const done = markers.find(marker => marker.status === 'DONE');
       const partial = markers.find(marker => marker.status === 'ERROR_PARTIAL');
@@ -64,7 +64,7 @@ const handler = async function(event) {
     closeLock = lockResult.marker;
     const context = await loadContext(month, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
     if (!context.owners.length) throw new Error('No se encontraron propietarios para cerrar el mes.');
-    const plan = buildPlan({ owners: context.owners, expenses: context.expenses, payments: context.payments, month });
+    const plan = buildPlan({ owners: context.owners, expenses: context.expenses, payments: context.payments, month,dueDay:context.automationRules?.payment?.dueDay,surchargeRate:context.automationRules?.payment?.surchargeRate });
     if (plan.planHash !== submittedPlanHash) {
       await setCloseMarker(closeLock, month, 'ABORTED', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter).catch(() => null);
       return json(409, { success:false, protected:true, staleSimulation:true, month, newPlanHash:plan.planHash, message:'Los pagos, gastos o saldos cambiaron después de la simulación. No se modificó nada. Vuelva a simular.' }, counter);

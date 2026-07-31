@@ -14,8 +14,9 @@ const owners=Array.from({length:15},(_,i)=>{
   return {id:`recOwner${String(i+1).padStart(8,'0')}`,Casa:i+1,Propietario:`Propietario ${i+1}`,Alicuota:1/15,'Deuda Anterior USD':total>0&&i%2===0?total:0,'Deuda Anterior Bs Ref':total>0&&i%2===1?total:0,'Deuda Anterior':total,'Deuda Restante':total,'Saldo Oficial Activo':true,'Saldo USD Actual':total>0&&i%2===0?total:total<0?total:0,'Saldo Bs Ref Actual':total>0&&i%2===1?total:0,'Saldo Total Actual':total,'Estado Acceso Portón':total>0?'Limitado':'Habilitado','Última Sync MKJ':'2026-07-12T04:00:00.000Z','MKJ User ID':String(7000+i),'MKJ Email':`casa${i+1}@example.com`,Email:`casa${i+1}@example.com`};
 });
 const gastos=[];
+const gastosProgramados=[{id:'recExpense0000001',fields:{Concepto:'Vigilancia','Monto':150,'Tipo de Gasto':'Gasto Común','Forma de Pago':'Bs BCV',Frecuencia:'Fijo',Propietarios:owners.map(owner=>owner.id),'Mes de Aplicación':'2026-08','Estado del Gasto':'Programado'}}];
 const pagos=[];
-const reportes=[{id:'recReport00000001',fields:{Estado:'Pendiente','Propietario que Reporta':[owners[0].id],'Forma de Pago Reportada':'USD','Monto Reportado':50,Referencia:'TEST-001'}}];
+const reportes=[{id:'recReport00000001',fields:{Estado:'Pendiente','Propietario que Reporta':[owners[0].id],'Forma de Pago Reportada':'USD','Monto Reportado':50,Referencia:'TEST-001','Estado de Procesamiento':'Pendiente de administrador','Resultado Validación':'Baja confianza','AI Confidence':0.82}}];
 const health={ok:true,status:'ok',generatedAt:new Date().toISOString(),checks:[
 {name:'Airtable',ok:true,severity:'ok',detail:'Operativo'},
 {name:'Netlify',ok:true,severity:'ok',detail:'Operativo'},
@@ -27,6 +28,7 @@ function inject(html,isAdmin){
   const bridge='<script src="/admin-session-bridge.js"></script>';
   let extra=bridge;
   if(isAdmin)extra+=`<style>.hidden{display:none!important}.flex{display:flex}html[data-vla-admin-page="1"] #app{visibility:hidden!important;opacity:0!important}html[data-vla-admin-page="1"][data-vla-admin-ready="1"] #app{visibility:visible!important;opacity:1!important}#vla-admin-loader{display:none;position:fixed;inset:0;z-index:99999;align-items:center;justify-content:center;background:#061f3b}#login.hidden~#vla-admin-loader,#app:not(.hidden)~#vla-admin-loader{display:flex}html[data-vla-admin-ready="1"] #vla-admin-loader{display:none!important}</style><script>document.documentElement.dataset.vlaAdminPage='1';</script><link rel="stylesheet" href="/admin-premium.css"><link rel="stylesheet" href="/admin-premium-polish.css"><link rel="stylesheet" href="/admin-premium-10.css"><link rel="stylesheet" href="/admin-responsive-v4.css"><script>(function waitForAdmin(){if(window.ready===true){var p=document.createElement('script');p.src='/admin-premium-preflight.js';p.onload=function(){var s=document.createElement('script');s.src='/admin-premium.js';s.onload=function(){var c=document.createElement('script');c.src='/admin-premium-controls.js';c.onload=function(){var q=document.createElement('script');q.src='/admin-premium-10.js';q.onload=function(){var f=document.createElement('script');f.src='/admin-feature-parity.js';f.onload=function(){var r=document.createElement('script');r.src='/admin-responsive-v4.js';document.body.appendChild(r)};document.body.appendChild(f)};document.body.appendChild(q)};document.body.appendChild(c)};document.body.appendChild(s)};document.body.appendChild(p)}else setTimeout(waitForAdmin,30)})();</script>`;
+  if(isAdmin)extra+='<link rel="stylesheet" href="/admin-autopilot.css"><script defer src="/admin-autopilot.js"></script>';
   let result=html.replace('</head>',extra+'</head>');
   if(isAdmin)result=result.replace('</body>','<div id="vla-admin-loader"><div>Preparando portal administrativo…</div></div></body>');
   return result;
@@ -38,12 +40,13 @@ const server=http.createServer((req,res)=>{
     const name=url.pathname.split('/').pop();
     if(name==='app-icon'){res.writeHead(200,{'content-type':'image/svg+xml'});return res.end('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="22" fill="#fffaf0"/><circle cx="50" cy="43" r="25" fill="#0b7a34"/><text x="50" y="88" text-anchor="middle" font-size="14">VLA</text></svg>')}
     if(name==='login'&&req.method==='POST')return json(res,200,{success:true,token:TOKEN});
-    if(name==='admin-data')return json(res,200,{propietarios:owners,gastos,pagos,reportes,generatedAtCaracas:'12/07/2026 00:15'});
+    if(name==='admin-data')return json(res,200,{propietarios:owners,gastos,gastosProgramados,pagos,reportes,generatedAtCaracas:'12/07/2026 00:15'});
     if(name==='public-data')return json(res,200,{propietarios:owners,gastos,pagos,reportes});
     if(name==='bcv-rate')return json(res,200,{rate:150.25,rateFormatted:'150.25'});
     if(name==='api-usage')return json(res,200,{ok:true,total:245,limit:1000,remaining:755,percent:24.5,lastEvent:new Date().toISOString(),coverage:'interno-auditado'});
     if(name==='system-health'||name==='system-health-advanced')return json(res,200,health);
     if(name==='access-mode')return json(res,200,{mode:'Automático'});
+    if(name==='automation-settings')return json(res,200,{success:true,rules:{masterEnabled:false,rulesConfirmed:false,payment:{dueDay:10,surchargeRate:.1,minimumAutomaticConfidence:.97,automaticApprovalEnabled:false},access:{restrictionDay:11,automaticEnabled:false},monthlyClose:{automaticEnabled:false},expensePreload:{automaticEnabled:false,requireApprovalOfVariableExpenses:true},notifications:{automaticEnabled:false}},validation:{ok:true,issues:[]},paymentPreflight:{ok:true,blockers:[]},cycle:{clock:{monthKey:'2026-07'},dueDate:'2026-07-10',restrictionDate:'2026-07-11',nextMonth:'2026-08'},ai:{enabled:false,primaryModel:'gemini-2.5-flash',minimumConfidence:.85}});
     if(name==='process-payment-report')return json(res,200,{success:true,message:'Pago procesado en prueba segura.'});
     if(name==='whatsapp-jobs')return json(res,200,url.searchParams.get('resource')==='schedules'?{schedules:[]}:{jobs:[]});
     return json(res,200,{ok:true,message:'Mock seguro'});
@@ -88,6 +91,11 @@ async function pageState(page,label){
   const donutSize=await page.locator('#vla-donut').evaluate(el=>el.getBoundingClientRect().width);
   if(donutSize<170)throw new Error(`El gráfico sigue demasiado pequeño: ${donutSize}px.`);
   if(await page.locator('#vla-reading-controls').count()!==1)throw new Error('No aparecieron los controles de lectura.');
+  await page.locator('#vla-autopilot-open').waitFor({state:'visible',timeout:10000});
+  await page.locator('#vla-autopilot-open').click();
+  await page.locator('#vla-auto-form').waitFor({state:'visible',timeout:10000});
+  if(!/2026-07-10/.test(await page.locator('#vla-auto-status').innerText()))throw new Error('El piloto automático no mostró el calendario financiero.');
+  await page.locator('#vla-auto-form [data-auto-close]').click();
   const desktopLayout=await page.evaluate(()=>({login:getComputedStyle(document.getElementById('login')).display,app:getComputedStyle(document.getElementById('app')).display,ready:document.documentElement.dataset.vlaAdminReady,responsive:document.querySelector('link[href="/admin-responsive-v4.css"]')!==null,overflow:document.documentElement.scrollWidth-innerWidth}));
   if(desktopLayout.login!=='none'||desktopLayout.app==='none'||desktopLayout.ready!=='1'||!desktopLayout.responsive||desktopLayout.overflow>3)throw new Error(`El dashboard responsive no está listo: ${JSON.stringify(desktopLayout)}.`);
   await page.screenshot({path:'admin-premium-desktop.png',fullPage:true});
@@ -110,6 +118,9 @@ async function pageState(page,label){
   if(reading.dataset!=='xl'||reading.stored!=='xl')throw new Error('El tamaño de lectura no se guardó.');
   await page.screenshot({path:'admin-premium-owners.png',fullPage:true});
 
+  await page.locator('[data-vla-target="expenses"]').click();
+  await page.locator('#expense-month').waitFor({state:'visible'});
+  if(!/PRECARGADO 2026-08/.test(await page.locator('#expenses-body').innerText()))throw new Error('La precarga del mes siguiente no aparece en Gastos.');
   await page.locator('[data-vla-target="reports"]').click();
   if(!await page.locator('#reports').evaluate(el=>el.classList.contains('active')))throw new Error('La navegación a Pagos falló.');
   await page.screenshot({path:'admin-premium-reports.png',fullPage:true});

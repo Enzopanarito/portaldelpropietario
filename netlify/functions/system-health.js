@@ -4,8 +4,9 @@ const { withAirtableUsage } = require('./_airtable_meter');
 // Monitorea finanzas, Airtable, BCV, correo oficial, recibos, WhatsApp y control de acceso MKJoules.
 
 const { requireAdmin } = require('./_auth');
-const { calculateExpiredAccessDebt, getAccessMode } = require('./_access_control');
+const { calculateExpiredAccessDebt, getAccessMode, getAutomationRules } = require('./_access_control');
 const { OFFICIAL_EMAIL } = require('./_mailer');
+const { filterActiveExpenses, currentMonthCaracas } = require('./_expense_lifecycle');
 
 const TABLES = {
   propietarios: 'Propietarios',
@@ -86,7 +87,8 @@ const handler = async function(event) {
   const {
     AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, ADMIN_PASSWORD,
     SMTP_HOST, SMTP_USER, SMTP_SECRET, MAIL_FROM,
-    MKJ_BASE_URL, MKJ_ORG_ID, MKJ_ADMIN_EMAIL, MKJ_ADMIN_PASSWORD
+    MKJ_BASE_URL, MKJ_ORG_ID, MKJ_ADMIN_EMAIL, MKJ_ADMIN_PASSWORD,
+    GEMINI_API_KEY, PAYMENT_PROOF_ENCRYPTION_KEY, AUTOMATION_JOB_SECRET, ADMIN_TOKEN_SECRET, URL
   } = process.env;
 
   const checks = [];
@@ -107,6 +109,11 @@ const handler = async function(event) {
     add('Remitente oficial', officialSender, officialSender ? `Bloqueado correctamente a ${OFFICIAL_EMAIL}.` : `El sistema solo debe enviar desde ${OFFICIAL_EMAIL}. Revise SMTP_USER o MAIL_FROM en Netlify.`, officialSender ? 'ok' : 'error');
     add('Variables MKJoules', isConfigured(MKJ_ADMIN_EMAIL, MKJ_ADMIN_PASSWORD, MKJ_ORG_ID), isConfigured(MKJ_ADMIN_EMAIL, MKJ_ADMIN_PASSWORD, MKJ_ORG_ID) ? `Configurado para org ${MKJ_ORG_ID}.` : 'Faltan variables MKJ. El portón no podrá sincronizarse.', isConfigured(MKJ_ADMIN_EMAIL, MKJ_ADMIN_PASSWORD, MKJ_ORG_ID) ? 'ok' : 'error');
     add('URL MKJoules', true, MKJ_BASE_URL || 'Usando valor por defecto: https://cloud.mkjoules.com');
+    add('Analizador inteligente de pagos', !!GEMINI_API_KEY, GEMINI_API_KEY ? 'Proveedor configurado; la clave permanece oculta.' : 'Falta GEMINI_API_KEY. Los comprobantes pasarán a revisión manual.', GEMINI_API_KEY ? 'ok' : 'warning');
+    let proofEncryptionOk=false;try{require('./_payment_proof_store').parseEncryptionKey(PAYMENT_PROOF_ENCRYPTION_KEY);proofEncryptionOk=true}catch(_){proofEncryptionOk=false}
+    add('Cifrado de comprobantes', proofEncryptionOk, proofEncryptionOk ? 'AES-256-GCM listo para comprobantes.' : 'Configure PAYMENT_PROOF_ENCRYPTION_KEY con 32 bytes antes de activar autopago.', proofEncryptionOk ? 'ok' : 'warning');
+    const internalJobsReady=isConfigured(AUTOMATION_JOB_SECRET||ADMIN_TOKEN_SECRET||ADMIN_PASSWORD,URL);
+    add('Trabajos automáticos internos',internalJobsReady,internalJobsReady?'Cola asíncrona autenticada y URL de producción disponibles.':'Falta URL o secreto para autenticar la cola asíncrona.',internalJobsReady?'ok':'warning');
 
     if (!AIRTABLE_API_TOKEN || !AIRTABLE_BASE_ID) {
       return { statusCode: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify({ ok: false, status: 'error', checks, generatedAt: new Date().toISOString(), apiUsage: counter }) };
@@ -114,7 +121,7 @@ const handler = async function(event) {
 
     const [propietarios, gastos, pagos, reportes, recibos, whatsappJobs, whatsappSchedules] = await Promise.all([
       getAll(TABLES.propietarios, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Propietario', 'Casa', 'Email', 'Deuda Anterior', 'Deuda Anterior USD', 'Deuda Anterior Bs Ref', 'Deuda Restante', 'MKJ User ID', 'MKJ Email', 'Estado Acceso Portón', 'Excepción Acceso', 'Última Sync MKJ', 'Motivo Limitación Acceso']),
-      getAll(TABLES.gastos, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Concepto', 'Monto', 'Tipo de Gasto', 'Forma de Pago', 'Propietarios']),
+      getAll(TABLES.gastos, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Concepto', 'Monto', 'Tipo de Gasto', 'Forma de Pago', 'Propietarios','Mes de Aplicación','Estado del Gasto']),
       getAll(TABLES.pagos, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Propietario que Paga', 'Forma de Pago', 'Monto Pagado', 'Equivalente USD Aplicado', '[x] Aplicado al Cierre']),
       getAll(TABLES.reportes, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Propietario que Reporta', 'Estado', 'Forma de Pago Reportada', 'Monto Reportado', 'Equivalente USD Reportado']),
       getAll(TABLES.recibos, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Nro Recibo', 'Fecha', 'Estado Email', 'Correo', 'Log', 'Enviado En']),
@@ -130,9 +137,10 @@ const handler = async function(event) {
     const unclassified = gastos.filter(g => !((g.fields || {})['Forma de Pago'])).length;
     add('Gastos con forma de pago', unclassified === 0, unclassified ? `${unclassified} gasto(s) sin Forma de Pago.` : 'Todos clasificados.', unclassified ? 'warning' : 'ok');
 
-    let accessModeInfo;
+    let accessModeInfo,automationInfo;
     try {
       accessModeInfo = await getAccessMode();
+      automationInfo=await getAutomationRules(accessModeInfo);
       counter.airtable += 1;
       add('Modo Control Portón', true, accessModeInfo.mode === 'Automático' ? 'Automático activo.' : 'Manual activo: las sincronizaciones automáticas están pausadas.', accessModeInfo.mode === 'Automático' ? 'ok' : 'warning');
     } catch (error) {
@@ -148,14 +156,15 @@ const handler = async function(event) {
     const status = statusCount(propietarios, 'Estado Acceso Portón');
     add('Estados de acceso portón', true, `Habilitado: ${status.Habilitado || 0}; Limitado: ${status.Limitado || 0}; Excepción: ${status['Excepción Manual'] || 0}; Error: ${status['Error Sync'] || 0}; Sin configurar: ${status['Sin configurar'] || 0}.`, status['Error Sync'] ? 'warning' : 'ok', status);
 
-    const expired = propietarios.map(owner => ({ owner, calc: calculateExpiredAccessDebt(owner, pagos, reportes) }));
+    const activeExpenses=filterActiveExpenses(gastos,currentMonthCaracas()),rules=automationInfo?.rules;
+    const expired = propietarios.map(owner => ({ owner, calc: calculateExpiredAccessDebt(owner, pagos, reportes, {expenses:activeExpenses,dueDay:rules?.payment?.dueDay||10,surchargeRate:rules?.payment?.surchargeRate??0.10}) }));
     const withExpiredDebt = expired.filter(x => x.calc.hasExpiredDebt).length;
     const pendingCovered = expired.filter(x => x.calc.hasExpiredDebt && x.calc.pendingCoversExpiredDebt).length;
     const totalExpired = money(expired.reduce((sum, x) => sum + x.calc.expiredTotal, 0));
     add('Deuda vencida para control de acceso', true, `Propietarios con deuda vencida: ${withExpiredDebt}. Total vencido ref.: $${totalExpired.toFixed(2)}. Reportes pendientes suficientes: ${pendingCovered}.`, withExpiredDebt ? 'warning' : 'ok');
 
     const pendingReports = reportes.filter(r => selectName((r.fields || {}).Estado) === 'Pendiente').length;
-    add('Reportes pendientes y portón', true, pendingReports ? `${pendingReports} reporte(s) pendiente(s). El sistema habilita temporalmente solo si cubren toda la deuda vencida.` : 'No hay reportes pendientes.', pendingReports ? 'warning' : 'ok');
+    add('Reportes pendientes y portón', true, pendingReports ? `${pendingReports} reporte(s) pendiente(s). Un reporte no altera deuda ni acceso hasta quedar validado.` : 'No hay reportes pendientes.', pendingReports ? 'warning' : 'ok');
 
     const receiptErrors = recibos.filter(r => {
       const status = selectName((r.fields || {})['Estado Email']);

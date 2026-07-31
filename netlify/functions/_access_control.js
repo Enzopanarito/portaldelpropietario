@@ -6,12 +6,18 @@
 
 const { sendMail } = require('./_mailer');
 const { calculateOwnerBalance, money } = require('./_balance_engine_v4');
+const { FIELD_NAMES, mergeConfig, validateRules } = require('./_automation_rules');
+const { evaluateAccessDecision } = require('./_access_decision_engine');
+const { attachOfficialBalances, officialControlQuery } = require('./_official_balances');
+const {filterActiveExpenses,currentMonthCaracas}=require('./_expense_lifecycle');
 
 const TABLES = {
   propietarios: 'Propietarios',
   pagos: 'Pagos',
   reportes: 'Reportes de Pago',
-  config: 'Configuración'
+  gastos: 'Gastos del Mes',
+  config: 'Configuración',
+  control: 'ControlVersiones'
 };
 
 const TOLERANCE = 0.01;
@@ -109,7 +115,19 @@ async function getAccessMode() {
   const records = await airtableListAll(TABLES.config);
   const record = records[0] || null;
   const mode = normalizeAccessMode(record && record.fields ? record.fields[ACCESS_MODE_FIELD] : ACCESS_MODE_AUTO);
-  return { mode, recordId: record ? record.id : null };
+  return { mode, recordId: record ? record.id : null, record };
+}
+
+function hasAutomationConfiguration(record) {
+  const fields = record && record.fields ? record.fields : {};
+  return Object.values(FIELD_NAMES).some(name => Object.prototype.hasOwnProperty.call(fields, name));
+}
+
+async function getAutomationRules(modeInfo = null) {
+  const access = modeInfo || await getAccessMode();
+  const configured = hasAutomationConfiguration(access.record);
+  const rules = mergeConfig(access.record || {});
+  return { configured, rules, validation: validateRules(rules), recordId: access.recordId };
 }
 
 async function setAccessMode(mode) {
@@ -163,10 +181,10 @@ function ownerLinkIncludes(record, fieldName, ownerId) {
   return Array.isArray(links) && links.includes(ownerId);
 }
 
-function calculateExpiredAccessDebt(owner, pagos, reportes) {
+function calculateExpiredAccessDebt(owner, pagos, reportes, options = {}) {
   // Solo los pagos definitivos afectan la deuda vencida. Los reportes pendientes
   // se conservan para auditoría, pero nunca cubren deuda ni habilitan el portón.
-  const balance = calculateOwnerBalance(owner, [], pagos || []);
+  const {expenses=[],...balanceOptions}=options||{},balance = calculateOwnerBalance(owner, expenses, pagos || [], balanceOptions);
   const expiredUsd = money(Math.max(0, balance.expiredUsd));
   const expiredBsRef = money(Math.max(0, balance.expiredBsRef));
   const ignoredPendingReportIds = (reportes || [])
@@ -180,6 +198,10 @@ function calculateExpiredAccessDebt(owner, pagos, reportes) {
     expiredUsd,
     expiredBsRef,
     expiredTotal: money(expiredUsd + expiredBsRef),
+    outstandingUsd: money(Math.max(0,balance.usd)),
+    outstandingBsRef: money(Math.max(0,balance.bsRef)),
+    outstandingTotal: money(Math.max(0,balance.usd)+Math.max(0,balance.bsRef)),
+    hasOutstandingBalance: balance.usd>TOLERANCE||balance.bsRef>TOLERANCE,
     pendingUsd: 0,
     pendingBsRef: 0,
     pendingLegacy: 0,
@@ -237,19 +259,22 @@ async function sendLimitationEmail(owner, calc) {
 }
 
 async function loadAccessContext() {
-  const [owners, pagos, reportes] = await Promise.all([
+  const [rawOwners, pagos, reportes,officialRecords,gastos] = await Promise.all([
     airtableListAll(TABLES.propietarios),
     airtableListAll(TABLES.pagos),
-    airtableListAll(TABLES.reportes)
+    airtableListAll(TABLES.reportes),
+    airtableListAll(TABLES.control, officialControlQuery()),
+    airtableListAll(TABLES.gastos)
   ]);
-  return { owners, pagos, reportes };
+  const owners = attachOfficialBalances(rawOwners, officialRecords);
+  return { owners, pagos, reportes, officialRecords,gastos:filterActiveExpenses(gastos,currentMonthCaracas()) };
 }
 
 async function syncOwnerAccess(ownerId, options = {}, context = null) {
   const missing = requiredAccessEnv();
   if (missing.length) throw new Error('Faltan variables privadas: ' + missing.join(', '));
 
-  const modeInfo = await getAccessMode();
+  const modeInfo = options.modeInfo || await getAccessMode();
   if (modeInfo.mode === ACCESS_MODE_MANUAL && options.ignoreMode !== true) {
     return { ownerId, skipped: true, action: 'manual-mode', mode: ACCESS_MODE_MANUAL, reason: 'Control automático del portón en modo Manual. No se ejecutó sincronización automática.' };
   }
@@ -261,7 +286,8 @@ async function syncOwnerAccess(ownerId, options = {}, context = null) {
   const fields = owner.fields || {};
   const memberId = String(options.mkjUserId || fields['MKJ User ID'] || '').trim();
   const previousStatus = fields['Estado Acceso Portón'] || 'Sin configurar';
-  const calc = calculateExpiredAccessDebt(owner, ctx.pagos, ctx.reportes);
+  const automationInfo = options.automationInfo || await getAutomationRules(modeInfo);
+  const calc = calculateExpiredAccessDebt(owner, ctx.pagos, ctx.reportes, {expenses:ctx.gastos||[],...(options.now?{now:options.now}:{}),dueDay:automationInfo.rules.payment.dueDay,surchargeRate:automationInfo.rules.payment.surchargeRate});
   const runMkj = options.runMkj !== false;
 
   if (!memberId) {
@@ -282,14 +308,30 @@ async function syncOwnerAccess(ownerId, options = {}, context = null) {
   let reason = 'Sin deuda vencida pendiente. Acceso cómodo habilitado.';
   const temporary = false;
 
-  if (calc.hasExpiredDebt) {
+  let decision = null;
+  if (automationInfo.configured) {
+    decision = evaluateAccessDecision({
+      rules: automationInfo.rules,
+      balance: { expiredUsd:calc.expiredUsd, expiredBsRef:calc.expiredBsRef },
+      currentStatus: previousStatus,
+      hasException: fields['Excepción Acceso'] === true,
+      hasMemberId: Boolean(memberId),
+      dataFresh: options.dataFresh !== false,
+      consistent: options.consistent !== false,
+      pendingReports: calc.ignoredPendingReports,
+      now: options.now || new Date()
+    });
+    desiredAction = decision.action === 'DISABLE' ? 'disable' : decision.action === 'ENABLE' ? 'enable' : 'none';
+    desiredStatus = decision.action === 'NONE' ? previousStatus : decision.desiredStatus;
+    reason = options.reason || `${decision.reason} ${calc.hasExpiredDebt ? `Deuda vencida: ${accessDebtText(calc)}.` : ''}`.trim();
+  } else if (calc.hasExpiredDebt) {
     desiredAction = 'disable';
     desiredStatus = 'Limitado';
     reason = options.reason || `Limitación automática por deuda vencida pendiente (${accessDebtText(calc)}). Los reportes pendientes no modifican el acceso.`;
   }
 
   let mkjResult = null;
-  const shouldCallMkj = runMkj && (options.forceMkj || previousStatus !== desiredStatus);
+  const shouldCallMkj = desiredAction !== 'none' && runMkj && (options.forceMkj || previousStatus !== desiredStatus);
   if (shouldCallMkj) mkjResult = await mkjSetMemberStatus(memberId, desiredAction);
 
   const patched = await airtablePatchRecord(TABLES.propietarios, owner.id, {
@@ -299,7 +341,7 @@ async function syncOwnerAccess(ownerId, options = {}, context = null) {
   });
 
   let email = null;
-  if (desiredStatus === 'Limitado' && previousStatus !== 'Limitado' && options.sendEmail !== false) {
+  if (desiredAction === 'disable' && desiredStatus === 'Limitado' && previousStatus !== 'Limitado' && options.sendEmail !== false) {
     email = await sendLimitationEmail(owner, calc).catch(error => ({ sent: false, status: 'Error correo', detail: error.message }));
   }
 
@@ -317,12 +359,15 @@ async function syncOwnerAccess(ownerId, options = {}, context = null) {
     mkjStatus: mkjResult ? mkjResult.status : 'sin-cambio',
     email,
     calc,
+    decision,
+    automation: automationInfo.configured ? { configured:true, validation:automationInfo.validation } : { configured:false, legacyPolicy:true },
     owner: patched
   };
 }
 
 async function autoSyncAll(options = {}) {
   const modeInfo = await getAccessMode();
+  const automationInfo = await getAutomationRules(modeInfo);
   if (modeInfo.mode === ACCESS_MODE_MANUAL && options.ignoreMode !== true) {
     return {
       success: true,
@@ -341,7 +386,7 @@ async function autoSyncAll(options = {}) {
   const results = [];
   for (const owner of context.owners.sort((a, b) => Number((a.fields || {}).Casa || 0) - Number((b.fields || {}).Casa || 0))) {
     try {
-      results.push(await syncOwnerAccess(owner.id, options, context));
+      results.push(await syncOwnerAccess(owner.id, { ...options, modeInfo, automationInfo }, context));
     } catch (error) {
       results.push({ ownerId: owner.id, casa: owner.fields?.Casa, propietario: owner.fields?.Propietario, error: error.message });
     }
@@ -368,6 +413,8 @@ module.exports = {
   airtablePatchRecord,
   getAccessMode,
   setAccessMode,
+  getAutomationRules,
+  hasAutomationConfiguration,
   loadAccessContext,
   calculateExpiredAccessDebt,
   syncOwnerAccess,

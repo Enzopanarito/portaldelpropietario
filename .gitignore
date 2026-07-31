@@ -1,0 +1,17 @@
+node_modules/
+.netlify/
+.env
+.env.*
+!.env.example
+coverage/
+artifacts/
+playwright-report/
+test-results/
+*.log
+/*-result.json
+/*-state.json
+/*-error.txt
+/admin-*.png
+/owner-*.png
+/porton-*.png
+/audit-*.png

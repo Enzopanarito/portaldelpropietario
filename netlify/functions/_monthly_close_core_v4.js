@@ -21,12 +21,12 @@ function compactPayment(payment) {
   const explicitForm=selectName(f['Forma de Pago']);
   return{id:payment.id,propietarios:[...(Array.isArray(f['Propietario que Paga'])?f['Propietario que Paga']:[])].sort(),montoPagado:money(f['Monto Pagado']),montoPagadoBs:money(f['Monto Pagado Bs']),tasaBcv:Number(f['Tasa BCV Aplicada']||0),equivalenteUsd:money(f['Equivalente USD Aplicado']),forma:explicitForm||'LEGACY',fecha:String(f['Fecha de Pago']||'').slice(0,10),aplicado:f['[x] Aplicado al Cierre']===true};
 }
-function buildPlan({owners=[],expenses=[],payments=[],month}) {
+function buildPlan({owners=[],expenses=[],payments=[],month,dueDay=10,surchargeRate=0.10}) {
   const sortedOwners=[...owners].sort((a,b)=>String(a.id).localeCompare(String(b.id)));
   const sortedExpenses=[...expenses].sort((a,b)=>String(a.id).localeCompare(String(b.id)));
   const sortedPayments=[...payments].sort((a,b)=>String(a.id).localeCompare(String(b.id)));
   const ownerUpdates=sortedOwners.map(owner=>{
-    const balance=calculateOwnerBalance(owner,sortedExpenses,sortedPayments,{month,day:31});
+    const balance=calculateOwnerBalance(owner,sortedExpenses,sortedPayments,{month,day:31,dueDay,surchargeRate});
     const legacyTotal=money(owner?.fields?.['Deuda Restante']);
     const calculation={usd:balance.usd,bsRef:balance.bsRef,totalRef:balance.totalRef,rawUsd:balance.usd,rawBsRef:balance.bsRef,rawTotal:balance.totalRef,legacyTotal,difference:money(balance.totalRef-legacyTotal),reconciled:false,recargoBsRef:balance.recargoBsRef};
     return{id:owner.id,casa:owner?.fields?.Casa??null,propietario:String(owner?.fields?.Propietario||''),before:ownerBefore(owner),target:ownerTarget(balance),calculation};
@@ -40,7 +40,8 @@ function buildPlan({owners=[],expenses=[],payments=[],month}) {
   const validation={month,transitionMode:false,totalUsd,totalBsRef,totalRef,rawTotal:totalRef,legacyTotal,difference:money(totalRef-legacyTotal),differences,differenceCount:differences.length,conDeudaUsd:ownerUpdates.filter(i=>i.target.deudaAnteriorUsd>0.01).length,conDeudaBs:ownerUpdates.filter(i=>i.target.deudaAnteriorBsRef>0.01).length,conSaldoFavor:ownerUpdates.filter(i=>i.target.deudaAnterior<-0.01).length,pendingPaymentsCount:paymentIds.length,ownerCount:ownerUpdates.length};
   const source={owners:sortedOwners.map(compactOwner),expenses:sortedExpenses.map(compactExpense),payments:sortedPayments.map(compactPayment)};
   const sourceHash=hashJson(source);
-  const planHash=hashJson({version:4,month,sourceHash,ownerUpdates:ownerUpdates.map(i=>({id:i.id,before:i.before,target:i.target})),paymentIds});
-  return{version:4,month,generatedAt:new Date().toISOString(),transitionMode:false,sourceHash,planHash,ownerUpdates,paymentIds,validation};
+  const normalizedRules={dueDay:Number(dueDay),surchargeRate:Number(surchargeRate)};
+  const planHash=hashJson({version:4,month,sourceHash,normalizedRules,ownerUpdates:ownerUpdates.map(i=>({id:i.id,before:i.before,target:i.target})),paymentIds});
+  return{version:4,month,generatedAt:new Date().toISOString(),transitionMode:false,sourceHash,planHash,normalizedRules,ownerUpdates,paymentIds,validation};
 }
 module.exports={buildPlan};

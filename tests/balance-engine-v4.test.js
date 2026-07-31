@@ -26,12 +26,18 @@ assert.strictEqual(balance.recargoBsRef,19.38);
 assert.strictEqual(balance.usd,85);
 assert.strictEqual(balance.bsRef,213.17);
 assert.strictEqual(balance.totalRef,298.17);
-assert.strictEqual(balance.expiredTotalRef,0);
+assert.strictEqual(balance.expiredTotalRef,298.17);
 assert.strictEqual(balance.timelyPaidBsRef,0,'Un pago USD no puede contar para pronto pago en Bs');
 
 const day10=calculateOwnerBalance(owner,expenses,[usdPayment],{month:'2026-07',day:10});
 assert.strictEqual(day10.recargoBsRef,0);
 assert.strictEqual(day10.totalRef,278.79);
+const customBeforeDue=calculateOwnerBalance(owner,expenses,[usdPayment],{month:'2026-07',day:12,dueDay:15,surchargeRate:.05});
+assert.strictEqual(customBeforeDue.recargoBsRef,0);
+assert.strictEqual(customBeforeDue.expiredTotalRef,0);
+const customAfterDue=calculateOwnerBalance(owner,expenses,[usdPayment],{month:'2026-07',day:16,dueDay:15,surchargeRate:.05});
+assert.strictEqual(customAfterDue.recargoBsRef,9.69);
+assert.strictEqual(customAfterDue.expiredTotalRef,288.48);
 
 const bsPayment={id:'paybs',fields:{'Propietario que Paga':['owner10'],'Monto Pagado':193.79,'Equivalente USD Aplicado':193.79,'Forma de Pago':'Bs BCV','Fecha de Pago':'2026-07-10','[x] Aplicado al Cierre':false}};
 const noSurcharge=calculateOwnerBalance({...owner,fields:{...owner.fields,'Deuda Anterior USD':0,'Deuda Anterior':0}},expenses,[bsPayment],{month:'2026-07',day:11});
@@ -46,7 +52,7 @@ const priorAll=['ownerPrior'];
 const priorExpenses=expenses.map(item=>({...item,fields:{...item.fields,Propietarios:priorAll}}));
 const priorPayment={id:'oldDebtPayment',fields:{'Propietario que Paga':['ownerPrior'],'Monto Pagado':100,'Equivalente USD Aplicado':100,'Forma de Pago':'Bs BCV','Fecha de Pago':'2026-07-10','[x] Aplicado al Cierre':false}};
 const priorResult=calculateOwnerBalance(priorBsOwner,priorExpenses,[priorPayment],{month:'2026-07',day:11});
-assert.strictEqual(priorResult.expiredBsRef,0);
+assert.strictEqual(priorResult.expiredBsRef,213.17);
 assert.strictEqual(priorResult.timelyPaidBsRef,0);
 assert.strictEqual(priorResult.recargoBsRef,19.38);
 assert.strictEqual(priorResult.bsRef,213.17);
@@ -55,4 +61,7 @@ const plan=buildPlan({owners:[owner],expenses,payments:[usdPayment],month:'2026-
 assert.strictEqual(plan.ownerUpdates[0].target.deudaAnteriorUsd,85);
 assert.strictEqual(plan.ownerUpdates[0].target.deudaAnteriorBsRef,213.17);
 assert.strictEqual(plan.ownerUpdates[0].target.deudaAnterior,298.17);
+const customPlan=buildPlan({owners:[owner],expenses,payments:[usdPayment],month:'2026-07',dueDay:15,surchargeRate:.05});
+assert.deepStrictEqual(customPlan.normalizedRules,{dueDay:15,surchargeRate:.05});
+assert.notStrictEqual(customPlan.planHash,plan.planHash,'Cambiar las reglas financieras debe invalidar la simulación.');
 console.log('BALANCE_ENGINE_V4_TESTS_OK');

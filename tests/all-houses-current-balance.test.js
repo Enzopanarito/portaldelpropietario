@@ -73,21 +73,21 @@ pay(12,42.8,'2026-07-09','Bs BCV');
 pay(14,202.12,'2026-07-05',null,'1'); pay(14,85,'2026-07-08',null,'2'); pay(14,50,'2026-07-08','USD','3');
 
 const expected = {
-  1:{chargesBs:232.33,chargesUsd:85,recargo:0,usd:85,bs:0,total:85,expired:0},
+  1:{chargesBs:232.33,chargesUsd:85,recargo:0,usd:85,bs:0,total:85,expired:85},
   2:{chargesBs:145.83,chargesUsd:0,recargo:0,usd:0,bs:0,total:0,expired:0},
-  3:{chargesBs:142.79,chargesUsd:0,recargo:14.28,usd:0,bs:157.07,total:157.07,expired:0},
-  4:{chargesBs:201.97,chargesUsd:85,recargo:20.20,usd:85,bs:222.17,total:307.17,expired:0},
-  5:{chargesBs:210.49,chargesUsd:85,recargo:0,usd:85,bs:-0.15,total:84.85,expired:0},
+  3:{chargesBs:142.79,chargesUsd:0,recargo:14.28,usd:0,bs:157.07,total:157.07,expired:157.07},
+  4:{chargesBs:201.97,chargesUsd:85,recargo:20.20,usd:85,bs:222.17,total:307.17,expired:307.17},
+  5:{chargesBs:210.49,chargesUsd:85,recargo:0,usd:85,bs:-0.15,total:84.85,expired:85},
   6:{chargesBs:208.39,chargesUsd:85,recargo:0,usd:0,bs:0,total:0,expired:0},
-  7:{chargesBs:193.79,chargesUsd:85,recargo:0,usd:85,bs:0,total:85,expired:0},
-  8:{chargesBs:193.79,chargesUsd:85,recargo:0,usd:85,bs:0,total:85,expired:0},
+  7:{chargesBs:193.79,chargesUsd:85,recargo:0,usd:85,bs:0,total:85,expired:85},
+  8:{chargesBs:193.79,chargesUsd:85,recargo:0,usd:85,bs:0,total:85,expired:85},
   9:{chargesBs:193.79,chargesUsd:85,recargo:0,usd:-10,bs:-10,total:-20,expired:0},
-  10:{chargesBs:193.79,chargesUsd:85,recargo:19.38,usd:85,bs:213.17,total:298.17,expired:0},
+  10:{chargesBs:193.79,chargesUsd:85,recargo:19.38,usd:85,bs:213.17,total:298.17,expired:298.17},
   11:{chargesBs:142.79,chargesUsd:0,recargo:0,usd:0,bs:-378.89,total:-378.89,expired:0},
-  12:{chargesBs:142.79,chargesUsd:0,recargo:14.28,usd:0,bs:114.27,total:114.27,expired:0},
-  13:{chargesBs:193.79,chargesUsd:85,recargo:19.38,usd:85,bs:213.17,total:298.17,expired:0},
+  12:{chargesBs:142.79,chargesUsd:0,recargo:14.28,usd:0,bs:114.27,total:114.27,expired:114.27},
+  13:{chargesBs:193.79,chargesUsd:85,recargo:19.38,usd:85,bs:213.17,total:298.17,expired:298.17},
   14:{chargesBs:193.79,chargesUsd:85,recargo:0,usd:-50,bs:0,total:-50,expired:0},
-  15:{chargesBs:169.91,chargesUsd:0,recargo:16.99,usd:0,bs:186.90,total:186.90,expired:0}
+  15:{chargesBs:169.91,chargesUsd:0,recargo:16.99,usd:0,bs:186.90,total:186.90,expired:186.90}
 };
 
 const results = calculateAllOwners(owners, expenses, payments, {month:'2026-07',day:11});
@@ -116,7 +116,7 @@ for (let house=1; house<=15; house += 1) {
 const house4=results.get('h4');
 assert.strictEqual(house4.timelyPaidBsRef,0);
 assert.strictEqual(house4.recargoBsRef,20.20);
-assert.strictEqual(house4.expiredTotalRef,0);
+assert.strictEqual(house4.expiredTotalRef,307.17);
 
 // La Casa 14 valida la reconciliación de migración: total histórico 8,33,
 // compuesto realmente por crédito USD -50 y deuda Bs 58,33.

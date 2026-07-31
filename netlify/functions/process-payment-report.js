@@ -61,8 +61,15 @@ const handler = async function(event) {
 
   const reportId = String(body.reportId || '').trim();
   const decision = String(body.decision || '').trim();
+  const decisionSource = body.decisionSource === 'automatic' ? 'automatic' : 'admin';
   if (!validRecordId(reportId)) return json(400, { success:false, message:'Reporte inválido.' });
   if (!['approve','reject'].includes(decision)) return json(400, { success:false, message:'Decisión inválida.' });
+  if (decisionSource === 'automatic') {
+    const evidence=body.automationEvidence||{};
+    if (!String(evidence.snapshotId||'').startsWith('BALANCE_SNAPSHOT_V2|') || !/^[a-f0-9]{64}$/i.test(String(evidence.fingerprint||'')) || Number(evidence.confidence||0)<0.95) {
+      return json(403,{success:false,message:'La aprobación automática no contiene evidencia verificable.'});
+    }
+  }
 
   let operation = null;
   let writeStage = 0;
@@ -104,7 +111,7 @@ const handler = async function(event) {
     operation = guard.marker;
 
     if (decision === 'reject') {
-      const patched = await airtablePatchRecord(TABLES.reportes, reportId, { Estado: 'Rechazado' });
+      const patched = await airtablePatchRecord(TABLES.reportes, reportId, { Estado: 'Rechazado','Estado de Procesamiento':'Rechazado','Decisión Administrativa':'Rechazado','Validación Realizada Por':decisionSource==='automatic'?'Motor determinístico':'Administrador','Administrador que Revisó':decisionSource==='automatic'?'AUTOPILOT':auth.claims?.jti||'ADMIN','Fecha Revisión':new Date().toISOString(),'Motivo del Rechazo':safeDisplayText(body.reason||'No aprobado durante la validación.',500) });
       writeStage = 1;
       let access = null;
       try {
@@ -136,12 +143,21 @@ const handler = async function(event) {
       return json(400, { success:false, message:'El reporte no tiene monto válido.' });
     }
 
+    const detectedDate=String(f['Fecha Operación Detectada']||'').slice(0,10),paymentDate=/^\d{4}-\d{2}-\d{2}$/.test(detectedDate)&&detectedDate<=todayCaracasISO()?detectedDate:todayCaracasISO();
     const paymentFields = {
       'Propietario que Paga': [ownerId],
-      'Fecha de Pago': todayCaracasISO(),
+      'Fecha de Pago': paymentDate,
       'Forma de Pago': mode,
       'Monto Pagado': usdEq,
-      'Equivalente USD Aplicado': usdEq
+      'Equivalente USD Aplicado': usdEq,
+      'Moneda Recibida':mode==='USD'?'USD':'VES',
+      'Monto Recibido':mode==='USD'?usdEq:amountBs,
+      'Fuente Tasa BCV':mode==='USD'?'No aplica':'Tasa BCV del reporte',
+      'Reporte de Pago Origen':[reportId],
+      'Referencia':safeDisplayText(f.Referencia||'',160),
+      'Hash SHA-256':safeDisplayText(f['Hash SHA-256']||'',64),
+      'Huella Financiera':safeDisplayText(f['Huella Financiera']||'',64),
+      'Fuente de Validación':decisionSource==='automatic'?'Automática':'Manual'
     };
     if (mode === 'Bs BCV') {
       paymentFields['Monto Pagado Bs'] = amountBs;
@@ -161,13 +177,13 @@ const handler = async function(event) {
         amountUsd: usdEq,
         amountBs,
         reference: f.Referencia || '',
-        concept: 'Pago reportado por propietario y aprobado por administración'
+        concept: decisionSource==='automatic'?'Pago reportado y validado automáticamente':'Pago reportado por propietario y aprobado por administración'
       });
     } catch (error) {
       receipt = { success:false, warning:safeDisplayText(error.message,500) };
     }
 
-    const patched = await airtablePatchRecord(TABLES.reportes, reportId, { Estado: 'Confirmado' });
+    const patched = await airtablePatchRecord(TABLES.reportes, reportId, { Estado: 'Confirmado','Estado de Procesamiento':'Aprobado','Decisión Administrativa':decisionSource==='automatic'?'Aprobación automática':'Aprobado','Validación Realizada Por':decisionSource==='automatic'?'Motor determinístico':'Administrador','Administrador que Revisó':decisionSource==='automatic'?'AUTOPILOT':auth.claims?.jti||'ADMIN','Fecha Revisión':new Date().toISOString(),'Pago Definitivo Creado':true,'Pago Definitivo Relacionado':paymentId?[paymentId]:[] });
     writeStage = 2;
 
     let access = null;
@@ -189,6 +205,7 @@ const handler = async function(event) {
     return json(200, {
       success:true,
       decision,
+      decisionSource,
       message: accessWarning
         ? 'Pago confirmado. La sincronización del acceso requiere revisión.'
         : receiptSent

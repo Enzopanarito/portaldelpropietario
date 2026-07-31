@@ -102,7 +102,10 @@ const ownerBreakdownOverride = `<style id="vla-visual-breakdown-style-${BREAKDOW
     var type=selectName(fields['Tipo de Gasto']||fields.type);
     var aliquota=Number(owner&&owner.Alicuota||owner&&owner.aliquota||0);
     if(aliquota>1)aliquota=aliquota/100;
-    if(type==='Gasto Común'||type==='Gasto Comun')return amount*aliquota;
+    if(type==='Gasto Común'||type==='Gasto Comun'){
+      if(linked.length&&linked.indexOf(String(owner&&owner.id||''))<0)return 0;
+      return amount*aliquota;
+    }
     if(type==='Gasto Especial'&&linked.indexOf(String(owner&&owner.id||''))>=0)return amount/(linked.length||1);
     return 0;
   }
@@ -192,6 +195,14 @@ const ownerBreakdownOverride = `<style id="vla-visual-breakdown-style-${BREAKDOW
     if(typeof window.monthLabel==='function')return window.monthLabel();
     return 'mes actual';
   }
+  function configuredDueDay(data){
+    var value=Number(data&&data.automation&&data.automation.payment&&data.automation.payment.dueDay);
+    return Number.isFinite(value)&&value>=1&&value<=28?value:10;
+  }
+  function configuredSurchargeRate(data){
+    var value=Number(data&&data.automation&&data.automation.payment&&data.automation.payment.surchargeRate);
+    return Number.isFinite(value)&&value>=0&&value<=1?value:0.10;
+  }
 
   function draw(){
     var owner=selectedOwner();
@@ -223,7 +234,7 @@ const ownerBreakdownOverride = `<style id="vla-visual-breakdown-style-${BREAKDOW
       paid=m(paid+paymentReference(payment));
     });
 
-    var benefit=currentDay()<=10?m(promptBaseRaw*0.10):0;
+    var benefit=currentDay()<=configuredDueDay(data)?m(promptBaseRaw*configuredSurchargeRate(data)):0;
     var summary='';
     if(benefit>0.005)summary+=summaryRow('Beneficio Pronto Pago',benefit);
     summary+=summaryRow('Total Pagado',paid);

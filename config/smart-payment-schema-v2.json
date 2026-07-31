@@ -56,6 +56,11 @@
         {"name":"Estado Acceso al Reportar","type":"singleLineText"},
         {"name":"Casa al Reportar","type":"number","precision":0},
         {"name":"Fecha y Hora del Reporte","type":"dateTime"},
+        {"name":"Moneda Ingresada","type":"singleSelect","choices":["VES","USD"]},
+        {"name":"Monto Ingresado","type":"number","precision":2},
+        {"name":"Banco Reportado","type":"singleLineText"},
+        {"name":"Observaciones Reportadas","type":"multilineText"},
+        {"name":"Fuente Tasa BCV Reporte","type":"singleLineText"},
         {"name":"Archivo Obligatorio","type":"checkbox"},
         {"name":"Balance Snapshot ID","type":"singleLineText"},
         {"name":"Deuda Snapshot USD","type":"currency","symbol":"$","precision":2},
@@ -67,7 +72,7 @@
         {"name":"Balance Cutoff","type":"dateTime"},
         {"name":"Fuente del Snapshot","type":"singleLineText"},
         {"name":"Versión del Snapshot","type":"number","precision":0},
-        {"name":"Estado de Procesamiento","type":"singleSelect","choices":["Recibido","Archivo requerido","Validando archivo","Duplicado detectado","En cola IA","Analizando IA principal","Reintentando IA principal","Analizando IA secundaria","Normalizando","Evaluando reglas","Revisión manual urgente","Coincide preliminarmente","Requiere corrección","Habilitando acceso","Acceso provisional habilitado","Error de sincronización","Pendiente de administrador","Aprobado","Rechazado","Cerrado"]},
+        {"name":"Estado de Procesamiento","type":"singleSelect","choices":["Recibido","Archivo requerido","Validando archivo","Duplicado detectado","En cola IA","Analizando IA principal","Reintentando IA principal","Analizando IA secundaria","Normalizando","Evaluando reglas","Revisión manual urgente","Coincide preliminarmente","Aprobación automática autorizada","Requiere corrección","Habilitando acceso","Acceso provisional habilitado","Error de sincronización","Pendiente de administrador","Aprobado","Rechazado","Cerrado"]},
         {"name":"Job ID","type":"singleLineText"},
         {"name":"Idempotency Key","type":"singleLineText"},
         {"name":"Processing Lock","type":"checkbox"},
@@ -108,7 +113,7 @@
         {"name":"Pago Duplicado Relacionado","type":"multipleRecordLinks","linkedTable":"Pagos"},
         {"name":"Detalle de Coincidencia","type":"multilineText"},
         {"name":"Rules Evaluation JSON","type":"multilineText"},
-        {"name":"Resultado Validación","type":"singleSelect","choices":["Pendiente","Coincide preliminarmente","Monto insuficiente","Receptor incorrecto","Receptor no visible","Referencia no visible","Fecha inválida","Moneda inconsistente","Operación pendiente","Operación fallida","Duplicado","Baja confianza","Archivo ilegible","Revisión manual urgente"]},
+        {"name":"Resultado Validación","type":"singleSelect","choices":["Pendiente","Coincide preliminarmente","Coincidencia exacta verificada","Monto insuficiente","Receptor incorrecto","Receptor no visible","Referencia no visible","Fecha inválida","Moneda inconsistente","Operación pendiente","Operación fallida","Duplicado","Baja confianza","Archivo ilegible","Revisión manual urgente"]},
         {"name":"Detalle de Inconsistencias","type":"multilineText"},
         {"name":"Notificación Propietario","type":"multilineText"},
         {"name":"Habilitación Provisional Aplicada","type":"checkbox"},
@@ -116,8 +121,8 @@
         {"name":"Vencimiento Habilitación Provisional","type":"dateTime"},
         {"name":"MKJ Operation ID","type":"singleLineText"},
         {"name":"Error MKJoules","type":"multilineText"},
-        {"name":"Decisión Administrativa","type":"singleSelect","choices":["Pendiente","Aprobado","Rechazado"]},
-        {"name":"Validación Realizada Por","type":"singleSelect","choices":["IA principal","IA secundaria","Administrador"]},
+        {"name":"Decisión Administrativa","type":"singleSelect","choices":["Pendiente","Aprobado","Aprobación automática","Rechazado"]},
+        {"name":"Validación Realizada Por","type":"singleSelect","choices":["IA principal","IA secundaria","Sistema inteligente","Motor determinístico","Administrador"]},
         {"name":"Administrador que Revisó","type":"singleLineText"},
         {"name":"Fecha Revisión","type":"dateTime"},
         {"name":"Motivo del Rechazo","type":"multilineText"},
@@ -146,6 +151,35 @@
         {"name":"Último Motivo de Rechazo","type":"multilineText"}
       ]
     },
+    "Pagos": {
+      "mode":"extend",
+      "fields":[
+        {"name":"Reporte de Pago Origen","type":"multipleRecordLinks","linkedTable":"Reportes de Pago"},
+        {"name":"Referencia","type":"singleLineText"},
+        {"name":"Hash SHA-256","type":"singleLineText"},
+        {"name":"Huella Financiera","type":"singleLineText"},
+        {"name":"Fuente de Validación","type":"singleSelect","choices":["Manual","Automática"]},
+        {"name":"Moneda Recibida","type":"singleSelect","choices":["VES","USD"]},
+        {"name":"Monto Recibido","type":"number","precision":2},
+        {"name":"Fuente Tasa BCV","type":"singleLineText"},
+        {"name":"Fecha Tasa BCV","type":"dateTime"},
+        {"name":"Observaciones","type":"multilineText"}
+      ]
+    },
+    "Gastos del Mes": {
+      "mode":"extend",
+      "fields":[
+        {"name":"Mes de Aplicación","type":"singleLineText"},
+        {"name":"Estado del Gasto","type":"singleSelect","choices":["Activo","Programado","Cerrado","Anulado"]},
+        {"name":"Origen del Gasto","type":"singleSelect","choices":["Manual","Recurrente","Precarga"]},
+        {"name":"Clave de Plantilla","type":"singleLineText"},
+        {"name":"Precargado En","type":"dateTime"},
+        {"name":"Activado En","type":"dateTime"},
+        {"name":"Cerrado En","type":"dateTime"},
+        {"name":"Anulado En","type":"dateTime"},
+        {"name":"Motivo de Anulación","type":"multilineText"}
+      ]
+    },
     "Configuración": {
       "mode":"extend",
       "tableId":"tblvNGv2Ege0BEHr6",
@@ -167,10 +201,24 @@
         {"name":"External AI Fallback Enabled","type":"checkbox"},
         {"name":"Prompt Version","type":"singleLineText"},
         {"name":"Schema Version","type":"number","precision":0},
-        {"name":"Automatic Provisional Access Enabled","type":"checkbox"}
+        {"name":"Automatic Provisional Access Enabled","type":"checkbox"},
+        {"name":"Piloto Automático Habilitado","type":"checkbox"},
+        {"name":"Reglas Automáticas Confirmadas","type":"checkbox"},
+        {"name":"Día de Vencimiento","type":"number","precision":0},
+        {"name":"Porcentaje de Recargo","type":"number","precision":4},
+        {"name":"Aprobación Automática de Pagos","type":"checkbox"},
+        {"name":"Confianza Mínima Autopago","type":"number","precision":4},
+        {"name":"Control Automático Inteligente","type":"checkbox"},
+        {"name":"Día de Limitación Portón","type":"number","precision":0},
+        {"name":"Cierre Mensual Automático","type":"checkbox"},
+        {"name":"Precarga Automática","type":"checkbox"},
+        {"name":"Avisos Automáticos","type":"checkbox"},
+        {"name":"Variables Requieren Aprobación","type":"checkbox"}
       ],
       "initialValues": {
         "AI Enabled":false,
+        "AI Primary Model":"gemini-2.5-flash",
+        "AI Secondary Model":"gemini-3.5-flash",
         "AI Primary Timeout Seconds":45,
         "AI Maximum Primary Retries":1,
         "AI Secondary Enabled":false,
@@ -184,14 +232,26 @@
         "External AI Fallback Enabled":false,
         "Prompt Version":"VLA_PAYMENT_PROOF_V2_2026-07-13",
         "Schema Version":2,
-        "Automatic Provisional Access Enabled":false
+        "Automatic Provisional Access Enabled":false,
+        "Piloto Automático Habilitado":false,
+        "Reglas Automáticas Confirmadas":false,
+        "Día de Vencimiento":10,
+        "Porcentaje de Recargo":0.10,
+        "Aprobación Automática de Pagos":false,
+        "Confianza Mínima Autopago":0.97,
+        "Control Automático Inteligente":false,
+        "Día de Limitación Portón":11,
+        "Cierre Mensual Automático":false,
+        "Precarga Automática":false,
+        "Avisos Automáticos":false,
+        "Variables Requieren Aprobación":true
       }
     }
   },
   "invariants": [
     "No field is created when a case-insensitive equivalent exists.",
     "No existing select choice is renamed or removed.",
-    "AI Enabled and Automatic Provisional Access Enabled remain false after migration.",
+    "AI Enabled, Automatic Provisional Access Enabled and Piloto Automático Habilitado remain false after migration.",
     "No owner, payment, report, receipt, balance or MKJ status record is changed by schema migration.",
     "Every mutating migration step records an action/rollback ledger."
   ]

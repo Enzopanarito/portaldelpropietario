@@ -26,6 +26,12 @@
 [functions."airtable-usage-rollup-scheduled"]
   schedule = "30 4 * * *"
 
+[functions."condo-autopilot-scheduled"]
+  schedule = "0 4 * * *"
+
+[functions."payment-report-recovery-scheduled"]
+  schedule = "15 * * * *"
+
 [[edge_functions]]
 function = "pwa-head"
 path = "/*"

@@ -139,7 +139,7 @@ async function handler(event) {
   }
 
   try {
-    const formula = `OR(IFERROR(FIND('API_USAGE|${month}|',{Key}),0),IFERROR(FIND('API_CALL_V2|${month}|',{Key}),0),IFERROR(FIND('API_USAGE_MIGRATION_CHUNK|${month}|',{Key}),0),IFERROR(FIND('API_USAGE_DAILY|${month}-',{Key}),0),IFERROR(FIND('API_USAGE_BASELINE|${month}|',{Key}),0),IFERROR(FIND('API_USAGE_LIMIT|${month}|',{Key}),0))`;
+    const formula = `OR(FIND('API_USAGE|${month}|',{Key}),FIND('API_CALL_V2|${month}|',{Key}),FIND('API_USAGE_MIGRATION_CHUNK|${month}|',{Key}),FIND('API_USAGE_DAILY|${month}-',{Key}),FIND('API_USAGE_BASELINE|${month}|',{Key}),FIND('API_USAGE_LIMIT|${month}|',{Key}))`;
     let records;
     try {
       records = await airtableGetAll(`?pageSize=100&filterByFormula=${encodeURIComponent(formula)}`, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID);

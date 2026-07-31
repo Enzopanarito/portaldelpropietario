@@ -5,6 +5,11 @@
   "engines": {
     "node": ">=20"
   },
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "test:browser": "node --test tests/*.cjs",
+    "verify": "node scripts/predeploy-check.js && npm test"
+  },
   "dependencies": {
     "@netlify/blobs": "^10.7.9",
     "nodemailer": "^9.0.3",

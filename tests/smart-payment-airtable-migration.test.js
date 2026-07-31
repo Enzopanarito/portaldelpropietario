@@ -9,6 +9,7 @@ function baseMetadata(){return{tables:[
  {id:'tbl1CmkjMJEW0C6vG',name:'Propietarios',fields:[field('Propietario','singleLineText'),field('Casa','number'),field('Estado Acceso Portón','singleSelect',{choices:['Sin configurar','Habilitado','Limitado','Error Sync','Excepción Manual'].map(name=>({name}))}),field('Excepción Acceso','checkbox')]},
  {id:'tbliXVkmakLljmhM1',name:'Reportes de Pago',fields:[field('Reporte','singleLineText'),field('Propietario que Reporta','multipleRecordLinks',{linkedTableId:'tbl1CmkjMJEW0C6vG'}),field('Monto Reportado','currency'),field('Referencia','singleLineText'),field('Fecha del Reporte','date'),field('Estado','singleSelect',{choices:['Pendiente','Confirmado','Rechazado'].map(name=>({name}))}),field('Forma de Pago Reportada','singleSelect',{choices:['USD','Bs BCV'].map(name=>({name}))}),field('Monto Reportado Bs','currency'),field('Tasa BCV Reporte','number'),field('Equivalente USD Reportado','currency')]},
  {id:'tblBiEkE73eaQAYPu',name:'Pagos',fields:[field('ID de Pago','singleLineText')]},
+ {id:'tblExpense0000001',name:'Gastos del Mes',fields:[field('Concepto','singleLineText'),field('Monto','currency')]},
  {id:'tblvNGv2Ege0BEHr6',name:'Configuración',fields:[field('Configuración','singleLineText'),field('Modo Control Portón','singleSelect',{choices:[{name:'Automático'},{name:'Manual'}]})]}
 ]}}
 function response(status,data){return{ok:status>=200&&status<300,status,async text(){return JSON.stringify(data)}}}
@@ -43,9 +44,9 @@ function fakeAirtable(initial){
  const metadata=baseMetadata();
  const plan=migration.buildPlan(schema,metadata,{environment:'staging'});
  assert.strictEqual(plan.summary.createTables,1,'Debe crear únicamente Cuentas de Cobro Autorizadas.');
- assert.strictEqual(plan.summary.createFields,schema.tables['Reportes de Pago'].fields.length+schema.tables.Propietarios.fields.length+schema.tables.Configuración.fields.length);
+ assert.strictEqual(plan.summary.createFields,schema.tables['Reportes de Pago'].fields.length+schema.tables.Propietarios.fields.length+schema.tables.Pagos.fields.length+schema.tables['Gastos del Mes'].fields.length+schema.tables.Configuración.fields.length);
  assert.strictEqual(plan.summary.initializeConfig,1);
- assert(plan.actions.every(action=>!['Pagos','ControlVersiones'].includes(action.tableName)),'La migración no puede alterar tablas financieras.');
+ assert(plan.actions.every(action=>action.kind!=='delete-table'&&action.kind!=='delete-field'),'La migración solo puede extender el esquema.');
  const init=plan.actions.find(action=>action.kind==='initialize-config');
  assert.strictEqual(init.recordId,migration.STAGING_CONFIG_RECORD_ID);
  for(const flag of ['AI Enabled','AI Secondary Enabled','External AI Fallback Enabled','Automatic Provisional Access Enabled'])assert.strictEqual(init.fields[flag],false);

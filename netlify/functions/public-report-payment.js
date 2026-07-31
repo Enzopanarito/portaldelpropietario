@@ -4,8 +4,9 @@
 
 'use strict';
 
+const crypto=require('crypto');
 const { withAirtableUsage } = require('./_airtable_meter');
-const { airtableCreateRecord, airtableGetRecord, TABLES, money } = require('./_access_control');
+const { airtableCreateRecord, airtableGetRecord, airtablePatchRecord, TABLES, money } = require('./_access_control');
 const { pendingReportAccessDecision } = require('./_pending_report_access_policy');
 const { sendMail } = require('./_mailer');
 const { sanitizeReference, escapeHtml, cleanPlainText, safeDisplayText, deepEscapeStrings } = require('./_security_utils');
@@ -13,6 +14,8 @@ const { consume } = require('./_persistent_rate_limit');
 const { loadLastGood } = require('./_bcv_store');
 const { parseAmountInput, resolveAmount } = require('../../payment-report-intelligence');
 const { decodeAttachment } = require('./_payment_report_attachment');
+const { createProofStore } = require('./_payment_proof_store');
+const { sign } = require('./_internal_job_auth');
 
 const ALLOWED_MODES = new Set(['USD', 'Bs BCV']);
 const ALLOWED_ENTERED_CURRENCIES = new Set(['USD', 'BS']);
@@ -65,9 +68,9 @@ async function findRecentDuplicate({ownerId,mode,amountUsdRef,reference}){
   return reports.find(report=>{const fields=report.fields||{},owners=fields['Propietario que Reporta']||[],createdAt=Date.parse(report.createdTime||''),reportMode=String(fields['Forma de Pago Reportada']||''),reportAmount=money(Number(fields['Equivalente USD Reportado']||fields['Monto Reportado']||0)),reportReference=normalizeReference(fields.Referencia||'');return Array.isArray(owners)&&owners.includes(ownerId)&&reportMode===mode&&Math.abs(reportAmount-amountUsdRef)<=0.01&&reportReference===normalizedReference&&Number.isFinite(createdAt)&&createdAt>=cutoff;})||null;
 }
 
-async function notifyAdminPaymentReport({ownerId,mode,enteredCurrency,amountEntered,usdEq,amountBs,reference,rateInfo,reportId,access,bank,observations,attachment}){
+async function notifyAdminPaymentReport({ownerId,owner,mode,enteredCurrency,amountEntered,usdEq,amountBs,reference,rateInfo,reportId,access,bank,observations,attachment}){
   const to=process.env.ADMIN_NOTIFY_EMAIL||process.env.SMTP_USER||process.env.ADMIN_RECOVERY_EMAIL;if(!to)return{sent:false,status:'Sin correo administrador configurado'};
-  let owner=null;try{owner=await airtableGetRecord(TABLES.propietarios,ownerId)}catch(_){owner=null;}
+  if(!owner)try{owner=await airtableGetRecord(TABLES.propietarios,ownerId)}catch(_){owner=null;}
   const f=owner?.fields||{},casaRaw=cleanPlainText(f.Casa||'—',30),ownerRaw=cleanPlainText(f.Propietario||'Propietario',160),referenceRaw=sanitizeReference(reference)||'N/A';
   const accessRaw=access?.estado?`${cleanPlainText(access.estado,40)}${access.temporary?' temporal':''}`:(access?.skipped?cleanPlainText(access.reason,300):'Sin información');
   const accountText=mode==='USD'?'Deuda/cuenta pagadera en USD':'Deuda/cuenta pagadera en Bs a tasa BCV';
@@ -82,6 +85,20 @@ async function notifyAdminPaymentReport({ownerId,mode,enteredCurrency,amountEnte
     attachments:attachment?[{filename:attachment.filename,content:attachment.content,contentType:attachment.contentType}]:[],
     html:`<div style="font-family:Arial,sans-serif;color:#0f172a;line-height:1.5"><h2 style="margin:0 0 10px;color:#0f3d24">🚨 Nuevo pago reportado</h2><p>Se recibió un reporte desde el Portal del Propietario.</p><div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:14px;margin:14px 0"><p><b>Casa:</b> ${escapeHtml(casaRaw)}</p><p><b>Propietario:</b> ${escapeHtml(ownerRaw)}</p><p><b>Cuenta seleccionada:</b> ${escapeHtml(accountText)}</p><p><b>Monto escrito por el propietario:</b> ${escapeHtml(enteredText)}</p><p><b>Equivalente USD referencial:</b> ${escapeHtml(fmtUsd(usdEq))}</p>${targetBsText}${rateText}<p><b>Referencia:</b> ${escapeHtml(referenceRaw)}</p><p><b>Banco o método:</b> ${escapeHtml(bankText)}</p><p><b>Observaciones:</b> ${escapeHtml(observationsText)}</p>${attachmentText}<p><b>Fecha automática:</b> ${escapeHtml(nowCaracasLabel())}</p><p><b>Reporte:</b> ${escapeHtml(reportId||'—')}</p><p><b>Portón:</b> ${escapeHtml(accessRaw)}</p></div><p><a href="https://villalosapamates.netlify.app/admin.html" style="display:inline-block;background:#0f3d24;color:white;text-decoration:none;padding:12px 18px;border-radius:12px;font-weight:bold">Abrir Admin VLA</a></p></div>`
   });
+}
+
+async function storeEncryptedProof(reportId,attachment){
+  if(!attachment)return null;
+  const sha256=crypto.createHash('sha256').update(attachment.content).digest('hex'),store=createProofStore();
+  const stored=await store.put({reportId,content:attachment.content,contentType:attachment.contentType,attachmentSha:sha256});
+  await airtablePatchRecord(TABLES.reportes,reportId,{'Comprobante Blob Key':stored.key,'Comprobante Nombre Original':attachment.filename,'Comprobante MIME':attachment.contentType,'Comprobante Bytes':attachment.size,'Hash SHA-256':sha256,'Estado de Procesamiento':'Recibido'});
+  return{...stored,sha256};
+}
+async function triggerBackgroundAnalysis(reportId){
+  const siteUrl=String(process.env.URL||process.env.DEPLOY_PRIME_URL||'').replace(/\/$/,'');if(!siteUrl)return{queued:false,status:'SITE_URL_MISSING'};
+  const payload=JSON.stringify({reportId}),authorization=sign(payload);
+  const response=await fetch(`${siteUrl}/.netlify/functions/payment-report-analyzer-background`,{method:'POST',headers:{'Content-Type':'application/json','x-vla-job-timestamp':authorization.timestamp,'x-vla-job-signature':authorization.signature},body:payload});
+  return{queued:response.ok,status:response.status};
 }
 
 const handler = async function(event){
@@ -107,16 +124,22 @@ const handler = async function(event){
     if(!resolved.ok||!(resolved.amountUsdRef>0)||resolved.amountUsdRef>1000000)return json(400,{message:'El monto convertido no es válido.'});
     const usdEq=money(resolved.amountUsdRef),amountBs=mode==='Bs BCV'?money(usdEq*rateInfo.rate):(enteredCurrency==='BS'?money(amount):0);
     const attachment=decodeAttachment(body.attachment);
+    const owner=await airtableGetRecord(TABLES.propietarios,ownerId);
+    const ownerFields=owner?.fields||{},ownerLimited=String(ownerFields['Estado Acceso Portón']||'')==='Limitado';
+    if(ownerLimited&&!attachment)return json(400,{message:'Para una casa con acceso limitado es obligatorio adjuntar el comprobante.'});
 
     const duplicate=await findRecentDuplicate({ownerId,mode,amountUsdRef:usdEq,reference});
     if(duplicate)return json(409,{success:false,duplicate:true,retryAfterSeconds:300,message:'Este pago ya fue reportado recientemente. La administración se encuentra verificándolo. Espere al menos 5 minutos antes de intentar nuevamente.'},{'Retry-After':'300'});
 
-    const fields={'Propietario que Reporta':[ownerId],'Monto Reportado':usdEq,Referencia:reference,Estado:'Pendiente','Fecha del Reporte':todayCaracasISO(),'Forma de Pago Reportada':mode,'Equivalente USD Reportado':usdEq};
+    const fields={'Propietario que Reporta':[ownerId],'Monto Reportado':usdEq,Referencia:reference,Estado:'Pendiente','Fecha del Reporte':todayCaracasISO(),'Forma de Pago Reportada':mode,'Equivalente USD Reportado':usdEq,'Estado Acceso al Reportar':String(ownerFields['Estado Acceso Portón']||'Sin configurar'),'Casa al Reportar':Number(ownerFields.Casa||0),'Fecha y Hora del Reporte':new Date().toISOString(),'Moneda Ingresada':enteredCurrency==='BS'?'VES':'USD','Monto Ingresado':amount,'Fuente Tasa BCV Reporte':rateInfo.source,'Archivo Obligatorio':ownerLimited,'Estado de Procesamiento':attachment?'Validando archivo':'Pendiente de administrador',...(bank?{'Banco Reportado':bank}:{}),...(observations?{'Observaciones Reportadas':observations}:{})};
     if(mode==='Bs BCV'){fields['Monto Reportado Bs']=amountBs;fields['Tasa BCV Reporte']=rateInfo.rate;}
     const report=await airtableCreateRecord(TABLES.reportes,fields);
     const access=pendingReportAccessDecision(report?.id);
-    let adminNotification=null;try{adminNotification=await notifyAdminPaymentReport({ownerId,mode,enteredCurrency,amountEntered:amount,usdEq,amountBs,reference,rateInfo,reportId:report?.id,access,bank,observations,attachment});}catch(error){adminNotification={sent:false,status:'Error enviando notificación admin',detail:safeDisplayText(error.message,500)};}
-    return json(200,deepEscapeStrings({success:true,message:'Pago reportado correctamente. La administración verificará la información en un plazo no mayor de 72 horas.',reportId:report?.id,targetMode:mode,enteredCurrency,amountEntered:amount,amountUsdRef:usdEq,amountBs,rateApplied:rateInfo.rate||null,attachmentIncluded:Boolean(attachment),access,adminNotification}));
+    let proof=null,automation={queued:false,status:attachment?'PROOF_STORAGE_FAILED':'NO_ATTACHMENT'};
+    if(attachment)try{proof=await storeEncryptedProof(report.id,attachment);automation=await triggerBackgroundAnalysis(report.id)}catch(error){automation={queued:false,status:safeDisplayText(error.code||error.message,160)}}
+    let adminNotification=null;try{adminNotification=await notifyAdminPaymentReport({ownerId,owner,mode,enteredCurrency,amountEntered:amount,usdEq,amountBs,reference,rateInfo,reportId:report?.id,access,bank,observations,attachment});}catch(error){adminNotification={sent:false,status:'Error enviando notificación admin',detail:safeDisplayText(error.message,500)};}
+    const message=automation.queued?'Pago recibido. El motor inteligente está validando el comprobante; solo una inconsistencia requerirá revisión humana.':'Pago reportado correctamente. Quedó protegido y pendiente de verificación.';
+    return json(200,deepEscapeStrings({success:true,message,reportId:report?.id,targetMode:mode,enteredCurrency,amountEntered:amount,amountUsdRef:usdEq,amountBs,rateApplied:rateInfo.rate||null,attachmentIncluded:Boolean(attachment),proofStored:Boolean(proof),automation,access,adminNotification}));
   }catch(error){
     const clientError=/comprobante|adjunto|formato|3 MB|datos inválidos/i.test(String(error.message||''));
     return json(clientError?400:500,{message:clientError?'No se pudo procesar el comprobante.':'Error guardando reporte.',detail:safeDisplayText(error.message,500)});
@@ -125,3 +148,5 @@ const handler = async function(event){
 
 exports.handler = withAirtableUsage('public-report-payment', handler);
 exports.pendingReportAccessDecision = pendingReportAccessDecision;
+exports.storeEncryptedProof = storeEncryptedProof;
+exports.triggerBackgroundAnalysis = triggerBackgroundAnalysis;

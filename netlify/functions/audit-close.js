@@ -243,7 +243,7 @@ async function loadContext({ token, baseId, counter, month, retentionDays, cutof
   const ownerQuery = withFields('', OWNER_FIELDS);
   const paymentQuery = withFields('', PAYMENT_FIELDS);
   const receiptQuery = withFields('', RECEIPT_FIELDS);
-  const snapshotQuery = `?filterByFormula=${encodeURIComponent(`IFERROR(FIND('AUDITORIA|${month}|', {Concepto}), 0)`)}`;
+  const snapshotQuery = `?filterByFormula=${encodeURIComponent(`FIND('AUDITORIA|${month}|', {Concepto})`)}`;
   const controlQuery = `?filterByFormula=${encodeURIComponent(`LEFT({Key}, 7)='FIN_OP|'`)}`;
 
   const [owners, payments, receipts, snapshots, controls] = await Promise.all([

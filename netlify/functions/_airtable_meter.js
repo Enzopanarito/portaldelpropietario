@@ -6,7 +6,7 @@ const CONTROL_TABLE='ControlVersiones';
 const AIRTABLE_PREFIX='https://api.airtable.com/v0/';
 const DAILY_PREFIX='API_USAGE_DAILY|';
 const DEFAULT_MONTHLY_LIMIT=1000;
-const PUBLIC_SNAPSHOT_MUTATION_SOURCES=new Set(['admin-manual-payment','process-payment-report','admin-expense','batch-delete-records','monthly-close-v2']);
+const PUBLIC_SNAPSHOT_MUTATION_SOURCES=new Set(['admin-manual-payment','process-payment-report','admin-expense','admin-expense-action','batch-delete-records','monthly-close-v2','monthly-close-v4','automation-settings','access-auto-sync','mkj-access']);
 const storage=new AsyncLocalStorage();
 const rawFetch=globalThis.__VLA_AIRTABLE_RAW_FETCH||globalThis.fetch.bind(globalThis);
 
@@ -59,7 +59,7 @@ async function persistUsage(state){
 }
 
 function parseResponseBody(response){try{return JSON.parse(response&&response.body||'{}')}catch(_){return{}}}
-function shouldInvalidatePublicSnapshot(source,event,response){if(!PUBLIC_SNAPSHOT_MUTATION_SOURCES.has(source))return false;if(String(event&&event.httpMethod||'GET').toUpperCase()==='GET')return false;const status=Number(response&&response.statusCode||0);if(status<200||status>=300)return false;const body=parseResponseBody(response);if(source==='monthly-close-v2'&&body.dryRun===true)return false;return body.success!==false}
+function shouldInvalidatePublicSnapshot(source,event,response){if(!PUBLIC_SNAPSHOT_MUTATION_SOURCES.has(source))return false;if(String(event&&event.httpMethod||'GET').toUpperCase()==='GET')return false;const status=Number(response&&response.statusCode||0);if(status<200||status>=300)return false;const body=parseResponseBody(response);if((source==='monthly-close-v2'||source==='monthly-close-v4')&&body.dryRun===true)return false;if(source==='mkj-access'&&body.action==='test-login')return false;return body.success!==false}
 async function invalidatePublicSnapshotAfterMutation(source,event,response,state){
  if(!shouldInvalidatePublicSnapshot(source,event,response))return;
  try{

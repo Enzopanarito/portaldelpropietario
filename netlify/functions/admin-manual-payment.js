@@ -13,9 +13,11 @@ const { createAndSendReceipt } = require('./_receipt_service');
 const { begin, setState } = require('./_operation_guard');
 const { hashPayload } = require('./_idempotency_blobs');
 const { ensureFinancialWritesAllowed } = require('./_financial_write_lock');
-const { sanitizeReference, safeDisplayText, deepEscapeStrings } = require('./_security_utils');
+const { sanitizeReference, cleanPlainText, safeDisplayText, deepEscapeStrings } = require('./_security_utils');
+const { loadLastGood } = require('./_bcv_store');
 
 const ALLOWED_MODES = new Set(['USD', 'Bs BCV']);
+const ALLOWED_ENTERED_CURRENCIES = new Set(['USD', 'BS', 'USD_REF']);
 const FALLBACK_WINDOW_MS = 5 * 60 * 1000;
 
 function json(statusCode, body) {
@@ -36,19 +38,44 @@ function validRecordId(id) {
 function validOperationId(value) {
   return /^[A-Za-z0-9_-]{8,120}$/.test(String(value || ''));
 }
-function operationKey(body, ownerId, mode, amountUsdRef, rate, reference) {
+function validPaymentDate(value) {
+  const date=String(value||'').slice(0,10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return'';
+  const parsed=Date.parse(`${date}T12:00:00.000Z`);
+  const today=Date.parse(`${todayCaracasISO()}T12:00:00.000Z`);
+  return Number.isFinite(parsed)&&parsed<=today&&parsed>=today-(10*365*86400000)?date:'';
+}
+async function resolveRate(clientRate) {
+  const stored=await loadLastGood().catch(()=>null);
+  const official=Number(stored?.rate||0);
+  if(official>0)return{rate:official,source:stored?.source||'BCV persistida',updatedAt:stored?.updatedAt||stored?.fetchedAt||null};
+  const fallback=Number(clientRate||0);
+  return fallback>0&&fallback<1000000?{rate:fallback,source:'BCV mostrada en el panel',updatedAt:null}:{rate:0,source:'No disponible',updatedAt:null};
+}
+function resolveAmounts({mode,enteredCurrency,amount,rate}) {
+  if(mode==='USD'&&enteredCurrency==='BS')return{ok:false,message:'Un pago en bolívares no puede aplicarse directamente a la cuenta USD.'};
+  if(enteredCurrency==='BS'){
+    if(!(rate>0))return{ok:false,message:'No hay tasa BCV disponible.'};
+    return{ok:true,amountUsdRef:money(amount/rate),amountBs:money(amount)};
+  }
+  const amountUsdRef=money(amount);
+  return{ok:true,amountUsdRef,amountBs:mode==='Bs BCV'?money(amountUsdRef*rate):0};
+}
+function operationKey(body, ownerId, mode, amountUsdRef, rate, reference, date, enteredCurrency) {
   const supplied = String(body.operationId || '').trim();
   if (validOperationId(supplied)) return `CLIENT|${supplied}`;
   const window = Math.floor(Date.now() / FALLBACK_WINDOW_MS);
-  return `FALLBACK|${ownerId}|${mode}|${amountUsdRef.toFixed(2)}|${Number(rate || 0).toFixed(6)}|${reference}|${window}`;
+  return `FALLBACK|${ownerId}|${mode}|${enteredCurrency}|${amountUsdRef.toFixed(2)}|${Number(rate || 0).toFixed(6)}|${date}|${reference}|${window}`;
 }
-function operationPayload(ownerId, mode, amountUsdRef, rate, reference) {
+function operationPayload(ownerId, mode, amountUsdRef, rate, reference, date, enteredCurrency) {
   return {
     ownerId,
     mode,
     amountUsdRef: money(amountUsdRef),
     rate: mode === 'Bs BCV' ? Number(Number(rate || 0).toFixed(6)) : 0,
-    reference
+    reference,
+    date,
+    enteredCurrency
   };
 }
 
@@ -69,19 +96,30 @@ const handler = async function(event) {
     const body = JSON.parse(event.body || '{}');
     const ownerId = String(body.ownerId || '').trim();
     const mode = String(body.mode || '').trim();
-    const amountUsdRef = money(Number(body.amount || 0));
-    const rate = Number(body.rate || 0);
+    const enteredCurrency = String(body.enteredCurrency || 'USD_REF').trim().toUpperCase();
+    const enteredAmount = money(Number(body.amount || 0));
+    const rateInfo = await resolveRate(body.rate);
+    const rate = Number(rateInfo.rate || 0);
     const reference = sanitizeReference(body.reference || 'Pago manual admin') || 'Pago manual admin';
+    const paymentDate=validPaymentDate(body.date||todayCaracasISO());
+    const observations=cleanPlainText(body.observations||'',300);
 
     if (!validRecordId(ownerId)) return json(400, { message: 'Propietario inválido.' });
     if (!ALLOWED_MODES.has(mode)) return json(400, { message: 'Forma de pago inválida.' });
-    if (!(amountUsdRef > 0)) return json(400, { message: 'Ingrese un monto válido en USD referencial.' });
-    if (mode === 'Bs BCV' && !(rate > 0)) {
+    if (!ALLOWED_ENTERED_CURRENCIES.has(enteredCurrency)) return json(400,{message:'Moneda recibida inválida.'});
+    if (!(enteredAmount > 0)) return json(400, { message: 'Ingrese un monto válido.' });
+    if (!paymentDate)return json(400,{message:'La fecha del pago no es válida o está en el futuro.'});
+    if ((mode === 'Bs BCV'||enteredCurrency==='BS') && !(rate > 0)) {
       return json(400, { message: 'No hay tasa BCV disponible. Actualice el admin e intente de nuevo.' });
     }
+    const resolved=resolveAmounts({mode,enteredCurrency,amount:enteredAmount,rate});
+    if(!resolved.ok)return json(400,{message:resolved.message});
+    const amountUsdRef=resolved.amountUsdRef;
+    const amountBs=resolved.amountBs;
+    if(!(amountUsdRef>0))return json(400,{message:'El equivalente del pago no es válido.'});
 
-    operationBusinessKey = operationKey(body, ownerId, mode, amountUsdRef, rate, reference);
-    const payloadHash = hashPayload(operationPayload(ownerId, mode, amountUsdRef, rate, reference));
+    operationBusinessKey = operationKey(body, ownerId, mode, amountUsdRef, rate, reference, paymentDate, enteredCurrency);
+    const payloadHash = hashPayload(operationPayload(ownerId, mode, amountUsdRef, rate, reference, paymentDate, enteredCurrency));
     const guard = await begin('MANUAL_PAYMENT', operationBusinessKey, { payloadHash });
     if (!guard.ok) {
       if (guard.reason === 'done') {
@@ -119,13 +157,17 @@ const handler = async function(event) {
     operation = guard.marker;
 
     const usdEq = amountUsdRef;
-    const amountBs = mode === 'Bs BCV' ? money(amountUsdRef * rate) : 0;
     const fields = {
       'Propietario que Paga': [ownerId],
-      'Fecha de Pago': todayCaracasISO(),
+      'Fecha de Pago': paymentDate,
       'Forma de Pago': mode,
       'Monto Pagado': usdEq,
-      'Equivalente USD Aplicado': usdEq
+      'Equivalente USD Aplicado': usdEq,
+      'Moneda Recibida':enteredCurrency==='BS'?'VES':'USD',
+      'Monto Recibido':enteredAmount,
+      'Fuente Tasa BCV':rateInfo.source,
+      ...(rateInfo.updatedAt?{'Fecha Tasa BCV':rateInfo.updatedAt}:{}),
+      ...(observations?{Observaciones:observations}:{})
     };
     if (mode === 'Bs BCV') {
       fields['Monto Pagado Bs'] = amountBs;
@@ -145,7 +187,8 @@ const handler = async function(event) {
         amountUsd: usdEq,
         amountBs,
         reference,
-        concept: 'Pago manual registrado desde el panel administrativo'
+        date:paymentDate,
+        concept: observations ? `Pago manual registrado desde el panel administrativo. ${observations}` : 'Pago manual registrado desde el panel administrativo'
       });
     } catch (error) {
       receipt = { success: false, warning: safeDisplayText(error.message, 500) };
@@ -175,9 +218,13 @@ const handler = async function(event) {
       warning:guardWarning,
       paymentId,
       amount: amountUsdRef,
+      enteredAmount,
+      enteredCurrency,
       amountUsdRef,
       amountBs,
       mode,
+      paymentDate,
+      rateSource:rateInfo.source,
       usdEq,
       receipt:deepEscapeStrings(receipt),
       access:deepEscapeStrings(access)
@@ -200,3 +247,4 @@ const handler = async function(event) {
 };
 
 exports.handler = withAirtableUsage('admin-manual-payment', handler);
+exports._test={validPaymentDate,resolveAmounts,operationKey,operationPayload};

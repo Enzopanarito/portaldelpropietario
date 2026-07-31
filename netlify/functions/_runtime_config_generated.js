@@ -1,7 +1,6 @@
 'use strict';
 
-// Este archivo se regenera durante cada build de Netlify.
-// El valor versionado es deliberadamente seguro para desarrollo y CI.
+// Valor seguro para CI/local. El build de Netlify reemplaza este archivo.
 module.exports=Object.freeze({
  schemaVersion:1,
  generated:false,

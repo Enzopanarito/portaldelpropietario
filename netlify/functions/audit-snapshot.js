@@ -10,12 +10,18 @@ const { requireAdmin } = require('./_auth');
 const { begin, setState } = require('./_operation_guard');
 const { safeDisplayText } = require('./_security_utils');
 const { hashJson } = require('./_audit_cleanup');
+const { calculateOwnerBalance } = require('./_balance_engine_v4');
+const { filterActiveExpenses } = require('./_expense_lifecycle');
+const { attachOfficialBalances, officialControlQuery } = require('./_official_balances');
+const { mergeConfig } = require('./_automation_rules');
 
 const TABLES = {
   propietarios: 'Propietarios',
   gastos: 'Gastos del Mes',
   pagos: 'Pagos',
-  historial: 'Historial de Cargos'
+  historial: 'Historial de Cargos',
+  control:'ControlVersiones',
+  config:'Configuración'
 };
 const HF = { propietario: 'Propietario', monto: 'Monto Cargado', concepto: 'Concepto', fecha: 'Fecha' };
 const ROWS_PER_OWNER = 10;
@@ -109,7 +115,10 @@ function ownerShare(gasto, owner) {
   const type = fields['Tipo de Gasto'];
   const linked = fields.Propietarios || [];
   const share = Number(owner.fields?.Alicuota || 0);
-  if (type === 'Gasto Común') return money(amount * share);
+  if (type === 'Gasto Común') {
+    if (linked.length && !linked.includes(owner.id)) return 0;
+    return money(amount * share);
+  }
   if (type === 'Gasto Especial' && linked.includes(owner.id)) return money(amount / (linked.length || 1));
   return 0;
 }
@@ -133,68 +142,14 @@ function explicitNegativeSplit(total, initialUsd, initialBs, rawUsd, rawBs) {
   return { usd, bs: money(total - usd) };
 }
 
-function compute(owner, gastos, pagos, transitionMode) {
-  const fields = owner.fields || {};
-  const initialUsd = Number(fields['Deuda Anterior USD'] || 0);
-  const initialBsBase = Number(fields['Deuda Anterior Bs Ref'] || 0);
-  const splitExists = Math.abs(initialUsd) > 0.001 || Math.abs(initialBsBase) > 0.001;
-  let initialBs = initialBsBase;
-  if (!splitExists) initialBs += Number(fields['Deuda Anterior'] || 0);
-
-  let chargesUsd = 0;
-  let chargesBs = 0;
-  let paidUsd = 0;
-  let paidBs = 0;
-  for (const gasto of gastos) {
-    const share = ownerShare(gasto, owner);
-    if (share <= 0) continue;
-    const mode = gasto.fields?.['Forma de Pago'] || 'Bs BCV';
-    if (mode === 'USD') chargesUsd += share;
-    else chargesBs += share;
-  }
-  for (const payment of pagos) {
-    if (isAppliedPayment(payment)) continue;
-    if (!((payment.fields || {})['Propietario que Paga'] || []).includes(owner.id)) continue;
-    const mode = payment.fields?.['Forma de Pago'] || 'Bs BCV';
-    const amount = paymentEquivalentUsd(payment);
-    if (mode === 'USD') paidUsd += amount;
-    else paidBs += amount;
-  }
-
-  const rawUsd = money(initialUsd + chargesUsd - paidUsd);
-  const rawBs = money(initialBs + chargesBs - paidBs);
-  const rawTotal = money(rawUsd + rawBs);
-  const legacyTotal = money(fields['Deuda Restante']);
-  let finalUsd = rawUsd;
-  let finalBs = rawBs;
-  let total = rawTotal;
-
-  if (transitionMode) {
-    total = legacyTotal;
-    if (total <= 0.01) {
-      const negative = explicitNegativeSplit(total, initialUsd, initialBsBase, rawUsd, rawBs);
-      finalUsd = negative.usd;
-      finalBs = negative.bs;
-    } else {
-      const positiveUsd = Math.max(0, rawUsd);
-      const positiveBs = Math.max(0, rawBs);
-      const positiveTotal = positiveUsd + positiveBs;
-      if (positiveTotal <= 0.01) {
-        finalUsd = 0;
-        finalBs = total;
-      } else {
-        finalUsd = money(total * (positiveUsd / positiveTotal));
-        finalBs = money(total - finalUsd);
-      }
-    }
-  }
-
+function compute(owner, gastos, pagos, transitionMode, month=currentMonthCaracas(),rules=mergeConfig({})) {
+  const balance=calculateOwnerBalance(owner,gastos,pagos,{month,day:31,dueDay:rules.payment.dueDay,surchargeRate:rules.payment.surchargeRate});
   return {
-    initialUsd: money(initialUsd), initialBs: money(initialBs),
-    chargesUsd: money(chargesUsd), chargesBs: money(chargesBs),
-    paidUsd: money(paidUsd), paidBs: money(paidBs),
-    finalUsd: money(finalUsd), finalBs: money(finalBs), total: money(total),
-    rawTotal, legacyTotal
+    initialUsd:money(balance.priorUsd),initialBs:money(balance.priorBsRef),
+    chargesUsd:money(balance.chargesUsd),chargesBs:money(balance.chargesBsRef),
+    paidUsd:money(balance.paidUsd),paidBs:money(balance.paidBsRef),
+    finalUsd:money(balance.usd),finalBs:money(balance.bsRef),total:money(balance.totalRef),
+    rawTotal:money(balance.totalRef),legacyTotal:money(owner?.fields?.['Deuda Restante'])
   };
 }
 
@@ -227,7 +182,7 @@ function rows(owner, calculation, month, date, transitionMode) {
 }
 
 function auditQuery(month) {
-  return `?filterByFormula=${encodeURIComponent(`IFERROR(FIND('AUDITORIA|${month}|', {Concepto}), 0)`)}`;
+  return `?filterByFormula=${encodeURIComponent(`FIND('AUDITORIA|${month}|', {Concepto})`)}`;
 }
 
 const handler = async function(event) {
@@ -246,15 +201,19 @@ const handler = async function(event) {
     const month = normalizeMonth(body.month);
     const date = String(body.date || todayCaracasISO()).slice(0, 10);
 
-    const [owners, gastos, pagos, existing] = await Promise.all([
+    const [rawOwners, gastos, pagos, existing, officialRecords,configRecords] = await Promise.all([
       getAll(TABLES.propietarios, '', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter),
       getAll(TABLES.gastos, '', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter),
       getAll(TABLES.pagos, '', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter),
-      getAll(TABLES.historial, auditQuery(month), AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter)
+      getAll(TABLES.historial, auditQuery(month), AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter),
+      getAll(TABLES.control,officialControlQuery(),AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID,counter),
+      getAll(TABLES.config,'?maxRecords=1',AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID,counter)
     ]);
 
-    const transitionMode = hasLegacyIndividualCharges(gastos);
-    const expectedRows = owners.flatMap(owner => rows(owner, compute(owner, gastos, pagos, transitionMode), month, date, transitionMode));
+    const owners=attachOfficialBalances(rawOwners,officialRecords,month),rules=mergeConfig(configRecords[0]||{});
+    const activeGastos=filterActiveExpenses(gastos,month);
+    const transitionMode = hasLegacyIndividualCharges(activeGastos);
+    const expectedRows = owners.flatMap(owner => rows(owner, compute(owner, activeGastos, pagos, transitionMode, month,rules), month, date, transitionMode));
     const existingConcepts = new Set(existing.map(record => String(record.fields?.Concepto || '')));
     let missingRows = expectedRows.filter(row => !existingConcepts.has(String(row.fields?.Concepto || '')));
     const expectedCount = owners.length * ROWS_PER_OWNER;

@@ -7,6 +7,7 @@ const { requireAdmin } = require('./_auth');
 const { ensureFinancialWritesAllowed } = require('./_financial_write_lock');
 const { begin, setState } = require('./_operation_guard');
 const { cleanPlainText, deepEscapeStrings, safeDisplayText } = require('./_security_utils');
+const { currentMonthCaracas, nextMonth, newExpenseLifecycleFields, compactTemplate, templateKey, FIELDS, ORIGIN } = require('./_expense_lifecycle');
 
 const TABLE_GASTOS = 'Gastos del Mes';
 const TABLE_OWNERS = 'Propietarios';
@@ -34,9 +35,9 @@ async function existingOwnerIds() {
   } while (offset);
   return ids;
 }
-function businessKey({ concept, amount, type, mode, frequency, ownerIds }) {
+function businessKey({ concept, amount, type, mode, frequency, ownerIds, month }) {
   const window = Math.floor(Date.now() / 300000);
-  const input = JSON.stringify({ concept, amount, type, mode, frequency, ownerIds:[...ownerIds].sort(), window });
+  const input = JSON.stringify({ concept, amount, type, mode, frequency, month, ownerIds:[...ownerIds].sort(), window });
   return crypto.createHash('sha256').update(input).digest('hex');
 }
 
@@ -50,17 +51,20 @@ const handler = async function(event) {
     const lock = await ensureFinancialWritesAllowed(); if (!lock.ok) return lock.response;
     const body = JSON.parse(event.body || '{}');
     const concept = cleanPlainText(body.concept, 160), amount = money(body.amount), type = String(body.type || ''), mode = String(body.mode || ''), frequency = String(body.frequency || 'Eventual');
+    const currentMonth=currentMonthCaracas(),allowedMonths=new Set([currentMonth,nextMonth(currentMonth)]);
+    const month=/^\d{4}-(0[1-9]|1[0-2])$/.test(String(body.month||''))?String(body.month):currentMonth;
     const ownerIds = [...new Set((Array.isArray(body.ownerIds) ? body.ownerIds : []).map(value => String(value || '').trim()).filter(validRecordId))];
     if (!concept) return json(400, { message:'El concepto es obligatorio.' });
     if (!(amount > 0) || amount > 1000000) return json(400, { message:'El monto del gasto no es válido.' });
     if (!ALLOWED_TYPES.has(type)) return json(400, { message:'Tipo de gasto inválido.' });
     if (!ALLOWED_MODES.has(mode)) return json(400, { message:'Forma de pago inválida.' });
     if (!ALLOWED_FREQUENCIES.has(frequency)) return json(400, { message:'Frecuencia inválida.' });
+    if (!allowedMonths.has(month)) return json(400, { message:'Solo puede registrar el mes actual o precargar el mes siguiente.' });
     if (!ownerIds.length) return json(400, { message:'Debe seleccionar al menos un propietario.' });
 
     const owners = await existingOwnerIds();
     if (ownerIds.some(id => !owners.has(id))) return json(400, { message:'La selección contiene un propietario inválido.' });
-    key = businessKey({ concept, amount, type, mode, frequency, ownerIds });
+    key = businessKey({ concept, amount, type, mode, frequency, ownerIds, month });
     const guard = await begin('EXPENSE_CREATE', key);
     if (!guard.ok) {
       if (guard.reason === 'done') return json(200, { success:true,idempotent:true,recordId:guard.marker?.resultId||null,message:'Este gasto ya había sido creado. No se duplicó.' });
@@ -68,11 +72,12 @@ const handler = async function(event) {
       return json(409, { success:false,protected:true,message:'Este gasto ya está siendo creado. Espere y actualice el panel.' });
     }
     operation = guard.marker;
-    const fields = { Concepto:concept, Monto:amount, 'Tipo de Gasto':type, Frecuencia:frequency, Propietarios:ownerIds, 'Forma de Pago':mode };
+    const fields = { Concepto:concept, Monto:amount, 'Tipo de Gasto':type, Frecuencia:frequency, Propietarios:ownerIds, 'Forma de Pago':mode, ...newExpenseLifecycleFields({month,origin:month===currentMonth?ORIGIN.MANUAL:ORIGIN.PRELOAD}) };
+    if(month!==currentMonth)fields[FIELDS.templateKey]=templateKey(compactTemplate({fields},month));
     const data = await request(TABLE_GASTOS, { method:'POST', body:JSON.stringify({ records:[{ fields }], typecast:true }) });
     const record = data.records?.[0] || null; recordId = record?.id || '';
     await setState(operation, 'EXPENSE_CREATE', key, 'DONE', recordId);
-    return json(200, deepEscapeStrings({ success:true,record,message:type==='Gasto Especial'?`Gasto especial creado entre ${ownerIds.length} propietario(s).`:'Gasto común creado correctamente.' }));
+    return json(200, deepEscapeStrings({ success:true,record,month,scheduled:month!==currentMonthCaracas(),message:month!==currentMonthCaracas()?`Gasto precargado para ${month}; se activará con el cierre.`:type==='Gasto Especial'?`Gasto especial creado entre ${ownerIds.length} propietario(s).`:'Gasto común creado correctamente.' }));
   } catch (error) {
     if (operation) await setState(operation, 'EXPENSE_CREATE', key, recordId ? 'PARTIAL' : 'ERROR', recordId).catch(() => null);
     return json(500, { success:false,protected:true,partial:Boolean(recordId),recordId:recordId||null,message:recordId?'El gasto pudo haberse creado antes del error. Revise la tabla antes de repetir.':'No se pudo crear el gasto.',detail:safeDisplayText(error.message,500) });

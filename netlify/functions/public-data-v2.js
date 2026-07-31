@@ -5,6 +5,8 @@ const { withAirtableUsage } = require('./_airtable_meter');
 const { deepEscapeStrings } = require('./_security_utils');
 const { calculateAllOwners, calculatedFields } = require('./_balance_engine_v4');
 const { attachOfficialBalances, officialControlQuery } = require('./_official_balances');
+const { filterActiveExpenses, currentMonthCaracas, FIELDS:EXPENSE_FIELDS } = require('./_expense_lifecycle');
+const { mergeConfig, publicRules } = require('./_automation_rules');
 
 let publicCache = null;
 const PUBLIC_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -12,7 +14,8 @@ const TABLES = {
   propietarios: 'Propietarios',
   gastos: 'Gastos del Mes',
   pagos: 'Pagos',
-  control: 'ControlVersiones'
+  control: 'ControlVersiones',
+  config:'Configuración'
 };
 
 function nowCaracasLabel() {
@@ -70,7 +73,9 @@ function compactGasto(record) {
   return { id: record.id, fields: {
     Concepto: f.Concepto, Monto: f.Monto, 'Tipo de Gasto': f['Tipo de Gasto'],
     Frecuencia: f.Frecuencia, Propietarios: f.Propietarios || [],
-    'Forma de Pago': f['Forma de Pago'] || 'Bs BCV'
+    'Forma de Pago': f['Forma de Pago'] || 'Bs BCV',
+    [EXPENSE_FIELDS.month]:f[EXPENSE_FIELDS.month]||'',
+    [EXPENSE_FIELDS.status]:f[EXPENSE_FIELDS.status]||'Activo'
   }};
 }
 function compactPago(record) {
@@ -82,7 +87,10 @@ function compactPago(record) {
     'Forma de Pago': f['Forma de Pago'] || null,
     'Monto Pagado Bs': f['Monto Pagado Bs'] || 0,
     'Tasa BCV Aplicada': f['Tasa BCV Aplicada'] || 0,
-    'Equivalente USD Aplicado': f['Equivalente USD Aplicado'] || 0
+    'Equivalente USD Aplicado': f['Equivalente USD Aplicado'] || 0,
+    'Moneda Recibida':f['Moneda Recibida']||'',
+    'Monto Recibido':f['Monto Recibido']||0,
+    'Fuente Tasa BCV':f['Fuente Tasa BCV']||''
   }};
 }
 const handler = async function(event) {
@@ -92,20 +100,23 @@ const handler = async function(event) {
   if (!force && publicCache && publicCache.expiresAt > Date.now()) return { statusCode: 200, headers: responseHeaders(0, 'HIT'), body: JSON.stringify(publicCache.payload) };
   const counter = { calls: 0 };
   try {
-    const [owners, expenses, payments, control] = await Promise.all([
+    const [owners, expenses, payments, control,config] = await Promise.all([
       airtableGetAll(TABLES.propietarios, '', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter),
       airtableGetAll(TABLES.gastos, '?view=Gastos%20Mensuales', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter),
       airtableGetAll(TABLES.pagos, '', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter),
-      airtableGetAll(TABLES.control, officialControlQuery(), AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter)
+      airtableGetAll(TABLES.control, officialControlQuery(), AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter),
+      airtableGetAll(TABLES.config,'?maxRecords=1',AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID,counter)
     ]);
-    const officialOwners = attachOfficialBalances(owners, control);
-    const balances = calculateAllOwners(officialOwners, expenses, payments);
+    const officialOwners = attachOfficialBalances(owners, control),rules=mergeConfig(config[0]||{});
+    const activeExpenses=filterActiveExpenses(expenses,currentMonthCaracas());
+    const balances = calculateAllOwners(officialOwners, activeExpenses, payments,{dueDay:rules.payment.dueDay,surchargeRate:rules.payment.surchargeRate});
     const payload = deepEscapeStrings({
       generatedAt: new Date().toISOString(), generatedAtCaracas: nowCaracasLabel(),
       balanceEngineVersion: 5,
       officialBalanceSource: 'ControlVersiones',
+      automation:publicRules(rules),
       propietarios: officialOwners.map(record => compactOwner(record, balances.get(record.id))).sort((a,b)=>(a.Casa||0)-(b.Casa||0)),
-      gastos: expenses.map(compactGasto), pagos: payments.map(compactPago)
+      gastos: activeExpenses.map(compactGasto), pagos: payments.map(compactPago)
     });
     publicCache = { payload, expiresAt: Date.now() + PUBLIC_CACHE_TTL_MS };
     return { statusCode: 200, headers: responseHeaders(counter.calls, 'MISS'), body: JSON.stringify(payload) };

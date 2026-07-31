@@ -14,6 +14,7 @@
   function enteredAmount(){const input=byId('payAmount');return window.VLAPaymentIntelligence.parseAmountInput(input&&input.value)}
   function safeText(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
   function currentDateLabel(){try{return typeof caracasLabel==='function'?caracasLabel():new Date().toLocaleDateString('es-VE')}catch(_){return new Date().toLocaleDateString('es-VE')}}
+  function ownerIsLimited(){try{return typeof currentOwner!=='undefined'&&currentOwner&&String(currentOwner['Estado Acceso Portón']||'')==='Limitado'}catch(_){return false}}
 
   function modalMarkup(){
     return `<div class="vla-pay-sheet modal-card" role="dialog" aria-modal="true" aria-labelledby="vla-pay-title">
@@ -36,10 +37,10 @@
         <section class="vla-pay-section vla-pay-optional" aria-labelledby="vla-pay-optional-title">
           <div class="vla-pay-section-title"><span aria-hidden="true">＋</span><h4 id="vla-pay-optional-title">Información opcional</h4></div>
           <label class="vla-pay-field"><span>Banco o método <em>Opcional</em></span><input id="payBank" maxlength="100" autocomplete="off" placeholder="Ej.: Pago móvil, Zelle, transferencia"></label>
-          <div class="vla-pay-field"><span>Comprobante <em>Opcional</em></span><input id="payProof" class="vla-pay-file-input" type="file" accept="image/jpeg,image/png,application/pdf"><label for="payProof" class="vla-pay-file-button"><span aria-hidden="true">⌁</span><strong id="vla-pay-file-label">Elegir desde galería o archivos</strong></label><small>JPG, PNG o PDF. Máximo 3 MB. El archivo llegará adjunto al correo administrativo.</small></div>
+          <div class="vla-pay-field"><span>Comprobante <em id="vla-pay-proof-requirement">Opcional</em></span><input id="payProof" class="vla-pay-file-input" type="file" accept="image/jpeg,image/png,application/pdf"><label for="payProof" class="vla-pay-file-button"><span aria-hidden="true">⌁</span><strong id="vla-pay-file-label">Elegir desde galería o archivos</strong></label><small id="vla-pay-proof-help">JPG, PNG o PDF. Máximo 3 MB.</small></div>
           <label class="vla-pay-field"><span>Observaciones <em>Opcional</em></span><textarea id="payNotes" maxlength="300" rows="3" placeholder="Agrega información que ayude a verificar el pago"></textarea><small><span id="vla-pay-notes-count">0</span>/300</small></label>
         </section>
-        <div class="vla-pay-review-note"><span aria-hidden="true">i</span><p>El reporte será revisado por la administración antes de aplicarse. Los adelantos también pueden reportarse.</p></div>
+        <div class="vla-pay-review-note"><span aria-hidden="true">i</span><p>El sistema validará monto, moneda, referencia, receptor, duplicados y comprobante. Solo las excepciones pasarán a revisión humana.</p></div>
         <div class="vla-pay-actions"><button id="submitReport" type="submit" class="vla-pay-submit">Enviar reporte</button><button type="button" id="cancelModal" class="vla-pay-cancel">Cancelar</button></div>
       </form>
     </div>`;
@@ -86,6 +87,10 @@
     const total=number(balance.total),credit=total<-.01?Math.abs(total):0;
     byId('report-context').innerHTML=`<div class="vla-pay-house"><span class="vla-pay-house-icon" aria-hidden="true">⌂</span><div><strong>Casa ${safeText(owner&&owner.Casa||'')}</strong><small>${safeText(owner&&owner.Propietario||'')}</small></div></div><div class="vla-pay-balance-grid"><div><span>Cuenta USD</span><strong>${refUsd(Math.max(0,number(balance.debtUsd)))}</strong></div><div><span>Cuenta Bs Ref.</span><strong>${refUsd(Math.max(0,number(balance.debtBs)))}</strong><small>${fxRate()?realBs(Math.max(0,number(balance.debtBs))*fxRate()):'Tasa no disponible'}</small></div><div><span>${credit?'Saldo a favor':'Total referencial'}</span><strong>${credit?'-'+refUsd(credit):refUsd(Math.max(0,total))}</strong></div></div>`;
     byId('vla-pay-date-label').textContent=currentDateLabel();
+    const required=ownerIsLimited(),proof=byId('payProof'),requirement=byId('vla-pay-proof-requirement'),help=byId('vla-pay-proof-help');
+    if(proof)proof.required=required;
+    if(requirement)requirement.textContent=required?'Obligatorio':'Opcional';
+    if(help)help.textContent=required?'Obligatorio para una casa con acceso limitado. JPG, PNG o PDF; máximo 3 MB.':'JPG, PNG o PDF. Máximo 3 MB.';
   }
 
   function clearCurrencyChoice(){
@@ -171,6 +176,7 @@
     const result=analyze();
     if(!result||!['clear','confirmed'].includes(result.status))return typeof toast==='function'&&toast('Confirma si escribiste el monto en dólares o bolívares.',true);
     if((mode==='Bs BCV'||result.enteredCurrency==='BS')&&!fxRate())return typeof toast==='function'&&toast('La tasa BCV no está disponible. Intenta nuevamente más tarde.',true);
+    if(ownerIsLimited()&&!selectedFile)return typeof toast==='function'&&toast('Adjunta el comprobante para validar una cuenta con acceso limitado.',true);
 
     const submit=byId('submitReport');submit.disabled=true;submit.textContent='Enviando…';
     try{
@@ -180,7 +186,7 @@
       const data=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(data.detail||data.message||'Error reportando pago.');
       hideSmartModal();
-      if(typeof toast==='function')toast('Reporte enviado. Será verificado por la administración.',false);
+      if(typeof toast==='function')toast(data.message||'Reporte recibido y enviado al motor de validación.',false);
     }catch(error){if(typeof toast==='function')toast(error.message||'No se pudo enviar el reporte.',true)}
     finally{submit.disabled=false;submit.textContent='Enviar reporte'}
   }

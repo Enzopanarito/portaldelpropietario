@@ -36,7 +36,7 @@ assert(!ledger.includes('Registro de Idempotencia'),'Airtable no debe convertirs
 
 assert(manual.includes("const { hashPayload } = require('./_idempotency_blobs')"));
 assert(manual.includes("begin('MANUAL_PAYMENT', operationBusinessKey, { payloadHash })"));
-assert(manual.includes('operationPayload(ownerId, mode, amountUsdRef, rate, reference)'));
+assert(manual.includes('operationPayload(ownerId, mode, amountUsdRef, rate, reference, paymentDate, enteredCurrency)'));
 assert(manual.includes('idempotencyConflict:true'));
 assert(manual.indexOf("begin('MANUAL_PAYMENT'")<manual.indexOf('airtableCreateRecord(TABLES.pagos'),'Debe adquirir el candado antes de crear el pago.');
 

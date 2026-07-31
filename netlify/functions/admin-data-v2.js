@@ -5,16 +5,19 @@ const { withAirtableUsage } = require('./_airtable_meter');
 const { requireAdmin } = require('./_auth');
 const { deepEscapeStrings, safeDisplayText } = require('./_security_utils');
 const { calculateAllOwners, calculatedFields } = require('./_balance_engine_v4');
+const { filterActiveExpenses, currentMonthCaracas, STATUS, statusOf, monthOf } = require('./_expense_lifecycle');
+const { mergeConfig } = require('./_automation_rules');
 
 let adminCache = null;
 const ADMIN_CACHE_TTL_MS = 2 * 60 * 1000;
 const AIRTABLE_TIMEOUT_MS = 9500;
-const TABLES = { propietarios:'Propietarios', gastos:'Gastos del Mes', pagos:'Pagos', reportes:'Reportes de Pago' };
+const TABLES = { propietarios:'Propietarios', gastos:'Gastos del Mes', pagos:'Pagos', reportes:'Reportes de Pago',config:'Configuración' };
 const FIELD_SETS = {
   propietarios: ['Propietario','Casa','Telefono','Email','Alicuota','Deuda Anterior','Deuda Anterior USD','Deuda Anterior Bs Ref','Deuda Restante','Total Pagado','Gasto del Mes','Cuota Base Mes','Recargo Aplicado','Monto a Pagar a Tiempo','MKJ User ID','MKJ Email','Estado Acceso Portón','Excepción Acceso','Última Sync MKJ','Motivo Limitación Acceso'],
-  gastos: ['Concepto','Monto','Tipo de Gasto','Frecuencia','Propietarios','Forma de Pago'],
-  pagos: ['Propietario que Paga','Monto Pagado','Fecha de Pago','Método de Pago','Forma de Pago','Monto Pagado Bs','Tasa BCV Aplicada','Equivalente USD Aplicado','[x] Aplicado al Cierre'],
-  reportes: ['Reporte','Propietario que Reporta','Monto Reportado','Referencia','Fecha del Reporte','Estado','Forma de Pago Reportada','Monto Reportado Bs','Tasa BCV Reporte','Equivalente USD Reportado']
+  gastos: ['Concepto','Monto','Tipo de Gasto','Frecuencia','Propietarios','Forma de Pago','Mes de Aplicación','Estado del Gasto','Origen del Gasto','Clave de Plantilla'],
+  pagos: ['Propietario que Paga','Monto Pagado','Fecha de Pago','Método de Pago','Forma de Pago','Monto Pagado Bs','Tasa BCV Aplicada','Equivalente USD Aplicado','[x] Aplicado al Cierre','Moneda Recibida','Monto Recibido','Fuente Tasa BCV','Fecha Tasa BCV','Observaciones'],
+  reportes: ['Reporte','Propietario que Reporta','Monto Reportado','Referencia','Fecha del Reporte','Estado','Forma de Pago Reportada','Monto Reportado Bs','Tasa BCV Reporte','Equivalente USD Reportado','Moneda Ingresada','Monto Ingresado','Banco Reportado','Observaciones Reportadas','Fuente Tasa BCV Reporte','Estado de Procesamiento','Resultado Validación','AI Confidence','Método Detectado','Moneda Detectada','Monto Detectado','Referencia Detectada','Posible Duplicado','Detalle de Inconsistencias','Validación Realizada Por'],
+  config:['Día de Vencimiento','Porcentaje de Recargo']
 };
 const NO_STORE_HEADERS = {'Content-Type':'application/json','Cache-Control':'no-store, no-cache, must-revalidate, proxy-revalidate','Pragma':'no-cache','Expires':'0','Surrogate-Control':'no-store'};
 function buildUrl(baseId, tableName, query){return 'https://api.airtable.com/v0/'+baseId+'/'+encodeURIComponent(tableName)+(query||'')}
@@ -38,18 +41,19 @@ const handler = async function(event){
       safeLoad('propietarios',()=>airtableGetAll(TABLES.propietarios,withFields('',FIELD_SETS.propietarios),token,baseId,counter),true),
       safeLoad('gastos',()=>airtableGetAllWithFallback(TABLES.gastos,withFields('?view=Gastos%20Mensuales',FIELD_SETS.gastos),withFields('',FIELD_SETS.gastos),token,baseId,counter),true),
       safeLoad('pagos',()=>airtableGetAll(TABLES.pagos,withFields('',FIELD_SETS.pagos),token,baseId,counter),false),
-      safeLoad('reportes',()=>airtableGetAllWithFallback(TABLES.reportes,withFields('?filterByFormula='+encodeURIComponent("{Estado}='Pendiente'"),FIELD_SETS.reportes),withFields('',FIELD_SETS.reportes),token,baseId,counter),false)
+      safeLoad('reportes',()=>airtableGetAllWithFallback(TABLES.reportes,withFields('?filterByFormula='+encodeURIComponent("{Estado}='Pendiente'"),FIELD_SETS.reportes),withFields('',FIELD_SETS.reportes),token,baseId,counter),false),
+      safeLoad('config',()=>airtableGetAll(TABLES.config,withFields('?maxRecords=1',FIELD_SETS.config),token,baseId,counter),false)
     ]);
     const byLabel=Object.fromEntries(results.map(r=>[r.label,r]));
     const requiredFailures=results.filter(r=>r.required&&!r.ok);
     if(requiredFailures.length&&adminCache?.payload){const stale=Object.assign({},adminCache.payload,{stale:true,warnings:requiredFailures.map(r=>({table:r.label,detail:r.error}))});return{statusCode:200,headers:Object.assign({},NO_STORE_HEADERS,{'X-Cache':'STALE','X-Airtable-Calls':String(counter.calls)}),body:JSON.stringify(stale)}}
     if(requiredFailures.length)return{statusCode:503,headers:Object.assign({},NO_STORE_HEADERS,{'X-Airtable-Calls':String(counter.calls)}),body:JSON.stringify({message:'Airtable tardó o falló cargando datos base.',detail:requiredFailures.map(r=>r.label+': '+r.error).join(' | ')})};
-    const rawOwners=byLabel.propietarios.records||[],gastos=byLabel.gastos.records||[],pagos=byLabel.pagos.records||[];
-    const balances=calculateAllOwners(rawOwners,gastos,pagos);
+    const rawOwners=byLabel.propietarios.records||[],allExpenses=byLabel.gastos.records||[],gastos=filterActiveExpenses(allExpenses,currentMonthCaracas()),gastosProgramados=allExpenses.filter(record=>statusOf(record)===STATUS.SCHEDULED&&monthOf(record)>currentMonthCaracas()),pagos=byLabel.pagos.records||[];
+    const rules=mergeConfig((byLabel.config.records||[])[0]||{}),balances=calculateAllOwners(rawOwners,gastos,pagos,{dueDay:rules.payment.dueDay,surchargeRate:rules.payment.surchargeRate});
     const propietarios=rawOwners.map(record=>flattenOwner(record,balances.get(record.id))).sort((a,b)=>Number(a.Casa||0)-Number(b.Casa||0));
     const reportes=onlyPendingReports(byLabel.reportes.records||[]);
     const warnings=results.filter(r=>!r.ok).map(r=>({table:r.label,detail:r.error}));
-    const payload=deepEscapeStrings({generatedAt:new Date().toISOString(),generatedAtCaracas:new Intl.DateTimeFormat('es-VE',{timeZone:'America/Caracas',dateStyle:'medium',timeStyle:'short'}).format(new Date()),balanceEngineVersion:4,propietarios,gastos,pagos,reportes,warnings,partial:warnings.length>0});
+    const payload=deepEscapeStrings({generatedAt:new Date().toISOString(),generatedAtCaracas:new Intl.DateTimeFormat('es-VE',{timeZone:'America/Caracas',dateStyle:'medium',timeStyle:'short'}).format(new Date()),balanceEngineVersion:4,propietarios,gastos,gastosProgramados,pagos,reportes,warnings,partial:warnings.length>0});
     adminCache={payload,expiresAt:Date.now()+ADMIN_CACHE_TTL_MS};
     return{statusCode:200,headers:Object.assign({},NO_STORE_HEADERS,{'X-Cache':force?'BYPASS':'MISS','X-Airtable-Calls':String(counter.calls)}),body:JSON.stringify(payload)};
   }catch(error){return{statusCode:500,headers:Object.assign({},NO_STORE_HEADERS,{'X-Airtable-Calls':String(counter.calls)}),body:JSON.stringify({message:'Error cargando datos administrativos.',detail:safeDisplayText(error.message,500)})}}

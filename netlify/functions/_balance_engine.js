@@ -162,7 +162,9 @@ function calculateOwnerBalance(owner, expenses = [], payments = [], options = {}
   const clock = options.month
     ? { month: String(options.month), day: Number(options.day || 31) }
     : caracasClock(options.now || new Date());
-  const cutoff = `${clock.month}-10`;
+  const dueDay=Math.max(1,Math.min(28,Number(options.dueDay||10)));
+  const surchargeRate=Math.max(0,Math.min(1,Number(options.surchargeRate??0.10)));
+  const cutoff = `${clock.month}-${String(dueDay).padStart(2,'0')}`;
   const prior = reconciledPrior(owner);
   const charges = calculateCharges(owner, expenses);
 
@@ -235,19 +237,22 @@ function calculateOwnerBalance(owner, expenses = [], payments = [], options = {}
   const currentBsAfterTimely = money(state.currentBs.value);
   const timelyPaidBsRef = money(Math.max(0, promptPaymentRequiredBsRef - currentBsAfterTimely));
   const promptPaymentComplied = currentBsAfterTimely <= TOLERANCE;
-  const recargoBsRef = clock.day > 10 && charges.bsRef > TOLERANCE && !promptPaymentComplied
-    ? money(charges.bsRef * 0.10)
+  const recargoBsRef = clock.day > dueDay && charges.bsRef > TOLERANCE && !promptPaymentComplied
+    ? money(charges.bsRef * surchargeRate)
     : 0;
   state.currentBs.value = money(state.currentBs.value + recargoBsRef);
 
   for (const payment of late) applyPayment(payment);
 
-  const expiredUsd = money(state.priorUsd.value);
-  const expiredBsRef = money(state.priorBs.value);
-  const currentUsd = money(state.currentUsd.value - state.creditUsd);
-  const currentBsRef = money(state.currentBs.value - state.creditBs);
-  const usd = money(expiredUsd + currentUsd);
-  const bsRef = money(expiredBsRef + currentBsRef);
+  let expiredUsd = money(state.priorUsd.value);
+  let expiredBsRef = money(state.priorBs.value);
+  let currentUsd = money(state.currentUsd.value - state.creditUsd);
+  let currentBsRef = money(state.currentBs.value - state.creditBs);
+  const usd = money(expiredUsd + currentUsd),bsRef = money(expiredBsRef + currentBsRef);
+  if(clock.day>dueDay){
+    expiredUsd=money(Math.max(0,usd));currentUsd=money(Math.min(0,usd));
+    expiredBsRef=money(Math.max(0,bsRef));currentBsRef=money(Math.min(0,bsRef));
+  }
 
   return {
     ownerId,
@@ -265,6 +270,8 @@ function calculateOwnerBalance(owner, expenses = [], payments = [], options = {}
     timelyPaidBsRef,
     promptPaymentRequiredBsRef,
     promptPaymentComplied,
+    dueDay,
+    surchargeRate,
     usd,
     bsRef,
     totalRef: money(usd + bsRef),

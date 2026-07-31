@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "timezone": "America/Caracas",
+  "masterEnabled": false,
+  "rulesConfirmed": false,
+  "payment": {
+    "dueDay": 10,
+    "surchargeRate": 0.1,
+    "maximumReviewHours": 72,
+    "automaticApprovalEnabled": false,
+    "minimumAutomaticConfidence": 0.97
+  },
+  "access": {
+    "automaticEnabled": false,
+    "restrictionDay": 11,
+    "warningDaysBefore": [7, 3, 1, 0],
+    "onlyExpiredDebt": true,
+    "failSafeOnStaleData": true
+  },
+  "monthlyClose": {
+    "automaticEnabled": false,
+    "day": 1,
+    "hour": 0,
+    "minute": 0,
+    "retryDays": [2, 3],
+    "requireCompleteAudit": true,
+    "requireNoPendingFinancialOperations": true
+  },
+  "expensePreload": {
+    "automaticEnabled": false,
+    "leadDays": 3,
+    "requireApprovalOfVariableExpenses": true
+  },
+  "notifications": {
+    "automaticEnabled": false,
+    "emailEnabled": true,
+    "dueReminderDaysBefore": [7, 3, 1, 0],
+    "restrictionReminderDaysBefore": [3, 1, 0]
+  },
+  "freshness": {
+    "financialDataMaxAgeMinutes": 15,
+    "bcvRateMaxAgeHours": 36
+  }
+}

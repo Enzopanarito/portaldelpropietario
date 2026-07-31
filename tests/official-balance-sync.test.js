@@ -66,9 +66,9 @@ for (let house=1; house<=15; house+=1) {
   const adminResult = adminResults.get(`h${house}`);
   const [usd,bs,recargo,total] = expected[house];
   assert.strictEqual(publicResult.officialSnapshotActive, true, `Casa ${house}: corte activo`);
-  assert.strictEqual(publicResult.expiredUsd, 0, `Casa ${house}: vencida USD`);
-  assert.strictEqual(publicResult.expiredBsRef, 0, `Casa ${house}: vencida Bs`);
-  assert.strictEqual(publicResult.expiredTotalRef, 0, `Casa ${house}: vencida total`);
+  assert.strictEqual(publicResult.expiredUsd, Math.max(0,usd), `Casa ${house}: vencida USD`);
+  assert.strictEqual(publicResult.expiredBsRef, Math.max(0,bs), `Casa ${house}: vencida Bs`);
+  assert.strictEqual(publicResult.expiredTotalRef, money(Math.max(0,usd)+Math.max(0,bs)), `Casa ${house}: vencida total`);
   assert.strictEqual(publicResult.usd, usd, `Casa ${house}: USD`);
   assert.strictEqual(publicResult.bsRef, bs, `Casa ${house}: Bs ref con recargo`);
   assert.strictEqual(publicResult.recargoBsRef, recargo, `Casa ${house}: recargo`);
@@ -99,7 +99,7 @@ const paid = calculateOwnerBalance(house10, [], [postCutoffPayment], {month:'202
 assert.strictEqual(paid.usd, 85);
 assert.strictEqual(paid.bsRef, 193.17);
 assert.strictEqual(paid.totalRef, 278.17);
-assert.strictEqual(paid.expiredTotalRef, 0);
+assert.strictEqual(paid.expiredTotalRef, 278.17);
 
 // Un gasto posterior al corte se agrega una sola vez y no altera la base aprobada del recargo.
 const postCutoffExpense = {
@@ -119,6 +119,7 @@ assert.strictEqual(charged.usd, 85);
 assert.strictEqual(charged.bsRef, 231.40);
 assert.strictEqual(charged.recargoBsRef, 20.13);
 assert.strictEqual(charged.totalRef, 316.40);
+assert.strictEqual(charged.expiredTotalRef,316.40);
 
 // El contrato de julio no se arrastra automáticamente a agosto.
 const nextMonth = calculateOwnerBalance(house10, [], [], {month:'2026-08',day:1});

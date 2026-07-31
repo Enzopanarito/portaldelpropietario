@@ -54,7 +54,10 @@ function findAuthorizedRecipient(analysis,accounts,{now=new Date()}={}){
  return{ok:false,reason:'Receptor incorrecto',compatible:compatible.length};
 }
 function check(code,ok,detail=''){return{code,ok:Boolean(ok),detail:clean(detail)}}
-function resultEnvelope({processingState,resultValidation,preliminaryMatch=false,reasons=[],checks=[]}){return{schemaVersion:1,processingState,resultValidation,preliminaryMatch:Boolean(preliminaryMatch),requiresAdminDecision:true,automaticApproval:false,paymentAction:'NONE',accessAction:'NONE',canCreatePayment:false,canEnableAccess:false,reasons:[...new Set(reasons.filter(Boolean))],checks}}
+function resultEnvelope({processingState,resultValidation,preliminaryMatch=false,automaticApproval=false,reasons=[],checks=[]}){
+ const automatic=automaticApproval===true;
+ return{schemaVersion:2,processingState,resultValidation,preliminaryMatch:Boolean(preliminaryMatch),requiresAdminDecision:!automatic,automaticApproval:automatic,paymentAction:automatic?'CREATE_PAYMENT':'NONE',accessAction:automatic?'RECALCULATE_AFTER_PAYMENT':'NONE',canCreatePayment:automatic,canEnableAccess:false,reasons:[...new Set(reasons.filter(Boolean))],checks};
+}
 function evaluatePaymentReport({report={},owner={},attachment={},analysis=null,snapshot=null,snapshotValidation=null,duplicate=null,authorizedAccounts=[],config={},now=new Date()}={}){
  const fields=fieldsOf(report),ownerFields=fieldsOf(owner),checks=[];
  const targetMode=clean(report.targetMode||fields['Forma de Pago Reportada']),expectedCurrency=targetCurrency(targetMode),ownerStatus=clean(report.ownerAccessStatus||fields['Estado Acceso al Reportar']||ownerFields['Estado Acceso Portón']),limited=ownerStatus==='Limitado';
@@ -81,6 +84,15 @@ function evaluatePaymentReport({report={},owner={},attachment={},analysis=null,s
  const amount=money(analysis.amount),required=targetMode==='USD'?money(snapshot&&snapshot.requiredUsdAccount):money(snapshot&&snapshot.requiredBsAccount),amountOk=amount+TOLERANCE>=required&&required>TOLERANCE;
  checks.push(check('AMOUNT',amountOk,`${amount} / ${required}`));if(!amountOk)return resultEnvelope({processingState:'Requiere corrección',resultValidation:'Monto insuficiente',reasons:['AMOUNT_INSUFFICIENT'],checks});
  if(duplicate&&duplicate.possibleDuplicate===true)return resultEnvelope({processingState:'Pendiente de administrador',resultValidation:'Revisión manual urgente',reasons:['PARTIAL_DUPLICATE_REVIEW'],checks});
+ const automaticEnabled=config.automaticApprovalEnabled===true,automaticConfidence=Math.max(0.95,Math.min(1,Number(config.minimumAutomaticConfidence??0.97)));
+ const reportedAmount=targetMode==='USD'?money(fields['Equivalente USD Reportado']||fields['Monto Reportado']):money(fields['Monto Reportado Bs']);
+ const reportedAmountMatches=reportedAmount>TOLERANCE&&Math.abs(reportedAmount-amount)<=TOLERANCE;
+ checks.push(check('REPORTED_AMOUNT_MATCH',reportedAmountMatches,`${reportedAmount} / ${amount}`));
+ const automaticConfidenceOk=Number(analysis.confidence)>=automaticConfidence;
+ checks.push(check('AUTOMATIC_CONFIDENCE',automaticConfidenceOk,`Confianza ${Number(analysis.confidence)||0}; mínimo automático ${automaticConfidence}.`));
+ if(automaticEnabled&&automaticConfidenceOk&&reportedAmountMatches){
+  return resultEnvelope({processingState:'Aprobación automática autorizada',resultValidation:'Coincidencia exacta verificada',preliminaryMatch:true,automaticApproval:true,reasons:['DETERMINISTIC_AUTOMATIC_APPROVAL'],checks});
+ }
  return resultEnvelope({processingState:'Coincide preliminarmente',resultValidation:'Coincide preliminarmente',preliminaryMatch:true,reasons:['ADMIN_DECISION_REQUIRED'],checks});
 }
 

@@ -198,7 +198,7 @@ function parseOperationPayload(record) {
 
 async function loadContext(month, token, baseId, counter) {
   const prefix = `AUDITORIA|${month}|`;
-  const formula = encodeURIComponent(`IFERROR(FIND('${prefix}', {Concepto}), 0)`);
+  const formula = encodeURIComponent(`FIND('${prefix}', {Concepto})`);
   const [owners, expenses, payments, snapshots] = await Promise.all([
     getAll(TABLES.owners, '', token, baseId, counter),
     getAll(TABLES.expenses, '', token, baseId, counter),

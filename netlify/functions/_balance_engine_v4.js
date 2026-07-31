@@ -77,14 +77,16 @@ function applyPositivePayment(balance, amount) {
   return { balance: money(balance - used), remaining: money(amount - used) };
 }
 
-function calculateOfficialBalance(owner, expenses, payments, clock, snapshot) {
+function calculateOfficialBalance(owner, expenses, payments, clock, snapshot,options={}) {
   const ownerId = String(owner && owner.id || '');
   const newExpenses = (expenses || []).filter(record => recordCreatedAt(record) > snapshot.cutoffMs);
   const chargesAfterCutoff = chargeLines(owner, newExpenses);
   let usd = money(snapshot.usd + chargesAfterCutoff.usd);
   let bsRef = money(snapshot.bsRef + chargesAfterCutoff.bsRef);
-  const recargoBsRef = clock.day > 10 && snapshot.surchargeBaseBsRef > base.TOLERANCE
-    ? money(snapshot.surchargeBaseBsRef * 0.10)
+  const dueDay=Math.max(1,Math.min(28,Number(options.dueDay||10)));
+  const surchargeRate=Math.max(0,Math.min(1,Number(options.surchargeRate??0.10)));
+  const recargoBsRef = clock.day > dueDay && snapshot.surchargeBaseBsRef > base.TOLERANCE
+    ? money(snapshot.surchargeBaseBsRef * surchargeRate)
     : 0;
   bsRef = money(bsRef + recargoBsRef);
 
@@ -134,6 +136,7 @@ function calculateOfficialBalance(owner, expenses, payments, clock, snapshot) {
     ...chargesAfterCutoff.expenseLinesBs
   ];
 
+  const expiredUsd=clock.day>dueDay?money(Math.max(0,usd)):0,expiredBsRef=clock.day>dueDay?money(Math.max(0,bsRef)):0,currentUsd=clock.day>dueDay?money(Math.min(0,usd)):usd,currentBsRef=clock.day>dueDay?money(Math.min(0,bsRef)):bsRef;
   return {
     ownerId,
     month: clock.month,
@@ -152,15 +155,17 @@ function calculateOfficialBalance(owner, expenses, payments, clock, snapshot) {
     timelyPaidBsRef: 0,
     promptPaymentRequiredBsRef: snapshot.surchargeBaseBsRef,
     promptPaymentComplied: recargoBsRef <= base.TOLERANCE,
+    dueDay,
+    surchargeRate,
     usd,
     bsRef,
     totalRef: money(usd + bsRef),
-    expiredUsd: 0,
-    expiredBsRef: 0,
-    expiredTotalRef: 0,
-    currentUsd: usd,
-    currentBsRef: bsRef,
-    currentTotalRef: money(usd + bsRef),
+    expiredUsd,
+    expiredBsRef,
+    expiredTotalRef: money(expiredUsd+expiredBsRef),
+    currentUsd,
+    currentBsRef,
+    currentTotalRef: money(currentUsd+currentBsRef),
     activePayments,
     expenseLinesUsd,
     expenseLinesBs
@@ -172,7 +177,7 @@ function calculateOwnerBalance(owner, expenses = [], payments = [], options = {}
     ? { month:String(options.month), day:Number(options.day || 31) }
     : base.caracasClock(options.now || new Date());
   const snapshot = officialSnapshot(owner, clock.month);
-  if (snapshot) return calculateOfficialBalance(owner, expenses, payments, clock, snapshot);
+  if (snapshot) return calculateOfficialBalance(owner, expenses, payments, clock, snapshot,options);
   const result = base.calculateOwnerBalance(owner, expenses, payments, options);
   return Object.assign({}, result, { officialSnapshotActive:false, officialCutoff:'' });
 }
