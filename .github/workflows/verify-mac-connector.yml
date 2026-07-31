@@ -1,0 +1,74 @@
+name: Verify Mac Connector
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'mac-connector/**'
+      - 'tests/mac-connector-static.test.js'
+      - '.github/workflows/verify-mac-connector.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-mac-connector:
+    runs-on: macos-14
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate extension and installer contracts
+        run: |
+          node tests/mac-connector-static.test.js
+          node --check mac-connector/chrome-extension/background.js
+          node --check mac-connector/chrome-extension/whatsapp-content.js
+          python3 -m json.tool mac-connector/chrome-extension/manifest.json >/dev/null
+          bash -n mac-connector/scripts/install.sh
+          bash -n mac-connector/scripts/uninstall.sh
+          bash -n mac-connector/scripts/rollback-latest.sh
+
+      - name: Run Swift tests
+        working-directory: mac-connector
+        run: swift test
+
+      - name: Build native host release
+        working-directory: mac-connector
+        run: swift build -c release --product VLAWhatsAppHost
+
+      - name: Build menu app release
+        working-directory: mac-connector
+        run: swift build -c release --product VLAWhatsAppMenu
+
+      - name: Inspect release binaries
+        working-directory: mac-connector
+        run: |
+          BIN_DIR="$(swift build -c release --show-bin-path)"
+          test -x "${BIN_DIR}/VLAWhatsAppHost"
+          test -x "${BIN_DIR}/VLAWhatsAppMenu"
+          file "${BIN_DIR}/VLAWhatsAppHost"
+          file "${BIN_DIR}/VLAWhatsAppMenu"
+          otool -L "${BIN_DIR}/VLAWhatsAppHost"
+          otool -L "${BIN_DIR}/VLAWhatsAppMenu"
+
+      - name: Build unsigned test package
+        working-directory: mac-connector
+        run: |
+          rm -rf dist
+          mkdir -p dist/bin dist/chrome-extension
+          BIN_DIR="$(swift build -c release --show-bin-path)"
+          cp "${BIN_DIR}/VLAWhatsAppHost" dist/bin/
+          cp "${BIN_DIR}/VLAWhatsAppMenu" dist/bin/
+          cp -R chrome-extension/. dist/chrome-extension/
+          cp scripts/install.sh scripts/uninstall.sh scripts/rollback-latest.sh dist/
+          shasum -a 256 dist/bin/VLAWhatsAppHost dist/bin/VLAWhatsAppMenu dist/chrome-extension/manifest.json > dist/SHA256SUMS.txt
+
+      - name: Upload unsigned certification artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vla-mac-connector-unsigned-${{ github.event.pull_request.head.sha || github.sha }}
+          path: mac-connector/dist
+          if-no-files-found: error
+          retention-days: 14

@@ -10,7 +10,7 @@ permissions:
 jobs:
   verify-admin-preview:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,20 +36,26 @@ jobs:
             [ "$quality" = "10" ] || ready=0
             grep -q 'admin-premium-10.css' /tmp/admin.html 2>/dev/null || ready=0
             grep -q 'vla-admin-quality' /tmp/admin.html 2>/dev/null || ready=0
-            for asset in admin-premium.css admin-premium-polish.css admin-premium-10.css admin-premium-preflight.js admin-premium.js admin-premium-controls.js admin-premium-10.js admin-feature-parity.js admin-session-bridge.js; do
+            for asset in admin-premium.css admin-premium-polish.css admin-premium-10.css admin-premium-preflight.js admin-premium.js admin-premium-controls.js admin-premium-10.js admin-feature-parity.js admin-session-bridge.js whatsapp-v2.css whatsapp-v2.js; do
               code="$(curl --silent --show-error --location --output "/tmp/${asset}" --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/${asset}?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
               [ "$code" = "200" ] || ready=0
               [ -s "/tmp/${asset}" ] || ready=0
             done
             porton="$(curl --silent --show-error --location --max-time 30 "${TARGET_URL}/mkj-access.html?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
             seguridad="$(curl --silent --show-error --location --max-time 30 "${TARGET_URL}/seguridad.html?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            whatsapp="$(curl --silent --show-error --location --max-time 30 "${TARGET_URL}/whatsapp.html?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
             printf '%s' "$porton" | grep -q 'admin-session-bridge.js' || ready=0
             printf '%s' "$seguridad" | grep -q 'admin-session-bridge.js' || ready=0
+            printf '%s' "$whatsapp" | grep -q 'admin-session-bridge.js' || ready=0
+            printf '%s' "$whatsapp" | grep -q 'Modo simulación protegido' || ready=0
+            printf '%s' "$whatsapp" | grep -q 'whatsapp-v2.js' || ready=0
+            protected_code="$(curl --silent --show-error --location --output /tmp/messaging-preview.json --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/.netlify/functions/messaging-preview" 2>/dev/null || true)"
+            [ "$protected_code" = "401" ] || ready=0
             if [ "$ready" = "1" ]; then
-              echo "Preview exacta disponible en ${TARGET_URL}"
+              echo "Preview exacta y mensajería protegida disponibles en ${TARGET_URL}"
               exit 0
             fi
-            echo "Intento ${attempt}: ui=${ui:-missing}, session=${session:-missing}, quality=${quality:-missing}, ready=${ready}"
+            echo "Intento ${attempt}: ui=${ui:-missing}, session=${session:-missing}, quality=${quality:-missing}, messaging=${protected_code:-missing}, ready=${ready}"
             sleep 10
           done
           echo "La vista previa exacta no estuvo disponible."
@@ -106,6 +112,11 @@ jobs:
           NODE
           node verify-admin-preview.cjs
 
+      - name: Verify WhatsApp simulation on mobile and desktop
+        env:
+          TARGET_URL: ${{ steps.target.outputs.url }}
+        run: node tests/whatsapp-preview-browser.cjs
+
       - name: Upload preview evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -115,5 +126,9 @@ jobs:
             admin-preview-result.json
             admin-preview-error.txt
             admin-preview-login.png
+            whatsapp-preview-browser-result.json
+            whatsapp-preview-browser-error.txt
+            whatsapp-preview-mobile.png
+            whatsapp-preview-desktop.png
           if-no-files-found: ignore
           retention-days: 14
