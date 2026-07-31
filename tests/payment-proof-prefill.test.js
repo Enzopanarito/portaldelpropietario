@@ -11,6 +11,7 @@ function loadWithAnalysis(analysis,{runnerFactory}={}){
    if(request==='./_airtable_meter')return{withAirtableUsage:(_name,handler)=>handler};
    if(request==='./_payment_report_attachment')return{decodeAttachment:value=>value?{content:Buffer.from('proof'),contentType:'image/png'}:null};
    if(request==='./_payment_ai_gemini')return{createGeminiAnalysisRunner:runnerFactory||(()=>async()=>JSON.stringify(analysis))};
+   if(request==='./_payment_ai_model_discovery')return{discoverCompatibleModel:async()=>({model:'gemini-2.5-flash-lite',cached:true})};
    if(request==='./_persistent_rate_limit')return{consume:async()=>({allowed:true})};
    if(request==='./_security_utils')return{safeDisplayText:value=>String(value||'')};
    if(request==='./_automation_rules')return{mergeConfig:()=>({})};
