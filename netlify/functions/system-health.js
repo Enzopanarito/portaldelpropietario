@@ -110,8 +110,8 @@ const handler = async function(event) {
     add('Variables MKJoules', isConfigured(MKJ_ADMIN_EMAIL, MKJ_ADMIN_PASSWORD, MKJ_ORG_ID), isConfigured(MKJ_ADMIN_EMAIL, MKJ_ADMIN_PASSWORD, MKJ_ORG_ID) ? `Configurado para org ${MKJ_ORG_ID}.` : 'Faltan variables MKJ. El portón no podrá sincronizarse.', isConfigured(MKJ_ADMIN_EMAIL, MKJ_ADMIN_PASSWORD, MKJ_ORG_ID) ? 'ok' : 'error');
     add('URL MKJoules', true, MKJ_BASE_URL || 'Usando valor por defecto: https://cloud.mkjoules.com');
     add('Analizador inteligente de pagos', !!GEMINI_API_KEY, GEMINI_API_KEY ? 'Proveedor configurado; la clave permanece oculta.' : 'Falta GEMINI_API_KEY. Los comprobantes pasarán a revisión manual.', GEMINI_API_KEY ? 'ok' : 'warning');
-    let proofEncryptionOk=false;try{require('./_payment_proof_store').parseEncryptionKey(PAYMENT_PROOF_ENCRYPTION_KEY);proofEncryptionOk=true}catch(_){proofEncryptionOk=false}
-    add('Cifrado de comprobantes', proofEncryptionOk, proofEncryptionOk ? 'AES-256-GCM listo para comprobantes.' : 'Configure PAYMENT_PROOF_ENCRYPTION_KEY con 32 bytes antes de activar autopago.', proofEncryptionOk ? 'ok' : 'warning');
+    let proofEncryptionOk=false;try{require('./_payment_proof_store').resolveEncryptionKey(process.env);proofEncryptionOk=true}catch(_){proofEncryptionOk=false}
+    add('Cifrado de comprobantes', proofEncryptionOk, proofEncryptionOk ? 'AES-256-GCM listo para comprobantes.' : 'Configure una clave de 32 bytes o un secreto interno fuerte antes de activar autopago.', proofEncryptionOk ? 'ok' : 'warning');
     const internalJobsReady=isConfigured(AUTOMATION_JOB_SECRET||ADMIN_TOKEN_SECRET||ADMIN_PASSWORD,URL);
     add('Trabajos automáticos internos',internalJobsReady,internalJobsReady?'Cola asíncrona autenticada y URL de producción disponibles.':'Falta URL o secreto para autenticar la cola asíncrona.',internalJobsReady?'ok':'warning');
 

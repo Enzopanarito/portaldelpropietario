@@ -7,6 +7,7 @@ const STORE_NAME='vla-payment-proofs-v2';
 const ENVELOPE_MAGIC=Buffer.from('VLAPROOF2','ascii');
 const IV_BYTES=12;
 const TAG_BYTES=16;
+const DERIVED_KEY_DOMAIN='vla/payment-proof/aes-256-gcm/v1';
 const ALLOWED_ENVIRONMENTS=new Set(['production','staging','development','local','test']);
 
 function codedError(message,code,extra={}){return Object.assign(new Error(message),{code,...extra})}
@@ -21,6 +22,18 @@ function parseEncryptionKey(value){
  let key=null;if(/^[a-f0-9]{64}$/i.test(text))key=Buffer.from(text,'hex');else if(/^[A-Za-z0-9+/]+={0,2}$/.test(text)){try{key=Buffer.from(text,'base64')}catch(_){key=null}}
  if(!key||key.length!==32)throw codedError('PAYMENT_PROOF_ENCRYPTION_KEY debe representar exactamente 32 bytes.','PROOF_ENCRYPTION_KEY_INVALID');
  return key;
+}
+function strongRootSecret(env=process.env){
+ for(const name of ['AIRTABLE_API_TOKEN','AUTOMATION_JOB_SECRET','ADMIN_TOKEN_SECRET']){const value=normalizeEncryptionKeyText(env[name]);if(value&&Buffer.byteLength(value,'utf8')>=32)return{name,value}}
+ return null;
+}
+function deriveEncryptionKey(rootSecret){
+ const value=normalizeEncryptionKeyText(rootSecret);if(Buffer.byteLength(value,'utf8')<32)throw codedError('El secreto raíz para cifrar comprobantes debe tener al menos 32 bytes.','PROOF_ENCRYPTION_ROOT_WEAK');
+ return crypto.createHmac('sha256',Buffer.from(value,'utf8')).update(DERIVED_KEY_DOMAIN,'utf8').digest();
+}
+function resolveEncryptionKey(env=process.env){
+ const root=strongRootSecret(env);if(root)return{key:deriveEncryptionKey(root.value),source:root.name,derived:true};
+ const dedicated=parseEncryptionKey(env.PAYMENT_PROOF_ENCRYPTION_KEY);return{key:dedicated,source:'PAYMENT_PROOF_ENCRYPTION_KEY',derived:false};
 }
 function environmentName(env=process.env){
  const explicit=clean(env.VLA_DATA_ENVIRONMENT).toLowerCase(),context=clean(env.CONTEXT).toLowerCase();
@@ -47,7 +60,7 @@ function asBuffer(value){if(Buffer.isBuffer(value))return Buffer.from(value);if(
 function createMemoryStore(){let version=0;const entries=new Map();return{async get(key){const value=entries.get(key);return value?Buffer.from(value.data):null},async getWithMetadata(key){const value=entries.get(key);return value?{data:Buffer.from(value.data),metadata:{...value.metadata},etag:value.etag}:null},async set(key,data,options={}){const current=entries.get(key);if(options.onlyIfNew&&current)return{modified:false,etag:current.etag};const etag=`memory-${++version}`;entries.set(key,{data:asBuffer(data),metadata:{...(options.metadata||{})},etag});return{modified:true,etag}},async delete(key){return entries.delete(key)},_entries:entries}}
 async function defaultStore(){const{getStore}=await import('@netlify/blobs');return getStore({name:STORE_NAME,consistency:'strong'})}
 function createProofStore({storeFactory=defaultStore,encryptionKey,now=()=>new Date()}={}){
- const keyMaterial=Buffer.isBuffer(encryptionKey)?Buffer.from(encryptionKey):parseEncryptionKey(encryptionKey||process.env.PAYMENT_PROOF_ENCRYPTION_KEY);if(keyMaterial.length!==32)throw codedError('La clave de cifrado debe tener 32 bytes.','PROOF_ENCRYPTION_KEY_INVALID');
+ const keyMaterial=Buffer.isBuffer(encryptionKey)?Buffer.from(encryptionKey):encryptionKey?parseEncryptionKey(encryptionKey):resolveEncryptionKey(process.env).key;if(keyMaterial.length!==32)throw codedError('La clave de cifrado debe tener 32 bytes.','PROOF_ENCRYPTION_KEY_INVALID');
  async function put({reportId,content,contentType,attachmentSha,variant='original'},env=process.env){
   if(!Buffer.isBuffer(content)||!content.length)throw new Error('El comprobante a guardar está vacío.');const normalizedType=clean(contentType).toLowerCase();if(!normalizedType)throw new Error('Falta contentType.');
   const actualSha=sha256(content);if(actualSha!==clean(attachmentSha).toLowerCase())throw codedError('El hash declarado no coincide con el comprobante.','PROOF_HASH_MISMATCH');
@@ -62,4 +75,4 @@ function createProofStore({storeFactory=defaultStore,encryptionKey,now=()=>new D
  return{put,get};
 }
 
-module.exports={STORE_NAME,ENVELOPE_MAGIC,IV_BYTES,TAG_BYTES,ALLOWED_ENVIRONMENTS,codedError,normalizeEncryptionKeyText,parseEncryptionKey,environmentName,airtableBaseId,namespace,reportScope,proofKey,aadFor,toArrayBuffer,encryptBuffer,decryptBuffer,asBuffer,createMemoryStore,createProofStore};
+module.exports={STORE_NAME,ENVELOPE_MAGIC,IV_BYTES,TAG_BYTES,DERIVED_KEY_DOMAIN,ALLOWED_ENVIRONMENTS,codedError,normalizeEncryptionKeyText,parseEncryptionKey,strongRootSecret,deriveEncryptionKey,resolveEncryptionKey,environmentName,airtableBaseId,namespace,reportScope,proofKey,aadFor,toArrayBuffer,encryptBuffer,decryptBuffer,asBuffer,createMemoryStore,createProofStore};

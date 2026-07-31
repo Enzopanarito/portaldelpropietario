@@ -1,6 +1,6 @@
 'use strict';
 
-const {parseEncryptionKey}=require('./_payment_proof_store');
+const {resolveEncryptionKey}=require('./_payment_proof_store');
 const {safeModel}=require('./_payment_ai_gemini');
 
 function checkPaymentAutomation({rules,configFields={},authorizedAccounts=null,env=process.env}={}){
@@ -8,12 +8,12 @@ function checkPaymentAutomation({rules,configFields={},authorizedAccounts=null,e
  const automaticRequested=rules?.payment?.automaticApprovalEnabled===true,analysisRequested=configFields['AI Enabled']===true,requested=automaticRequested||analysisRequested;
  add('AI_ENABLED',!automaticRequested||analysisRequested,'El analizador de comprobantes debe estar habilitado.');
  add('GEMINI_KEY',!requested||Boolean(String(env.GEMINI_API_KEY||'').trim()),'GEMINI_API_KEY debe estar configurada.');
- let encryptionOk=true,encryptionDetail='PAYMENT_PROOF_ENCRYPTION_KEY representa 32 bytes.';
- try{parseEncryptionKey(env.PAYMENT_PROOF_ENCRYPTION_KEY)}catch(error){
+ let encryptionOk=true,encryptionDetail='Clave AES-256 disponible para cifrar comprobantes.';
+ try{const resolved=resolveEncryptionKey(env);encryptionDetail=resolved.derived?'Clave AES-256 derivada de forma segura desde un secreto interno del backend.':'PAYMENT_PROOF_ENCRYPTION_KEY representa 32 bytes.'}catch(error){
   encryptionOk=false;
   const characters=String(env.PAYMENT_PROOF_ENCRYPTION_KEY||'').trim().length;
   encryptionDetail=error?.code==='PROOF_ENCRYPTION_KEY_MISSING'
-   ?'PAYMENT_PROOF_ENCRYPTION_KEY no está disponible para las funciones de producción.'
+   ?'Falta una clave de cifrado o un secreto interno fuerte para proteger comprobantes.'
    :`PAYMENT_PROOF_ENCRYPTION_KEY tiene formato inválido (${characters} caracteres); debe representar 32 bytes.`;
  }
  add('PROOF_ENCRYPTION',!requested||encryptionOk,encryptionDetail);
