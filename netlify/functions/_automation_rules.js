@@ -82,15 +82,20 @@ function cycleStatus(rules,now=new Date()){
  const clock=caracasParts(now);
  const dueDate=`${clock.monthKey}-${String(Math.min(rules.payment.dueDay,daysInMonth(clock.year,clock.month))).padStart(2,'0')}`;
  const restrictionDate=`${clock.monthKey}-${String(Math.min(rules.access.restrictionDay,daysInMonth(clock.year,clock.month))).padStart(2,'0')}`;
+ const upcomingMonth=nextMonth(clock.monthKey),upcomingMatch=/^(\d{4})-(\d{2})$/.exec(upcomingMonth),upcomingYear=Number(upcomingMatch[1]),upcomingMonthNumber=Number(upcomingMatch[2]);
+ const nextDueDate=`${upcomingMonth}-${String(Math.min(rules.payment.dueDay,daysInMonth(upcomingYear,upcomingMonthNumber))).padStart(2,'0')}`;
+ const nextRestrictionDate=`${upcomingMonth}-${String(Math.min(rules.access.restrictionDay,daysInMonth(upcomingYear,upcomingMonthNumber))).padStart(2,'0')}`;
  const lastDay=daysInMonth(clock.year,clock.month);
  return{
   clock,
   dueDate,
   restrictionDate,
+  nextDueDate,
+  nextRestrictionDate,
   daysUntilDue:calendarDayDifference(clock.date,dueDate),
   daysUntilRestriction:calendarDayDifference(clock.date,restrictionDate),
   isPreloadWindow:lastDay-clock.day<rules.expensePreload.leadDays,
-  nextMonth:nextMonth(clock.monthKey),
+  nextMonth:upcomingMonth,
   isPrimaryCloseWindow:clock.day===rules.monthlyClose.day,
   isCloseRecoveryWindow:(rules.monthlyClose.retryDays||[]).includes(clock.day),
   isCloseWindow:clock.day===rules.monthlyClose.day||(rules.monthlyClose.retryDays||[]).includes(clock.day)
@@ -103,7 +108,7 @@ function publicRules(rules,now=new Date()){
   timezone:rules.timezone,
   payment:{dueDay:rules.payment.dueDay,surchargeRate:rules.payment.surchargeRate,maximumReviewHours:rules.payment.maximumReviewHours},
   access:{restrictionDay:rules.access.restrictionDay,onlyExpiredDebt:rules.access.onlyExpiredDebt},
-  cycle:{month:cycle.clock.monthKey,today:cycle.clock.date,dueDate:cycle.dueDate,restrictionDate:cycle.restrictionDate,daysUntilDue:cycle.daysUntilDue,daysUntilRestriction:cycle.daysUntilRestriction}
+  cycle:{month:cycle.clock.monthKey,today:cycle.clock.date,dueDate:cycle.dueDate,restrictionDate:cycle.restrictionDate,nextMonth:cycle.nextMonth,nextDueDate:cycle.nextDueDate,nextRestrictionDate:cycle.nextRestrictionDate,daysUntilDue:cycle.daysUntilDue,daysUntilRestriction:cycle.daysUntilRestriction}
  };
 }
 

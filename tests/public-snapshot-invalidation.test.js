@@ -43,5 +43,6 @@ assert(publicV3.includes('previousHandler(forceEvent(event))'),'La reconstrucci�
 assert(publicV3.includes("X-Public-Snapshot':'REFRESH_BUSY"),'La exclusión mutua debe fallar sin reconstrucción paralela.');
 assert(meterSource.includes('snapshotStore.environmentForEvent(event)'),'Las mutaciones deben invalidar únicamente el entorno derivado de su Host.');
 assert(ownerHtml.includes('/.netlify/functions/public-data?force=1'),'El archivo productivo conserva el endpoint histórico.');
+assert(ownerHtml.includes("bsAmount>0?`${bs(bsAmount)}"),'Los pagos legacy sin monto original en bolívares no deben mostrarse como Bs 0,00.');
 assert(!ownerEdge.includes("split('/.netlify/functions/public-data?force=1')"),'El Edge no debe reescribir la ruta pública.');
 console.log('PUBLIC_SNAPSHOT_INVALIDATION_OK');

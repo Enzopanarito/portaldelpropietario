@@ -40,6 +40,17 @@ test('calcula vencimiento, limitación y próximo mes en hora Caracas',()=>{
  assert.equal(cycle.daysUntilDue,2);
  assert.equal(cycle.daysUntilRestriction,3);
  assert.equal(cycle.nextMonth,'2026-08');
+ assert.equal(cycle.nextDueDate,'2026-08-10');
+ assert.equal(cycle.nextRestrictionDate,'2026-08-11');
+});
+
+test('el calendario público nunca anuncia como próximo un vencimiento ya pasado',()=>{
+ const rules=rulesModule.mergeConfig({});
+ const publicCalendar=rulesModule.publicRules(rules,new Date('2026-07-31T15:00:00.000Z')).cycle;
+ assert.equal(publicCalendar.dueDate,'2026-07-10');
+ assert.equal(publicCalendar.daysUntilDue,-21);
+ assert.equal(publicCalendar.nextDueDate,'2026-08-10');
+ assert.equal(publicCalendar.nextRestrictionDate,'2026-08-11');
 });
 
 test('el cierre conserva una ventana segura de recuperación sin duplicar',()=>{
