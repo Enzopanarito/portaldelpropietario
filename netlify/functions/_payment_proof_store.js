@@ -10,8 +10,14 @@ const TAG_BYTES=16;
 const ALLOWED_ENVIRONMENTS=new Set(['production','staging','development','local','test']);
 
 function codedError(message,code,extra={}){return Object.assign(new Error(message),{code,...extra})}
+function normalizeEncryptionKeyText(value){
+ let text=clean(value);if(!text)return text;
+ if(text.startsWith('"')&&text.endsWith('"')){try{const parsed=JSON.parse(text);if(typeof parsed==='string')text=clean(parsed)}catch(_){}}
+ else if(text.startsWith("'")&&text.endsWith("'"))text=clean(text.slice(1,-1));
+ return text;
+}
 function parseEncryptionKey(value){
- const text=clean(value);if(!text)throw codedError('Falta PAYMENT_PROOF_ENCRYPTION_KEY.','PROOF_ENCRYPTION_KEY_MISSING');
+ const text=normalizeEncryptionKeyText(value);if(!text)throw codedError('Falta PAYMENT_PROOF_ENCRYPTION_KEY.','PROOF_ENCRYPTION_KEY_MISSING');
  let key=null;if(/^[a-f0-9]{64}$/i.test(text))key=Buffer.from(text,'hex');else if(/^[A-Za-z0-9+/]+={0,2}$/.test(text)){try{key=Buffer.from(text,'base64')}catch(_){key=null}}
  if(!key||key.length!==32)throw codedError('PAYMENT_PROOF_ENCRYPTION_KEY debe representar exactamente 32 bytes.','PROOF_ENCRYPTION_KEY_INVALID');
  return key;
@@ -56,4 +62,4 @@ function createProofStore({storeFactory=defaultStore,encryptionKey,now=()=>new D
  return{put,get};
 }
 
-module.exports={STORE_NAME,ENVELOPE_MAGIC,IV_BYTES,TAG_BYTES,ALLOWED_ENVIRONMENTS,codedError,parseEncryptionKey,environmentName,airtableBaseId,namespace,reportScope,proofKey,aadFor,toArrayBuffer,encryptBuffer,decryptBuffer,asBuffer,createMemoryStore,createProofStore};
+module.exports={STORE_NAME,ENVELOPE_MAGIC,IV_BYTES,TAG_BYTES,ALLOWED_ENVIRONMENTS,codedError,normalizeEncryptionKeyText,parseEncryptionKey,environmentName,airtableBaseId,namespace,reportScope,proofKey,aadFor,toArrayBuffer,encryptBuffer,decryptBuffer,asBuffer,createMemoryStore,createProofStore};

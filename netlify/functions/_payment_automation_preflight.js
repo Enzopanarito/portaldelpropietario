@@ -8,8 +8,15 @@ function checkPaymentAutomation({rules,configFields={},authorizedAccounts=null,e
  const automaticRequested=rules?.payment?.automaticApprovalEnabled===true,analysisRequested=configFields['AI Enabled']===true,requested=automaticRequested||analysisRequested;
  add('AI_ENABLED',!automaticRequested||analysisRequested,'El analizador de comprobantes debe estar habilitado.');
  add('GEMINI_KEY',!requested||Boolean(String(env.GEMINI_API_KEY||'').trim()),'GEMINI_API_KEY debe estar configurada.');
- let encryptionOk=true;try{parseEncryptionKey(env.PAYMENT_PROOF_ENCRYPTION_KEY)}catch(_){encryptionOk=false}
- add('PROOF_ENCRYPTION',!requested||encryptionOk,'PAYMENT_PROOF_ENCRYPTION_KEY debe tener 32 bytes.');
+ let encryptionOk=true,encryptionDetail='PAYMENT_PROOF_ENCRYPTION_KEY representa 32 bytes.';
+ try{parseEncryptionKey(env.PAYMENT_PROOF_ENCRYPTION_KEY)}catch(error){
+  encryptionOk=false;
+  const characters=String(env.PAYMENT_PROOF_ENCRYPTION_KEY||'').trim().length;
+  encryptionDetail=error?.code==='PROOF_ENCRYPTION_KEY_MISSING'
+   ?'PAYMENT_PROOF_ENCRYPTION_KEY no está disponible para las funciones de producción.'
+   :`PAYMENT_PROOF_ENCRYPTION_KEY tiene formato inválido (${characters} caracteres); debe representar 32 bytes.`;
+ }
+ add('PROOF_ENCRYPTION',!requested||encryptionOk,encryptionDetail);
  add('JOB_AUTH',!requested||Boolean(String(env.AUTOMATION_JOB_SECRET||env.ADMIN_TOKEN_SECRET||env.ADMIN_PASSWORD||'').trim()),'Debe existir un secreto para autenticar trabajos internos.');
  add('SITE_URL',!requested||/^https:\/\//.test(String(env.URL||'')),'La URL de producción debe estar disponible.');
  let primaryOk=true;try{safeModel(configFields['AI Primary Model']||env.PAYMENT_AI_PRIMARY_MODEL||'gemini-2.5-flash')}catch(_){primaryOk=false}

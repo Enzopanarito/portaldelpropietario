@@ -9,6 +9,8 @@ const storeModule=require('../netlify/functions/_payment_proof_store');
  const key=Buffer.alloc(32,0x42),content=Buffer.from('comprobante bancario ficticio para pruebas','utf8'),sha=core.sha256(content),env={VLA_DATA_ENVIRONMENT:'staging',AIRTABLE_BASE_ID:'appSTAGING0000001'};
  assert.strictEqual(storeModule.parseEncryptionKey(key.toString('hex')).length,32);
  assert.strictEqual(storeModule.parseEncryptionKey(key.toString('base64')).length,32);
+ assert.strictEqual(storeModule.parseEncryptionKey(JSON.stringify(key.toString('base64'))).length,32);
+ assert.strictEqual(storeModule.parseEncryptionKey(`'${key.toString('hex')}'`).length,32);
  assert.throws(()=>storeModule.parseEncryptionKey('short'),error=>error.code==='PROOF_ENCRYPTION_KEY_INVALID');
  assert.throws(()=>storeModule.parseEncryptionKey(''),error=>error.code==='PROOF_ENCRYPTION_KEY_MISSING');
  assert.throws(()=>storeModule.environmentName({VLA_DATA_ENVIRONMENT:'unknown'}),error=>error.code==='PROOF_ENVIRONMENT_INVALID');
