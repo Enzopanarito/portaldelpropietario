@@ -3,6 +3,7 @@
 const {withAirtableUsage}=require('./_airtable_meter');
 const {decodeAttachment}=require('./_payment_report_attachment');
 const {createGeminiAnalysisRunner}=require('./_payment_ai_gemini');
+const {discoverCompatibleModel}=require('./_payment_ai_model_discovery');
 const contract=require('./_payment_ai_contract');
 const {consume}=require('./_persistent_rate_limit');
 const {safeDisplayText}=require('./_security_utils');
@@ -34,7 +35,8 @@ async function loadAiConfig(){const records=await listAll(TABLES.config,'?maxRec
 function modelCandidates(config={}){return[FAST_MODEL,config.primaryModel,config.secondaryModel,FALLBACK_MODEL].map(value=>String(value||'').trim()).filter((value,index,array)=>value&&array.indexOf(value)===index)}
 function canTryAnotherModel(error){const status=Number(error?.status||0);return['AI_MODEL_INVALID','RATE_LIMIT','PROVIDER_UNAVAILABLE','TIMEOUT','EMPTY_OUTPUT','AI_PROVIDER_ERROR'].includes(String(error?.code||''))&&(status!==401&&status!==403)}
 async function analyzeWithFallback({config,proof,report,promptVersion}={}){
- const runner=createGeminiAnalysisRunner({timeoutMs:FAST_TIMEOUT_MS}),models=modelCandidates(config);let lastError=null;
+ let detected='';try{detected=(await discoverCompatibleModel()).model}catch(error){if(Number(error?.status)===401||Number(error?.status)===403)throw error}
+ const runner=createGeminiAnalysisRunner({timeoutMs:FAST_TIMEOUT_MS}),models=modelCandidates({...config,primaryModel:detected||config.primaryModel});let lastError=null;
  for(let index=0;index<models.length;index++)try{return{raw:await runner({model:models[index],proof,report,promptVersion}),model:models[index]}}catch(error){lastError=error;if(index===models.length-1||!canTryAnotherModel(error))break}
  throw lastError||Object.assign(new Error('No hay un modelo disponible para analizar el comprobante.'),{code:'AI_NOT_CONFIGURED'});
 }
