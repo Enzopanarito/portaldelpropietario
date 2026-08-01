@@ -70,6 +70,28 @@ jobs:
             return negative ? -value : value;
           }
 
+          async function waitForHouseOptions(page, expected = 15, timeout = 30000) {
+            const deadline = Date.now() + timeout;
+            let found = 0;
+            while (Date.now() < deadline) {
+              const labels = await page.locator('#welcomeSelector option').allTextContents().catch(() => []);
+              found = labels.filter(label => /^Casa\s+\d+\s+-/.test(String(label || '').trim())).length;
+              if (found === expected) return;
+              await page.waitForTimeout(250);
+            }
+            throw new Error(`Se cargaron ${found} de ${expected} casas.`);
+          }
+
+          async function waitForLocatorText(page, locator, predicate, description, timeout = 30000) {
+            const deadline = Date.now() + timeout;
+            while (Date.now() < deadline) {
+              const value = await locator.innerText().catch(() => '');
+              if (predicate(value)) return value;
+              await page.waitForTimeout(200);
+            }
+            throw new Error(`No apareció ${description}.`);
+          }
+
           async function loadPortalWithOwners(page) {
             let lastError = null;
             for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -77,12 +99,7 @@ jobs:
                 const response = await page.goto(`${process.env.TARGET_URL}/?browser=${Date.now()}-${attempt}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
                 if (!response || response.status() !== 200) throw new Error(`El portal respondió ${response && response.status()}.`);
                 await page.addStyleTag({ content: '[data-netlify-deploy-id],iframe[title="Netlify Drawer"]{display:none!important;pointer-events:none!important}' }).catch(() => {});
-                await page.waitForFunction(() => {
-                  const select = document.getElementById('welcomeSelector');
-                  if (!select) return false;
-                  const houses = Array.from(select.options).filter(option => /^Casa\s+\d+\s+-/.test(String(option.textContent || '').trim()));
-                  return houses.length === 15;
-                }, null, { timeout: 30000 });
+                await waitForHouseOptions(page, 15, 30000);
                 await page.waitForTimeout(400);
                 return response;
               } catch (error) {
@@ -127,10 +144,13 @@ jobs:
 
             const breakdown = page.locator('[data-vla-breakdown-host="2026-07-11-photo-v6"]');
             await breakdown.waitFor({ state: 'visible', timeout: 30000 });
-            await page.waitForFunction(() => {
-              const host = document.querySelector('[data-vla-breakdown-host="2026-07-11-photo-v6"]');
-              return host && /Costo\s*Total/i.test(host.innerText) && /Su\s*Parte/i.test(host.innerText);
-            }, null, { timeout: 30000 });
+            await waitForLocatorText(
+              page,
+              breakdown,
+              text => /Costo\s*Total/i.test(text) && /Su\s*Parte/i.test(text),
+              'el desglose completo',
+              30000
+            );
 
             const breakdownText = await breakdown.innerText();
             if (!/VIGILANCIA/i.test(breakdownText)) throw new Error('El desglose visible no contiene VIGILANCIA.');
@@ -146,10 +166,13 @@ jobs:
               }, house);
               if (!value) throw new Error(`No se encontró la Casa ${house}.`);
               await selector.selectOption(value);
-              await page.waitForFunction(houseNumber => {
-                const text = String(document.getElementById('welcome-msg')?.textContent || '').trim();
-                return text.startsWith(`Casa ${houseNumber} ·`);
-              }, house, { timeout: 5000 });
+              await waitForLocatorText(
+                page,
+                page.locator('#welcome-msg'),
+                text => String(text || '').trim().startsWith(`Casa ${house} ·`),
+                `el encabezado de Casa ${house}`,
+                5000
+              );
               const shown = parseMoney(await page.locator('#m-total').innerText());
               balances[house] = shown;
               if (Math.abs(shown - expected[house]) > 0.009) {

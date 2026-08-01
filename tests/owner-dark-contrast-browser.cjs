@@ -114,6 +114,28 @@ async function auditGradients(page){
   });
 }
 
+async function waitForHouseOptions(page,expected=15,timeout=30000){
+  const deadline=Date.now()+timeout;
+  let found=0;
+  while(Date.now()<deadline){
+    const labels=await page.locator('#welcomeSelector option').allTextContents().catch(()=>[]);
+    found=labels.filter(label=>/^Casa\s+\d+\s+-/i.test(String(label||'').trim())).length;
+    if(found===expected)return;
+    await page.waitForTimeout(250);
+  }
+  throw new Error(`Se cargaron ${found} de ${expected} casas.`);
+}
+
+async function waitForLocatorText(page,locator,pattern,timeout=10000){
+  const deadline=Date.now()+timeout;
+  while(Date.now()<deadline){
+    const value=await locator.innerText().catch(()=>'');
+    if(pattern.test(value))return value;
+    await page.waitForTimeout(200);
+  }
+  throw new Error(`No apareció el texto esperado: ${pattern}.`);
+}
+
 (async()=>{
   const browser=await chromium.launch({headless:true});
   const page=await browser.newPage({viewport:{width:390,height:844}});
@@ -126,10 +148,8 @@ async function auditGradients(page){
   assert(response&&response.status()===200,`Portal respondió ${response&&response.status()}.`);
   assert(response.headers()['x-vla-owner-dark-contrast']==='wcag-v1','Falta marcador de contraste wcag-v1.');
   await page.addStyleTag({content:'[data-netlify-deploy-id],iframe[title="Netlify Drawer"]{display:none!important;pointer-events:none!important}'});
-  await page.waitForFunction(()=>{
-    const select=document.getElementById('welcomeSelector');
-    return document.documentElement.classList.contains('dark')&&select&&Array.from(select.options).filter(o=>/^Casa\s+\d+\s+-/.test(String(o.textContent||'').trim())).length===15;
-  },null,{timeout:30000});
+  await waitForHouseOptions(page,15,30000);
+  assert(await page.locator('html.dark').count()===1,'El modo oscuro no quedó activo.');
   assert(await page.locator('#vla-owner-dark-contrast-v1').count()===1,'No se cargó la hoja de contraste final.');
 
   const audits=[];
@@ -155,7 +175,7 @@ async function auditGradients(page){
   await page.selectOption('#payMode','USD');
   await page.fill('#payAmount',String(Math.round(85*rate*100)/100));
   await page.locator('#payAmount').blur();
-  await page.waitForFunction(()=>/Monto identificado: Bs/.test(document.getElementById('vla-pay-detection').innerText),null,{timeout:10000});
+  await waitForLocatorText(page,page.locator('#vla-pay-detection'),/Monto identificado: Bs/,10000);
   audits.push(await contrastAudit(page,'#modal','Reportar pago con detección'));
   await page.screenshot({path:'owner-dark-payment.png',fullPage:true});
 
