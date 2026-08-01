@@ -93,23 +93,48 @@ async function request(path, options = {}) {
   return { response, ...parsed, session };
 }
 
+function looksLikeOrganizationUser(value) {
+  return Boolean(value && typeof value === 'object' && (
+    value.user || value.membership || value.user_id || value.user_email ||
+    value.email || value.id
+  ));
+}
+
 function organizationUsers(data) {
   if (Array.isArray(data)) return data;
-  const containers = [
-    data,
-    data?.data,
-    data?.organization,
-    data?.data?.organization,
-    data?.result,
-    data?.result?.organization
-  ];
-  for (const container of containers) {
-    if (Array.isArray(container)) return container;
-    for (const key of ['users', 'members', 'items']) {
-      if (Array.isArray(container?.[key])) return container[key];
+
+  // MKJ ha usado varias envolturas para el detalle de una organización
+  // (members, memberships, organization_members, etc.). Recorremos el JSON
+  // de forma acotada y elegimos solo arreglos con forma de usuario/membresía.
+  // Así recuperamos miembros deshabilitados sin consultar el directorio global.
+  const preferredKeys = new Set([
+    'users', 'members', 'items', 'memberships', 'organization_users',
+    'organizationUsers', 'organization_members', 'organizationMembers'
+  ]);
+  const queue = [{ value: data, depth: 0, preferred: false }];
+  let fallback = [];
+
+  while (queue.length) {
+    const current = queue.shift();
+    const value = current.value;
+    if (!value || typeof value !== 'object' || current.depth > 6) continue;
+
+    if (Array.isArray(value)) {
+      if (value.length && value.some(looksLikeOrganizationUser)) {
+        if (current.preferred) return value;
+        if (!fallback.length) fallback = value;
+      }
+      for (const item of value) queue.push({ value: item, depth: current.depth + 1, preferred: current.preferred });
+      continue;
+    }
+
+    for (const [key, nested] of Object.entries(value)) {
+      if (!nested || typeof nested !== 'object') continue;
+      queue.push({ value: nested, depth: current.depth + 1, preferred: current.preferred || preferredKeys.has(key) });
     }
   }
-  return [];
+
+  return fallback;
 }
 
 function normalizedEmail(value) {
@@ -163,13 +188,13 @@ function providerAlreadyInDesiredState(action, data) {
 async function listOrganizationUsers(options = {}) {
   const result = await request(`/api/organizations/${encodeURIComponent(orgId())}/users`, options);
   if (!result.response.ok) throw mkjError('MKJ no pudo listar los usuarios de la organización', result.response.status, result.data, 'MKJ_USERS_LOOKUP_FAILED');
-  return { users: organizationUsers(result.data), session: result.session, status: result.response.status };
+  return { users: organizationUsers(result.data), data: result.data, session: result.session, status: result.response.status };
 }
 
 async function listOrganizationDetailUsers(options = {}) {
   const result = await request(`/api/admin/organizations/${encodeURIComponent(orgId())}`, options);
   if (!result.response.ok) throw mkjError('MKJ no pudo consultar el detalle de la organización', result.response.status, result.data, 'MKJ_ORGANIZATION_LOOKUP_FAILED');
-  return { users: organizationUsers(result.data), session: result.session, status: result.response.status };
+  return { users: organizationUsers(result.data), data: result.data, session: result.session, status: result.response.status };
 }
 
 function memberNotFoundError(data) {
@@ -292,6 +317,9 @@ module.exports = {
   mkjSetMemberStatus,
   listOrganizationUsers,
   listOrganizationDetailUsers,
+  organizationUsers,
+  organizationUserId,
+  organizationUserEmail,
   resolveOrganizationUser,
   providerAlreadyInDesiredState,
   clearSessionCache
