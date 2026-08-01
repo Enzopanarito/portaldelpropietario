@@ -171,12 +171,15 @@ async function waitForLocatorText(page,locator,pattern,timeout=10000){
   await page.click('#reportBtn');
   await page.locator('#vla-pay-title').waitFor({state:'visible',timeout:10000});
   audits.push(await contrastAudit(page,'#modal','Reportar pago inicial'));
+  await page.locator('#payChannelCash').check({force:true});
+  await page.locator('#vla-pay-details').waitFor({state:'visible',timeout:10000});
   const rate=await page.evaluate(()=>Number(window.rate()));
+  await page.selectOption('#payCurrency','BS');
   await page.selectOption('#payMode','USD');
   await page.fill('#payAmount',String(Math.round(85*rate*100)/100));
   await page.locator('#payAmount').blur();
-  await waitForLocatorText(page,page.locator('#vla-pay-detection'),/Monto identificado: Bs/,10000);
-  audits.push(await contrastAudit(page,'#modal','Reportar pago con detección'));
+  await page.fill('#payCashReceiver','Administración');
+  audits.push(await contrastAudit(page,'#modal','Reportar pago con datos'));
   await page.screenshot({path:'owner-dark-payment.png',fullPage:true});
 
   const placeholder=await page.evaluate(()=>{
@@ -185,7 +188,7 @@ async function waitForLocatorText(page,locator,pattern,timeout=10000){
   });
   const failures=audits.flatMap(item=>item.failures.map(f=>({...f,section:item.label})));
   assert(audits.every(item=>!item.missing),'Faltó una sección durante la auditoría.');
-  const minimumChecks={'Bienvenida':5,'Selector de tema':1,'Portal completo':50,'Reportar pago inicial':30,'Reportar pago con detección':30};
+  const minimumChecks={'Bienvenida':5,'Selector de tema':1,'Portal completo':50,'Reportar pago inicial':30,'Reportar pago con datos':30};
   assert(audits.every(item=>item.checked>=(minimumChecks[item.label]||1)),`La auditoría revisó muy pocos textos: ${JSON.stringify(audits)}`);
   assert(!failures.length,`Contrastes insuficientes: ${JSON.stringify(failures.slice(0,20))}`);
   assert(!badGradients.length,`Gradientes con contraste insuficiente: ${JSON.stringify(badGradients)}`);
