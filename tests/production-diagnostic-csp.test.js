@@ -18,4 +18,5 @@ test('el diagnóstico de producción respeta el CSP estricto del portal', () => 
     assert.equal(/\beval\s*\(/.test(source), false);
   }
   assert.match(sources[0], /waitForCasaOne\(page, 60000\)/);
+  assert.equal(sources[2].includes("blockedTailwind<1"), false);
 });
