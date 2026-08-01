@@ -171,7 +171,8 @@ async function waitForLocatorText(page,locator,pattern,timeout=10000){
   await page.click('#reportBtn');
   await page.locator('#vla-pay-title').waitFor({state:'visible',timeout:10000});
   audits.push(await contrastAudit(page,'#modal','Reportar pago inicial'));
-  await page.locator('#payChannelCash').check({force:true});
+  await page.getByText('Efectivo',{exact:true}).click();
+  assert(await page.locator('#payChannelCash').isChecked(),'No se activó el canal de efectivo.');
   await page.locator('#vla-pay-details').waitFor({state:'visible',timeout:10000});
   const rate=await page.evaluate(()=>Number(window.rate()));
   await page.selectOption('#payCurrency','BS');
