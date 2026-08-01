@@ -311,6 +311,8 @@ async function syncOwnerAccess(ownerId, options = {}, context = null) {
     propietario: fields.Propietario,
     mkjUserId: mkjResult?.resolvedMemberId || memberId,
     mkjUserIdRecovered: mkjResult?.recoveredMemberId === true,
+    mkjMembershipVerified: mkjResult?.verifiedMembership === true,
+    mkjAlreadyApplied: mkjResult?.idempotent === true,
     previousStatus,
     estado: desiredStatus,
     action: desiredAction,
