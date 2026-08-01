@@ -5,6 +5,7 @@
 
 [functions]
   node_bundler = "esbuild"
+  external_node_modules = ["pdfkit"]
 
 [context.production.environment]
   PUBLIC_BLOB_CACHE_ENABLED = "true"

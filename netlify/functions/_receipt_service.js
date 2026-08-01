@@ -52,6 +52,20 @@ async function getOwner(ownerId){
   }
 }
 
+function receiptPayloadFromFields(fields = {}, ownerFields = {}){
+  return {
+    receiptNumber: cleanPlainText(fields['Nro Recibo'] || '', 80),
+    ownerName: cleanPlainText(ownerFields.Propietario || '', 180),
+    casa: cleanPlainText(fields.Casa || ownerFields.Casa || '', 30),
+    mode: cleanPlainText(fields['Forma de Pago'] || '', 40),
+    date: cleanPlainText(fields.Fecha || caracasDate(), 30),
+    amountUsd: fields['Monto USD'] || 0,
+    amountBs: fields['Monto Bs'] || 0,
+    reference: sanitizeReference(fields.Referencia || ''),
+    concept: 'Pago registrado en el sistema administrativo'
+  };
+}
+
 function buildHtml(payload){
   const owner = escapeHtml(cleanPlainText(payload.ownerName || 'Propietario', 180));
   const casa = escapeHtml(cleanPlainText(payload.casa || '', 30));
@@ -79,25 +93,7 @@ function buildHtml(payload){
   </div>`;
 }
 
-async function createAndSendReceipt(input = {}){
-  if (!process.env.AIRTABLE_API_TOKEN || !process.env.AIRTABLE_BASE_ID) throw new Error('Airtable no está configurado.');
-
-  const owner = await getOwner(input.ownerId);
-  const f = owner?.fields || {};
-  const email = cleanPlainText(firstNonEmpty(input.email, f.Email, f.Correo, f['MKJ Email']), 254);
-  const receiptNumber = cleanPlainText(input.receiptNumber || receiptNo(), 80);
-  const payload = {
-    receiptNumber,
-    ownerName: cleanPlainText(input.ownerName || f.Propietario || '', 180),
-    casa: cleanPlainText(input.casa || f.Casa || '', 30),
-    mode: cleanPlainText(input.mode || input.formaPago || '', 40),
-    date: cleanPlainText(input.date || caracasDate(), 30),
-    amountUsd: input.amountUsd || input.usdEq || 0,
-    amountBs: input.amountBs || 0,
-    reference: sanitizeReference(input.reference || input.referencia || ''),
-    concept: cleanPlainText(input.concept || 'Pago registrado en el sistema administrativo', 240)
-  };
-
+async function deliverReceipt(payload, email){
   const html = buildHtml(payload);
   let emailResult = { sent:false, status: email ? 'Pendiente' : 'Sin correo', detail: email ? 'Pendiente de envío' : 'El propietario no tiene email registrado.' };
   let pdfBuffer = null;
@@ -117,10 +113,10 @@ async function createAndSendReceipt(input = {}){
     if (pdfBuffer) {
       try {
         const safeCasa = String(payload.casa || '').replace(/[^0-9A-Za-z_-]/g, '');
-        attachmentFile = `${receiptNumber}-Casa-${safeCasa || 'NA'}.pdf`;
+        attachmentFile = `${payload.receiptNumber}-Casa-${safeCasa || 'NA'}.pdf`;
         emailResult = await sendMail({
           to: email,
-          subject: `Comprobante de pago ${receiptNumber} - Villa Los Apamates`,
+          subject: `Comprobante de pago ${payload.receiptNumber} - Villa Los Apamates`,
           html,
           attachments: [{ filename:attachmentFile, content:pdfBuffer, contentType:'application/pdf' }]
         });
@@ -140,6 +136,34 @@ async function createAndSendReceipt(input = {}){
     `Detalle: ${cleanPlainText(emailResult.detail || '', 500)}`
   ].join(' | ');
 
+  return {
+    email: emailResult,
+    html,
+    auditLog,
+    pdf: { status: pdfStatus, attachment: attachmentStatus, filename: attachmentFile || null }
+  };
+}
+
+async function createAndSendReceipt(input = {}){
+  if (!process.env.AIRTABLE_API_TOKEN || !process.env.AIRTABLE_BASE_ID) throw new Error('Airtable no está configurado.');
+
+  const owner = await getOwner(input.ownerId);
+  const f = owner?.fields || {};
+  const email = cleanPlainText(firstNonEmpty(input.email, f.Email, f.Correo, f['MKJ Email']), 254);
+  const receiptNumber = cleanPlainText(input.receiptNumber || receiptNo(), 80);
+  const payload = {
+    receiptNumber,
+    ownerName: cleanPlainText(input.ownerName || f.Propietario || '', 180),
+    casa: cleanPlainText(input.casa || f.Casa || '', 30),
+    mode: cleanPlainText(input.mode || input.formaPago || '', 40),
+    date: cleanPlainText(input.date || caracasDate(), 30),
+    amountUsd: input.amountUsd || input.usdEq || 0,
+    amountBs: input.amountBs || 0,
+    reference: sanitizeReference(input.reference || input.referencia || ''),
+    concept: cleanPlainText(input.concept || 'Pago registrado en el sistema administrativo', 240)
+  };
+  const delivery = await deliverReceipt(payload, email);
+
   const fields = {
     'Nro Recibo': receiptNumber,
     'Casa': Number(payload.casa || 0),
@@ -149,16 +173,72 @@ async function createAndSendReceipt(input = {}){
     'Forma de Pago': payload.mode === 'USD' ? 'USD' : 'Bs BCV',
     'Referencia': payload.reference,
     'Correo': email || undefined,
-    'Estado Email': cleanPlainText(emailResult.status, 100),
-    'HTML Recibo': html,
-    'Log': auditLog
+    'Estado Email': cleanPlainText(delivery.email.status, 100),
+    'HTML Recibo': delivery.html,
+    'Log': delivery.auditLog
   };
   if (input.ownerId) fields.Propietario = [input.ownerId];
   if (input.paymentId) fields.Pago = [input.paymentId];
-  if (emailResult.sent) fields['Enviado En'] = nowIso();
+  if (delivery.email.sent) fields['Enviado En'] = nowIso();
 
   const created = await airtable(TABLE_RECEIPTS, { method:'POST', body:JSON.stringify({ records:[{ fields }], typecast:true }) });
-  return { success:true, receipt: created.records?.[0], email: emailResult, payload, pdf: { status: pdfStatus, attachment: attachmentStatus, filename: attachmentFile || null } };
+  return { success:true, receipt: created.records?.[0], email: delivery.email, payload, pdf: delivery.pdf };
 }
 
-module.exports = { createAndSendReceipt, buildHtml, money, usd, bs };
+async function retryExistingReceipt(receiptId){
+  if (!process.env.AIRTABLE_API_TOKEN || !process.env.AIRTABLE_BASE_ID) throw new Error('Airtable no está configurado.');
+  const cleanId = String(receiptId || '').trim();
+  if (!/^rec[A-Za-z0-9]{10,}$/.test(cleanId)) throw new Error('Recibo inválido.');
+
+  const receipt = await airtable(TABLE_RECEIPTS, {}, `/${encodeURIComponent(cleanId)}`);
+  const fields = receipt.fields || {};
+  if (String(fields['Estado Email'] || '').trim() === 'Enviado') {
+    return { success:true, idempotent:true, receipt, email:{ sent:true, status:'Enviado', detail:'El recibo ya había sido enviado.' } };
+  }
+
+  const ownerId = Array.isArray(fields.Propietario) ? fields.Propietario[0] : '';
+  const owner = await getOwner(ownerId);
+  const ownerFields = owner?.fields || {};
+  const email = cleanPlainText(firstNonEmpty(fields.Correo, ownerFields.Email, ownerFields.Correo, ownerFields['MKJ Email']), 254);
+  const payload = receiptPayloadFromFields(fields, ownerFields);
+  const delivery = await deliverReceipt(payload, email);
+  const recoveredAt = nowIso();
+  const patchFields = {
+    'Correo': email || undefined,
+    'Estado Email': cleanPlainText(delivery.email.status, 100),
+    'HTML Recibo': delivery.html,
+    'Log': `${delivery.auditLog} | Recuperación automática: ${recoveredAt}`
+  };
+  if (delivery.email.sent) patchFields['Enviado En'] = recoveredAt;
+  let updated;
+  try {
+    updated = await airtable(TABLE_RECEIPTS, {
+      method:'PATCH',
+      body:JSON.stringify({ fields:patchFields, typecast:true })
+    }, `/${encodeURIComponent(cleanId)}`);
+  } catch (error) {
+    if (delivery.email.sent) {
+      error.code='RECEIPT_SENT_AIRTABLE_PATCH_FAILED';
+      error.deliverySent=true;
+      error.deliveryAudit={ sentAt:recoveredAt, email, log:patchFields.Log };
+    }
+    throw error;
+  }
+
+  return { success:true, idempotent:false, receipt:updated, email:delivery.email, payload, pdf:delivery.pdf };
+}
+
+async function finalizeExistingReceiptDelivery(receiptId,audit={}){
+  const cleanId=String(receiptId||'').trim();
+  if(!/^rec[A-Za-z0-9]{10,}$/.test(cleanId))throw new Error('Recibo inválido.');
+  const sentAt=cleanPlainText(audit.sentAt||nowIso(),60);
+  const fields={
+    'Estado Email':'Enviado',
+    'Enviado En':sentAt,
+    'Log':cleanPlainText(audit.log||`Correo enviado; auditoría recuperada automáticamente: ${sentAt}`,1800)
+  };
+  if(audit.email)fields.Correo=cleanPlainText(audit.email,254);
+  return airtable(TABLE_RECEIPTS,{method:'PATCH',body:JSON.stringify({fields,typecast:true})},`/${encodeURIComponent(cleanId)}`);
+}
+
+module.exports = { createAndSendReceipt, retryExistingReceipt, finalizeExistingReceiptDelivery, receiptPayloadFromFields, deliverReceipt, buildHtml, money, usd, bs };

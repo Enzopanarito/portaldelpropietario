@@ -250,6 +250,9 @@ async function syncOwnerAccess(ownerId, options = {}, context = null) {
   }
 
   if (fields['Excepción Acceso'] === true) {
+    if (previousStatus === 'Excepción Manual' && options.touchUnchanged !== true) {
+      return { ownerId, casa: fields.Casa, propietario: fields.Propietario, action: 'skip-exception', estado: 'Excepción Manual', unchanged: true, mode: modeInfo.mode, calc, owner };
+    }
     const patched = await airtablePatchRecord(TABLES.propietarios, owner.id, {
       'Estado Acceso Portón': 'Excepción Manual',
       'Última Sync MKJ': nowCaracas(),
@@ -291,6 +294,28 @@ async function syncOwnerAccess(ownerId, options = {}, context = null) {
     email: fields['MKJ Email'] || fields.Email || '',
     session: options.mkjSession
   });
+
+  if (runMkj && !shouldCallMkj && previousStatus === desiredStatus && options.touchUnchanged !== true) {
+    return {
+      ownerId: owner.id,
+      casa: fields.Casa,
+      propietario: fields.Propietario,
+      mkjUserId: memberId,
+      previousStatus,
+      estado: desiredStatus,
+      action: desiredAction,
+      temporary,
+      unchanged: true,
+      mode: modeInfo.mode,
+      reason,
+      mkjStatus: 'sin-cambio',
+      email: null,
+      calc,
+      decision,
+      automation: automationInfo.configured ? { configured:true, validation:automationInfo.validation } : { configured:false, legacyPolicy:true },
+      owner
+    };
+  }
 
   const patch = {
     'Estado Acceso Portón': desiredStatus,

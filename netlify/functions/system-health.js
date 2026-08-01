@@ -163,6 +163,21 @@ const handler = async function(event) {
     const totalExpired = money(expired.reduce((sum, x) => sum + x.calc.expiredTotal, 0));
     add('Deuda vencida para control de acceso', true, `Propietarios con deuda vencida: ${withExpiredDebt}. Total vencido ref.: $${totalExpired.toFixed(2)}. Reportes pendientes suficientes: ${pendingCovered}.`, withExpiredDebt ? 'warning' : 'ok');
 
+    const accessMismatches = expired.filter(({owner,calc}) => {
+      const fields=owner.fields||{},actual=selectName(fields['Estado Acceso Portón']);
+      if(fields['Excepción Acceso']===true)return actual!=='Excepción Manual';
+      return actual!==(calc.hasExpiredDebt?'Limitado':'Habilitado');
+    }).map(({owner,calc})=>({
+      casa:(owner.fields||{}).Casa,
+      propietario:(owner.fields||{}).Propietario,
+      actual:selectName((owner.fields||{})['Estado Acceso Portón']),
+      esperado:(owner.fields||{})['Excepción Acceso']===true?'Excepción Manual':(calc.hasExpiredDebt?'Limitado':'Habilitado')
+    }));
+    const mismatchSeverity=accessMismatches.length?(accessModeInfo?.mode==='Automático'?'error':'warning'):'ok';
+    add('Coherencia financiera del portón',accessMismatches.length===0,accessMismatches.length
+      ?`${accessMismatches.length} acceso(s) no coinciden con la deuda vencida: ${accessMismatches.map(item=>`Casa ${item.casa} (${item.actual} → ${item.esperado})`).join(', ')}.`
+      :'Todos los estados de acceso coinciden con la deuda vencida o con una excepción auditada.',mismatchSeverity,{mismatches:accessMismatches});
+
     const pendingReports = reportes.filter(r => selectName((r.fields || {}).Estado) === 'Pendiente').length;
     add('Reportes pendientes y portón', true, pendingReports ? `${pendingReports} reporte(s) pendiente(s). Un reporte no altera deuda ni acceso hasta quedar validado.` : 'No hay reportes pendientes.', pendingReports ? 'warning' : 'ok');
 
