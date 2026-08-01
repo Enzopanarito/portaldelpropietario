@@ -8,7 +8,16 @@ function ownerBefore(owner) {
   return { deudaAnteriorUsd: money(f['Deuda Anterior USD']), deudaAnteriorBsRef: money(f['Deuda Anterior Bs Ref']), deudaAnterior: money(f['Deuda Anterior']) };
 }
 function ownerTarget(balance) {
-  return { deudaAnteriorUsd: money(balance.usd), deudaAnteriorBsRef: money(balance.bsRef), deudaAnterior: money(balance.totalRef) };
+  // Política administrativa confirmada: el cierre no crea saldos totales a favor.
+  // Si un cálculo termina por debajo de cero, se neutraliza en el traspaso y el
+  // ajuste queda expuesto en validation.creditAdjustments para auditoría. Si el
+  // total es positivo pero una moneda queda negativa, se netea contra la otra
+  // sin alterar el total para evitar créditos parciales confusos en el portal.
+  const total=money(balance.totalRef),usd=money(balance.usd),bsRef=money(balance.bsRef);
+  if(total<-0.01)return{deudaAnteriorUsd:0,deudaAnteriorBsRef:0,deudaAnterior:0};
+  if(usd<0)return{deudaAnteriorUsd:0,deudaAnteriorBsRef:total,deudaAnterior:total};
+  if(bsRef<0)return{deudaAnteriorUsd:total,deudaAnteriorBsRef:0,deudaAnterior:total};
+  return { deudaAnteriorUsd: usd, deudaAnteriorBsRef: bsRef, deudaAnterior: total };
 }
 function compactOwner(owner) {
   const f=owner?.fields||{};return{id:owner.id,casa:f.Casa??null,propietario:String(f.Propietario||''),alicuota:Number(f.Alicuota||0),deudaAnterior:money(f['Deuda Anterior']),deudaAnteriorUsd:money(f['Deuda Anterior USD']),deudaAnteriorBsRef:money(f['Deuda Anterior Bs Ref']),deudaRestante:money(f['Deuda Restante'])};
@@ -59,11 +68,13 @@ function buildPlan({owners=[],expenses=[],payments=[],month,dueDay=10,surchargeR
   const legacyTotal=money(ownerUpdates.reduce((s,i)=>s+i.calculation.legacyTotal,0));
   const differences=ownerUpdates.filter(i=>Math.abs(i.calculation.difference)>0.01).map(i=>({ownerId:i.id,casa:i.casa,propietario:i.propietario,rawTotal:i.calculation.rawTotal,legacyTotal:i.calculation.legacyTotal,difference:i.calculation.difference}));
   const invalidPaymentIds=paymentScope.invalid.map(payment=>payment.id),futurePaymentIds=paymentScope.future.map(payment=>payment.id);
-  const validation={month,transitionMode:false,totalUsd,totalBsRef,totalRef,rawTotal:totalRef,legacyTotal,difference:money(totalRef-legacyTotal),differences,differenceCount:differences.length,conDeudaUsd:ownerUpdates.filter(i=>i.target.deudaAnteriorUsd>0.01).length,conDeudaBs:ownerUpdates.filter(i=>i.target.deudaAnteriorBsRef>0.01).length,conSaldoFavor:ownerUpdates.filter(i=>i.target.deudaAnterior<-0.01).length,pendingPaymentsCount:paymentIds.length,paymentCutoff:paymentScope.cutoff,invalidPaymentDatesCount:invalidPaymentIds.length,invalidPaymentIds,futurePaymentsExcludedCount:futurePaymentIds.length,futurePaymentIds,closeScopeReady:invalidPaymentIds.length===0,ownerCount:ownerUpdates.length};
+  const creditAdjustments=ownerUpdates.filter(i=>i.calculation.rawTotal<-0.01).map(i=>({ownerId:i.id,casa:i.casa,propietario:i.propietario,calculatedTotal:i.calculation.rawTotal,appliedTotal:i.target.deudaAnterior,reason:'NO_CREDIT_BALANCE_POLICY'}));
+  const currencyNettingAdjustments=ownerUpdates.filter(i=>i.calculation.rawTotal>=-0.01&&(i.calculation.rawUsd<0||i.calculation.rawBsRef<0)).map(i=>({ownerId:i.id,casa:i.casa,propietario:i.propietario,rawUsd:i.calculation.rawUsd,rawBsRef:i.calculation.rawBsRef,appliedUsd:i.target.deudaAnteriorUsd,appliedBsRef:i.target.deudaAnteriorBsRef,total:i.target.deudaAnterior,reason:'NO_PARTIAL_CURRENCY_CREDIT_POLICY'}));
+  const validation={month,transitionMode:false,totalUsd,totalBsRef,totalRef,rawTotal:money(ownerUpdates.reduce((s,i)=>s+i.calculation.rawTotal,0)),legacyTotal,difference:money(totalRef-legacyTotal),differences,differenceCount:differences.length,creditAdjustments,creditAdjustmentCount:creditAdjustments.length,currencyNettingAdjustments,currencyNettingAdjustmentCount:currencyNettingAdjustments.length,conDeudaUsd:ownerUpdates.filter(i=>i.target.deudaAnteriorUsd>0.01).length,conDeudaBs:ownerUpdates.filter(i=>i.target.deudaAnteriorBsRef>0.01).length,conSaldoFavor:ownerUpdates.filter(i=>i.target.deudaAnterior<-0.01).length,pendingPaymentsCount:paymentIds.length,paymentCutoff:paymentScope.cutoff,invalidPaymentDatesCount:invalidPaymentIds.length,invalidPaymentIds,futurePaymentsExcludedCount:futurePaymentIds.length,futurePaymentIds,closeScopeReady:invalidPaymentIds.length===0,ownerCount:ownerUpdates.length};
   const source={owners:sortedOwners.map(compactOwner),expenses:sortedExpenses.map(compactExpense),payments:closingPayments.map(compactPayment),invalidPayments:paymentScope.invalid.map(compactPayment)};
   const sourceHash=hashJson(source);
   const normalizedRules={dueDay:Number(dueDay),surchargeRate:Number(surchargeRate)};
-  const planHash=hashJson({version:5,month,sourceHash,normalizedRules,ownerUpdates:ownerUpdates.map(i=>({id:i.id,before:i.before,target:i.target})),paymentIds,invalidPaymentIds});
-  return{version:4,month,generatedAt:new Date().toISOString(),transitionMode:false,sourceHash,planHash,normalizedRules,ownerUpdates,paymentIds,validation};
+  const planHash=hashJson({version:6,month,sourceHash,normalizedRules,ownerUpdates:ownerUpdates.map(i=>({id:i.id,before:i.before,target:i.target})),paymentIds,invalidPaymentIds});
+  return{version:5,month,generatedAt:new Date().toISOString(),transitionMode:false,sourceHash,planHash,normalizedRules,ownerUpdates,paymentIds,validation};
 }
 module.exports={monthEnd,paymentDate,splitPaymentsForClose,buildPlan};
