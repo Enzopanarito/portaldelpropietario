@@ -95,7 +95,20 @@ async function request(path, options = {}) {
 
 function organizationUsers(data) {
   if (Array.isArray(data)) return data;
-  for (const key of ['users', 'members', 'items', 'data']) if (Array.isArray(data?.[key])) return data[key];
+  const containers = [
+    data,
+    data?.data,
+    data?.organization,
+    data?.data?.organization,
+    data?.result,
+    data?.result?.organization
+  ];
+  for (const container of containers) {
+    if (Array.isArray(container)) return container;
+    for (const key of ['users', 'members', 'items']) {
+      if (Array.isArray(container?.[key])) return container[key];
+    }
+  }
   return [];
 }
 
@@ -105,20 +118,20 @@ function normalizedEmail(value) {
 
 function organizationUserId(user) {
   return String(
-    user?.id ??
-    user?.user_id ??
     user?.user?.id ??
+    user?.user_id ??
     user?.membership?.user_id ??
+    user?.id ??
     ''
   ).trim();
 }
 
 function organizationUserEmail(user) {
   return normalizedEmail(
-    user?.email ??
-    user?.user_email ??
     user?.user?.email ??
+    user?.user_email ??
     user?.membership?.email ??
+    user?.email ??
     ''
   );
 }
@@ -153,6 +166,20 @@ async function listOrganizationUsers(options = {}) {
   return { users: organizationUsers(result.data), session: result.session, status: result.response.status };
 }
 
+async function listOrganizationDetailUsers(options = {}) {
+  const result = await request(`/api/admin/organizations/${encodeURIComponent(orgId())}`, options);
+  if (!result.response.ok) throw mkjError('MKJ no pudo consultar el detalle de la organización', result.response.status, result.data, 'MKJ_ORGANIZATION_LOOKUP_FAILED');
+  return { users: organizationUsers(result.data), session: result.session, status: result.response.status };
+}
+
+function memberNotFoundError(data) {
+  const error = new Error('No se encontró este usuario dentro de la organización MKJ. Revise el MKJ User ID y el correo, o agregue nuevamente su membresía.');
+  error.code = 'MKJ_MEMBER_NOT_FOUND';
+  error.status = 404;
+  error.providerDetail = providerMessage(data);
+  return error;
+}
+
 async function setStatusRequest(memberId, action, options = {}) {
   const path = `/api/organizations/${encodeURIComponent(orgId())}/members/${encodeURIComponent(memberId)}/${action}`;
   return request(path, {
@@ -181,6 +208,7 @@ async function mkjSetMemberStatus(memberId, action, options = {}) {
   let verifiedMembership = false;
   let idempotent = false;
   let providerStatus = result.response.status;
+  let membershipSource = '';
 
   // MKJ usa 404 tanto para una membresía inexistente como para una operación
   // ya aplicada ("not found or already active/inactive"). Verificamos primero
@@ -194,9 +222,30 @@ async function mkjSetMemberStatus(memberId, action, options = {}) {
       lookup = null;
     }
 
-    const matched = lookup
+    let matched = lookup
       ? resolveOrganizationUser(lookup.users, requestedMemberId, options.email)
       : null;
+    if (matched) membershipSource = 'organization-users';
+
+    // La lista normal de usuarios de MKJ puede omitir membresías deshabilitadas.
+    // El detalle de ESTA organización también incluye sus miembros inactivos.
+    // Nunca consultamos el directorio global porque podría resolver otra persona.
+    if (!matched) {
+      let detailLookup = null;
+      try {
+        detailLookup = await listOrganizationDetailUsers({ ...options, session: result.session });
+      } catch (_) {
+        detailLookup = null;
+      }
+      matched = detailLookup
+        ? resolveOrganizationUser(detailLookup.users, requestedMemberId, options.email)
+        : null;
+      if (matched) {
+        lookup = detailLookup;
+        membershipSource = 'organization-detail';
+      }
+    }
+
     const candidateId = organizationUserId(matched);
     verifiedMembership = Boolean(candidateId);
 
@@ -217,8 +266,8 @@ async function mkjSetMemberStatus(memberId, action, options = {}) {
   }
 
   if (!result.response.ok && !idempotent) {
-    const code = result.response.status === 404 ? 'MKJ_MEMBER_NOT_FOUND' : 'MKJ_STATUS_UPDATE_FAILED';
-    throw mkjError(`MKJ ${action} falló`, result.response.status, result.data, code);
+    if (result.response.status === 404) throw memberNotFoundError(result.data);
+    throw mkjError(`MKJ ${action} falló`, result.response.status, result.data, 'MKJ_STATUS_UPDATE_FAILED');
   }
 
   return {
@@ -229,6 +278,7 @@ async function mkjSetMemberStatus(memberId, action, options = {}) {
     resolvedMemberId,
     recoveredMemberId,
     verifiedMembership,
+    membershipSource,
     idempotent,
     authMode: result.session?.token && result.session?.cookie ? 'bearer+cookie' : result.session?.token ? 'bearer' : 'cookie'
   };
@@ -241,6 +291,7 @@ module.exports = {
   mkjLogin,
   mkjSetMemberStatus,
   listOrganizationUsers,
+  listOrganizationDetailUsers,
   resolveOrganizationUser,
   providerAlreadyInDesiredState,
   clearSessionCache
