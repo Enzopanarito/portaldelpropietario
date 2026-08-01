@@ -36,6 +36,7 @@ function inject(html,isAdmin){
 function fileType(file){if(file.endsWith('.js'))return'application/javascript';if(file.endsWith('.css'))return'text/css';if(file.endsWith('.html'))return'text/html; charset=utf-8';return'application/octet-stream'}
 const server=http.createServer((req,res)=>{
   const url=new URL(req.url,`http://127.0.0.1:${PORT}`);
+  if(url.pathname==='/api/vla/public-data')return json(res,200,{propietarios:owners,gastos,pagos,reportes});
   if(url.pathname.startsWith('/.netlify/functions/')){
     const name=url.pathname.split('/').pop();
     if(name==='app-icon'){res.writeHead(200,{'content-type':'image/svg+xml'});return res.end('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="22" fill="#fffaf0"/><circle cx="50" cy="43" r="25" fill="#0b7a34"/><text x="50" y="88" text-anchor="middle" font-size="14">VLA</text></svg>')}
