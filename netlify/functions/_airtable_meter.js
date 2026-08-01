@@ -6,7 +6,7 @@ const CONTROL_TABLE='ControlVersiones';
 const AIRTABLE_PREFIX='https://api.airtable.com/v0/';
 const DAILY_PREFIX='API_USAGE_DAILY|';
 const DEFAULT_MONTHLY_LIMIT=1000;
-const PUBLIC_SNAPSHOT_MUTATION_SOURCES=new Set(['admin-manual-payment','process-payment-report','admin-expense','admin-expense-action','batch-delete-records','monthly-close-v2','monthly-close-v4','automation-settings','access-auto-sync','mkj-access']);
+const PUBLIC_SNAPSHOT_MUTATION_SOURCES=new Set(['admin-manual-payment','process-payment-report','admin-expense','admin-expense-action','batch-delete-records','monthly-close-v2','monthly-close-v4','automation-settings','access-auto-sync','access-reconciliation-background','mkj-access']);
 const storage=new AsyncLocalStorage();
 const rawFetch=globalThis.__VLA_AIRTABLE_RAW_FETCH||globalThis.fetch.bind(globalThis);
 
