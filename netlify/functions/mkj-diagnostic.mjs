@@ -1,14 +1,13 @@
 import crypto from 'node:crypto';
-import { createRequire } from 'node:module';
+import client from './_mkj_client.js';
 
-const require = createRequire(import.meta.url);
 const {
   mkjLogin,
   listOrganizationUsers,
   listOrganizationDetailUsers,
   organizationUserId,
   organizationUserEmail
-} = require('./_mkj_client.js');
+} = client;
 
 function clean(value, max = 254) {
   return String(value || '').trim().slice(0, max);
