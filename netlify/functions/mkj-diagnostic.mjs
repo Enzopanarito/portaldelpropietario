@@ -41,6 +41,7 @@ async function ownerForHouse(house) {
 }
 
 function authorized(req) {
+  // Secreto exclusivo por contexto de despliegue; nunca se expone al navegador.
   const expected = clean(Netlify.env.get('MKJ_DIAGNOSTIC_SECRET'), 256);
   const provided = clean((req.headers.get('authorization') || '').replace(/^Bearer\s+/i, ''), 256);
   if (!expected || !provided) return false;
