@@ -147,7 +147,8 @@ async function waitForLocatorText(page,locator,pattern,timeout=10000){
   const response=await page.goto(`${TARGET}/?dark-contrast=${Date.now()}`,{waitUntil:'domcontentloaded',timeout:60000});
   assert(response&&response.status()===200,`Portal respondió ${response&&response.status()}.`);
   assert(response.headers()['x-vla-owner-dark-contrast']==='wcag-v1','Falta marcador de contraste wcag-v1.');
-  await page.addStyleTag({content:'[data-netlify-deploy-id],iframe[title="Netlify Drawer"]{display:none!important;pointer-events:none!important}'});
+  await page.addStyleTag({content:'[data-netlify-deploy-id],iframe[title="Netlify Drawer"]{display:none!important;pointer-events:none!important}'})
+    .catch(error=>{if(!ignored.test(String(error)))throw error});
   await waitForHouseOptions(page,15,30000);
   assert(await page.locator('html.dark').count()===1,'El modo oscuro no quedó activo.');
   assert(await page.locator('#vla-owner-dark-contrast-v1').count()===1,'No se cargó la hoja de contraste final.');
