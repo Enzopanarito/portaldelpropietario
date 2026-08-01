@@ -173,6 +173,23 @@ test('un miembro deshabilitado con el mismo ID se reconcilia desde el detalle', 
   assert.equal(result.membershipSource, 'organization-detail');
 });
 
+test('descubre membresías dentro de envolturas anidadas de MKJ', () => {
+  const users = client.organizationUsers({
+    data: {
+      organization: {
+        access: {
+          organization_members: [
+            { membership: { active: false }, user: { id: 8006, email: 'inespomposo3012@gmail.com' } }
+          ]
+        }
+      }
+    }
+  });
+  assert.equal(users.length, 1);
+  assert.equal(client.organizationUserId(users[0]), '8006');
+  assert.equal(client.organizationUserEmail(users[0]), 'inespomposo3012@gmail.com');
+});
+
 test('MKJ nunca usa el endpoint global de usuario como atajo inseguro', async () => {
   client.clearSessionCache();
   const calls = [];
