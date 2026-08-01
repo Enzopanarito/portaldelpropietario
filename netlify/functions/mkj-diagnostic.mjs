@@ -9,6 +9,10 @@ const {
   organizationUserEmail
 } = client;
 
+// Huella SHA-256 de un secreto aleatorio temporal. El secreto nunca se publica.
+// Se elimina junto con esta función al finalizar la recuperación de Casa 13.
+const DIAGNOSTIC_SECRET_SHA256 = '6f8a40c5d429772385e2caa552357a6e22e8117925f7c4f3c1cb231c0e07a7ac';
+
 function clean(value, max = 254) {
   return String(value || '').trim().slice(0, max);
 }
@@ -44,10 +48,17 @@ function authorized(req) {
   // Secreto exclusivo por contexto de despliegue; nunca se expone al navegador.
   const expected = clean(Netlify.env.get('MKJ_DIAGNOSTIC_SECRET'), 256);
   const provided = clean((req.headers.get('authorization') || '').replace(/^Bearer\s+/i, ''), 256);
-  if (!expected || !provided) return false;
+  if (!provided) return false;
+  const providedHash = crypto.createHash('sha256').update(provided).digest('hex');
+  const hashMatches = crypto.timingSafeEqual(
+    Buffer.from(DIAGNOSTIC_SECRET_SHA256),
+    Buffer.from(providedHash)
+  );
+  if (!expected) return hashMatches;
   const left = Buffer.from(expected);
   const right = Buffer.from(provided);
-  return left.length === right.length && crypto.timingSafeEqual(left, right);
+  const envMatches = left.length === right.length && crypto.timingSafeEqual(left, right);
+  return envMatches || hashMatches;
 }
 
 function json(status, body) {
