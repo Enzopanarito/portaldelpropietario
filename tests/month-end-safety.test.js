@@ -82,3 +82,26 @@ test('auditoría y cierre usan el alcance histórico recuperable',()=>{
  assert.match(pilot,/monthly-close-not-complete/);
  assert.match(pilot,/results\.actions\.closeGate\.ok/);
 });
+
+test('la reconciliación del portón cambia de clave cuando cambian los saldos',()=>{
+ const rules={payment:{dueDay:10,surchargeRate:0.1}};
+ const owner={id:'owner-1',fields:{Casa:1,Propietario:'A','MKJ User ID':'7791','Deuda Anterior':20,'Deuda Anterior USD':20,'Deuda Anterior Bs Ref':0}};
+ const first=autopilot.accessStateFingerprint({owners:[owner],pagos:[],reportes:[],gastos:[]},rules);
+ const corrected={...owner,fields:{...owner.fields,'Deuda Anterior':0,'Deuda Anterior USD':0}};
+ const second=autopilot.accessStateFingerprint({owners:[corrected],pagos:[],reportes:[],gastos:[]},rules);
+ assert.notEqual(first,second);
+});
+
+test('el cierre confirma la contabilidad antes de sincronizar el proveedor externo',()=>{
+ const source=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_monthly_close_execute.js'),'utf8');
+ const doneIndex=source.indexOf("setCloseMarker(closeLock, month, 'DONE'");
+ const accessIndex=source.indexOf('autoSyncAll({ forceMkj: true');
+ assert(doneIndex>0);
+ assert(accessIndex>doneIndex);
+});
+
+test('el piloto reconcilia físicamente MKJ y no confía solo en el estado local',()=>{
+ const source=fs.readFileSync(path.join(__dirname,'..','netlify','functions','condo-autopilot-background.js'),'utf8');
+ assert.match(source,/key=`\$\{cycle\.clock\.date\}\|\$\{fingerprint\}`/);
+ assert.match(source,/autoSyncAll\(\{forceMkj:true,sendEmail:true\}\)/);
+});

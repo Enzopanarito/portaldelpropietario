@@ -10,6 +10,7 @@ const { FIELD_NAMES, mergeConfig, validateRules } = require('./_automation_rules
 const { evaluateAccessDecision } = require('./_access_decision_engine');
 const { attachOfficialBalances, officialControlQuery } = require('./_official_balances');
 const {filterActiveExpenses,currentMonthCaracas}=require('./_expense_lifecycle');
+const { mkjLogin, mkjSetMemberStatus } = require('./_mkj_client');
 
 const TABLES = {
   propietarios: 'Propietarios',
@@ -38,14 +39,6 @@ function nowCaracas() {
     timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', second: '2-digit'
   }).format(new Date());
-}
-
-function baseUrl() {
-  return (process.env.MKJ_BASE_URL || 'https://cloud.mkjoules.com').replace(/\/$/, '');
-}
-
-function orgId() {
-  return process.env.MKJ_ORG_ID || '1053';
 }
 
 function requiredAccessEnv() {
@@ -136,44 +129,6 @@ async function setAccessMode(mode) {
   if (!current.recordId) throw new Error('No existe registro de Configuración para guardar el modo del portón.');
   const updated = await airtablePatchRecord(TABLES.config, current.recordId, { [ACCESS_MODE_FIELD]: normalized });
   return { mode: normalized, record: updated };
-}
-
-function extractCookie(setCookieHeaders) {
-  const raw = Array.isArray(setCookieHeaders) ? setCookieHeaders.join(',') : String(setCookieHeaders || '');
-  const match = raw.match(/access_token=[^;]+/);
-  return match ? match[0] : '';
-}
-
-async function mkjLogin() {
-  const response = await fetch(`${baseUrl()}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ email: process.env.MKJ_ADMIN_EMAIL, password: process.env.MKJ_ADMIN_PASSWORD })
-  });
-  const text = await response.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch (_) { data = null; }
-  const cookie = extractCookie(response.headers.get('set-cookie'));
-  if (!response.ok || !cookie) throw new Error(`Login MKJ falló: HTTP ${response.status}${data?.message ? ' - ' + data.message : ''}`);
-  return { cookie, status: response.status };
-}
-
-async function mkjSetMemberStatus(memberId, action) {
-  const login = await mkjLogin();
-  const response = await fetch(`${baseUrl()}/api/organizations/${encodeURIComponent(orgId())}/members/${encodeURIComponent(memberId)}/${action}`, {
-    method: 'PUT',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      Cookie: login.cookie,
-      Referer: `${baseUrl()}/admin/users/${encodeURIComponent(memberId)}`
-    }
-  });
-  const text = await response.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch (_) { data = text || null; }
-  if (!response.ok) throw new Error(`MKJ ${action} falló: HTTP ${response.status}${data?.message ? ' - ' + data.message : ''}`);
-  return { status: response.status, data };
 }
 
 function ownerLinkIncludes(record, fieldName, ownerId) {
@@ -332,13 +287,18 @@ async function syncOwnerAccess(ownerId, options = {}, context = null) {
 
   let mkjResult = null;
   const shouldCallMkj = desiredAction !== 'none' && runMkj && (options.forceMkj || previousStatus !== desiredStatus);
-  if (shouldCallMkj) mkjResult = await mkjSetMemberStatus(memberId, desiredAction);
+  if (shouldCallMkj) mkjResult = await mkjSetMemberStatus(memberId, desiredAction, {
+    email: fields['MKJ Email'] || fields.Email || '',
+    session: options.mkjSession
+  });
 
-  const patched = await airtablePatchRecord(TABLES.propietarios, owner.id, {
+  const patch = {
     'Estado Acceso Portón': desiredStatus,
     'Última Sync MKJ': nowCaracas(),
     'Motivo Limitación Acceso': reason
-  });
+  };
+  if (mkjResult?.recoveredMemberId && mkjResult.resolvedMemberId) patch['MKJ User ID'] = mkjResult.resolvedMemberId;
+  const patched = await airtablePatchRecord(TABLES.propietarios, owner.id, patch);
 
   let email = null;
   if (desiredAction === 'disable' && desiredStatus === 'Limitado' && previousStatus !== 'Limitado' && options.sendEmail !== false) {
@@ -349,7 +309,8 @@ async function syncOwnerAccess(ownerId, options = {}, context = null) {
     ownerId: owner.id,
     casa: fields.Casa,
     propietario: fields.Propietario,
-    mkjUserId: memberId,
+    mkjUserId: mkjResult?.resolvedMemberId || memberId,
+    mkjUserIdRecovered: mkjResult?.recoveredMemberId === true,
     previousStatus,
     estado: desiredStatus,
     action: desiredAction,
@@ -391,14 +352,15 @@ async function autoSyncAll(options = {}) {
       results.push({ ownerId: owner.id, casa: owner.fields?.Casa, propietario: owner.fields?.Propietario, error: error.message });
     }
   }
+  const errorCount = results.filter(result => result.error).length;
   return {
-    success: true,
+    success: errorCount === 0,
     mode: modeInfo.mode,
     total: results.length,
     limited: results.filter(result => result.estado === 'Limitado').length,
     enabled: results.filter(result => result.estado === 'Habilitado').length,
     skipped: results.filter(result => result.skipped || result.action === 'skip-exception').length,
-    errors: results.filter(result => result.error).length,
+    errors: errorCount,
     results
   };
 }
