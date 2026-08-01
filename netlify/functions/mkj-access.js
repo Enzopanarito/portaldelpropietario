@@ -5,9 +5,14 @@ const { withAirtableUsage } = require('./_airtable_meter');
 
 const { requireAdmin } = require('./_auth');
 const { mkjLogin, mkjSetMemberStatus } = require('./_mkj_client');
+const {
+  getAccessMode, getAutomationRules, loadAccessContext, calculateExpiredAccessDebt,
+  syncOwnerAccess, ACCESS_MODE_AUTO
+} = require('./_access_control');
+const { evaluateManualAccessRequest } = require('./_manual_access_policy');
 
 const TABLE_PROPIETARIOS = 'Propietarios';
-const ALLOWED_ACTIONS = new Set(['enable', 'disable', 'test-login']);
+const ALLOWED_ACTIONS = new Set(['enable', 'disable', 'clear-exception', 'test-login']);
 
 function json(statusCode, body) {
   return {
@@ -79,7 +84,7 @@ const handler = async function(event) {
 
     const ownerId = body.ownerId;
     const rawMemberId = String(body.mkjUserId || '').trim();
-    if (!ownerId && !rawMemberId) return json(400, { success: false, message: 'Debe indicar propietario o MKJ User ID.' });
+    if (!ownerId) return json(400, { success: false, message: 'Debe indicar el propietario para que toda acción quede auditada.' });
 
     let owner = null;
     let memberId = rawMemberId;
@@ -89,11 +94,52 @@ const handler = async function(event) {
     }
     if (!memberId) return json(400, { success: false, message: 'Este propietario no tiene MKJ User ID configurado.' });
 
+    if (action === 'clear-exception') {
+      if (!ownerId || !owner) return json(400, { success:false, message:'Debe indicar el propietario.' });
+      const modeInfo = await getAccessMode();
+      if (modeInfo.mode !== ACCESS_MODE_AUTO) return json(409, { success:false, code:'AUTOMATIC_MODE_REQUIRED', message:'Active primero el modo Automático para devolver este propietario a la regla general.' });
+      if (owner.fields?.['Excepción Acceso'] !== true) {
+        return json(200, { success:true, action, idempotent:true, message:'El propietario ya estaba bajo la regla automática.' });
+      }
+      await airtablePatchOwner(ownerId, { 'Excepción Acceso':false, 'Motivo Limitación Acceso':'Excepción manual retirada. Reconciliación automática solicitada.' });
+      try {
+        const result = await syncOwnerAccess(ownerId, { forceMkj:true, sendEmail:false, reason:'Excepción manual retirada; estado reconciliado con la deuda vencida.' });
+        return json(200, { success:true, action, message:'Excepción retirada y acceso reconciliado con la regla automática.', result });
+      } catch (error) {
+        await airtablePatchOwner(ownerId, { 'Excepción Acceso':true, 'Estado Acceso Portón':'Excepción Manual', 'Motivo Limitación Acceso':'Se conservó la excepción porque falló la reconciliación automática.' }).catch(()=>{});
+        throw error;
+      }
+    }
+
+    let policy = { allowed:true, exception:false };
+    let accessCalc = null;
+    if (ownerId && owner) {
+      const modeInfo = await getAccessMode();
+      if (modeInfo.mode === ACCESS_MODE_AUTO) {
+        const [automationInfo, context] = await Promise.all([getAutomationRules(modeInfo), loadAccessContext()]);
+        const financialOwner = context.owners.find(item => item.id === ownerId) || owner;
+        accessCalc = calculateExpiredAccessDebt(financialOwner, context.pagos, context.reportes, {
+          expenses:context.gastos || [],
+          dueDay:automationInfo.rules.payment.dueDay,
+          surchargeRate:automationInfo.rules.payment.surchargeRate
+        });
+      }
+      policy = evaluateManualAccessRequest({
+        action,
+        mode:modeInfo.mode,
+        hasExpiredDebt:Boolean(accessCalc?.hasExpiredDebt),
+        hasException:owner.fields?.['Excepción Acceso'] === true,
+        exceptionRequested:body.manualException === true,
+        reason:body.reason
+      });
+      if (!policy.allowed) return json(409, { success:false, ...policy, calc:accessCalc });
+    }
+
     const result = await mkjSetMemberStatus(memberId, action, {
       email: owner?.fields?.['MKJ Email'] || owner?.fields?.Email || ''
     });
     memberId = result.resolvedMemberId || memberId;
-    const estado = action === 'enable' ? 'Habilitado' : 'Limitado';
+    const estado = policy.exception ? 'Excepción Manual' : (action === 'enable' ? 'Habilitado' : 'Limitado');
     const motivo = body.reason || (action === 'enable' ? 'Habilitación manual desde portal.' : 'Limitación manual desde portal.');
 
     let updatedOwner = null;
@@ -103,8 +149,17 @@ const handler = async function(event) {
         'Última Sync MKJ': nowCaracas(),
         'Motivo Limitación Acceso': motivo
       };
+      if (policy.createException) fields['Excepción Acceso'] = true;
       if (result.recoveredMemberId) fields['MKJ User ID'] = memberId;
-      updatedOwner = await airtablePatchOwner(ownerId, fields);
+      try {
+        updatedOwner = await airtablePatchOwner(ownerId, fields);
+      } catch (error) {
+        if (policy.createException && result.idempotent !== true) {
+          const rollbackAction = action === 'enable' ? 'disable' : 'enable';
+          await mkjSetMemberStatus(memberId, rollbackAction, { email:owner?.fields?.['MKJ Email'] || owner?.fields?.Email || '' }).catch(()=>{});
+        }
+        throw error;
+      }
     }
 
     return json(200, {
@@ -112,6 +167,8 @@ const handler = async function(event) {
       action,
       mkjUserId: memberId,
       estado,
+      manualException: policy.exception === true,
+      accessCalc,
       mkjStatus: result.status,
       mkjUserIdRecovered: result.recoveredMemberId === true,
       mkjMembershipVerified: result.verifiedMembership === true,

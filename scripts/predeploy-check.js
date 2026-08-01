@@ -14,8 +14,12 @@ const required=[
  'config/smart-payment-schema-v2.json',
  'netlify/functions/condo-autopilot-modern-scheduled.mjs',
  'netlify/functions/condo-autopilot-background.js',
+ 'netlify/functions/access-reconciliation-modern-scheduled.mjs',
+ 'netlify/functions/access-reconciliation-modern-background.mjs',
  'netlify/functions/payment-report-analyzer-background.js',
  'netlify/functions/payment-report-recovery-modern-scheduled.mjs',
+ 'netlify/functions/receipt-recovery-modern-scheduled.mjs',
+ 'netlify/functions/receipt-recovery-modern-background.mjs',
  'netlify/functions/_automation_activation_preflight.js',
  'scripts/expense-lifecycle-backfill.js'
 ];
@@ -36,9 +40,13 @@ check(rules.monthlyClose.automaticEnabled===false,'El cierre automático debe de
 check(rules.expensePreload.automaticEnabled===false,'La precarga automática debe desplegarse apagada.');
 
 const autopilotSchedule=read('netlify/functions/condo-autopilot-modern-scheduled.mjs');
+const accessReconciliationSchedule=read('netlify/functions/access-reconciliation-modern-scheduled.mjs');
 const recoverySchedule=read('netlify/functions/payment-report-recovery-modern-scheduled.mjs');
+const receiptRecoverySchedule=read('netlify/functions/receipt-recovery-modern-scheduled.mjs');
 check(autopilotSchedule.includes("schedule:'0 4 * * *'"),'El cron principal debe equivaler a medianoche de Venezuela.');
+check(accessReconciliationSchedule.includes("schedule:'5 * * * *'"),'Falta la reconciliación horaria del portón.');
 check(recoverySchedule.includes("schedule:'15 * * * *'"),'Falta la recuperación horaria de comprobantes.');
+check(receiptRecoverySchedule.includes("schedule:'*/15 * * * *'"),'Falta la recuperación periódica de recibos.');
 
 const edge=read('netlify/edge-functions/admin-premium-assets.js');
 check(edge.includes('admin-autopilot.js')&&edge.includes('admin-autopilot.css'),'El panel administrativo no inyecta el piloto.');
@@ -46,6 +54,8 @@ const background=read('netlify/functions/condo-autopilot-background.js');
 check(background.includes("require('./_internal_job_auth')")&&background.includes('verify(rawBody'),'El trabajo pesado no está autenticado.');
 const recovery=read('netlify/functions/payment-report-recovery-scheduled.js');
 new vm.Script(recovery,{filename:'payment-report-recovery-scheduled.js'});
+const receiptRecovery=read('netlify/functions/receipt-recovery-scheduled.js');
+new vm.Script(receiptRecovery,{filename:'receipt-recovery-scheduled.js'});
 
 let branch='';
 try{branch=execFileSync('git',['branch','--show-current'],{cwd:ROOT,encoding:'utf8'}).trim()}catch(error){errors.push(`No se pudo verificar la rama: ${error.message}.`)}
