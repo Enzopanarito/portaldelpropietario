@@ -114,6 +114,28 @@ async function auditGradients(page){
   });
 }
 
+async function waitForHouseOptions(page,expected=15,timeout=30000){
+  const deadline=Date.now()+timeout;
+  let found=0;
+  while(Date.now()<deadline){
+    const labels=await page.locator('#welcomeSelector option').allTextContents().catch(()=>[]);
+    found=labels.filter(label=>/^Casa\s+\d+\s+-/i.test(String(label||'').trim())).length;
+    if(found===expected)return;
+    await page.waitForTimeout(250);
+  }
+  throw new Error(`Se cargaron ${found} de ${expected} casas.`);
+}
+
+async function waitForLocatorText(page,locator,pattern,timeout=10000){
+  const deadline=Date.now()+timeout;
+  while(Date.now()<deadline){
+    const value=await locator.innerText().catch(()=>'');
+    if(pattern.test(value))return value;
+    await page.waitForTimeout(200);
+  }
+  throw new Error(`No apareció el texto esperado: ${pattern}.`);
+}
+
 (async()=>{
   const browser=await chromium.launch({headless:true});
   const page=await browser.newPage({viewport:{width:390,height:844}});
@@ -126,10 +148,8 @@ async function auditGradients(page){
   assert(response&&response.status()===200,`Portal respondió ${response&&response.status()}.`);
   assert(response.headers()['x-vla-owner-dark-contrast']==='wcag-v1','Falta marcador de contraste wcag-v1.');
   await page.addStyleTag({content:'[data-netlify-deploy-id],iframe[title="Netlify Drawer"]{display:none!important;pointer-events:none!important}'});
-  await page.waitForFunction(()=>{
-    const select=document.getElementById('welcomeSelector');
-    return document.documentElement.classList.contains('dark')&&select&&Array.from(select.options).filter(o=>/^Casa\s+\d+\s+-/.test(String(o.textContent||'').trim())).length===15;
-  },null,{timeout:30000});
+  await waitForHouseOptions(page,15,30000);
+  assert(await page.locator('html.dark').count()===1,'El modo oscuro no quedó activo.');
   assert(await page.locator('#vla-owner-dark-contrast-v1').count()===1,'No se cargó la hoja de contraste final.');
 
   const audits=[];
@@ -151,12 +171,16 @@ async function auditGradients(page){
   await page.click('#reportBtn');
   await page.locator('#vla-pay-title').waitFor({state:'visible',timeout:10000});
   audits.push(await contrastAudit(page,'#modal','Reportar pago inicial'));
+  await page.getByText('Efectivo',{exact:true}).click();
+  assert(await page.locator('#payChannelCash').isChecked(),'No se activó el canal de efectivo.');
+  await page.locator('#vla-pay-details').waitFor({state:'visible',timeout:10000});
   const rate=await page.evaluate(()=>Number(window.rate()));
+  await page.selectOption('#payCurrency','BS');
   await page.selectOption('#payMode','USD');
   await page.fill('#payAmount',String(Math.round(85*rate*100)/100));
   await page.locator('#payAmount').blur();
-  await page.waitForFunction(()=>/Monto identificado: Bs/.test(document.getElementById('vla-pay-detection').innerText),null,{timeout:10000});
-  audits.push(await contrastAudit(page,'#modal','Reportar pago con detección'));
+  await page.fill('#payCashReceiver','Administración');
+  audits.push(await contrastAudit(page,'#modal','Reportar pago con datos'));
   await page.screenshot({path:'owner-dark-payment.png',fullPage:true});
 
   const placeholder=await page.evaluate(()=>{
@@ -165,7 +189,7 @@ async function auditGradients(page){
   });
   const failures=audits.flatMap(item=>item.failures.map(f=>({...f,section:item.label})));
   assert(audits.every(item=>!item.missing),'Faltó una sección durante la auditoría.');
-  const minimumChecks={'Bienvenida':5,'Selector de tema':1,'Portal completo':50,'Reportar pago inicial':30,'Reportar pago con detección':30};
+  const minimumChecks={'Bienvenida':5,'Selector de tema':1,'Portal completo':50,'Reportar pago inicial':30,'Reportar pago con datos':30};
   assert(audits.every(item=>item.checked>=(minimumChecks[item.label]||1)),`La auditoría revisó muy pocos textos: ${JSON.stringify(audits)}`);
   assert(!failures.length,`Contrastes insuficientes: ${JSON.stringify(failures.slice(0,20))}`);
   assert(!badGradients.length,`Gradientes con contraste insuficiente: ${JSON.stringify(badGradients)}`);

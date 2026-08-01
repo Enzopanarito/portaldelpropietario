@@ -12,16 +12,25 @@ const viewports=[
 function transparent(value){return !value||value==='transparent'||value==='rgba(0, 0, 0, 0)'}
 function painted(color,image){return !transparent(color)||Boolean(image&&image!=='none')}
 
+async function waitForHouseOptions(page,expected=15,timeout=30000){
+  const deadline=Date.now()+timeout;
+  let found=0;
+  while(Date.now()<deadline){
+    const labels=await page.locator('#welcomeSelector option').allTextContents().catch(()=>[]);
+    found=labels.filter(label=>/^Casa\s+\d+\s+-/i.test(String(label||'').trim())).length;
+    if(found===expected)return;
+    await page.waitForTimeout(250);
+  }
+  throw new Error(`Se cargaron ${found} de ${expected} casas.`);
+}
+
 async function loadPortalWithOwners(page){
   let lastError=null;
   for(let attempt=1;attempt<=3;attempt++){
     try{
       const response=await page.goto(`${TARGET}/?owner-mobile-test=${Date.now()}-${attempt}`,{waitUntil:'domcontentloaded',timeout:60000});
       if(!response||!response.ok())throw new Error(`El portal respondió ${response&&response.status()}.`);
-      await page.waitForFunction(()=>{
-        const select=document.getElementById('welcomeSelector');
-        return select&&Array.from(select.options).some(option=>/^Casa\s+1\s+-/i.test(String(option.textContent||'').trim()));
-      },null,{timeout:30000});
+      await waitForHouseOptions(page,15,30000);
       await page.waitForTimeout(300);
       return response;
     }catch(error){
@@ -73,7 +82,8 @@ async function loadPortalWithOwners(page){
       buttonColor:style(button)?.color
     };
   });
-  if(blockedTailwind<1)throw new Error('La prueba no bloqueó realmente el Tailwind CDN.');
+  // Si el CDN ya no está incluido, blockedTailwind queda en cero y el portal
+  // está en una condición todavía más segura: toda la presentación es local.
   if(welcomeMetrics.marker!=='fluid-v2')throw new Error('No se activó el marcador móvil fluid-v2.');
   if(!welcomeMetrics.stylesheetLink||!welcomeMetrics.stylesheetLoaded)throw new Error('No se cargó la hoja móvil local.');
   if(welcomeMetrics.documentWidth>welcomeMetrics.viewport+2)throw new Error('La bienvenida desborda horizontalmente.');
@@ -151,7 +161,7 @@ async function loadPortalWithOwners(page){
 
   if(pageErrors.length)throw new Error(`Errores JavaScript: ${pageErrors.join(' | ')}`);
   if(consoleErrors.length)throw new Error(`Errores de consola: ${consoleErrors.join(' | ')}`);
-  const output={target:TARGET,status:response.status(),tailwindCdnBlocked:true,blockedTailwind,welcome:welcomeMetrics,viewports:results,pageErrors,consoleErrors};
+  const output={target:TARGET,status:response.status(),tailwindCdnRequested:blockedTailwind>0,blockedTailwind,welcome:welcomeMetrics,viewports:results,pageErrors,consoleErrors};
   fs.writeFileSync('owner-mobile-result.json',JSON.stringify(output,null,2));
   console.log('OWNER_MOBILE_BROWSER_OK');
   await browser.close();

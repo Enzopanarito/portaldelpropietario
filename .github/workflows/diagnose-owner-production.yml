@@ -27,6 +27,22 @@ jobs:
           cat > diagnose-owner.cjs <<'NODE'
           const { chromium } = require('playwright');
           const fs = require('fs');
+
+          async function waitForCasaOne(page, timeout = 60000) {
+            const deadline = Date.now() + timeout;
+            while (Date.now() < deadline) {
+              const options = page.locator('#welcomeSelector option');
+              const count = await options.count().catch(() => 0);
+              for (let index = 0; index < count; index += 1) {
+                const option = options.nth(index);
+                const label = String(await option.innerText().catch(() => '')).trim();
+                if (/^Casa 1 -/.test(label)) return option.getAttribute('value');
+              }
+              await page.waitForTimeout(250);
+            }
+            throw new Error('No apareció Casa 1 dentro del tiempo esperado.');
+          }
+
           (async () => {
             const target = 'https://villalosapamates.netlify.app';
             const browser = await chromium.launch({ headless: true });
@@ -40,9 +56,7 @@ jobs:
             const owners = source.propietarios || [];
             const response = await page.goto(`${target}/?diagnose=${Date.now()}`, { waitUntil: 'load', timeout: 60000 });
             const welcome = page.locator('#welcomeSelector');
-            const casaOneOption = welcome.locator('option').filter({ hasText: /^Casa 1 -/ }).first();
-            await casaOneOption.waitFor({ state: 'attached', timeout: 30000 });
-            const firstValue = await casaOneOption.getAttribute('value');
+            const firstValue = await waitForCasaOne(page, 60000);
             if (!firstValue) throw new Error('No se encontró una Casa 1 válida después de cargar los propietarios.');
             await welcome.selectOption(firstValue);
             await page.screenshot({ path: 'owner-before-enter.png', fullPage: true });

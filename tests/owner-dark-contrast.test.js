@@ -17,6 +17,10 @@ assert(css.includes('html.dark .vla-pay-detect.warn'),'Falta el estado de advert
 assert(css.includes('html.dark .vla-pay-detect.ok'),'Falta el estado confirmado del detector.');
 assert(css.includes('html.dark .vla-pay-currency-choice'),'Falta la confirmación manual de moneda.');
 assert(css.includes('html.dark .vla-pay-file-button'),'Falta el selector de comprobante.');
+assert(css.includes('html.dark .vla-pay-scan.neutral'),'Falta el contraste de la lectura inteligente inicial.');
+assert(css.includes('html.dark .vla-pay-validation.warn'),'Falta el contraste de datos pendientes.');
+assert(css.includes('html.dark .vla-pay-validation.ok'),'Falta el contraste del formulario completo.');
+assert(css.includes('html.dark .vla-pay-channel-grid small'),'Falta el contraste de las opciones digital y efectivo.');
 assert(css.includes('html.dark .vla-pay-cancel'),'Falta contraste del botón cancelar.');
 assert(css.includes('html.dark #estado>.metric-gold'),'Falta oscurecer la tarjeta dorada para texto blanco legible.');
 assert(css.includes('color-scheme:dark'),'Falta adaptar controles nativos al modo oscuro.');
