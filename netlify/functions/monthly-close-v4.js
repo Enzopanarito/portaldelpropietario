@@ -52,7 +52,8 @@ const handler = async function(event) {
       const partial = markers.find(marker => marker.status === 'ERROR_PARTIAL');
       const cutoff = Date.now() - ACTIVE_LOCK_TTL_MS;
       const running = markers.find(marker => marker.status === 'LOCKED' && (!Number.isFinite(marker.createdAt) || marker.createdAt >= cutoff));
-      return json(200, { success:true, dryRun:true, month, planHash:plan.planHash, sourceHash:plan.sourceHash, validation:plan.validation, snapshot:{count:context.snapshotCount,expected:context.expectedSnapshotCount,complete:context.snapshotComplete}, closeStatus:done?'already-closed':partial?'partial-error':running?'in-progress':'ready', repairAvailable:!!partial, repairOperationId:partial?.operationId||null, canExecute:!done&&!partial&&!running }, counter);
+      const paymentScopeReady=plan.validation?.closeScopeReady!==false;
+      return json(200, { success:true, dryRun:true, month, planHash:plan.planHash, sourceHash:plan.sourceHash, validation:plan.validation, snapshot:{count:context.snapshotCount,expected:context.expectedSnapshotCount,complete:context.snapshotComplete}, closeStatus:done?'already-closed':partial?'partial-error':running?'in-progress':paymentScopeReady?'ready':'blocked-invalid-payment-dates', repairAvailable:!!partial, repairOperationId:partial?.operationId||null, canExecute:!done&&!partial&&!running&&paymentScopeReady }, counter);
     } catch (error) { return json(500, { success:false, dryRun:true, message:'Error preparando la simulación del cierre.', detail:error.message }, counter); }
   }
   const submittedPlanHash = String(body.planHash || '').trim();
@@ -65,6 +66,10 @@ const handler = async function(event) {
     const context = await loadContext(month, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
     if (!context.owners.length) throw new Error('No se encontraron propietarios para cerrar el mes.');
     const plan = buildPlan({ owners: context.owners, expenses: context.expenses, payments: context.payments, month,dueDay:context.automationRules?.payment?.dueDay,surchargeRate:context.automationRules?.payment?.surchargeRate });
+    if(plan.validation?.closeScopeReady===false){
+      await setCloseMarker(closeLock, month, 'ABORTED', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter).catch(() => null);
+      return json(409,{success:false,protected:true,month,invalidPaymentDatesCount:plan.validation.invalidPaymentDatesCount,invalidPaymentIds:plan.validation.invalidPaymentIds,message:'Existen pagos sin una fecha válida. El cierre se detuvo sin modificar datos.'},counter);
+    }
     if (plan.planHash !== submittedPlanHash) {
       await setCloseMarker(closeLock, month, 'ABORTED', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter).catch(() => null);
       return json(409, { success:false, protected:true, staleSimulation:true, month, newPlanHash:plan.planHash, message:'Los pagos, gastos o saldos cambiaron después de la simulación. No se modificó nada. Vuelva a simular.' }, counter);

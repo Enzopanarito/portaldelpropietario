@@ -32,7 +32,7 @@ assert(data.includes("'Estado de Procesamiento'"));
 assert(data.includes("'Resultado Validación'"));
 assert(data.includes("'AI Confidence'"));
 assert(expense.includes('allowedMonths'));
-assert(netlify.includes('[functions."condo-autopilot-scheduled"]'));
+assert(read('netlify/functions/condo-autopilot-modern-scheduled.mjs').includes("schedule:'0 4 * * *'"));
 
 for(const value of ['Aprobación automática autorizada','Coincide preliminarmente','Revisión manual urgente'])assert(field('Reportes de Pago','Estado de Procesamiento').choices.includes(value));
 for(const value of ['Coincidencia exacta verificada','Monto insuficiente','Duplicado'])assert(field('Reportes de Pago','Resultado Validación').choices.includes(value));

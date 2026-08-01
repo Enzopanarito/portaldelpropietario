@@ -22,6 +22,13 @@ html.vla-pay-open,html.vla-pay-open body{overflow:hidden!important}
 .vla-pay-form{display:grid;gap:16px}
 .vla-pay-proof-first{background:linear-gradient(145deg,#fbfffc,#f3faf5)}
 .vla-pay-section{display:grid;gap:14px;padding:17px;border:1px solid #e2e8f0;border-radius:20px;background:#fff}
+.vla-pay-channel-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.vla-pay-channel-grid label{display:block;cursor:pointer;position:relative}
+.vla-pay-channel-grid input{position:absolute;opacity:0;pointer-events:none}
+.vla-pay-channel-grid label>span{display:flex;min-height:82px;flex-direction:column;justify-content:center;gap:4px;border:2px solid #dbe4ef;border-radius:17px;padding:13px 15px;background:#f8fafc;color:#172033;transition:border-color .16s ease,background .16s ease,box-shadow .16s ease}
+.vla-pay-channel-grid b{font-size:14px;font-weight:900}.vla-pay-channel-grid small{font-size:11px;line-height:1.35;color:#64748b}
+.vla-pay-channel-grid input:checked+span{border-color:#12823d;background:#effaf3;box-shadow:0 0 0 3px rgba(18,130,61,.1)}
+.vla-pay-channel-grid input:focus-visible+span{outline:3px solid rgba(14,165,233,.28);outline-offset:2px}
 #vla-pay-details.hidden{display:none!important}
 .vla-pay-two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .vla-pay-optional{background:#fbfcfd}
@@ -78,6 +85,8 @@ html.vla-pay-open,html.vla-pay-open body{overflow:hidden!important}
 .vla-pay-cancel{border:1.5px solid #aebbc8;background:#fff;color:#334155}
 html.dark #modal .vla-pay-sheet,html.dark .vla-pay-section,html.dark .vla-pay-balance-grid>div,html.dark .vla-pay-field input,html.dark .vla-pay-field select,html.dark .vla-pay-field textarea,html.dark .vla-pay-file-button{background:#0f172a!important;color:#f8fafc!important;border-color:#334155!important}
 html.dark .vla-pay-summary,html.dark .vla-pay-optional{background:#111c2e!important;border-color:#334155!important}
+html.dark .vla-pay-channel-grid label>span{background:#111c2e;color:#f8fafc;border-color:#334155}
+html.dark .vla-pay-channel-grid input:checked+span{background:#12351f;border-color:#22c55e}
 html.dark .vla-pay-field>span,html.dark .vla-pay-section-title h4,html.dark .vla-pay-header h3{color:#f8fafc!important}
 
 @media(max-width:767px){
@@ -94,6 +103,7 @@ html.dark .vla-pay-field>span,html.dark .vla-pay-section-title h4,html.dark .vla
   .vla-pay-balance-grid strong{font-size:18px}
   .vla-pay-section{padding:14px;border-radius:18px}
   .vla-pay-two{grid-template-columns:1fr}
+  .vla-pay-channel-grid{grid-template-columns:1fr}
   .vla-pay-date{align-items:flex-start;flex-direction:column}
   .vla-pay-date strong{text-align:left}
   .vla-pay-detect{align-items:flex-start}

@@ -27,7 +27,7 @@
     "possible_visual_modification"
   ],
   "properties": {
-    "method": {"type":"string","enum":["TRANSFER_VE","MOBILE_PAYMENT_VE","ZELLE","TRANSFER_US","OTHER","UNKNOWN"]},
+    "method": {"type":"string","enum":["TRANSFER_VE","MOBILE_PAYMENT_VE","ZELLE","TRANSFER_US","BINANCE_PAY","CRYPTO_TRANSFER","OTHER","UNKNOWN"]},
     "bank_or_platform": {"type":["string","null"],"maxLength":160},
     "amount": {"type":["number","null"],"minimum":0},
     "currency": {"type":"string","enum":["VES","USD","UNKNOWN"]},

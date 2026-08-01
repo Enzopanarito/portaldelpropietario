@@ -12,10 +12,10 @@ const required=[
  'admin-autopilot.css',
  'config/condo-automation-rules-v1.json',
  'config/smart-payment-schema-v2.json',
- 'netlify/functions/condo-autopilot-scheduled.js',
+ 'netlify/functions/condo-autopilot-modern-scheduled.mjs',
  'netlify/functions/condo-autopilot-background.js',
  'netlify/functions/payment-report-analyzer-background.js',
- 'netlify/functions/payment-report-recovery-scheduled.js',
+ 'netlify/functions/payment-report-recovery-modern-scheduled.mjs',
  'netlify/functions/_automation_activation_preflight.js',
  'scripts/expense-lifecycle-backfill.js'
 ];
@@ -35,10 +35,10 @@ check(rules.access.automaticEnabled===false,'El control automático debe despleg
 check(rules.monthlyClose.automaticEnabled===false,'El cierre automático debe desplegarse apagado.');
 check(rules.expensePreload.automaticEnabled===false,'La precarga automática debe desplegarse apagada.');
 
-const netlify=read('netlify.toml');
-check(netlify.includes('[functions."condo-autopilot-scheduled"]'),'Falta el cron diario del piloto.');
-check(netlify.includes('schedule = "0 4 * * *"'),'El cron principal debe equivaler a medianoche de Venezuela.');
-check(netlify.includes('[functions."payment-report-recovery-scheduled"]'),'Falta la recuperación horaria de comprobantes.');
+const autopilotSchedule=read('netlify/functions/condo-autopilot-modern-scheduled.mjs');
+const recoverySchedule=read('netlify/functions/payment-report-recovery-modern-scheduled.mjs');
+check(autopilotSchedule.includes("schedule:'0 4 * * *'"),'El cron principal debe equivaler a medianoche de Venezuela.');
+check(recoverySchedule.includes("schedule:'15 * * * *'"),'Falta la recuperación horaria de comprobantes.');
 
 const edge=read('netlify/edge-functions/admin-premium-assets.js');
 check(edge.includes('admin-autopilot.js')&&edge.includes('admin-autopilot.css'),'El panel administrativo no inyecta el piloto.');

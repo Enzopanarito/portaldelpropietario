@@ -16,7 +16,7 @@ test('el cron solo despacha y firma el trabajo pesado de forma interna',async()=
   const body=JSON.parse(result.body);
   assert.equal(result.statusCode,202);
   assert.equal(body.queued,true);
-  assert.equal(request.url,'https://villa.test/.netlify/functions/condo-autopilot-background');
+  assert.equal(request.url,'https://villa.test/api/vla/condo-autopilot');
   assert.equal(verify(request.options.body,request.options.headers,process.env),true);
  }finally{
   global.fetch=previous.fetch;

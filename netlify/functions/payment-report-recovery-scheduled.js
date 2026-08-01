@@ -8,7 +8,7 @@ const {sign}=require('./_internal_job_auth');
 async function queue(reportId){
  const site=String(process.env.URL||'').replace(/\/$/,'');if(!site)throw new Error('Falta URL del sitio.');
  const payload=JSON.stringify({reportId}),authorization=sign(payload);
- const response=await fetch(`${site}/.netlify/functions/payment-report-analyzer-background`,{method:'POST',headers:{'Content-Type':'application/json','x-vla-job-timestamp':authorization.timestamp,'x-vla-job-signature':authorization.signature},body:payload});
+ const response=await fetch(`${site}/api/vla/payment-report-analyzer`,{method:'POST',headers:{'Content-Type':'application/json','x-vla-job-timestamp':authorization.timestamp,'x-vla-job-signature':authorization.signature},body:payload});
  return{reportId,queued:response.ok,status:response.status};
 }
 const handler=async function(){

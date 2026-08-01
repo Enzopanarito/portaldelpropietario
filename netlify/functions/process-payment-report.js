@@ -144,20 +144,23 @@ const handler = async function(event) {
     }
 
     const detectedDate=String(f['Fecha Operación Detectada']||'').slice(0,10),paymentDate=/^\d{4}-\d{2}-\d{2}$/.test(detectedDate)&&detectedDate<=todayCaracasISO()?detectedDate:todayCaracasISO();
+    const receivedCurrency=selectName(f['Moneda Ingresada']||'')|| (mode==='USD'?'USD':'VES'),receivedAmount=money(Number(f['Monto Ingresado']||0))|| (receivedCurrency==='USD'?usdEq:amountBs);
     const paymentFields = {
       'Propietario que Paga': [ownerId],
       'Fecha de Pago': paymentDate,
       'Forma de Pago': mode,
       'Monto Pagado': usdEq,
       'Equivalente USD Aplicado': usdEq,
-      'Moneda Recibida':mode==='USD'?'USD':'VES',
-      'Monto Recibido':mode==='USD'?usdEq:amountBs,
+      'Moneda Recibida':receivedCurrency,
+      'Monto Recibido':receivedAmount,
       'Fuente Tasa BCV':mode==='USD'?'No aplica':'Tasa BCV del reporte',
       'Reporte de Pago Origen':[reportId],
       'Referencia':safeDisplayText(f.Referencia||'',160),
       'Hash SHA-256':safeDisplayText(f['Hash SHA-256']||'',64),
+      'Hash Perceptual':safeDisplayText(f['Hash Perceptual']||'',64),
       'Huella Financiera':safeDisplayText(f['Huella Financiera']||'',64),
-      'Fuente de Validación':decisionSource==='automatic'?'Automática':'Manual'
+      'Fuente de Validación':decisionSource==='automatic'?'Automática':'Manual',
+      'Observaciones':safeDisplayText(f['Observaciones Reportadas']||'',500)
     };
     if (mode === 'Bs BCV') {
       paymentFields['Monto Pagado Bs'] = amountBs;

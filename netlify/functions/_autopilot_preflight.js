@@ -19,6 +19,7 @@ function evaluateClosePreflight({rules,dryRun,pendingReports=0,bcv=null,pendingF
  const cycle=rules?cycleStatus(rules,now):null;
  add('CLOSE_WINDOW',cycle?.isCloseWindow===true,cycle?`Fecha local ${cycle.clock.date} ${cycle.clock.hour}:${String(cycle.clock.minute).padStart(2,'0')}.`:'Sin reloj local.');
  add('DRY_RUN_READY',dryRun?.canExecute===true,dryRun?.closeStatus?`Estado: ${dryRun.closeStatus}.`:'No existe simulación válida.');
+ add('PAYMENT_DATES_VALID',dryRun?.validation?.closeScopeReady!==false,`${Number(dryRun?.validation?.invalidPaymentDatesCount||0)} pago(s) sin fecha válida.`);
  add('AUDIT_COMPLETE',dryRun?.snapshot?.complete===true,`Corte: ${dryRun?.snapshot?.count||0}/${dryRun?.snapshot?.expected||0}.`);
  add('NO_PENDING_REPORTS',Number(pendingReports||0)===0,`${Number(pendingReports||0)} reporte(s) de pago pendiente(s).`);
  add('NO_PENDING_FINANCIAL_OPS',Number(pendingFinancialOperations||0)===0,`${Number(pendingFinancialOperations||0)} operación(es) financiera(s) pendiente(s).`);

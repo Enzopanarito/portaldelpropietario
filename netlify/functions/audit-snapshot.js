@@ -11,7 +11,8 @@ const { begin, setState } = require('./_operation_guard');
 const { safeDisplayText } = require('./_security_utils');
 const { hashJson } = require('./_audit_cleanup');
 const { calculateOwnerBalance } = require('./_balance_engine_v4');
-const { filterActiveExpenses } = require('./_expense_lifecycle');
+const { filterClosingExpenses } = require('./_expense_lifecycle');
+const { splitPaymentsForClose } = require('./_monthly_close_core_v4');
 const { attachOfficialBalances, officialControlQuery } = require('./_official_balances');
 const { mergeConfig } = require('./_automation_rules');
 
@@ -211,9 +212,17 @@ const handler = async function(event) {
     ]);
 
     const owners=attachOfficialBalances(rawOwners,officialRecords,month),rules=mergeConfig(configRecords[0]||{});
-    const activeGastos=filterActiveExpenses(gastos,month);
-    const transitionMode = hasLegacyIndividualCharges(activeGastos);
-    const expectedRows = owners.flatMap(owner => rows(owner, compute(owner, activeGastos, pagos, transitionMode, month,rules), month, date, transitionMode));
+    const closingGastos=filterClosingExpenses(gastos,month),paymentScope=splitPaymentsForClose(pagos,month);
+    if(paymentScope.invalid.length){
+      return json(409,{
+        success:false,protected:true,month,
+        invalidPaymentDatesCount:paymentScope.invalid.length,
+        invalidPaymentIds:paymentScope.invalid.map(record=>record.id),
+        message:'Existen pagos sin una fecha válida. El corte se detuvo sin modificar datos.'
+      },counter);
+    }
+    const transitionMode = hasLegacyIndividualCharges(closingGastos);
+    const expectedRows = owners.flatMap(owner => rows(owner, compute(owner, closingGastos, paymentScope.eligible, transitionMode, month,rules), month, date, transitionMode));
     const existingConcepts = new Set(existing.map(record => String(record.fields?.Concepto || '')));
     let missingRows = expectedRows.filter(row => !existingConcepts.has(String(row.fields?.Concepto || '')));
     const expectedCount = owners.length * ROWS_PER_OWNER;

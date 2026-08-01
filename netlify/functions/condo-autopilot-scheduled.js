@@ -12,7 +12,7 @@ const handler=async function(){
   if(!site)throw new Error('Falta URL del sitio.');
   const payload=JSON.stringify({requestedAt:new Date().toISOString(),source:'netlify-schedule'});
   const authorization=sign(payload);
-  const queued=await fetch(`${site}/.netlify/functions/condo-autopilot-background`,{
+  const queued=await fetch(`${site}/api/vla/condo-autopilot`,{
    method:'POST',
    headers:{
     'Content-Type':'application/json',

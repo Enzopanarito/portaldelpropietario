@@ -179,13 +179,13 @@
     try{
       window.vlaCloseBusy=true;
       if(button){button.disabled=true;button.textContent='Preparando cierre...'}
-      dry=await adminFetch('/.netlify/functions/monthly-close',{method:'POST',body:JSON.stringify({dryRun:true})});
+      dry=await adminFetch('/api/vla/monthly-close',{method:'POST',body:JSON.stringify({dryRun:true})});
       if(dry.closeStatus==='already-closed')throw new Error(`El mes ${dry.month} ya fue cerrado.`);
       if(dry.closeStatus==='in-progress')throw new Error(`Ya existe un cierre de ${dry.month} en proceso.`);
       if(dry.repairAvailable&&dry.repairOperationId){
         if(!confirm(`Existe un cierre parcial de ${dry.month}. ¿Desea ejecutar la reparación automática antes de continuar?`))throw new Error('El cierre parcial debe repararse antes de continuar.');
         if(button)button.textContent='Reparando cierre...';
-        const repaired=await adminFetch('/.netlify/functions/monthly-close',{method:'POST',body:JSON.stringify({action:'repair',month:dry.month,operationId:dry.repairOperationId})});
+        const repaired=await adminFetch('/api/vla/monthly-close',{method:'POST',body:JSON.stringify({action:'repair',month:dry.month,operationId:dry.repairOperationId})});
         toast(repaired.message||'Cierre parcial reparado.');
         await loadAll(true);
         return;
@@ -195,10 +195,10 @@
       if(!approved)return;
       if(button)button.textContent='Verificando respaldo...';
       await adminFetch('/.netlify/functions/audit-snapshot',{method:'POST',body:JSON.stringify({month:dry.month})});
-      const finalCheck=await adminFetch('/.netlify/functions/monthly-close',{method:'POST',body:JSON.stringify({dryRun:true,month:dry.month})});
+      const finalCheck=await adminFetch('/api/vla/monthly-close',{method:'POST',body:JSON.stringify({dryRun:true,month:dry.month})});
       if(finalCheck.planHash!==dry.planHash)throw new Error('Los datos cambiaron durante la revisión. No se cerró el mes. Presione nuevamente Cierre de Mes para revisar los valores actualizados.');
       if(button)button.textContent='Cerrando y verificando...';
-      const done=await adminFetch('/.netlify/functions/monthly-close',{method:'POST',body:JSON.stringify({confirmed:true,month:dry.month,planHash:finalCheck.planHash})});
+      const done=await adminFetch('/api/vla/monthly-close',{method:'POST',body:JSON.stringify({confirmed:true,month:dry.month,planHash:finalCheck.planHash})});
       alert(`Cierre completado y verificado.\nMes: ${done.month}\nPropietarios: ${done.updatedCount}\nPagos cerrados: ${done.paymentsClosedCount}${done.warning?`\nAdvertencia: ${done.warning}`:''}`);
       await loadAll(true);
     }catch(error){
@@ -207,7 +207,7 @@
         if(repair){
           try{
             if(button)button.textContent='Reparando cierre...';
-            const repaired=await adminFetch('/.netlify/functions/monthly-close',{method:'POST',body:JSON.stringify({action:'repair',month:error.data.month||(dry&&dry.month),operationId:error.data.repairOperationId})});
+            const repaired=await adminFetch('/api/vla/monthly-close',{method:'POST',body:JSON.stringify({action:'repair',month:error.data.month||(dry&&dry.month),operationId:error.data.repairOperationId})});
             toast(repaired.message||'Reparación completada.');
             await loadAll(true);
             return;

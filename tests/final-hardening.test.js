@@ -42,7 +42,9 @@ assert(netlify.includes('Strict-Transport-Security'));
 assert(netlify.includes('Content-Security-Policy'));
 assert(netlify.includes("object-src 'none'"));
 assert(netlify.includes("frame-ancestors 'self'"));
-assert(netlify.includes('https://cdn.tailwindcss.com'));
+assert(!netlify.includes('https://cdn.tailwindcss.com'));
+assert(netlify.includes('publish = "dist"'));
+assert(source('scripts/build-production.js').includes('PUBLIC_FILES'));
 assert(netlify.includes('https://upload.wikimedia.org'));
 
 const proxy = source('netlify/functions/airtable-v2.js');

@@ -6,13 +6,17 @@
     "node": ">=20"
   },
   "scripts": {
+    "build": "node scripts/build-production.js",
     "test": "node --test tests/*.test.js",
     "test:browser": "node --test tests/*.cjs",
     "verify": "node scripts/predeploy-check.js && npm test"
   },
   "dependencies": {
+    "@netlify/aws-lambda-compat": "^1.0.0",
     "@netlify/blobs": "^10.7.9",
     "nodemailer": "^9.0.3",
-    "pdfkit": "^0.15.0"
+    "pdfkit": "^0.15.0",
+    "sharp": "^0.34.3",
+    "tailwindcss": "^3.4.17"
   }
 }

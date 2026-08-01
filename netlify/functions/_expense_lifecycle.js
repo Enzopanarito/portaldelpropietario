@@ -35,6 +35,13 @@ function isActiveExpense(record,month=currentMonthCaracas()){
  return status===STATUS.ACTIVE&&(!recordMonth||recordMonth===month);
 }
 function filterActiveExpenses(records,month=currentMonthCaracas()){return(records||[]).filter(record=>isActiveExpense(record,month))}
+// El cierre debe poder reconstruirse aunque una rotación incompleta ya haya
+// marcado el mes anterior como Cerrado. Programado y Anulado nunca participan.
+function isClosingExpense(record,month){
+ const status=statusOf(record),recordMonth=monthOf(record);
+ return recordMonth===clean(month)&&(status===STATUS.ACTIVE||status===STATUS.CLOSED);
+}
+function filterClosingExpenses(records,month){return(records||[]).filter(record=>isClosingExpense(record,month))}
 function compactTemplate(record,targetMonth){
  const fields=fieldsOf(record),owners=Array.isArray(fields.Propietarios)?[...fields.Propietarios].sort():[];
  return{sourceId:clean(record&&record.id),targetMonth,concept:clean(fields.Concepto),amount:Number(fields.Monto||0),type:choice(fields['Tipo de Gasto']),mode:choice(fields['Forma de Pago']||'Bs BCV'),frequency:choice(fields.Frecuencia||'Eventual'),owners};
@@ -67,4 +74,4 @@ function newExpenseLifecycleFields({month=currentMonthCaracas(),status,origin=OR
  return{[FIELDS.month]:month,[FIELDS.status]:active,[FIELDS.origin]:origin,...(active===STATUS.SCHEDULED?{[FIELDS.preparedAt]:now.toISOString()}:{[FIELDS.activatedAt]:now.toISOString()})};
 }
 
-module.exports={FIELDS,STATUS,ORIGIN,clean,choice,fieldsOf,currentMonthCaracas,nextMonth,statusOf,monthOf,isActiveExpense,filterActiveExpenses,compactTemplate,templateKey,templateIdentity,buildPreloadPlan,buildRotationPlan,newExpenseLifecycleFields};
+module.exports={FIELDS,STATUS,ORIGIN,clean,choice,fieldsOf,currentMonthCaracas,nextMonth,statusOf,monthOf,isActiveExpense,filterActiveExpenses,isClosingExpense,filterClosingExpenses,compactTemplate,templateKey,templateIdentity,buildPreloadPlan,buildRotationPlan,newExpenseLifecycleFields};

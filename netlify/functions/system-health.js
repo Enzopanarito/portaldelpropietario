@@ -195,7 +195,11 @@ const handler = async function(event) {
     const pendingJobs = whatsappJobs.filter(r => selectName((r.fields || {}).Estado) === 'Pendiente').length;
     const errorJobs = whatsappJobs.filter(r => Number((r.fields || {}).Errores || 0) > 0 || selectName((r.fields || {}).Estado) === 'Error').length;
     const lastJob = latestByField(whatsappJobs, 'Creado En') || latestByField(whatsappJobs, 'Finalizado En');
-    add('WhatsApp local agent', true, `Programaciones activas: ${activeSchedules}; Jobs pendientes: ${pendingJobs}; Jobs con errores: ${errorJobs}; Último job: ${lastJob ? ((lastJob.fields || {})['Job ID'] || 'sin ID') : 'ninguno'}.`, pendingJobs || errorJobs ? 'warning' : 'ok');
+    const whatsappSafe=activeSchedules===0&&pendingJobs===0&&errorJobs===0;
+    add('WhatsApp opcional', whatsappSafe, whatsappSafe
+      ? 'Sin programaciones reales activas ni jobs pendientes. Los avisos críticos siguen por correo automático; WhatsApp queda disponible solo como conector manual.'
+      : `Requiere atención: programaciones activas ${activeSchedules}; jobs pendientes ${pendingJobs}; jobs con errores ${errorJobs}; último job ${lastJob ? ((lastJob.fields || {})['Job ID'] || 'sin ID') : 'ninguno'}. El envío real depende de un agente local y no debe considerarse autónomo.`,
+      whatsappSafe?'ok':'warning');
 
     add('Botón Portón en admin', true, 'Disponible en el panel Admin como 🚪 Portón; abre el selector Automático/Manual, Auto Sync y botones Habilitar/Limitar.');
     add('Botón Auto Sync', true, 'Disponible dentro del módulo Portón. En modo Manual queda bloqueado para evitar ejecuciones accidentales.');

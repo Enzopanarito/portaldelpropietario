@@ -56,7 +56,7 @@ assert.strictEqual(analysis.additionalProperties,false);
 assert(!Object.prototype.hasOwnProperty.call(analysis.properties,'approved'),'La IA no puede devolver una propiedad approved.');
 const analysisRequired=['method','amount','currency','transaction_status','recipient_name','recipient_phone','recipient_email','confidence','critical_fields_visible','warnings','possible_visual_modification'];
 for(const field of analysisRequired)assert(analysis.required.includes(field),`El contrato AI no exige ${field}.`);
-assert.deepStrictEqual(analysis.properties.method.enum,['TRANSFER_VE','MOBILE_PAYMENT_VE','ZELLE','TRANSFER_US','OTHER','UNKNOWN']);
+assert.deepStrictEqual(analysis.properties.method.enum,['TRANSFER_VE','MOBILE_PAYMENT_VE','ZELLE','TRANSFER_US','BINANCE_PAY','CRYPTO_TRANSFER','OTHER','UNKNOWN']);
 assert.deepStrictEqual(analysis.properties.transaction_status.enum,['COMPLETED','SENT','PROCESSED','PENDING','SCHEDULED','FAILED','CANCELLED','REJECTED','UNKNOWN']);
 assert.strictEqual(analysis.properties.confidence.minimum,0);
 assert.strictEqual(analysis.properties.confidence.maximum,1);

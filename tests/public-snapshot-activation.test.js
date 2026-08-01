@@ -10,7 +10,8 @@ const generatedDefault=fs.readFileSync(path.join(__dirname,'..','netlify','funct
 const store=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_public_snapshot_store.js'),'utf8');
 const route=fs.readFileSync(path.join(__dirname,'..','netlify','functions','public-data-v3.js'),'utf8');
 
-assert(config.includes('command = "node scripts/generate-netlify-runtime-config.js"'),'El build debe materializar la configuración no secreta para Functions.');
+assert(config.includes('command = "npm run build"'),'El build productivo debe generar configuración y publicar solo archivos permitidos.');
+assert(fs.readFileSync(path.join(__dirname,'..','scripts','build-production.js'),'utf8').includes("require('./generate-netlify-runtime-config')"));
 const productionBlock=config.match(/\[context\.production\.environment\]([\s\S]*?)(?=\n\[|$)/);
 assert(productionBlock,'Debe existir un bloque de variables exclusivo para producción.');
 assert(productionBlock[1].includes('PUBLIC_BLOB_CACHE_ENABLED = "true"'));

@@ -135,7 +135,7 @@ assert.ok(edgeSource.includes("headers.set('x-vla-balance-engine', 'v6')"));
 assert.ok(!edgeSource.includes("replace(/function calc"), 'No debe reescribir calc mediante regex');
 
 const netlifyConfig = fs.readFileSync(path.join(__dirname, '../netlify.toml'), 'utf8');
-assert.ok(/\[build\][\s\S]*publish\s*=\s*"\."/.test(netlifyConfig), 'Netlify debe publicar la raíz del repositorio');
+assert.ok(/\[build\][\s\S]*publish\s*=\s*"dist"/.test(netlifyConfig), 'Netlify debe publicar únicamente el build público permitido');
 const release = JSON.parse(fs.readFileSync(path.join(__dirname, '../release.json'), 'utf8'));
 assert.strictEqual(release.release, CANONICAL_CONTRACT.release);
 assert.strictEqual(release.expectedHouses, 15);

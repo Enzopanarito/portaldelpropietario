@@ -2,7 +2,7 @@
 
 const base = require('./_monthly_close_store');
 const { attachOfficialBalances, officialControlQuery } = require('./_official_balances');
-const { filterActiveExpenses } = require('./_expense_lifecycle');
+const { filterClosingExpenses } = require('./_expense_lifecycle');
 const { mergeConfig } = require('./_automation_rules');
 
 async function loadContext(month, token, baseId, counter) {
@@ -13,7 +13,7 @@ async function loadContext(month, token, baseId, counter) {
   ]);
   return Object.assign({}, context, {
     owners: attachOfficialBalances(context.owners || [], controlRecords || [], month),
-    expenses:filterActiveExpenses(context.expenses||[],month),
+    expenses:filterClosingExpenses(context.expenses||[],month),
     officialBalanceRecords: controlRecords || [],
     automationRules:mergeConfig(configRecords[0]||{})
   });

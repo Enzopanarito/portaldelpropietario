@@ -48,10 +48,10 @@ function aiConfig(configRecord,rules){
 }
 function proofDescriptor(report){
  const fields=fieldsOf(report);
- return{sha256:clean(fields['Hash SHA-256']),contentType:clean(fields['Comprobante MIME']),filename:clean(fields['Comprobante Nombre Original']||'comprobante')};
+ return{sha256:clean(fields['Hash SHA-256']),visualHash:clean(fields['Hash Perceptual']),blobKey:clean(fields['Comprobante Blob Key']),contentType:clean(fields['Comprobante MIME']),filename:clean(fields['Comprobante Nombre Original']||'comprobante')};
 }
 function resultFields(result){
- const analysis=result?.analysis?.normalized||{},snapshot=result?.snapshot||{},decision=result?.decision||{};
+ const analysis=result?.analysis?.normalized||{},snapshot=result?.snapshot||{},decision=result?.decision||{},audit=result?.analysis?.audit||[],primaryAudit=audit.find(item=>item?.secondary!==true)||{},secondaryAudit=audit.find(item=>item?.secondary===true)||{},lastAudit=audit[audit.length-1]||{};
  const fields={
   'Estado de Procesamiento':clean(result?.processingState||'Revisión manual urgente'),
   'Resultado Validación':clean(result?.resultValidation||'Revisión manual urgente'),
@@ -62,6 +62,13 @@ function resultFields(result){
   'AI Secondary Raw JSON':clean(result?.analysis?.rawSecondary).slice(0,90000),
   'AI Confidence':Number(analysis.confidence||0),
   'AI Failure Reason':clean(result?.analysis?.failureReason),
+  'AI Provider Principal':clean(primaryAudit.provider||lastAudit.provider),
+  'AI Model Principal':clean(primaryAudit.model),
+  'AI Model Secundario':clean(secondaryAudit.model),
+  'Prompt Version':clean(primaryAudit.promptVersion||secondaryAudit.promptVersion),
+  'AI Analysis Started At':primaryAudit.startedAt||secondaryAudit.startedAt||null,
+  'AI Analysis Completed At':lastAudit.completedAt||null,
+  'AI Fallback Used':Boolean(secondaryAudit.model||audit.filter(item=>item?.secondary!==true).length>1),
   'Método Detectado':clean(analysis.method),
   'Banco o Plataforma Detectada':clean(analysis.bank_or_platform),
   'Moneda Detectada':clean(analysis.currency),
@@ -75,6 +82,7 @@ function resultFields(result){
   'Correo Receptor Detectado':clean(analysis.recipient_email),
   'Cuenta Receptora Visible':clean(analysis.recipient_account_visible),
   'Huella Financiera':clean(result?.financialFingerprint),
+  'Hash Perceptual':clean(result?.proof?.visualHash),
   'Posible Duplicado':result?.duplicate?.possibleDuplicate===true||result?.duplicate?.isDuplicate===true,
   'Tipo de Coincidencia':clean(result?.duplicate?.type),
   'Detalle de Coincidencia':compactJson(result?.duplicate?.matches||[]),
@@ -106,11 +114,13 @@ async function defaultLoadBundle(reportId){
   listAll(TABLES.config,'?maxRecords=1'),
   require('./_bcv_store').loadLastGood({force:true})
  ]);
- const configRecord=configRecords[0]||{fields:{}},rules=mergeConfig(configRecord),proof=proofDescriptor(report);
+ const configRecord=configRecords[0]||{fields:{}},rules=mergeConfig(configRecord),proof=proofDescriptor(report),configuredAi=aiConfig(configRecord,rules);
+ try{const discovery=await require('./_payment_ai_model_discovery').discoverCompatibleModel(),models=discovery.models||[discovery.model];if(models[0])configuredAi.primaryModel=models[0];const fallback=models.find(model=>model&&model!==configuredAi.primaryModel)||configuredAi.secondaryModel;if(fallback&&fallback!==configuredAi.primaryModel){configuredAi.secondaryModel=fallback;configuredAi.secondaryEnabled=true}}catch(error){if(Number(error?.status)===401||Number(error?.status)===403)configuredAi.aiEnabled=false}
  if(!/^[a-f0-9]{64}$/.test(proof.sha256)||!proof.contentType)throw new Error('El reporte no tiene un comprobante cifrado disponible.');
- const proofStore=require('./_payment_proof_store').createProofStore(),stored=await proofStore.get({reportId,attachmentSha:proof.sha256,contentType:proof.contentType});
+ const proofStore=require('./_payment_proof_store').createProofStore(),stored=proof.blobKey?await proofStore.getByKey({key:proof.blobKey,attachmentSha:proof.sha256,contentType:proof.contentType}):await proofStore.get({reportId,attachmentSha:proof.sha256,contentType:proof.contentType});
  if(!stored)throw new Error('No se encontró el comprobante cifrado.');
- return{report,owner,expenses:filterActiveExpenses(expenses,currentMonthCaracas()),payments,duplicatePayments:payments,duplicateReports:reports,officialRecords,authorizedAccounts,config:aiConfig(configRecord,rules),rules,bcvRate:Number(bcv?.rate||0),bcvSource:clean(bcv?.source||'BCV persistida'),attachment:{name:proof.filename,type:proof.contentType,content:stored.content}};
+ let visualHash=proof.visualHash;if(!visualHash)try{visualHash=(await require('./_payment_visual_hash').computePerceptualHash(stored.content,proof.contentType)).hash||''}catch(_){}
+ return{report,owner,expenses:filterActiveExpenses(expenses,currentMonthCaracas()),payments,duplicatePayments:payments,duplicateReports:reports,officialRecords,authorizedAccounts,config:configuredAi,rules,bcvRate:Number(bcv?.rate||0),bcvSource:clean(bcv?.source||'BCV persistida'),attachment:{name:proof.filename,type:proof.contentType,content:stored.content,storedKey:stored.key,visualHash}};
 }
 async function defaultExecuteApproval({reportId,result}){
  const {issueAdminToken}=require('./_auth'),handler=require('./process-payment-report').handler,token=issueAdminToken({authVersion:0});

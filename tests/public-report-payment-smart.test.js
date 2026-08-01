@@ -3,7 +3,7 @@ const assert=require('assert');
 const Module=require('module');
 const path=require('path');
 
-const created=[];const mails=[];
+const created=[];const mails=[];const encrypted=new Map();let reservationCount=0;
 const originalLoad=Module._load;
 Module._load=function(request,parent,isMain){
   if(parent&&String(parent.filename||'').endsWith(path.join('netlify','functions','public-report-payment.js'))){
@@ -12,7 +12,7 @@ Module._load=function(request,parent,isMain){
       airtableCreateRecord:async(_table,fields)=>{created.push(fields);return{id:'recREPORT00000001'}},
       airtableGetRecord:async()=>({fields:{Casa:4,Propietario:'Casa 4'}}),
       syncOwnerAccess:async()=>({estado:'Habilitado',temporary:false}),
-      TABLES:{reportes:'Reportes de Pago',propietarios:'Propietarios'},
+      TABLES:{reportes:'Reportes de Pago',propietarios:'Propietarios',pagos:'Pagos'},
       money:value=>Math.round((Number(value||0)+Number.EPSILON)*100)/100
     };
     if(request==='./_mailer')return{sendMail:async message=>{mails.push(message);return{sent:true,status:'Enviado'}}};
@@ -25,6 +25,13 @@ Module._load=function(request,parent,isMain){
     };
     if(request==='./_persistent_rate_limit')return{consume:async()=>({allowed:true,retryAfter:0})};
     if(request==='./_bcv_store')return{loadLastGood:async()=>({rate:180,source:'bcv-test'})};
+    if(request==='./_payment_visual_hash')return{computePerceptualHash:async()=>({hash:'0123456789abcdef',algorithm:'dhash-64-v1'})};
+    if(request==='./_payment_proof_store')return{createProofStore:()=>({
+      reserveIdentity:async()=>({acquired:true,created:true,key:`reservation-${++reservationCount}`,requestId:`request-${reservationCount}`}),
+      completeIdentity:async()=>({completed:true}),
+      put:async({content,attachmentSha})=>{const key=`test/${attachmentSha}`;encrypted.set(key,Buffer.from(content));return{key,created:true}},
+      getByKey:async({key,attachmentSha,contentType})=>({key,content:Buffer.from(encrypted.get(key)),sha256:attachmentSha,contentType})
+    })};
   }
   return originalLoad.apply(this,arguments);
 };
@@ -66,6 +73,12 @@ const png=Buffer.concat([Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]),
   assert.equal(created[1]['Forma de Pago Reportada'],'Bs BCV');
   assert.equal(created[1]['Monto Reportado Bs'],39852);
   assert.equal(created[1]['Tasa BCV Reporte'],180);
+
+  response=await handler(event({ownerId:'recABCDEFGHIJKLMN',paymentChannel:'CASH',mode:'USD',amount:'50,00',enteredCurrency:'USD',cashReceiver:'Administración',transactionDate:'2026-07-31'}));
+  assert.equal(response.statusCode,200,JSON.stringify(parse(response)));body=parse(response);
+  assert.equal(body.paymentChannel,'CASH');assert.equal(body.attachmentIncluded,false);assert.equal(body.automation.status,'CASH_ADMIN_CONFIRMATION_REQUIRED');
+  assert.equal(created[2]['Archivo Obligatorio'],false);assert.equal(created[2]['Estado de Procesamiento'],'Pendiente de administrador');assert.match(created[2].Referencia,/EFECTIVO/);
+  assert.equal(mails[2].attachments.length,0);
 
   const before=created.length;
   response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:85,enteredCurrency:'USD',reference:'BAD-PROOF',bank:'Banco',transactionDate:'2026-07-31',transactionStatus:'PROCESSED',attachment:{name:'falso.png',type:'image/png',base64:Buffer.from('not-png').toString('base64')}}));

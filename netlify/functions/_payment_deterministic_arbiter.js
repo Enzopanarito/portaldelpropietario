@@ -6,7 +6,9 @@ const METHOD_ACCOUNT_MAP=Object.freeze({
  TRANSFER_VE:{method:'Transferencia bancaria Venezuela',currency:'VES'},
  MOBILE_PAYMENT_VE:{method:'Pago móvil Venezuela',currency:'VES'},
  ZELLE:{method:'Zelle',currency:'USD'},
- TRANSFER_US:{method:'Transferencia bancaria USA',currency:'USD'}
+ TRANSFER_US:{method:'Transferencia bancaria USA',currency:'USD'},
+ BINANCE_PAY:{method:'Otro',currency:'USD'},
+ CRYPTO_TRANSFER:{method:'Otro',currency:'USD'}
 });
 
 function clean(value){return String(value??'').trim()}
