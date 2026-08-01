@@ -44,24 +44,24 @@ test('un pago sin fecha detiene el cierre antes de modificar datos',()=>{
  assert.deepEqual(plan.paymentIds,[]);
 });
 
-test('el cierre nunca consolida un saldo total a favor',()=>{
+test('el cierre conserva un saldo a favor legítimo para el mes siguiente',()=>{
  const owners=[{id:'owner-1',fields:{Casa:1,Propietario:'A',Alicuota:1,'Deuda Anterior':0,'Deuda Anterior USD':0,'Deuda Anterior Bs Ref':0}}];
  const plan=closeCore.buildPlan({owners,expenses:[],payments:[payment('overpayment','2026-07-31')],month:'2026-07'});
- assert.deepEqual(plan.ownerUpdates[0].target,{deudaAnteriorUsd:0,deudaAnteriorBsRef:0,deudaAnterior:0});
- assert.equal(plan.validation.conSaldoFavor,0);
- assert.equal(plan.validation.creditAdjustmentCount,1);
+ assert.deepEqual(plan.ownerUpdates[0].target,{deudaAnteriorUsd:0,deudaAnteriorBsRef:-10,deudaAnterior:-10});
+ assert.equal(plan.validation.conSaldoFavor,1);
+ assert.equal(plan.validation.creditBalanceCount,1);
 });
 
-test('el cierre netea créditos parciales entre monedas sin cambiar el total',()=>{
+test('el cierre conserva por separado los créditos de cada moneda',()=>{
  const owners=[
   {id:'owner-usd',fields:{Casa:1,Propietario:'A',Alicuota:1,'Deuda Anterior':35,'Deuda Anterior USD':-30,'Deuda Anterior Bs Ref':65}},
   {id:'owner-bs',fields:{Casa:2,Propietario:'B',Alicuota:1,'Deuda Anterior':19.8,'Deuda Anterior USD':20,'Deuda Anterior Bs Ref':-0.2}}
  ];
  const plan=closeCore.buildPlan({owners,expenses:[],payments:[],month:'2026-07'});
- assert.deepEqual(plan.ownerUpdates[0].target,{deudaAnteriorUsd:19.8,deudaAnteriorBsRef:0,deudaAnterior:19.8});
- assert.deepEqual(plan.ownerUpdates[1].target,{deudaAnteriorUsd:0,deudaAnteriorBsRef:35,deudaAnterior:35});
+ assert.deepEqual(plan.ownerUpdates[0].target,{deudaAnteriorUsd:20,deudaAnteriorBsRef:-0.2,deudaAnterior:19.8});
+ assert.deepEqual(plan.ownerUpdates[1].target,{deudaAnteriorUsd:-30,deudaAnteriorBsRef:65,deudaAnterior:35});
  assert.equal(plan.validation.totalRef,54.8);
- assert.equal(plan.validation.currencyNettingAdjustmentCount,2);
+ assert.equal(plan.validation.currencyCreditComponentCount,2);
 });
 
 test('el piloto no continúa después de un cierre bloqueado o saltado',()=>{
