@@ -44,11 +44,18 @@ async function sendScheduledReminders(rules,cycle,context){
  }
  return{considered,sent,failed};
 }
-async function syncAccessCycle(rules,cycle){
+function accessStateFingerprint(context,rules){
+ const snapshot=(context.owners||[]).map(owner=>{
+  const fields=owner.fields||{},calc=calculateExpiredAccessDebt(owner,context.pagos,context.reportes,{expenses:context.gastos||[],dueDay:rules.payment.dueDay,surchargeRate:rules.payment.surchargeRate});
+  return[String(owner.id||''),String(fields['MKJ User ID']||''),fields['Excepción Acceso']===true,calc.expiredUsd,calc.expiredBsRef];
+ }).sort((a,b)=>a[0].localeCompare(b[0]));
+ return crypto.createHash('sha256').update(JSON.stringify(snapshot)).digest('hex').slice(0,20);
+}
+async function syncAccessCycle(rules,cycle,context){
  if(!rules.access.automaticEnabled||cycle.daysUntilRestriction>0)return{skipped:true,reason:'restriction-not-due'};
- const key=cycle.clock.monthKey,guard=await begin('ACCESS_CYCLE_SYNC',key);
+ const fingerprint=accessStateFingerprint(context,rules),key=`${cycle.clock.date}|${fingerprint}`,guard=await begin('ACCESS_CYCLE_SYNC',key);
  if(!guard.ok)return{skipped:true,reason:guard.reason};
- try{const result=await autoSyncAll({sendEmail:true});if(result.errors)throw new Error(`${result.errors} acceso(s) no pudieron sincronizarse.`);await setState(guard.marker,'ACCESS_CYCLE_SYNC',key,'DONE',key);return result}
+ try{const result=await autoSyncAll({forceMkj:true,sendEmail:true});if(result.errors)throw new Error(`${result.errors} acceso(s) no pudieron sincronizarse.`);await setState(guard.marker,'ACCESS_CYCLE_SYNC',key,'DONE',fingerprint);return{...result,fingerprint,reconciled:true}}
  catch(error){await setState(guard.marker,'ACCESS_CYCLE_SYNC',key,'ERROR').catch(()=>null);throw error}
 }
 async function executeAutomaticClose({rules,cycle,context,adminToken}){
@@ -113,7 +120,7 @@ const handler=async function(event){
    ?await sendScheduledReminders(rules,cycle,context)
    :{skipped:true,blocked:true,reason:'monthly-close-not-complete'};
   results.actions.access=results.actions.closeGate.ok
-   ?await syncAccessCycle(rules,cycle).catch(async error=>{await alertOnce(cycle.clock.date,'ACCESS_SYNC',[{code:'ACCESS_SYNC',detail:error.message}]);return{success:false,error:error.message}})
+   ?await syncAccessCycle(rules,cycle,context).catch(async error=>{await alertOnce(cycle.clock.date,'ACCESS_SYNC',[{code:'ACCESS_SYNC',detail:error.message}]);return{success:false,error:error.message}})
    :{skipped:true,blocked:true,reason:'monthly-close-not-complete'};
   return response(200,{success:true,...results,airtableCalls:counter.calls});
  }catch(error){await alertOnce(new Date().toISOString().slice(0,10),'UNHANDLED',[{code:'UNHANDLED',detail:error.message}]).catch(()=>null);return response(500,{success:false,message:'El piloto automático encontró una excepción y se detuvo sin forzar decisiones.',detail:String(error.message||'').slice(0,500)})}
@@ -125,3 +132,5 @@ exports.sendScheduledReminders=sendScheduledReminders;
 exports.executeAutomaticClose=executeAutomaticClose;
 exports.closeResultAllowsContinuation=closeResultAllowsContinuation;
 exports.resolveCloseGate=resolveCloseGate;
+exports.accessStateFingerprint=accessStateFingerprint;
+exports.syncAccessCycle=syncAccessCycle;

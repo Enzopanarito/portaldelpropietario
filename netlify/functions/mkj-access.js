@@ -4,6 +4,7 @@ const { withAirtableUsage } = require('./_airtable_meter');
 // Las credenciales se leen únicamente desde variables privadas de Netlify.
 
 const { requireAdmin } = require('./_auth');
+const { mkjLogin, mkjSetMemberStatus } = require('./_mkj_client');
 
 const TABLE_PROPIETARIOS = 'Propietarios';
 const ALLOWED_ACTIONS = new Set(['enable', 'disable', 'test-login']);
@@ -16,14 +17,6 @@ function json(statusCode, body) {
   };
 }
 
-function baseUrl() {
-  return (process.env.MKJ_BASE_URL || 'https://cloud.mkjoules.com').replace(/\/$/, '');
-}
-
-function orgId() {
-  return process.env.MKJ_ORG_ID || '1053';
-}
-
 function requiredEnv() {
   const missing = [];
   if (!process.env.MKJ_ADMIN_EMAIL) missing.push('MKJ_ADMIN_EMAIL');
@@ -31,53 +24,6 @@ function requiredEnv() {
   if (!process.env.AIRTABLE_API_TOKEN) missing.push('AIRTABLE_API_TOKEN');
   if (!process.env.AIRTABLE_BASE_ID) missing.push('AIRTABLE_BASE_ID');
   return missing;
-}
-
-function extractCookie(setCookieHeaders) {
-  const raw = Array.isArray(setCookieHeaders) ? setCookieHeaders.join(',') : String(setCookieHeaders || '');
-  const match = raw.match(/access_token=[^;]+/);
-  return match ? match[0] : '';
-}
-
-async function mkjLogin() {
-  const response = await fetch(`${baseUrl()}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-    body: JSON.stringify({ email: process.env.MKJ_ADMIN_EMAIL, password: process.env.MKJ_ADMIN_PASSWORD })
-  });
-
-  const text = await response.text();
-  const cookie = extractCookie(response.headers.get('set-cookie'));
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch (_) { data = null; }
-
-  if (!response.ok || !cookie) {
-    throw new Error(`Login MKJ falló: HTTP ${response.status}${data?.message ? ' - ' + data.message : ''}`);
-  }
-
-  return { cookie, status: response.status };
-}
-
-async function mkjSetMemberStatus(memberId, action) {
-  const login = await mkjLogin();
-  const url = `${baseUrl()}/api/organizations/${encodeURIComponent(orgId())}/members/${encodeURIComponent(memberId)}/${action}`;
-  const response = await fetch(url, {
-    method: 'PUT',
-    headers: {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json',
-      'Cookie': login.cookie,
-      'Referer': `${baseUrl()}/admin/users/${encodeURIComponent(memberId)}`
-    }
-  });
-  const text = await response.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch (_) { data = text || null; }
-
-  if (!response.ok) {
-    throw new Error(`MKJ ${action} falló: HTTP ${response.status}${data?.message ? ' - ' + data.message : ''}`);
-  }
-  return { status: response.status, data };
 }
 
 function airtableUrl(path = '') {
@@ -143,17 +89,22 @@ const handler = async function(event) {
     }
     if (!memberId) return json(400, { success: false, message: 'Este propietario no tiene MKJ User ID configurado.' });
 
-    const result = await mkjSetMemberStatus(memberId, action);
+    const result = await mkjSetMemberStatus(memberId, action, {
+      email: owner?.fields?.['MKJ Email'] || owner?.fields?.Email || ''
+    });
+    memberId = result.resolvedMemberId || memberId;
     const estado = action === 'enable' ? 'Habilitado' : 'Limitado';
     const motivo = body.reason || (action === 'enable' ? 'Habilitación manual desde portal.' : 'Limitación manual desde portal.');
 
     let updatedOwner = null;
     if (ownerId) {
-      updatedOwner = await airtablePatchOwner(ownerId, {
+      const fields = {
         'Estado Acceso Portón': estado,
         'Última Sync MKJ': nowCaracas(),
         'Motivo Limitación Acceso': motivo
-      });
+      };
+      if (result.recoveredMemberId) fields['MKJ User ID'] = memberId;
+      updatedOwner = await airtablePatchOwner(ownerId, fields);
     }
 
     return json(200, {
@@ -162,6 +113,8 @@ const handler = async function(event) {
       mkjUserId: memberId,
       estado,
       mkjStatus: result.status,
+      mkjUserIdRecovered: result.recoveredMemberId === true,
+      mkjAuthMode: result.authMode,
       message: action === 'enable' ? 'Acceso habilitado en MKJoules.' : 'Acceso limitado en MKJoules.',
       owner: updatedOwner ? { id: updatedOwner.id, fields: updatedOwner.fields } : null
     });

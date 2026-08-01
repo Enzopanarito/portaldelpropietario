@@ -46,26 +46,9 @@ async function executeClose({ month, closeLock, plan, context, token, baseId, co
     payload.state = 'VERIFIED';
     await persistProgress(operationLog.id, payload, token, baseId, counter);
 
-    let expenseRotation = null;
-    try {
-      expenseRotation = await rotateExpenses({ closingMonth:month, targetMonth:nextMonth(month), token, baseId, counter });
-    } catch (error) {
-      expenseRotation = { success:false, error:error.message, retryable:true };
-    }
-    payload.expenseRotation = expenseRotation;
-
-    let accessSync = null;
-    try { accessSync = await autoSyncAll({ sendEmail: true }); }
-    catch (error) { accessSync = { success: false, error: error.message }; }
-    payload.accessSync = accessSync;
-    payload.state = 'COMPLETED';
-    payload.completedAt = new Date().toISOString();
-    dataCompleted = true;
-
-    let logWarning = null;
-    try { await persistProgress(operationLog.id, payload, token, baseId, counter, 'Ejecutado'); }
-    catch (error) { logWarning = `No se pudo finalizar la bitácora: ${error.message}`; }
-
+    // El cierre financiero queda confirmado antes de cualquier integración
+    // externa. Si MKJ está temporalmente caído, el cierre permanece válido y
+    // el piloto puede reintentar el portón sin repetir cargos ni pagos.
     let markerWarning = null;
     try { await setCloseMarker(closeLock, month, 'DONE', token, baseId, counter); }
     catch (error) {
@@ -75,6 +58,29 @@ async function executeClose({ month, closeLock, plan, context, token, baseId, co
         markerWarning = null;
       } catch (_) {}
     }
+    if (markerWarning) throw new Error(markerWarning);
+    dataCompleted = true;
+    payload.state = 'ACCOUNTING_COMPLETED';
+    await persistProgress(operationLog.id, payload, token, baseId, counter).catch(() => null);
+
+    let expenseRotation = null;
+    try {
+      expenseRotation = await rotateExpenses({ closingMonth:month, targetMonth:nextMonth(month), token, baseId, counter });
+    } catch (error) {
+      expenseRotation = { success:false, error:error.message, retryable:true };
+    }
+    payload.expenseRotation = expenseRotation;
+
+    let accessSync = null;
+    try { accessSync = await autoSyncAll({ forceMkj: true, sendEmail: true }); }
+    catch (error) { accessSync = { success: false, error: error.message }; }
+    payload.accessSync = accessSync;
+    payload.state = 'COMPLETED';
+    payload.completedAt = new Date().toISOString();
+
+    let logWarning = null;
+    try { await persistProgress(operationLog.id, payload, token, baseId, counter, 'Ejecutado'); }
+    catch (error) { logWarning = `No se pudo finalizar la bitácora: ${error.message}`; }
 
     const accessErrors = Number(accessSync?.errors || 0);
     const accessWarning = accessSync?.success === false || accessErrors > 0;
@@ -90,7 +96,7 @@ async function executeClose({ month, closeLock, plan, context, token, baseId, co
       verification,
       expenseRotation,
       accessSync,
-      warning: logWarning || markerWarning || (rotationWarning ? 'El cierre contable terminó, pero la rotación de gastos debe reintentarse.' : null) || (accessWarning ? 'El cierre contable terminó, pero uno o más accesos requieren revisión.' : null),
+      warning: logWarning || (rotationWarning ? 'El cierre contable terminó, pero la rotación de gastos debe reintentarse.' : null) || (accessWarning ? 'El cierre contable terminó, pero uno o más accesos requieren revisión.' : null),
       message: rotationWarning
         ? 'Cierre mensual completado y verificado. La activación de gastos del nuevo mes quedó en reintento seguro.'
         : accessWarning
