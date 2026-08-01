@@ -188,6 +188,21 @@ html.dark .vla-pay-detect.ok button{color:var(--vla-dark-green)!important}
 html.dark .vla-pay-currency-choice label span{background:var(--vla-dark-surface)!important;color:var(--vla-dark-text-soft)!important;border-color:#a16207!important}
 html.dark .vla-pay-currency-choice input:checked+span{background:#052e1a!important;color:var(--vla-dark-green)!important;border-color:#4ade80!important}
 
+/* Estados y opciones agregados por el reporte inteligente smart-v5. */
+html.dark .vla-pay-channel-grid label>span{background:var(--vla-dark-surface-2)!important;color:var(--vla-dark-text)!important;border-color:var(--vla-dark-border)!important}
+html.dark .vla-pay-channel-grid small{color:var(--vla-dark-text-muted)!important}
+html.dark .vla-pay-channel-grid input:checked+span{background:#12351f!important;color:var(--vla-dark-text)!important;border-color:#4ade80!important}
+
+html.dark .vla-pay-scan.neutral{background:var(--vla-dark-surface-3)!important;color:var(--vla-dark-text-soft)!important;border-color:#64748b!important}
+html.dark .vla-pay-scan.loading{background:#0c2b4d!important;color:#dbeafe!important;border-color:#3b82f6!important}
+html.dark .vla-pay-scan.ok,
+html.dark .vla-pay-validation.ok{background:#052e1a!important;color:#dcfce7!important;border-color:#22c55e!important}
+html.dark .vla-pay-scan.warn,
+html.dark .vla-pay-scan.error,
+html.dark .vla-pay-validation.warn{background:#422006!important;color:#fef3c7!important;border-color:#d97706!important}
+html.dark .vla-pay-scan.manual{background:#2e1065!important;color:#ede9fe!important;border-color:#8b5cf6!important}
+html.dark .vla-pay-manual{background:var(--vla-dark-surface-3)!important;color:var(--vla-dark-text)!important;border-color:#64748b!important}
+
 html.dark .vla-pay-submit{background:linear-gradient(135deg,#15803d,#166534)!important;color:#fff!important}
 html.dark .vla-pay-cancel{background:var(--vla-dark-surface-3)!important;color:var(--vla-dark-text)!important;border-color:#64748b!important}
 html.dark .vla-pay-cancel:hover,
