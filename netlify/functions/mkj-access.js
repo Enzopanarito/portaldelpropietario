@@ -115,6 +115,7 @@ const handler = async function(event) {
       mkjStatus: result.status,
       mkjUserIdRecovered: result.recoveredMemberId === true,
       mkjMembershipVerified: result.verifiedMembership === true,
+      mkjMembershipSource: result.membershipSource || null,
       mkjAlreadyApplied: result.idempotent === true,
       mkjAuthMode: result.authMode,
       message: result.idempotent
