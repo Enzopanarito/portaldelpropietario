@@ -119,6 +119,60 @@ test('un ID recuperado también acepta que el estado deseado ya estaba aplicado'
   assert.equal(result.idempotent, true);
 });
 
+test('un miembro deshabilitado se recupera desde el detalle de la organización', async () => {
+  client.clearSessionCache();
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    calls.push({ url, options });
+    if (url.endsWith('/api/auth/login')) return response(200, { access_token: 'jwt-current' }, 'access_token=cookie-current; Path=/');
+    if (url.endsWith('/members/old-airtable-id/enable')) return response(404, { error: 'Member not found' });
+    if (url.endsWith('/members/8006/enable')) return response(200, { success: true });
+    if (url.endsWith('/organizations/1053/users')) return response(200, { users: [] });
+    if (url.endsWith('/api/admin/organizations/1053')) {
+      return response(200, {
+        organization: {
+          members: [{ id: 44123, active: false, user: { id: 8006, email: 'inespomposo3012@gmail.com' } }]
+        }
+      });
+    }
+    return response(500, { error: 'unexpected route' });
+  };
+
+  const result = await client.mkjSetMemberStatus('old-airtable-id', 'enable', {
+    email: 'inespomposo3012@gmail.com',
+    fetchImpl
+  });
+  assert.equal(result.resolvedMemberId, '8006');
+  assert.equal(result.recoveredMemberId, true);
+  assert.equal(result.verifiedMembership, true);
+  assert.equal(result.membershipSource, 'organization-detail');
+  assert.equal(result.idempotent, false);
+  assert.equal(calls.filter(call => call.url.endsWith('/members/8006/enable')).length, 1);
+  assert.equal(calls.some(call => call.url.endsWith('/members/44123/enable')), false);
+});
+
+test('un miembro deshabilitado con el mismo ID se reconcilia desde el detalle', async () => {
+  client.clearSessionCache();
+  const fetchImpl = async url => {
+    if (url.endsWith('/api/auth/login')) return response(200, { access_token: 'jwt-current' }, 'access_token=cookie-current; Path=/');
+    if (url.endsWith('/members/8006/enable')) return response(404, { error: 'User membership not found or already active' });
+    if (url.endsWith('/organizations/1053/users')) return response(200, { users: [] });
+    if (url.endsWith('/api/admin/organizations/1053')) {
+      return response(200, { data: { organization: { members: [{ id: 9911, user: { id: 8006, email: 'inespomposo3012@gmail.com' } }] } } });
+    }
+    return response(500, { error: 'unexpected route' });
+  };
+
+  const result = await client.mkjSetMemberStatus('8006', 'enable', {
+    email: 'inespomposo3012@gmail.com',
+    fetchImpl
+  });
+  assert.equal(result.status, 200);
+  assert.equal(result.idempotent, true);
+  assert.equal(result.verifiedMembership, true);
+  assert.equal(result.membershipSource, 'organization-detail');
+});
+
 test('MKJ nunca usa el endpoint global de usuario como atajo inseguro', async () => {
   client.clearSessionCache();
   const calls = [];
@@ -127,6 +181,7 @@ test('MKJ nunca usa el endpoint global de usuario como atajo inseguro', async ()
     if (url.endsWith('/api/auth/login')) return response(200, { access_token: 'jwt-current' }, 'access_token=cookie-current; Path=/');
     if (url.endsWith('/members/missing/disable')) return response(404, { error: 'Member not found' });
     if (url.endsWith('/organizations/1053/users')) return response(200, { users: [] });
+    if (url.endsWith('/api/admin/organizations/1053')) return response(200, { organization: { members: [] } });
     return response(500, { error: 'unexpected route' });
   };
 
