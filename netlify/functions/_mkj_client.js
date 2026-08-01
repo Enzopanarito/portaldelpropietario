@@ -103,13 +103,48 @@ function normalizedEmail(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function organizationUserId(user) {
+  return String(
+    user?.id ??
+    user?.user_id ??
+    user?.user?.id ??
+    user?.membership?.user_id ??
+    ''
+  ).trim();
+}
+
+function organizationUserEmail(user) {
+  return normalizedEmail(
+    user?.email ??
+    user?.user_email ??
+    user?.user?.email ??
+    user?.membership?.email ??
+    ''
+  );
+}
+
 function resolveOrganizationUser(users, memberId, email) {
   const requestedId = String(memberId || '').trim();
   const requestedEmail = normalizedEmail(email);
-  const byId = users.find(user => String(user?.id ?? user?.user_id ?? '').trim() === requestedId);
-  if (byId) return byId;
-  if (!requestedEmail) return null;
-  return users.find(user => normalizedEmail(user?.email || user?.user_email) === requestedEmail) || null;
+  const byEmail = requestedEmail
+    ? users.find(user => organizationUserEmail(user) === requestedEmail)
+    : null;
+  if (byEmail) return byEmail;
+
+  const byId = users.find(user => organizationUserId(user) === requestedId) || null;
+  if (!byId) return null;
+
+  // Si contamos con correo, no aceptamos silenciosamente un ID que pertenezca
+  // a otra persona. Solo usamos el ID cuando MKJ no devuelve correo o coincide.
+  const byIdEmail = organizationUserEmail(byId);
+  if (requestedEmail && byIdEmail && byIdEmail !== requestedEmail) return null;
+  return byId;
+}
+
+function providerAlreadyInDesiredState(action, data) {
+  const detail = providerMessage(data).toLowerCase();
+  if (action === 'enable') return /already\s+(?:active|enabled)/.test(detail);
+  return /already\s+(?:inactive|disabled)/.test(detail);
 }
 
 async function listOrganizationUsers(options = {}) {
@@ -143,32 +178,58 @@ async function mkjSetMemberStatus(memberId, action, options = {}) {
 
   let resolvedMemberId = requestedMemberId;
   let recoveredMemberId = false;
+  let verifiedMembership = false;
+  let idempotent = false;
+  let providerStatus = result.response.status;
 
-  // Si MKJ responde 404, verificamos el usuario real por correo dentro de la
-  // organización y reintentamos con el ID vigente. Nunca se usa un usuario de
-  // otra organización ni un endpoint global.
-  if (result.response.status === 404 && normalizedEmail(options.email)) {
-    const lookup = await listOrganizationUsers({ ...options, session: result.session });
-    const matched = resolveOrganizationUser(lookup.users, requestedMemberId, options.email);
-    const candidateId = String(matched?.id ?? matched?.user_id ?? '').trim();
+  // MKJ usa 404 tanto para una membresía inexistente como para una operación
+  // ya aplicada ("not found or already active/inactive"). Verificamos primero
+  // que el usuario pertenece a esta organización. Solo entonces aceptamos el
+  // resultado como éxito idempotente o reintentamos con el ID vigente.
+  if (result.response.status === 404) {
+    let lookup = null;
+    try {
+      lookup = await listOrganizationUsers({ ...options, session: result.session });
+    } catch (_) {
+      lookup = null;
+    }
+
+    const matched = lookup
+      ? resolveOrganizationUser(lookup.users, requestedMemberId, options.email)
+      : null;
+    const candidateId = organizationUserId(matched);
+    verifiedMembership = Boolean(candidateId);
+
     if (candidateId && candidateId !== requestedMemberId) {
       resolvedMemberId = candidateId;
       recoveredMemberId = true;
       result = await setStatusRequest(resolvedMemberId, action, { ...options, session: lookup.session });
+      providerStatus = result.response.status;
+    }
+
+    if (
+      verifiedMembership &&
+      result.response.status === 404 &&
+      providerAlreadyInDesiredState(action, result.data)
+    ) {
+      idempotent = true;
     }
   }
 
-  if (!result.response.ok) {
+  if (!result.response.ok && !idempotent) {
     const code = result.response.status === 404 ? 'MKJ_MEMBER_NOT_FOUND' : 'MKJ_STATUS_UPDATE_FAILED';
     throw mkjError(`MKJ ${action} falló`, result.response.status, result.data, code);
   }
 
   return {
-    status: result.response.status,
+    status: idempotent ? 200 : result.response.status,
+    providerStatus,
     data: result.data,
     requestedMemberId,
     resolvedMemberId,
     recoveredMemberId,
+    verifiedMembership,
+    idempotent,
     authMode: result.session?.token && result.session?.cookie ? 'bearer+cookie' : result.session?.token ? 'bearer' : 'cookie'
   };
 }
@@ -181,5 +242,6 @@ module.exports = {
   mkjSetMemberStatus,
   listOrganizationUsers,
   resolveOrganizationUser,
+  providerAlreadyInDesiredState,
   clearSessionCache
 };

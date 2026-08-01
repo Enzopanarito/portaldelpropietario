@@ -114,8 +114,14 @@ const handler = async function(event) {
       estado,
       mkjStatus: result.status,
       mkjUserIdRecovered: result.recoveredMemberId === true,
+      mkjMembershipVerified: result.verifiedMembership === true,
+      mkjAlreadyApplied: result.idempotent === true,
       mkjAuthMode: result.authMode,
-      message: action === 'enable' ? 'Acceso habilitado en MKJoules.' : 'Acceso limitado en MKJoules.',
+      message: result.idempotent
+        ? (action === 'enable'
+          ? 'El acceso ya estaba habilitado en MKJoules; estado verificado y actualizado.'
+          : 'El acceso ya estaba limitado en MKJoules; estado verificado y actualizado.')
+        : (action === 'enable' ? 'Acceso habilitado en MKJoules.' : 'Acceso limitado en MKJoules.'),
       owner: updatedOwner ? { id: updatedOwner.id, fields: updatedOwner.fields } : null
     });
   } catch (error) {
