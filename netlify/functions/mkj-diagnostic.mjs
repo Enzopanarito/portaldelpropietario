@@ -18,6 +18,29 @@ function normalizedEmail(value) {
   return clean(value).toLowerCase();
 }
 
+async function ownerForHouse(house) {
+  const token = clean(Netlify.env.get('AIRTABLE_API_TOKEN'), 512);
+  const baseId = clean(Netlify.env.get('AIRTABLE_BASE_ID'), 80);
+  if (!token || !baseId) throw new Error('Airtable no está configurado para el diagnóstico.');
+  const params = new URLSearchParams({
+    maxRecords: '2',
+    filterByFormula: `{Casa}=${house}`
+  });
+  for (const field of ['Casa', 'MKJ User ID', 'MKJ Email', 'Email']) params.append('fields[]', field);
+  const response = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent('Propietarios')}?${params}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data?.error?.message || 'No se pudo leer la Casa solicitada.');
+  const records = data.records || [];
+  if (records.length !== 1) throw new Error(`Se esperó una sola Casa ${house} y se encontraron ${records.length}.`);
+  const fields = records[0].fields || {};
+  return {
+    memberId: clean(fields['MKJ User ID'], 80),
+    email: normalizedEmail(fields['MKJ Email'] || fields.Email)
+  };
+}
+
 function authorized(req) {
   const expected = clean(Netlify.env.get('MKJ_DIAGNOSTIC_SECRET'), 256);
   const provided = clean((req.headers.get('authorization') || '').replace(/^Bearer\s+/i, ''), 256);
@@ -67,11 +90,12 @@ export default async function handler(req) {
 
   let body = {};
   try { body = await req.json(); } catch (_) { body = {}; }
-  const memberId = clean(body.memberId, 80);
-  const email = normalizedEmail(body.email);
-  if (!memberId || !email) return json(400, { success: false, message: 'memberId y email son obligatorios.' });
+  const house = Number(body.house);
+  if (!Number.isInteger(house) || house < 1 || house > 15) return json(400, { success: false, message: 'Casa inválida.' });
 
   try {
+    const { memberId, email } = await ownerForHouse(house);
+    if (!memberId || !email) throw new Error(`La Casa ${house} no tiene ID y correo MKJ completos.`);
     const session = await mkjLogin();
     const [usersResult, detailResult] = await Promise.all([
       listOrganizationUsers({ session }),
@@ -81,6 +105,7 @@ export default async function handler(req) {
     const detailMatches = exactMatches(detailResult.users, memberId, email);
     return json(200, {
       success: true,
+      house,
       memberId,
       organizationUsers: { status: usersResult.status, count: usersResult.users.length, matches: usersMatches, shape: responseShape(usersResult.data) },
       organizationDetail: { status: detailResult.status, count: detailResult.users.length, matches: detailMatches, shape: responseShape(detailResult.data) },
