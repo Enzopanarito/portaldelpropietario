@@ -1,7 +1,8 @@
 (function(){
   'use strict';
 
-  const RELEASE='owner-financial-view-v1';
+  const RELEASE='2026-07-11-photo-v6';
+  const VIEW_RELEASE='owner-financial-view-v1';
   const TOLERANCE=0.01;
 
   function rootContract(){return window.VLABalanceContract||null}
@@ -75,7 +76,7 @@
     installStyle();const fixed=decorate(owner,calculation),rows=contract.breakdownRows(owner,sourceData(),fixed),host=ensureHost(),title=findTitle();if(title)title.textContent='Desglose de Cargos';
     const body=rows.map(row=>'<tr><td class="vla-concept">'+esc(String(row.concept||'Gasto').toUpperCase())+'</td><td class="vla-money">'+usd(row.total)+'<span class="vla-mode">'+esc(row.mode)+'</span></td><td class="vla-money">'+usd(row.share)+'<span class="vla-mode">'+esc(row.mode)+'</span></td></tr>').join('');
     host.innerHTML='<div class="vla-breakdown-scroll"><table aria-label="Desglose de cargos"><colgroup><col style="width:52%"><col style="width:24%"><col style="width:24%"></colgroup><thead><tr><th>Concepto</th><th>Costo<br>Total</th><th>Su<br>Parte</th></tr></thead><tbody>'+body+'<tr class="vla-summary-row"><td colspan="2">TOTAL PAGADERO</td><td>'+usd(fixed.payableTotal)+'</td></tr></tbody></table></div>';
-    document.documentElement.dataset.vlaOwnerFinancialView=RELEASE;return true;
+    document.documentElement.dataset.vlaOwnerFinancialView=VIEW_RELEASE;return true;
   }
   function schedule(){clearTimeout(window.__VLA_OWNER_FINANCIAL_TIMER);window.__VLA_OWNER_FINANCIAL_TIMER=setTimeout(render,30)}
   function boot(){installStyle();schedule()}
