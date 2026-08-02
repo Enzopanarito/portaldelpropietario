@@ -78,6 +78,7 @@ path = "/index.html"
 function = "balance-fix"
 path = "/admin*"
 
+# Mantiene separados los saldos USD y Bs; no permite compensación cruzada.
 [[edge_functions]]
 function = "currency-balance-fix"
 path = "/"
