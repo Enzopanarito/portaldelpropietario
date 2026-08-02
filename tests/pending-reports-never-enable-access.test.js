@@ -31,8 +31,12 @@ function pending({id,mode,amount}){return{id,fields:{Estado:'Pendiente','Propiet
  assert.strictEqual(noDebt.hasExpiredDebt,false);
  assert.strictEqual(noDebt.pendingCoversExpiredDebt,false);
 
- const decision=pendingReportAccessDecision('recReport0000001');
- assert.deepStrictEqual(decision,{reportId:'recReport0000001',skipped:true,action:'pending-review',temporary:false,reason:'Un reporte pendiente no modifica el portón. La administración debe revisarlo antes de cualquier decisión de acceso.'});
+ const manual=pendingReportAccessDecision('recReport0000001');
+ assert.deepStrictEqual(manual,{reportId:'recReport0000001',skipped:true,action:'pending-review',temporary:false,reason:'MANUAL_MODE'});
+ const automaticExact=pendingReportAccessDecision('recReport0000001',{accessMode:'Automático',automaticProvisionalAccessEnabled:true,exactMatch:true});
+ assert.deepStrictEqual(automaticExact,{reportId:'recReport0000001',skipped:false,action:'enable-provisional',temporary:true,reason:'EXACT_REPORT_PENDING_ADMIN'});
+ const automaticUnsafe=pendingReportAccessDecision('recReport0000001',{accessMode:'Automático',automaticProvisionalAccessEnabled:true,exactMatch:false});
+ assert.strictEqual(automaticUnsafe.skipped,true);assert.strictEqual(automaticUnsafe.reason,'REPORT_NOT_EXACT');
 
  const previousFetch=global.fetch;
  const previousEnv={...process.env};
@@ -70,5 +74,5 @@ function pending({id,mode,amount}){return{id,fields:{Estado:'Pendiente','Propiet
  const accessSource=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_access_control.js'),'utf8');
  assert(!accessSource.includes('Habilitación temporal automática por reporte de pago pendiente'));
  assert(!accessSource.includes('podrá habilitar <b>automáticamente</b>'));
- console.log('PENDING_REPORTS_NEVER_ENABLE_ACCESS_OK');
+ console.log('PENDING_REPORT_ACCESS_SAFETY_OK');
 })().catch(error=>{console.error(error);process.exit(1)});

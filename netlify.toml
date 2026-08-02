@@ -30,6 +30,9 @@
 [functions."airtable-usage-rollup-scheduled"]
   schedule = "30 4 * * *"
 
+[functions."provisional-access-expiration-scheduled"]
+  schedule = "*/15 * * * *"
+
 [[edge_functions]]
 function = "pwa-head"
 path = "/*"
