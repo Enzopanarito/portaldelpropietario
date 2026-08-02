@@ -108,19 +108,33 @@ export default async function handler(req) {
     const { memberId, email } = await ownerForHouse(house);
     if (!memberId || !email) throw new Error(`La Casa ${house} no tiene ID y correo MKJ completos.`);
     const session = await mkjLogin();
-    const [usersResult, detailResult] = await Promise.all([
+    const [usersLookup, detailLookup] = await Promise.allSettled([
       listOrganizationUsers({ session }),
       listOrganizationDetailUsers({ session })
     ]);
-    const usersMatches = exactMatches(usersResult.users, memberId, email);
-    const detailMatches = exactMatches(detailResult.users, memberId, email);
+    const usersResult = usersLookup.status === 'fulfilled' ? usersLookup.value : null;
+    const detailResult = detailLookup.status === 'fulfilled' ? detailLookup.value : null;
+    const usersMatches = exactMatches(usersResult?.users, memberId, email);
+    const detailMatches = exactMatches(detailResult?.users, memberId, email);
+    const lookupError = settled => settled.status === 'rejected'
+      ? {
+          code: settled.reason?.code || 'MKJ_LOOKUP_FAILED',
+          status: settled.reason?.status || 500,
+          message: settled.reason?.message || 'Consulta MKJ fallida.'
+        }
+      : null;
     return json(200, {
       success: true,
       house,
       memberId,
-      organizationUsers: { status: usersResult.status, count: usersResult.users.length, matches: usersMatches, shape: responseShape(usersResult.data) },
-      organizationDetail: { status: detailResult.status, count: detailResult.users.length, matches: detailMatches, shape: responseShape(detailResult.data) },
-      membershipFound: usersMatches.length > 0 || detailMatches.length > 0
+      organizationUsers: usersResult
+        ? { status: usersResult.status, count: usersResult.users.length, matches: usersMatches, shape: responseShape(usersResult.data) }
+        : { error: lookupError(usersLookup) },
+      organizationDetail: detailResult
+        ? { status: detailResult.status, count: detailResult.users.length, matches: detailMatches, shape: responseShape(detailResult.data) }
+        : { error: lookupError(detailLookup) },
+      membershipFound: usersMatches.length > 0 || detailMatches.length > 0,
+      lookupComplete: Boolean(usersResult && detailResult)
     });
   } catch (error) {
     return json(502, { success: false, code: error.code || 'MKJ_DIAGNOSTIC_FAILED', message: error.message });
