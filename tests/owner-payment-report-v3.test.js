@@ -3,6 +3,7 @@ const fs=require('fs');const assert=require('assert');
 const ui=fs.readFileSync('owner-payment-report-v3.js','utf8');
 const css=fs.readFileSync('owner-payment-report-v3.css','utf8');
 const edge=fs.readFileSync('netlify/edge-functions/owner-mobile-assets.js','utf8');
+const signature=fs.readFileSync('netlify/edge-functions/owner-signature.js','utf8');
 const server=fs.readFileSync('netlify/functions/public-report-payment.js','utf8');
 
 for(const marker of ['¿Cómo realizaste el pago?','Pago digital','Efectivo','Adjunta el comprobante','Revisa y completa los datos','Moneda del pago','Deuda o cuenta donde se aplicará','Banco o método','Referencia o confirmación','Fecha de la operación','Estado visible','Observaciones','Prefiero completar los datos manualmente','Binance'])assert(ui.includes(marker),`Falta ${marker}`);
@@ -11,12 +12,18 @@ assert(!/id="payProof"[^>]*required/.test(ui),'El capture no puede ser obligator
 assert(!/id="payRef"[^>]*required/.test(ui),'La referencia se valida condicionalmente para permitir efectivo.');
 assert(!/id="payNotes"[^>]*required/.test(ui),'Observaciones deben ser opcionales.');
 assert(ui.includes("openReport=openSmartReport"),'Debe sustituir el flujo heredado.');
+assert(ui.includes("addEventListener('submit',submitSmartReport)"),'El formulario inteligente debe poseer el único manejador de envío.');
 assert(ui.includes('/api/vla/payment-proof-prefill'),'Debe analizar el comprobante en runtime moderno antes de crear el reporte.');
 assert(ui.includes('/api/vla/report-payment'),'El envío debe usar almacenamiento fuerte de Blobs.');
 assert(ui.includes('submissionId'),'Cada envío digital debe incluir clave idempotente.');
 assert(ui.includes('readAsDataURL'),'Debe preparar el comprobante para análisis y envío.');
 assert(ui.includes('submit.disabled=missing.length>0'),'El envío debe permanecer bloqueado con datos incompletos.');
 assert(!ui.includes('Confirma si escribiste el monto'),'No debe reaparecer el mensaje confuso de moneda.');
+assert(!signature.includes('form.onsubmit'),'La firma no puede sobrescribir el envío inteligente.');
+assert(!signature.includes('vla-payment-report-submit-guard'),'La firma no puede inyectar el guard heredado.');
+assert(!signature.includes("Number(document.getElementById('payAmount').value)"),'Ningún validador heredado puede interpretar el monto con Number().');
+assert(!signature.includes('/.netlify/functions/public-report-payment'),'La firma no puede disparar un segundo endpoint de pago.');
+assert(!signature.includes('Complete monto y referencia.'),'No debe reaparecer el falso aviso rojo heredado.');
 assert(!/recargo/i.test(ui+css),'El portal público no debe mencionar el recargo.');
 assert(css.includes('.vla-pay-two{display:grid'),'Los datos deben adaptarse a móvil y escritorio.');
 assert(css.includes('input[aria-invalid=true]'),'Los campos faltantes deben señalarse en línea.');
@@ -31,4 +38,4 @@ assert(server.indexOf("paymentChannel==='DIGITAL'&&!attachment")<server.indexOf(
 assert(server.includes("resolveAmount({amount,enteredCurrency"),'El servidor debe recalcular el equivalente.');
 assert(server.includes('loadLastGood'),'El servidor debe preferir la tasa BCV persistida.');
 assert(server.includes('attachments:attachment?'),'El correo debe llevar el comprobante adjunto.');
-console.log('owner-payment-report-v4: OK');
+console.log('owner-payment-report-v5: OK');
