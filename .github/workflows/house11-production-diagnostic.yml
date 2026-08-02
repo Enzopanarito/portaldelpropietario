@@ -1,0 +1,97 @@
+name: House 11 Production Diagnostic
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-house-11:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Casa 11 public balance
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            "https://villalosapamates.netlify.app/api/vla/public-data?force=1&house11=${GITHUB_RUN_ID}" \
+            --output public-data.json
+          node <<'NODE'
+          const fs = require('fs');
+          const data = JSON.parse(fs.readFileSync('public-data.json', 'utf8'));
+          const owner = (data.propietarios || []).find(item => Number(item.Casa) === 11);
+          if (!owner) throw new Error('Casa 11 no aparece en la API pública.');
+          const result = {
+            casa: Number(owner.Casa),
+            propietario: owner.Propietario,
+            saldoUsd: Number(owner['Saldo USD Actual']),
+            saldoBsRef: Number(owner['Saldo Bs Ref Actual']),
+            saldoTotal: Number(owner['Saldo Total Actual']),
+            mesCorrienteUsd: Number(owner['Mes Corriente USD'])
+          };
+          console.log(JSON.stringify(result, null, 2));
+          if (Math.abs(result.saldoUsd - 50) > 0.009) {
+            throw new Error(`Casa 11: Saldo USD Actual=${result.saldoUsd}; se esperaban 50.`);
+          }
+          if (Math.abs(result.mesCorrienteUsd - 50) > 0.009) {
+            throw new Error(`Casa 11: Mes Corriente USD=${result.mesCorrienteUsd}; se esperaban 50.`);
+          }
+          NODE
+
+      - name: Check every inline production script
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            "https://villalosapamates.netlify.app/?house11-script-check=${GITHUB_RUN_ID}" \
+            --output production.html
+          python3 <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+
+          class Scripts(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.items=[]
+                  self.current=None
+              def handle_starttag(self, tag, attrs):
+                  if tag.lower()!='script': return
+                  meta=dict(attrs)
+                  if meta.get('src'): return
+                  self.current={'meta':meta,'text':[]}
+              def handle_data(self, data):
+                  if self.current is not None:
+                      self.current['text'].append(data)
+              def handle_endtag(self, tag):
+                  if tag.lower()=='script' and self.current is not None:
+                      self.items.append(self.current)
+                      self.current=None
+
+          html=Path('production.html').read_text(encoding='utf-8')
+          parser=Scripts(); parser.feed(html)
+          out=Path('inline-scripts'); out.mkdir(exist_ok=True)
+          manifest=[]
+          for i,item in enumerate(parser.items,1):
+              path=out/f'{i:03d}.js'
+              path.write_text(''.join(item['text']),encoding='utf-8')
+              manifest.append(f"{i:03d}\tid={item['meta'].get('id','')}\tbytes={path.stat().st_size}")
+          Path('inline-scripts-manifest.txt').write_text('\n'.join(manifest),encoding='utf-8')
+          print('\n'.join(manifest))
+          PY
+          failed=0
+          while IFS= read -r file; do
+            echo "--- checking ${file} ---"
+            if ! node --check "$file"; then
+              failed=1
+              number="$(basename "$file" .js)"
+              grep "^${number}" inline-scripts-manifest.txt || true
+              nl -ba "$file" | tail -n 80
+            fi
+          done < <(find inline-scripts -name '*.js' | sort)
+          test "$failed" -eq 0
