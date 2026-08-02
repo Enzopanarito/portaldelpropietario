@@ -42,6 +42,11 @@ path = "/*"
 function = "admin-auth-version"
 path = "/.netlify/functions/*"
 
+# Salud solo considera cargos legacy vigentes; los cerrados permanecen como histórico.
+[[edge_functions]]
+function = "accounting-health-fix"
+path = "/.netlify/functions/system-health"
+
 [[edge_functions]]
 function = "owner-mobile-assets"
 path = "/"
