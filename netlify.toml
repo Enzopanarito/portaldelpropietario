@@ -75,31 +75,6 @@ function = "admin-monthly-close"
 path = "/admin*"
 
 [[edge_functions]]
-function = "balance-fix"
-path = "/"
-
-[[edge_functions]]
-function = "balance-fix"
-path = "/index.html"
-
-[[edge_functions]]
-function = "balance-fix"
-path = "/admin*"
-
-# Mantiene separados los saldos USD y Bs; no permite compensación cruzada.
-[[edge_functions]]
-function = "currency-balance-fix"
-path = "/"
-
-[[edge_functions]]
-function = "currency-balance-fix"
-path = "/index.html"
-
-[[edge_functions]]
-function = "currency-balance-fix"
-path = "/admin*"
-
-[[edge_functions]]
 function = "admin-payment-flow"
 path = "/admin*"
 
