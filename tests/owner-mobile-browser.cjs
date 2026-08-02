@@ -38,7 +38,7 @@ async function waitForHouseOptions(page,expected=15,timeout=30000){
   let found=0;
   while(Date.now()<deadline){
     const labels=await page.locator('#welcomeSelector option').allTextContents().catch(()=>[]);
-    found=labels.filter(label=>/^Casa\s+\d+\s+-/i.test(String(label||'').trim())).length;
+    found=labels.filter(label=>/^Casa\s+\d+\b/i.test(String(label||'').trim())).length;
     if(found===expected)return;
     await page.waitForTimeout(250);
   }
@@ -115,7 +115,8 @@ async function loadPortalWithOwners(page){
   if(welcomeMetrics.buttonHeight<50||!painted(welcomeMetrics.buttonBackground,welcomeMetrics.buttonBackgroundImage)||welcomeMetrics.buttonColor==='rgb(0, 0, 0)')throw new Error(`El botón de entrada perdió su estilo principal: ${JSON.stringify(welcomeMetrics)}.`);
 
   const ownerValue=await page.locator('#welcomeSelector option').evaluateAll(options=>{
-    const option=options.find(item=>/^Casa\s+15\s+-/i.test(String(item.textContent||'').trim()))||options.find(item=>/^Casa\s+1\s+-/i.test(String(item.textContent||'').trim()));
+    const valid=options.filter(item=>String(item.value||'').trim()&&/^Casa\s+\d+\b/i.test(String(item.textContent||'').trim()));
+    const option=valid.find(item=>/^Casa\s+15\b/i.test(String(item.textContent||'').trim()))||valid[0];
     return option?option.value:'';
   });
   if(!ownerValue)throw new Error('No se encontró una casa válida.');
