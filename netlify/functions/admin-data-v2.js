@@ -39,7 +39,9 @@ const handler = async function(event){
   try{
     const results=await Promise.all([
       safeLoad('propietarios',()=>airtableGetAll(TABLES.propietarios,withFields('',FIELD_SETS.propietarios),token,baseId,counter),true),
-      safeLoad('gastos',()=>airtableGetAllWithFallback(TABLES.gastos,withFields('?view=Gastos%20Mensuales',FIELD_SETS.gastos),withFields('',FIELD_SETS.gastos),token,baseId,counter),true),
+      // La vista de Airtable puede ocultar registros recién creados. Admin lee la
+      // tabla completa y aplica el filtro contable por mes/estado en el servidor.
+      safeLoad('gastos',()=>airtableGetAll(TABLES.gastos,withFields('',FIELD_SETS.gastos),token,baseId,counter),true),
       safeLoad('pagos',()=>airtableGetAll(TABLES.pagos,withFields('',FIELD_SETS.pagos),token,baseId,counter),false),
       safeLoad('reportes',()=>airtableGetAllWithFallback(TABLES.reportes,withFields('?filterByFormula='+encodeURIComponent("{Estado}='Pendiente'"),FIELD_SETS.reportes),withFields('',FIELD_SETS.reportes),token,baseId,counter),false),
       safeLoad('config',()=>airtableGetAll(TABLES.config,withFields('?maxRecords=1',FIELD_SETS.config),token,baseId,counter),false)
