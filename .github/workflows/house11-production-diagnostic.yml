@@ -16,6 +16,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Wait for corrected production release
+        shell: bash
+        run: |
+          set -euo pipefail
+          marker='vla-currency-balance-fix-2026-08-02-currency-v2'
+          for attempt in $(seq 1 36); do
+            html="$(curl --fail --silent --show-error --location "https://villalosapamates.netlify.app/?house11-release=${GITHUB_RUN_ID}-${attempt}" || true)"
+            if grep -Fq "$marker" <<<"$html"; then
+              printf '%s' "$html" > production.html
+              echo "Corrected production release detected."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "The corrected production release was not detected." >&2
+          exit 1
+
       - name: Validate Casa 11 public balance
         shell: bash
         run: |
@@ -49,9 +66,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --location \
-            "https://villalosapamates.netlify.app/?house11-script-check=${GITHUB_RUN_ID}" \
-            --output production.html
+          test -s production.html
           python3 <<'PY'
           from html.parser import HTMLParser
           from pathlib import Path
