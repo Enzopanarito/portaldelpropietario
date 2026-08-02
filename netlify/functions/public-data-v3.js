@@ -22,7 +22,7 @@ function stagingFallback(result,env,fixture=stagingFixture){
 }
 
 function createHandler(deps={}){
- const previousHandler=deps.previousHandler||previous.handler;
+ const rawPreviousHandler=deps.previousHandler||previous.handler;
  const isEnabled=deps.enabled||snapshotStore.enabled;
  const eventEnvironment=deps.environmentForEvent||snapshotStore.environmentForEvent;
  const eventHost=deps.requestHost||snapshotStore.requestHost;
@@ -32,16 +32,19 @@ function createHandler(deps={}){
  const releaseRefresh=deps.releasePublicRefresh||snapshotStore.releasePublicRefresh;
  const expectedEtag=deps.snapshotExpectedEtag||snapshotStore.snapshotExpectedEtag;
  const fixture=deps.stagingFixture||stagingFixture;
+ const previousHandler=async event=>{
+  const env=eventEnvironment(event);
+  try{return stagingFallback(await rawPreviousHandler(event),env,fixture)}
+  catch(error){
+   if(!stagingFixture.isStagingEnvironment(env))throw error;
+   return stagingFallback(response(503,{message:'No se pudo consultar Airtable en este entorno.',detail:String(error.message||'').slice(0,200)}),env,fixture);
+  }
+ };
 
  return async function handler(event){
   const host=eventHost(event);
   const snapshotEnv=eventEnvironment(event);
   if(!isEnabled(snapshotEnv,snapshotStore.runtimeConfig,host))return previousHandler(event);
-  if(stagingFixture.isStagingEnvironment(snapshotEnv)){
-   let direct;
-   try{direct=await previousHandler(event)}catch(error){direct=response(503,{message:'No se pudo consultar Airtable en este entorno.',detail:String(error.message||'').slice(0,200)})}
-   return stagingFallback(direct,snapshotEnv,fixture);
-  }
   const waitSnapshot=deps.waitForSnapshot||(()=>waitForSnapshot(readSnapshot,deps.sleep||sleep,snapshotEnv));
   let cached=null,blobReadError=null;
   try{cached=await readSnapshot(snapshotEnv)}catch(error){blobReadError=error}
