@@ -7,6 +7,7 @@ const {execFileSync}=require('child_process');
 const ROOT=path.join(__dirname,'..');
 const DIST=path.join(ROOT,'dist');
 const BALANCE_CONTRACT='<script defer src="/balance-contract-v1.js"></script>';
+const OWNER_FINANCIAL_VIEW='<script defer src="/owner-financial-view-v1.js"></script>';
 const BALANCE_CONTRACT_PAGES=new Set(['index.html','admin.html']);
 const PUBLIC_FILES=[
   '_redirects',
@@ -16,7 +17,7 @@ const PUBLIC_FILES=[
   'admin-owner-access-v1.js','admin-premium-10.css','admin-premium-10.js',
   'admin-premium-controls.js','admin-premium-polish.css','admin-premium-preflight.js',
   'admin-premium.css','admin-premium.js','admin-responsive-v4.css','admin-responsive-v4.js',
-  'admin-session-bridge.js','balance-contract-v1.js','owner-dark-contrast-v1.css','owner-mobile-v2-layout-fix.css',
+  'admin-session-bridge.js','balance-contract-v1.js','owner-financial-view-v1.js','owner-dark-contrast-v1.css','owner-mobile-v2-layout-fix.css',
   'owner-mobile-v2.css','owner-payment-report-v3.css','owner-payment-report-v3.js',
   'payment-report-intelligence.js','pwa-register.js','release.json','service-worker.js'
 ];
@@ -33,7 +34,10 @@ function copyPublicFile(name){
   if(name.endsWith('.html')){
     let text=content.toString('utf8').replace(TAILWIND_CDN,'<link rel="stylesheet" href="/tailwind.generated.css">');
     if(/cdn\.tailwindcss\.com/i.test(text))throw new Error(`No se pudo retirar Tailwind CDN de ${name}.`);
-    if(BALANCE_CONTRACT_PAGES.has(name))text=injectBeforeBody(text,BALANCE_CONTRACT);
+    if(BALANCE_CONTRACT_PAGES.has(name)){
+      text=injectBeforeBody(text,BALANCE_CONTRACT);
+      if(name==='index.html')text=injectBeforeBody(text,OWNER_FINANCIAL_VIEW);
+    }
     content=Buffer.from(text);
   }
   fs.mkdirSync(path.dirname(target),{recursive:true});
@@ -58,6 +62,7 @@ execFileSync(tailwindBin,[
 for(const page of BALANCE_CONTRACT_PAGES){
  const built=fs.readFileSync(path.join(DIST,page),'utf8');
  if(!built.includes(BALANCE_CONTRACT))throw new Error(`El contrato financiero no fue integrado en ${page}.`);
+ if(page==='index.html'&&!built.includes(OWNER_FINANCIAL_VIEW))throw new Error('La vista financiera oficial no fue integrada en index.html.');
 }
 
 require('./generate-netlify-runtime-config');
