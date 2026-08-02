@@ -11,17 +11,39 @@ const viewports=[
 
 function transparent(value){return !value||value==='transparent'||value==='rgba(0, 0, 0, 0)'}
 function painted(color,image){return !transparent(color)||Boolean(image&&image!=='none')}
+function safeBodySample(value){return String(value||'').replace(/[\r\n\t]+/g,' ').slice(0,800)}
+
+async function publicDataDiagnostic(page){
+  try{
+    const response=await page.request.get(`${TARGET}/api/vla/public-data?force=1&diagnostic=${Date.now()}`,{timeout:30000});
+    const text=await response.text();
+    let parsed=null;try{parsed=JSON.parse(text)}catch(_){}
+    return{
+      status:response.status(),
+      ok:response.ok(),
+      contentType:response.headers()['content-type']||'',
+      snapshot:response.headers()['x-public-snapshot']||'',
+      environment:response.headers()['x-data-environment']||'',
+      airtableCalls:response.headers()['x-airtable-calls']||'',
+      owners:Array.isArray(parsed&&parsed.propietarios)?parsed.propietarios.length:null,
+      message:parsed&&parsed.message||'',
+      detail:parsed&&parsed.detail||'',
+      bodySample:safeBodySample(text)
+    };
+  }catch(error){return{error:String(error&&error.message||error)}}
+}
 
 async function waitForHouseOptions(page,expected=15,timeout=30000){
   const deadline=Date.now()+timeout;
   let found=0;
   while(Date.now()<deadline){
     const labels=await page.locator('#welcomeSelector option').allTextContents().catch(()=>[]);
-    found=labels.filter(label=>/^Casa\s+\d+\s+-/i.test(String(label||'').trim())).length;
+    found=labels.filter(label=>/^Casa\s+\d+\b/i.test(String(label||'').trim())).length;
     if(found===expected)return;
     await page.waitForTimeout(250);
   }
-  throw new Error(`Se cargaron ${found} de ${expected} casas.`);
+  const diagnostic=await publicDataDiagnostic(page);
+  throw new Error(`Se cargaron ${found} de ${expected} casas. Diagnóstico público: ${JSON.stringify(diagnostic)}`);
 }
 
 async function loadPortalWithOwners(page){
@@ -92,12 +114,16 @@ async function loadPortalWithOwners(page){
   if(welcomeMetrics.titleFont<25)throw new Error('El título móvil quedó demasiado pequeño.');
   if(welcomeMetrics.buttonHeight<50||!painted(welcomeMetrics.buttonBackground,welcomeMetrics.buttonBackgroundImage)||welcomeMetrics.buttonColor==='rgb(0, 0, 0)')throw new Error(`El botón de entrada perdió su estilo principal: ${JSON.stringify(welcomeMetrics)}.`);
 
-  const ownerValue=await page.locator('#welcomeSelector option').evaluateAll(options=>{
-    const option=options.find(item=>/^Casa\s+15\s+-/i.test(String(item.textContent||'').trim()))||options.find(item=>/^Casa\s+1\s+-/i.test(String(item.textContent||'').trim()));
-    return option?option.value:'';
+  const ownerOption=await page.locator('#welcomeSelector option').evaluateAll(options=>{
+    const candidates=options.map((item,index)=>({
+      index,
+      text:String(item.textContent||'').trim(),
+      value:String(item.value||'')
+    })).filter(item=>/^Casa\s+\d+\b/i.test(item.text));
+    return candidates.find(item=>/^Casa\s+15\b/i.test(item.text))||candidates[0]||null;
   });
-  if(!ownerValue)throw new Error('No se encontró una casa válida.');
-  await page.locator('#welcomeSelector').selectOption(ownerValue);
+  if(!ownerOption)throw new Error('No se encontró una casa válida.');
+  await page.locator('#welcomeSelector').selectOption({index:ownerOption.index});
   await page.getByRole('button',{name:/Consultar Estado de Cuenta/i}).click();
   await page.locator('#main').waitFor({state:'visible',timeout:15000});
   await page.locator('[data-vla-breakdown-host]').waitFor({state:'visible',timeout:30000});

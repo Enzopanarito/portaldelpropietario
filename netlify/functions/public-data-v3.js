@@ -2,6 +2,7 @@
 
 const previous=require('./public-data-v2');
 const snapshotStore=require('./_public_snapshot_store');
+const stagingFixture=require('./_staging_public_fixture');
 
 function response(statusCode,payload,headers={}){return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...headers},body:JSON.stringify(payload)}}
 function parseBody(result){try{return JSON.parse(result&&result.body||'{}')}catch(_){return{}}}
@@ -9,9 +10,19 @@ function cachedResponse(snapshot,state,extra={}){return response(200,snapshot.pa
 function forceEvent(event){return{...event,queryStringParameters:{...(event.queryStringParameters||{}),force:'1'}}}
 function sleep(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
 async function waitForSnapshot(readSnapshot=snapshotStore.readPublicSnapshot,sleepFn=sleep,env=process.env){for(let attempt=0;attempt<12;attempt+=1){await sleepFn(250);const current=await readSnapshot(env).catch(()=>null);if(current&&current.ok&&current.fresh)return current}return null}
+function stagingFallback(result,env,fixture=stagingFixture){
+ if(!fixture.shouldFallback(result,env))return result;
+ return response(200,fixture.payload(),{
+  'X-Public-Snapshot':'STAGING_FIXTURE',
+  'X-Data-Environment':'staging-fixture',
+  'X-Airtable-Calls':'0',
+  'X-Balance-Engine':'5',
+  'Warning':'199 - "Airtable staging no disponible; se sirvieron datos sanitizados de prueba"'
+ });
+}
 
 function createHandler(deps={}){
- const previousHandler=deps.previousHandler||previous.handler;
+ const rawPreviousHandler=deps.previousHandler||previous.handler;
  const isEnabled=deps.enabled||snapshotStore.enabled;
  const eventEnvironment=deps.environmentForEvent||snapshotStore.environmentForEvent;
  const eventHost=deps.requestHost||snapshotStore.requestHost;
@@ -20,6 +31,15 @@ function createHandler(deps={}){
  const claimRefresh=deps.claimPublicRefresh||snapshotStore.claimPublicRefresh;
  const releaseRefresh=deps.releasePublicRefresh||snapshotStore.releasePublicRefresh;
  const expectedEtag=deps.snapshotExpectedEtag||snapshotStore.snapshotExpectedEtag;
+ const fixture=deps.stagingFixture||stagingFixture;
+ const previousHandler=async event=>{
+  const env=eventEnvironment(event);
+  try{return stagingFallback(await rawPreviousHandler(event),env,fixture)}
+  catch(error){
+   if(!stagingFixture.isStagingEnvironment(env))throw error;
+   return stagingFallback(response(503,{message:'No se pudo consultar Airtable en este entorno.',detail:String(error.message||'').slice(0,200)}),env,fixture);
+  }
+ };
 
  return async function handler(event){
   const host=eventHost(event);
@@ -58,4 +78,4 @@ function createHandler(deps={}){
 
 const handler=createHandler();
 exports.handler=handler;
-module.exports={handler,createHandler,response,parseBody,forceEvent,cachedResponse,waitForSnapshot};
+module.exports={handler,createHandler,response,parseBody,forceEvent,cachedResponse,waitForSnapshot,stagingFallback};

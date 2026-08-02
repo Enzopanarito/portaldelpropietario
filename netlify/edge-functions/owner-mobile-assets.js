@@ -1,5 +1,6 @@
 const OWNER_PATHS=['/','/index.html'];
-const MOBILE_RELEASE='owner-mobile-fluid-v2-payment-smart-v5-dark-wcag-v1-r1-2026-07-31';
+const MOBILE_RELEASE='owner-mobile-fluid-v2-payment-smart-v5-dark-wcag-v1-r2-2026-08-02';
+const BREAKDOWN_PRESENTATION='2026-07-11-photo-v6';
 const STYLE_HREF=`/owner-mobile-v2.css?v=${MOBILE_RELEASE}`;
 const LAYOUT_FIX_HREF=`/owner-mobile-v2-layout-fix.css?v=${MOBILE_RELEASE}`;
 const PAYMENT_STYLE_HREF=`/owner-payment-report-v3.css?v=${MOBILE_RELEASE}`;
@@ -49,6 +50,7 @@ export default async (request,context)=>{
     if(!html.includes('id="vla-owner-dark-contrast-v1"'))extras+=`<meta name="vla-owner-dark-contrast" content="wcag-v1"><link id="vla-owner-dark-contrast-v1" rel="stylesheet" href="${DARK_STYLE_HREF}">`;
     if(!html.includes('id="vla-payment-intelligence"'))extras+=`<script id="vla-payment-intelligence" defer src="${PAYMENT_LOGIC_HREF}"></script>`;
     if(!html.includes('id="vla-owner-payment-report-v3"'))extras+=`<script id="vla-owner-payment-report-v3" defer src="${PAYMENT_UI_HREF}"></script>`;
+    if(!html.includes('id="vla-owner-mobile-release"'))extras+=releaseGuard;
     if(extras)html=html.includes('</head>')?html.replace('</head>',extras+'</head>'):html+extras;
   }
 
@@ -60,5 +62,6 @@ export default async (request,context)=>{
   headers.set('x-vla-owner-mobile','fluid-v2');
   headers.set('x-vla-owner-payment-report','smart-v5');
   headers.set('x-vla-owner-dark-contrast','wcag-v1');
+  headers.set('x-vla-breakdown-presentation',BREAKDOWN_PRESENTATION);
   return new Response(html,{status:response.status,statusText:response.statusText,headers});
 };
