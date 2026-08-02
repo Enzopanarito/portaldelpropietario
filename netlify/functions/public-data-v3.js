@@ -36,7 +36,8 @@ function createHandler(deps={}){
  return async function handler(event){
   const host=eventHost(event);
   const snapshotEnv=eventEnvironment(event);
-  if(!isEnabled(snapshotEnv,snapshotStore.runtimeConfig,host)){
+  if(!isEnabled(snapshotEnv,snapshotStore.runtimeConfig,host))return previousHandler(event);
+  if(stagingFixture.isStagingEnvironment(snapshotEnv)){
    let direct;
    try{direct=await previousHandler(event)}catch(error){direct=response(503,{message:'No se pudo consultar Airtable en este entorno.',detail:String(error.message||'').slice(0,200)})}
    return stagingFallback(direct,snapshotEnv,fixture);
