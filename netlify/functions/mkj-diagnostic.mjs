@@ -11,7 +11,7 @@ const {
 
 // Huella SHA-256 de un secreto aleatorio temporal. El secreto nunca se publica.
 // Se elimina junto con esta función al finalizar la recuperación de Casa 13.
-const DIAGNOSTIC_SECRET_SHA256 = '6f8a40c5d429772385e2caa552357a6e22e8117925f7c4f3c1cb231c0e07a7ac';
+const DIAGNOSTIC_SECRET_SHA256 = '61ce808972099b6b6e4dadfd94d74dc8f918f46b639f64d551721b684174877b';
 
 function clean(value, max = 254) {
   return String(value || '').trim().slice(0, max);
