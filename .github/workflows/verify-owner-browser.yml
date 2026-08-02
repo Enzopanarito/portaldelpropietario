@@ -70,6 +70,22 @@ jobs:
             return negative ? -value : value;
           }
 
+          function money(value) {
+            const number = Number(value);
+            return Number.isFinite(number) ? Math.round((number + Number.EPSILON) * 100) / 100 : 0;
+          }
+
+          function payableBalance(owner) {
+            const usd = money(owner['Saldo USD Actual']);
+            const bsRef = money(owner['Saldo Bs Ref Actual']);
+            return {
+              usd,
+              bsRef,
+              net: money(owner['Saldo Total Actual']),
+              payable: money(Math.max(0, usd) + Math.max(0, bsRef))
+            };
+          }
+
           async function waitForHouseOptions(page, expected = 15, timeout = 30000) {
             const deadline = Date.now() + timeout;
             let found = 0;
@@ -126,8 +142,8 @@ jobs:
             const expected = {};
             for (const owner of source.propietarios || []) {
               const house = Number(owner.Casa);
-              const balance = Number(owner['Saldo Total Actual']);
-              if (Number.isFinite(house) && Number.isFinite(balance)) expected[house] = balance;
+              const balance = payableBalance(owner);
+              if (Number.isFinite(house)) expected[house] = balance;
             }
             if (Object.keys(expected).length !== 15) throw new Error(`La fuente oficial devolvió ${Object.keys(expected).length} casas; se esperaban 15.`);
 
@@ -144,13 +160,7 @@ jobs:
 
             const breakdown = page.locator('[data-vla-breakdown-host="2026-07-11-photo-v6"]');
             await breakdown.waitFor({ state: 'visible', timeout: 30000 });
-            await waitForLocatorText(
-              page,
-              breakdown,
-              text => /Costo\s*Total/i.test(text) && /Su\s*Parte/i.test(text),
-              'el desglose completo',
-              30000
-            );
+            await waitForLocatorText(page, breakdown, text => /Costo\s*Total/i.test(text) && /Su\s*Parte/i.test(text), 'el desglose completo', 30000);
 
             const breakdownText = await breakdown.innerText();
             if (!/VIGILANCIA/i.test(breakdownText)) throw new Error('El desglose visible no contiene VIGILANCIA.');
@@ -166,17 +176,11 @@ jobs:
               }, house);
               if (!value) throw new Error(`No se encontró la Casa ${house}.`);
               await selector.selectOption(value);
-              await waitForLocatorText(
-                page,
-                page.locator('#welcome-msg'),
-                text => String(text || '').trim().startsWith(`Casa ${house} ·`),
-                `el encabezado de Casa ${house}`,
-                5000
-              );
+              await waitForLocatorText(page, page.locator('#welcome-msg'), text => String(text || '').trim().startsWith(`Casa ${house} ·`), `el encabezado de Casa ${house}`, 5000);
               const shown = parseMoney(await page.locator('#m-total').innerText());
               balances[house] = shown;
-              if (Math.abs(shown - expected[house]) > 0.009) {
-                throw new Error(`Casa ${house}: saldo visible ${shown}, fuente oficial ${expected[house]}.`);
+              if (Math.abs(shown - expected[house].payable) > 0.009) {
+                throw new Error(`Casa ${house}: pagadero visible ${shown}, pagadero oficial ${expected[house].payable}; USD ${expected[house].usd}, Bs ref. ${expected[house].bsRef}, neto referencial ${expected[house].net}.`);
               }
             }
 
@@ -187,6 +191,7 @@ jobs:
               status: response.status(),
               sourceGeneratedAt: source.generatedAt || null,
               sourceBalanceEngineVersion: source.balanceEngineVersion || null,
+              balanceContract: 'independent-currencies-payable-v1',
               breakdownVisible: true,
               hasCostoTotal: /Costo\s*Total/i.test(breakdownText),
               hasSuParte: /Su\s*Parte/i.test(breakdownText),
@@ -230,7 +235,7 @@ jobs:
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
             -f state=success \
             -f context='Owner Portal Production Verification' \
-            -f description='Desglose y saldos de las 15 casas verificados en producción.' \
+            -f description='Desglose y saldos pagaderos de las 15 casas verificados en producción.' \
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
       - name: Publish failed production status
