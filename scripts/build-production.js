@@ -8,6 +8,7 @@ const ROOT=path.join(__dirname,'..');
 const DIST=path.join(ROOT,'dist');
 const BALANCE_CONTRACT='<script defer src="/balance-contract-v1.js"></script>';
 const OWNER_FINANCIAL_VIEW='<script defer src="/owner-financial-view-v1.js"></script>';
+const OWNER_MOBILE_BOOTSTRAP='<script id="vla-owner-mobile-static-bootstrap">document.documentElement.dataset.vlaOwnerMobile="fluid-v2";document.documentElement.dataset.vlaOwnerDarkContrast="wcag-v1";</script>';
 const BALANCE_CONTRACT_PAGES=new Set(['index.html','admin.html']);
 const PUBLIC_FILES=[
   '_redirects',
@@ -36,7 +37,10 @@ function copyPublicFile(name){
     if(/cdn\.tailwindcss\.com/i.test(text))throw new Error(`No se pudo retirar Tailwind CDN de ${name}.`);
     if(BALANCE_CONTRACT_PAGES.has(name)){
       text=injectBeforeBody(text,BALANCE_CONTRACT);
-      if(name==='index.html')text=injectBeforeBody(text,OWNER_FINANCIAL_VIEW);
+      if(name==='index.html'){
+        text=injectBeforeBody(text,OWNER_FINANCIAL_VIEW);
+        text=injectBeforeBody(text,OWNER_MOBILE_BOOTSTRAP);
+      }
     }
     content=Buffer.from(text);
   }
@@ -62,7 +66,10 @@ execFileSync(tailwindBin,[
 for(const page of BALANCE_CONTRACT_PAGES){
  const built=fs.readFileSync(path.join(DIST,page),'utf8');
  if(!built.includes(BALANCE_CONTRACT))throw new Error(`El contrato financiero no fue integrado en ${page}.`);
- if(page==='index.html'&&!built.includes(OWNER_FINANCIAL_VIEW))throw new Error('La vista financiera oficial no fue integrada en index.html.');
+ if(page==='index.html'){
+  if(!built.includes(OWNER_FINANCIAL_VIEW))throw new Error('La vista financiera oficial no fue integrada en index.html.');
+  if(!built.includes(OWNER_MOBILE_BOOTSTRAP))throw new Error('El marcador móvil estático no fue integrado en index.html.');
+ }
 }
 
 require('./generate-netlify-runtime-config');
