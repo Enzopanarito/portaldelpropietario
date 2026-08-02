@@ -1,4 +1,4 @@
-const FIX_RELEASE = '2026-08-02-currency-v1';
+const FIX_RELEASE = '2026-08-02-currency-v2';
 
 const injection = `<script id="vla-currency-balance-fix-${FIX_RELEASE}">
 (function(){
@@ -119,7 +119,12 @@ const injection = `<script id="vla-currency-balance-fix-${FIX_RELEASE}">
 function appendInjection(html) {
   const marker = `vla-currency-balance-fix-${FIX_RELEASE}`;
   if (html.includes(marker)) return html;
-  return html.includes('</body>') ? html.replace('</body>', injection + '</body>') : html + injection;
+  // Use a callback replacement so JavaScript sequences such as "$'" inside
+  // the injected script are treated literally instead of as String.replace
+  // substitution tokens (where $' means the text after the match).
+  return html.includes('</body>')
+    ? html.replace('</body>', () => injection + '</body>')
+    : html + injection;
 }
 
 export default async (request, context) => {
