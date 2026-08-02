@@ -35,7 +35,7 @@
     const fixed=contract.authoritative(owner,calculation,typeof window.rate==='function'?Number(window.rate()||0):0);
     setCalculation(fixed);
     const total=document.getElementById('m-total');
-    if(total)total.textContent=fixed.payableTotal>TOLERANCE?usd(fixed.payableTotal):(fixed.saldoFavor>TOLERANCE?'-'+usd(fixed.saldoFavor):usd(0));
+    if(total)total.textContent=usd(fixed.payableTotal);
     const expired=document.getElementById('m-vencida');if(expired)expired.textContent=usd(fixed.expired);
     const currentNode=document.getElementById('m-corriente');if(currentNode)currentNode.textContent=usd(fixed.currentMonth);
     const summary=document.getElementById('summary');
