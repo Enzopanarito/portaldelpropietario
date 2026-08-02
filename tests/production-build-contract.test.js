@@ -22,12 +22,16 @@ test('los recalculadores Edge de balances fueron retirados',()=>{
  assert.doesNotMatch(config,/function\s*=\s*"currency-balance-fix"/);
 });
 
-test('la caché pública usa Netlify Blobs con CAS y arrendamiento atómico',()=>{
+test('la caché pública usa únicamente la API oficial de Netlify Blobs',()=>{
  const source=fs.readFileSync(path.join(root,'netlify','functions','_public_snapshot_store.js'),'utf8');
  assert.match(source,/getStore\(STORE_NAME,\{consistency:'strong'\}\)/);
  assert.doesNotMatch(source,/getStore\(\{name:STORE_NAME/);
  assert.match(source,/PUBLIC_SNAPSHOT_VERSION_REQUIRED/);
  assert.match(source,/STALE_PUBLIC_SNAPSHOT_WRITE/);
- assert.match(source,/onlyIfMatch/);
- assert.match(source,/onlyIfNew/);
+ assert.match(source,/PUBLIC_SNAPSHOT_LEASE_LOST/);
+ assert.match(source,/invalidationKey/);
+ assert.match(source,/writeOperationId/);
+ assert.doesNotMatch(source,/onlyIfMatch/);
+ assert.doesNotMatch(source,/onlyIfNew/);
+ assert.doesNotMatch(source,/result\.modified/);
 });
