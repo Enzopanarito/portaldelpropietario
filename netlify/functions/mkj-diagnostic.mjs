@@ -73,13 +73,24 @@ function exactMatches(users, memberId, email) {
     return idMatch || emailMatch;
   }).map(user => ({
     userId: organizationUserId(user),
+    email: organizationUserEmail(user),
+    firstName: clean(user?.user?.first_name ?? user?.first_name, 80),
+    lastName: clean(user?.user?.last_name ?? user?.last_name, 80),
     emailMatches: Boolean(wantedEmail && organizationUserEmail(user) === wantedEmail),
     idMatches: Boolean(memberId && organizationUserId(user) === memberId),
-    active: typeof user?.active === 'boolean'
-      ? user.active
+    userActive: typeof user?.is_active === 'boolean'
+      ? user.is_active
+      : typeof user?.user?.is_active === 'boolean'
+        ? user.user.is_active
+        : null,
+    membershipActive: typeof user?.membership_is_active === 'boolean'
+      ? user.membership_is_active
       : typeof user?.membership?.active === 'boolean'
         ? user.membership.active
-        : null,
+        : typeof user?.active === 'boolean'
+          ? user.active
+          : null,
+    organizationId: clean(user?.organization_id ?? user?.membership?.organization_id, 80),
     keys: Object.keys(user || {}).sort().slice(0, 20)
   }));
 }
