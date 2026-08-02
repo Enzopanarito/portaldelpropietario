@@ -1,5 +1,6 @@
 const OWNER_PATHS=['/','/index.html'];
 const MOBILE_RELEASE='owner-mobile-fluid-v2-payment-smart-v5-dark-wcag-v1-r2-2026-08-02';
+const BREAKDOWN_PRESENTATION='2026-07-11-photo-v6';
 const STYLE_HREF=`/owner-mobile-v2.css?v=${MOBILE_RELEASE}`;
 const LAYOUT_FIX_HREF=`/owner-mobile-v2-layout-fix.css?v=${MOBILE_RELEASE}`;
 const PAYMENT_STYLE_HREF=`/owner-payment-report-v3.css?v=${MOBILE_RELEASE}`;
@@ -61,5 +62,6 @@ export default async (request,context)=>{
   headers.set('x-vla-owner-mobile','fluid-v2');
   headers.set('x-vla-owner-payment-report','smart-v5');
   headers.set('x-vla-owner-dark-contrast','wcag-v1');
+  headers.set('x-vla-breakdown-presentation',BREAKDOWN_PRESENTATION);
   return new Response(html,{status:response.status,statusText:response.statusText,headers});
 };
