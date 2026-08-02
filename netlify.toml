@@ -79,6 +79,18 @@ function = "balance-fix"
 path = "/admin*"
 
 [[edge_functions]]
+function = "currency-balance-fix"
+path = "/"
+
+[[edge_functions]]
+function = "currency-balance-fix"
+path = "/index.html"
+
+[[edge_functions]]
+function = "currency-balance-fix"
+path = "/admin*"
+
+[[edge_functions]]
 function = "admin-payment-flow"
 path = "/admin*"
 
