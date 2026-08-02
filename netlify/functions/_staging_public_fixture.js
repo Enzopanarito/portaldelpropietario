@@ -8,10 +8,11 @@ const BALANCES=[
 ];
 
 function money(value){return Math.round(Number(value||0)*100)/100}
+function ownerId(house){return`staging-house-${String(house).padStart(2,'0')}`}
 function owner(index){
  const house=index+1,balance=BALANCES[index],usd=money(balance.usd),bs=money(balance.bs),total=money(usd+bs);
  return{
-  id:`staging-house-${String(house).padStart(2,'0')}`,
+  id:ownerId(house),
   Casa:house,
   Propietario:`Propietario de prueba Casa ${house}`,
   Alicuota:ALIQUOTS[index],
@@ -37,6 +38,20 @@ function owner(index){
   'Última Sync MKJ':''
  };
 }
+function expense(id,concept,amount,type='Gasto Común',mode='Bs BCV',owners=[]){
+ return{id,fields:{Concepto:concept,Monto:amount,'Tipo de Gasto':type,Frecuencia:'Mensual',Propietarios:owners,'Forma de Pago':mode,'Mes Contable':'2026-08','Estado del Gasto':'Activo'}};
+}
+function expenses(){
+ const allOwners=Array.from({length:15},(_,index)=>ownerId(index+1));
+ return[
+  expense('staging-exp-vigilancia','VIGILANCIA',1000),
+  expense('staging-exp-jardineria','JARDINERÍA',240),
+  expense('staging-exp-consumibles','CONSUMIBLES',60),
+  expense('staging-exp-aseo','CAMIÓN DEL ASEO',60),
+  expense('staging-exp-planta','SERVICIO TÉCNICO DE PLANTA ELÉCTRICA',100,'Gasto Especial','Bs BCV',allOwners.slice(0,13)),
+  expense('staging-exp-motor','CUOTA ESPECIAL MOTOR DEL PORTÓN',750,'Gasto Especial','USD',allOwners)
+ ];
+}
 function payload(now=new Date()){
  return{
   generatedAt:now.toISOString(),
@@ -47,7 +62,7 @@ function payload(now=new Date()){
   warning:'Datos sanitizados de respaldo para pruebas; no representan producción.',
   automation:{payment:{dueDay:10,surchargeRate:0.10},access:{mode:'Manual'}},
   propietarios:Array.from({length:15},(_,index)=>owner(index)),
-  gastos:[],
+  gastos:expenses(),
   pagos:[]
  };
 }
@@ -58,4 +73,4 @@ function shouldFallback(result,env={}){
  try{const body=JSON.parse(result.body||'{}');return !Array.isArray(body.propietarios)||body.propietarios.length!==15}catch(_){return true}
 }
 
-module.exports={ALIQUOTS,BALANCES,money,owner,payload,isStagingEnvironment,shouldFallback};
+module.exports={ALIQUOTS,BALANCES,money,ownerId,owner,expense,expenses,payload,isStagingEnvironment,shouldFallback};
