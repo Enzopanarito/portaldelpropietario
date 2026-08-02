@@ -1,4 +1,4 @@
-const RELEASE = '2026-08-02-accounting-health-v1';
+const RELEASE = '2026-08-02-accounting-health-v2';
 const LEGACY_MARKER = '(cargo individual)';
 
 function countFromDetail(detail = '') {
