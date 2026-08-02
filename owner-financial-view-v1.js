@@ -78,9 +78,24 @@
     host.innerHTML='<div class="vla-breakdown-scroll"><table aria-label="Desglose de cargos"><colgroup><col style="width:52%"><col style="width:24%"><col style="width:24%"></colgroup><thead><tr><th>Concepto</th><th>Costo<br>Total</th><th>Su<br>Parte</th></tr></thead><tbody>'+body+'<tr class="vla-summary-row"><td colspan="2">TOTAL PAGADERO</td><td>'+usd(fixed.payableTotal)+'</td></tr></tbody></table></div>';
     document.documentElement.dataset.vlaOwnerFinancialView=VIEW_RELEASE;return true;
   }
+  function installRenderWrapper(){
+    const previous=window.renderUser;
+    if(typeof previous!=='function'||previous.__vlaOwnerFinancialView===VIEW_RELEASE)return false;
+    const wrapped=function(){
+      const result=previous.apply(this,arguments);
+      const owner=selectedOwner(),calculation=selectedCalculation();
+      if(owner&&calculation)decorate(owner,calculation);
+      render();
+      return result;
+    };
+    wrapped.__vlaOwnerFinancialView=VIEW_RELEASE;
+    wrapped.__vlaPrevious=previous;
+    window.renderUser=wrapped;
+    return true;
+  }
   function schedule(){clearTimeout(window.__VLA_OWNER_FINANCIAL_TIMER);window.__VLA_OWNER_FINANCIAL_TIMER=setTimeout(render,30)}
-  function boot(){installStyle();schedule()}
+  function boot(){installStyle();installRenderWrapper();schedule()}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
   document.addEventListener('change',schedule,true);document.addEventListener('click',schedule,true);
-  let attempts=0;const timer=setInterval(function(){attempts+=1;render();if(attempts>=120)clearInterval(timer)},100);
+  let attempts=0;const timer=setInterval(function(){attempts+=1;installRenderWrapper();render();if(attempts>=120)clearInterval(timer)},100);
 })();
