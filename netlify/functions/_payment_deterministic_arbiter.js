@@ -32,6 +32,10 @@ function accountCompatibility(analysis,account){
  const expected=METHOD_ACCOUNT_MAP[analysis.method];if(!expected)return false;
  const fields=fieldsOf(account);return choice(fields.Método)===expected.method&&choice(fields.Moneda)===expected.currency;
 }
+function accountCurrencyCompatibility(analysis,account){
+ const expected=METHOD_ACCOUNT_MAP[analysis.method];if(!expected)return false;
+ return choice(fieldsOf(account).Moneda)===expected.currency;
+}
 function recipientEvidence(analysis){
  const values={name:normalizeText(analysis.recipient_name),phone:normalizePhone(analysis.recipient_phone),email:normalizeEmail(analysis.recipient_email),account:normalizeAccount(analysis.recipient_account_visible)};
  return{values,visible:Boolean(values.name||values.phone||values.email||values.account)};
@@ -50,9 +54,22 @@ function recipientMatchesAccount(analysis,account){
  return{visible:true,matched:false,matchType:''};
 }
 function findAuthorizedRecipient(analysis,accounts,{now=new Date()}={}){
- const compatible=(accounts||[]).filter(account=>accountActive(account,now)&&accountCompatibility(analysis,account));
+ const active=(accounts||[]).filter(account=>accountActive(account,now));
+ const compatible=active.filter(account=>accountCompatibility(analysis,account));
  const evidence=recipientEvidence(analysis);if(!evidence.visible)return{ok:false,reason:'Receptor no visible',compatible:compatible.length};
- for(const account of compatible){const match=recipientMatchesAccount(analysis,account);if(match.matched)return{ok:true,accountId:clean(account.id),matchType:match.matchType,compatible:compatible.length}}
+ for(const account of compatible){
+  const match=recipientMatchesAccount(analysis,account);
+  if(match.matched)return{ok:true,accountId:clean(account.id),matchType:match.matchType,compatible:compatible.length,methodMismatch:false};
+ }
+ // La IA puede confundir transferencia y pago móvil aunque haya leído un
+ // identificador exacto del receptor. En ese caso se acepta únicamente una
+ // coincidencia fuerte (teléfono, correo, cuenta o titular) contra otra cuenta
+ // activa de la misma moneda. Nunca se acepta por banco o texto aproximado.
+ const sameCurrency=active.filter(account=>accountCurrencyCompatibility(analysis,account)&&!compatible.includes(account));
+ for(const account of sameCurrency){
+  const match=recipientMatchesAccount(analysis,account);
+  if(match.matched)return{ok:true,accountId:clean(account.id),matchType:match.matchType,compatible:compatible.length,methodMismatch:true,reason:'Identificador autorizado exacto; método reclasificado'};
+ }
  return{ok:false,reason:'Receptor incorrecto',compatible:compatible.length};
 }
 function check(code,ok,detail=''){return{code,ok:Boolean(ok),detail:clean(detail)}}
@@ -98,4 +115,4 @@ function evaluatePaymentReport({report={},owner={},attachment={},analysis=null,s
  return resultEnvelope({processingState:'Coincide preliminarmente',resultValidation:'Coincide preliminarmente',preliminaryMatch:true,reasons:['ADMIN_DECISION_REQUIRED'],checks});
 }
 
-module.exports={TOLERANCE,COMPLETED_STATUSES,METHOD_ACCOUNT_MAP,clean,money,choice,normalizeText,normalizePhone,normalizeEmail,normalizeAccount,dateMs,fieldsOf,splitAlternatives,targetCurrency,accountActive,accountCompatibility,recipientEvidence,recipientMatchesAccount,findAuthorizedRecipient,check,resultEnvelope,evaluatePaymentReport};
+module.exports={TOLERANCE,COMPLETED_STATUSES,METHOD_ACCOUNT_MAP,clean,money,choice,normalizeText,normalizePhone,normalizeEmail,normalizeAccount,dateMs,fieldsOf,splitAlternatives,targetCurrency,accountActive,accountCompatibility,accountCurrencyCompatibility,recipientEvidence,recipientMatchesAccount,findAuthorizedRecipient,check,resultEnvelope,evaluatePaymentReport};

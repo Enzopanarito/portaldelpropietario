@@ -26,5 +26,27 @@ function assertNoAction(result){assert.strictEqual(result.requiresAdminDecision,
  const future=arbiter.evaluatePaymentReport(base({analysis:{...base().analysis,transaction_date:'2026-07-15'}}));assert.strictEqual(future.resultValidation,'Fecha inválida');assertNoAction(future);
  const expiredAccount=arbiter.evaluatePaymentReport(base({authorizedAccounts:[account({'Fecha de Vencimiento':'2026-07-12'})]}));assert.strictEqual(expiredAccount.resultValidation,'Receptor incorrecto');assertNoAction(expiredAccount);
  const bs=arbiter.evaluatePaymentReport(base({report:{id:'r',fields:{'Forma de Pago Reportada':'Bs BCV','Monto Reportado Bs':5000,'Estado Acceso al Reportar':'Limitado','Archivo Obligatorio':true}},analysis:{...base().analysis,method:'MOBILE_PAYMENT_VE',currency:'VES',amount:5000,recipient_name:null,recipient_email:null,recipient_phone:'04140554700'},snapshot:{...base().snapshot,requiredUsdAccount:0,requiredBsAccount:5000},authorizedAccounts:[account({Método:'Pago móvil Venezuela',Moneda:'VES','Titular Autorizado':'','Correo Normalizado':'','Teléfono Normalizado':'04140554700'})]}));assert.strictEqual(bs.preliminaryMatch,true);assertNoAction(bs);
+
+ const exactPhoneAcrossVesMethods=arbiter.evaluatePaymentReport(base({
+  report:{id:'r',fields:{'Forma de Pago Reportada':'Bs BCV','Monto Reportado Bs':48530.93,'Estado Acceso al Reportar':'Limitado','Archivo Obligatorio':true}},
+  analysis:{...base().analysis,method:'TRANSFER_VE',bank_or_platform:'BANESCO',currency:'VES',amount:48530.93,recipient_name:null,recipient_email:null,recipient_phone:'04140554700',recipient_account_visible:'V14978953',confidence:1},
+  snapshot:{...base().snapshot,requiredUsdAccount:0,requiredBsAccount:48530.93},
+  authorizedAccounts:[account({Método:'Pago móvil Venezuela',Moneda:'VES','Titular Autorizado':'','Correo Normalizado':'','Teléfono Normalizado':'04140554700'})],
+  config:{minimumConfidence:0.85,automaticApprovalEnabled:true,minimumAutomaticConfidence:0.97}
+ }));
+ assert.strictEqual(exactPhoneAcrossVesMethods.automaticApproval,true,'Un teléfono receptor exacto y autorizado en VES debe superar la confusión transferencia/pago móvil.');
+ assert.strictEqual(exactPhoneAcrossVesMethods.resultValidation,'Coincidencia exacta verificada');
+ assert.strictEqual(exactPhoneAcrossVesMethods.checks.find(item=>item.code==='RECIPIENT').ok,true);
+ assert.match(exactPhoneAcrossVesMethods.checks.find(item=>item.code==='RECIPIENT').detail,/método reclasificado/i);
+
+ const weakCrossMethod=arbiter.evaluatePaymentReport(base({
+  report:{id:'r',fields:{'Forma de Pago Reportada':'Bs BCV','Monto Reportado Bs':48530.93,'Estado Acceso al Reportar':'Limitado','Archivo Obligatorio':true}},
+  analysis:{...base().analysis,method:'TRANSFER_VE',bank_or_platform:'BANESCO',currency:'VES',amount:48530.93,recipient_name:null,recipient_email:null,recipient_phone:'04140000000',recipient_account_visible:null,confidence:1},
+  snapshot:{...base().snapshot,requiredUsdAccount:0,requiredBsAccount:48530.93},
+  authorizedAccounts:[account({Método:'Pago móvil Venezuela',Moneda:'VES','Titular Autorizado':'','Correo Normalizado':'','Teléfono Normalizado':'04140554700'})],
+  config:{minimumConfidence:0.85,automaticApprovalEnabled:true,minimumAutomaticConfidence:0.97}
+ }));
+ assert.strictEqual(weakCrossMethod.resultValidation,'Receptor incorrecto','Banco o moneda sin identificador exacto no deben autorizar el pago.');
+ assertNoAction(weakCrossMethod);
  console.log('PAYMENT_DETERMINISTIC_ARBITER_OK');
 })();
