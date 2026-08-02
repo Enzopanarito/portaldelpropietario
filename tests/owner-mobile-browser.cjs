@@ -114,13 +114,16 @@ async function loadPortalWithOwners(page){
   if(welcomeMetrics.titleFont<25)throw new Error('El título móvil quedó demasiado pequeño.');
   if(welcomeMetrics.buttonHeight<50||!painted(welcomeMetrics.buttonBackground,welcomeMetrics.buttonBackgroundImage)||welcomeMetrics.buttonColor==='rgb(0, 0, 0)')throw new Error(`El botón de entrada perdió su estilo principal: ${JSON.stringify(welcomeMetrics)}.`);
 
-  const ownerValue=await page.locator('#welcomeSelector option').evaluateAll(options=>{
-    const valid=options.filter(item=>String(item.value||'').trim()&&/^Casa\s+\d+\b/i.test(String(item.textContent||'').trim()));
-    const option=valid.find(item=>/^Casa\s+15\b/i.test(String(item.textContent||'').trim()))||valid[0];
-    return option?option.value:'';
+  const ownerOption=await page.locator('#welcomeSelector option').evaluateAll(options=>{
+    const candidates=options.map((item,index)=>({
+      index,
+      text:String(item.textContent||'').trim(),
+      value:String(item.value||'')
+    })).filter(item=>/^Casa\s+\d+\b/i.test(item.text));
+    return candidates.find(item=>/^Casa\s+15\b/i.test(item.text))||candidates[0]||null;
   });
-  if(!ownerValue)throw new Error('No se encontró una casa válida.');
-  await page.locator('#welcomeSelector').selectOption(ownerValue);
+  if(!ownerOption)throw new Error('No se encontró una casa válida.');
+  await page.locator('#welcomeSelector').selectOption({index:ownerOption.index});
   await page.getByRole('button',{name:/Consultar Estado de Cuenta/i}).click();
   await page.locator('#main').waitFor({state:'visible',timeout:15000});
   await page.locator('[data-vla-breakdown-host]').waitFor({state:'visible',timeout:30000});
