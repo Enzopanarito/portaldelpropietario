@@ -102,7 +102,9 @@ const handler = async function(event) {
   try {
     const [owners, expenses, payments, control,config] = await Promise.all([
       airtableGetAll(TABLES.propietarios, '', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter),
-      airtableGetAll(TABLES.gastos, '?view=Gastos%20Mensuales', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter),
+      // No depender de una vista de Airtable: se leen todos los gastos y el
+      // ciclo contable filtra por mes y estado Activo de forma determinista.
+      airtableGetAll(TABLES.gastos, '', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter),
       airtableGetAll(TABLES.pagos, '', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter),
       airtableGetAll(TABLES.control, officialControlQuery(), AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter),
       airtableGetAll(TABLES.config,'?maxRecords=1',AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID,counter)
