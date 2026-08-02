@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 jobs:
   diagnose-house-11:
@@ -91,7 +92,29 @@ jobs:
               failed=1
               number="$(basename "$file" .js)"
               grep "^${number}" inline-scripts-manifest.txt || true
-              nl -ba "$file" | tail -n 80
+              nl -ba "$file" | tail -n 100
             fi
           done < <(find inline-scripts -name '*.js' | sort)
           test "$failed" -eq 0
+
+      - name: Publish successful diagnostic status
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state=success \
+            -f context='House 11 Production Diagnostic' \
+            -f description='Casa 11 muestra USD 50 y los scripts de producción son válidos.' \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+      - name: Publish failed diagnostic status
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state=failure \
+            -f context='House 11 Production Diagnostic' \
+            -f description='Falló el saldo USD de Casa 11 o un script de producción.' \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
