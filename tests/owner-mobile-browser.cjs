@@ -11,6 +11,27 @@ const viewports=[
 
 function transparent(value){return !value||value==='transparent'||value==='rgba(0, 0, 0, 0)'}
 function painted(color,image){return !transparent(color)||Boolean(image&&image!=='none')}
+function safeBodySample(value){return String(value||'').replace(/[\r\n\t]+/g,' ').slice(0,800)}
+
+async function publicDataDiagnostic(page){
+  try{
+    const response=await page.request.get(`${TARGET}/api/vla/public-data?force=1&diagnostic=${Date.now()}`,{timeout:30000});
+    const text=await response.text();
+    let parsed=null;try{parsed=JSON.parse(text)}catch(_){}
+    return{
+      status:response.status(),
+      ok:response.ok(),
+      contentType:response.headers()['content-type']||'',
+      snapshot:response.headers()['x-public-snapshot']||'',
+      environment:response.headers()['x-data-environment']||'',
+      airtableCalls:response.headers()['x-airtable-calls']||'',
+      owners:Array.isArray(parsed&&parsed.propietarios)?parsed.propietarios.length:null,
+      message:parsed&&parsed.message||'',
+      detail:parsed&&parsed.detail||'',
+      bodySample:safeBodySample(text)
+    };
+  }catch(error){return{error:String(error&&error.message||error)}}
+}
 
 async function waitForHouseOptions(page,expected=15,timeout=30000){
   const deadline=Date.now()+timeout;
@@ -21,7 +42,8 @@ async function waitForHouseOptions(page,expected=15,timeout=30000){
     if(found===expected)return;
     await page.waitForTimeout(250);
   }
-  throw new Error(`Se cargaron ${found} de ${expected} casas.`);
+  const diagnostic=await publicDataDiagnostic(page);
+  throw new Error(`Se cargaron ${found} de ${expected} casas. Diagnóstico público: ${JSON.stringify(diagnostic)}`);
 }
 
 async function loadPortalWithOwners(page){
