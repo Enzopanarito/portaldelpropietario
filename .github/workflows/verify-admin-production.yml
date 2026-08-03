@@ -26,7 +26,7 @@ jobs:
           TARGET_URL="https://villalosapamates.netlify.app"
           for attempt in $(seq 1 90); do
             ready=1
-            headers="$(curl --silent --show-error --location --dump-header - --output /tmp/admin.html --max-time 30 "${TARGET_URL}/admin.html?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            headers="$(curl --silent --show-error --location --retry 3 --retry-all-errors --retry-delay 1 --dump-header - --output /tmp/admin.html --max-time 30 "${TARGET_URL}/admin.html?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
             ui="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-admin-ui"{gsub("\r","");print $2}' | tail -1)"
             session="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-admin-session"{gsub("\r","");print $2}' | tail -1)"
             quality="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-admin-quality"{gsub("\r","");print $2}' | tail -1)"
@@ -38,15 +38,15 @@ jobs:
             grep -q 'admin-feature-parity.js' /tmp/admin.html 2>/dev/null || ready=0
             grep -q 'vla-admin-quality' /tmp/admin.html 2>/dev/null || ready=0
             for asset in admin-premium.css admin-premium-polish.css admin-premium-10.css admin-premium-preflight.js admin-premium.js admin-premium-controls.js admin-premium-10.js admin-feature-parity.js admin-session-bridge.js; do
-              code="$(curl --silent --show-error --location --output "/tmp/${asset}" --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/${asset}?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+              code="$(curl --silent --show-error --location --retry 3 --retry-all-errors --retry-delay 1 --output "/tmp/${asset}" --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/${asset}?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
               [ "$code" = "200" ] || ready=0
               [ -s "/tmp/${asset}" ] || ready=0
             done
-            porton="$(curl --silent --show-error --location --max-time 30 "${TARGET_URL}/mkj-access.html?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
-            seguridad="$(curl --silent --show-error --location --max-time 30 "${TARGET_URL}/seguridad.html?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            porton="$(curl --silent --show-error --location --retry 3 --retry-all-errors --retry-delay 1 --max-time 30 "${TARGET_URL}/mkj-access.html?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            seguridad="$(curl --silent --show-error --location --retry 3 --retry-all-errors --retry-delay 1 --max-time 30 "${TARGET_URL}/seguridad.html?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
             printf '%s' "$porton" | grep -q 'admin-session-bridge.js' || ready=0
             printf '%s' "$seguridad" | grep -q 'admin-session-bridge.js' || ready=0
-            protected="$(curl --silent --show-error --location --output /tmp/protected.json --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/.netlify/functions/admin-data" 2>/dev/null || true)"
+            protected="$(curl --silent --show-error --location --retry 3 --retry-all-errors --retry-delay 1 --output /tmp/protected.json --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/.netlify/functions/admin-data" 2>/dev/null || true)"
             [ "$protected" = "401" ] || ready=0
             if [ "$ready" = "1" ]; then
               echo "Producción administrativa calidad 10 disponible."
@@ -80,7 +80,34 @@ jobs:
               const text = message.text();
               if (message.type() === 'error' && !/app\.netlify\.com|permissions policy/i.test(text)) consoleErrors.push(text);
             });
-            const response = await page.goto(`${target}/admin.html?browser=${Date.now()}`, { waitUntil: 'networkidle', timeout: 60000 });
+            async function requestWithRetry(url, options = {}, attempts = 4) {
+              let lastError;
+              for (let attempt = 1; attempt <= attempts; attempt += 1) {
+                try {
+                  const response = await page.request.get(url, { timeout: 30000, ...options });
+                  if (response.status() >= 500 && attempt < attempts) {
+                    await page.waitForTimeout(500 * attempt);
+                    continue;
+                  }
+                  return response;
+                } catch (error) {
+                  lastError = error;
+                  if (attempt === attempts) throw error;
+                  await page.waitForTimeout(500 * attempt);
+                }
+              }
+              throw lastError || new Error(`No se pudo consultar ${url}.`);
+            }
+            let response;
+            for (let attempt = 1; attempt <= 3; attempt += 1) {
+              try {
+                response = await page.goto(`${target}/admin.html?browser=${Date.now()}-${attempt}`, { waitUntil: 'networkidle', timeout: 60000 });
+                if (response && response.status() === 200) break;
+              } catch (error) {
+                if (attempt === 3) throw error;
+                await page.waitForTimeout(1000 * attempt);
+              }
+            }
             if (!response || response.status() !== 200) throw new Error(`Admin respondió ${response && response.status()}.`);
             await page.locator('#login').waitFor({ state: 'visible', timeout: 20000 });
             await page.locator('#password').waitFor({ state: 'visible', timeout: 20000 });
@@ -106,12 +133,12 @@ jobs:
             if (metrics.inputFont < 16) throw new Error(`Texto del login pequeño: ${metrics.inputFont}px.`);
             if (metrics.inputHeight < 44 || metrics.buttonHeight < 44) throw new Error(`Objetivos táctiles insuficientes: ${JSON.stringify(metrics)}.`);
             const assetChecks = await Promise.all(['admin-premium-10.css','admin-premium-10.js','admin-feature-parity.js'].map(async asset => {
-              const res = await page.request.get(`${target}/${asset}?browser=${Date.now()}`);
+              const res = await requestWithRetry(`${target}/${asset}?browser=${Date.now()}`);
               const body = await res.body();
               return { asset, status: res.status(), bytes: body.length };
             }));
             for (const asset of assetChecks) if (asset.status !== 200 || asset.bytes < 100) throw new Error(`Asset inválido: ${JSON.stringify(asset)}.`);
-            const protectedResponse = await page.request.get(`${target}/.netlify/functions/admin-data`);
+            const protectedResponse = await requestWithRetry(`${target}/.netlify/functions/admin-data`);
             if (protectedResponse.status() !== 401) throw new Error(`admin-data sin token respondió ${protectedResponse.status()}.`);
             if (pageErrors.length) throw new Error(`Errores JavaScript: ${pageErrors.join(' | ')}`);
             if (consoleErrors.length) throw new Error(`Errores de consola: ${consoleErrors.join(' | ')}`);
