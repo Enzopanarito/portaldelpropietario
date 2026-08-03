@@ -29,7 +29,7 @@ assert(!signature.includes('Complete monto y referencia.'),'No debe reaparecer e
 assert(!/recargo/i.test(ui+css),'El portal público no debe mencionar el recargo.');
 assert(css.includes('.vla-pay-two{display:grid'),'Los datos deben adaptarse a móvil y escritorio.');
 assert(css.includes('input[aria-invalid=true]'),'Los campos faltantes deben señalarse en línea.');
-assert(edge.includes("content=\"smart-v5\"")&&edge.includes("'smart-v5'"),'Falta marcador de despliegue smart-v5.');
+assert(edge.includes('content="smart-v6"')&&edge.includes("'smart-v6'"),'Falta marcador de despliegue smart-v6.');
 for(const asset of ['owner-payment-report-v3.css','payment-report-intelligence.js','owner-payment-report-v3.js'])assert(edge.includes(asset),`Falta inyección de ${asset}`);
 assert(server.includes("paymentChannel==='DIGITAL'?decodeAttachment(body.attachment):null"),'El servidor debe validar comprobante solo para pagos digitales.');
 assert(server.includes("'Archivo Obligatorio':paymentChannel==='DIGITAL'"),'El comprobante debe ser condicional y efectivo debe quedar sin captura.');
@@ -40,4 +40,4 @@ assert(server.indexOf("paymentChannel==='DIGITAL'&&!attachment")<server.indexOf(
 assert(server.includes("resolveAmount({amount,enteredCurrency"),'El servidor debe recalcular el equivalente.');
 assert(server.includes('loadLastGood'),'El servidor debe preferir la tasa BCV persistida.');
 assert(server.includes('attachments:attachment?'),'El correo debe llevar el comprobante adjunto.');
-console.log('owner-payment-report-v5: OK');
+console.log('owner-payment-report-v6: OK');
