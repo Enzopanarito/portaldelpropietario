@@ -51,13 +51,7 @@ jobs:
             --output restore.json --write-out '%{http_code}' \
             "https://api.netlify.com/api/v1/sites/${SITE_ID}/deploys/${DEPLOY_ID}/restore")
           echo "RESTORE_HTTP=${code}"
-          if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
-            python - <<'PY'
-          from pathlib import Path
-          print(Path('restore.json').read_text(errors='replace')[:500])
-          PY
-            exit 1
-          fi
+          if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then exit 1; fi
           python - <<'PY'
           import json
           from pathlib import Path
@@ -95,8 +89,22 @@ jobs:
                 exit 0
               fi
             fi
-            echo "Attempt ${attempt}: HTTP ${code}; esperando publicación..."
             sleep 5
           done
-          echo 'La URL productiva no recuperó las 15 casas dentro del tiempo esperado.'
           exit 1
+
+  detect-airtable-credential:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Detect an existing Airtable credential without exposing it
+        env:
+          AIRTABLE_API_TOKEN: ${{ secrets.AIRTABLE_API_TOKEN }}
+          AIRTABLE_TOKEN: ${{ secrets.AIRTABLE_TOKEN }}
+          AIRTABLE_PAT: ${{ secrets.AIRTABLE_PAT }}
+        run: |
+          set -euo pipefail
+          if [ -n "${AIRTABLE_API_TOKEN:-}" ]; then echo 'AVAILABLE=AIRTABLE_API_TOKEN'; exit 0; fi
+          if [ -n "${AIRTABLE_TOKEN:-}" ]; then echo 'AVAILABLE=AIRTABLE_TOKEN'; exit 0; fi
+          if [ -n "${AIRTABLE_PAT:-}" ]; then echo 'AVAILABLE=AIRTABLE_PAT'; exit 0; fi
+          echo 'AVAILABLE=NONE'
+          exit 2
