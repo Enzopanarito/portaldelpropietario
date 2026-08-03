@@ -11,6 +11,9 @@ permissions:
   contents: read
   statuses: write
 
+env:
+  OWNER_RELEASE: owner-mobile-fluid-v2-payment-smart-v5-dark-wcag-v1-r3-2026-08-03
+
 jobs:
   verify-owner-portal:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
@@ -38,15 +41,15 @@ jobs:
           set -euo pipefail
           for attempt in $(seq 1 90); do
             headers="$(curl --silent --show-error --location --dump-header - --output /dev/null --max-time 30 "${TARGET_URL}/?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
-            marker="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-breakdown-presentation"{gsub("\r","");print $2}' | tail -1)"
-            if [ "$marker" = "2026-07-11-photo-v6" ]; then
-              echo "Browser release available at $TARGET_URL"
+            marker="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-owner-release"{gsub("\r","");print $2}' | tail -1)"
+            if [ "$marker" = "$OWNER_RELEASE" ]; then
+              echo "Browser release exacto disponible en $TARGET_URL"
               exit 0
             fi
-            echo "Attempt $attempt: marker=${marker:-missing}"
+            echo "Attempt $attempt: owner-release=${marker:-missing}"
             sleep 10
           done
-          echo "Expected browser release was not available."
+          echo "La versión exacta del portal no estuvo disponible."
           exit 1
 
       - name: Install Playwright Chromium
@@ -65,7 +68,7 @@ jobs:
 
           function parseMoney(text) {
             const raw = String(text || '').trim();
-            const negative = raw.startsWith('-') || /saldo a favor/i.test(raw);
+            const negative = raw.startsWith('-');
             const value = Number(raw.replace(/[^0-9.]/g, '')) || 0;
             return negative ? -value : value;
           }
@@ -86,16 +89,31 @@ jobs:
             };
           }
 
+          function houseFromLabel(label) {
+            const match = String(label || '').trim().match(/^Casa\s+(\d+)\b/i);
+            return match ? Number(match[1]) : null;
+          }
+
+          async function optionValueForHouse(selector, house) {
+            return selector.locator('option').evaluateAll((options, houseNumber) => {
+              const item = options.find(option => {
+                const match = String(option.textContent || '').trim().match(/^Casa\s+(\d+)\b/i);
+                return match && Number(match[1]) === Number(houseNumber) && String(option.value || '').trim();
+              });
+              return item ? item.value : '';
+            }, house);
+          }
+
           async function waitForHouseOptions(page, expected = 15, timeout = 30000) {
             const deadline = Date.now() + timeout;
-            let found = 0;
+            let found = [];
             while (Date.now() < deadline) {
               const labels = await page.locator('#welcomeSelector option').allTextContents().catch(() => []);
-              found = labels.filter(label => /^Casa\s+\d+\s+-/.test(String(label || '').trim())).length;
-              if (found === expected) return;
+              found = [...new Set(labels.map(houseFromLabel).filter(Number.isInteger))].sort((a, b) => a - b);
+              if (found.length === expected && found.every((house, index) => house === index + 1)) return;
               await page.waitForTimeout(250);
             }
-            throw new Error(`Se cargaron ${found} de ${expected} casas.`);
+            throw new Error(`Casas disponibles: ${JSON.stringify(found)}; se esperaban 1 a ${expected}.`);
           }
 
           async function waitForLocatorText(page, locator, predicate, description, timeout = 30000) {
@@ -115,15 +133,15 @@ jobs:
                 const response = await page.goto(`${process.env.TARGET_URL}/?browser=${Date.now()}-${attempt}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
                 if (!response || response.status() !== 200) throw new Error(`El portal respondió ${response && response.status()}.`);
                 await page.addStyleTag({ content: '[data-netlify-deploy-id],iframe[title="Netlify Drawer"]{display:none!important;pointer-events:none!important}' }).catch(() => {});
+                await page.waitForFunction(release => document.documentElement.dataset.vlaOwnerRelease === release, process.env.OWNER_RELEASE, { timeout: 30000 });
                 await waitForHouseOptions(page, 15, 30000);
-                await page.waitForTimeout(400);
                 return response;
               } catch (error) {
                 lastError = error;
                 if (attempt < 3) await page.waitForTimeout(attempt * 1000);
               }
             }
-            throw new Error(`No se pudieron cargar las 15 casas después de 3 intentos: ${lastError && lastError.message}`);
+            throw new Error(`No se pudieron cargar las 15 casas en la versión exacta después de 3 intentos: ${lastError && lastError.message}`);
           }
 
           (async () => {
@@ -149,10 +167,7 @@ jobs:
 
             const response = await loadPortalWithOwners(page);
             const welcome = page.locator('#welcomeSelector');
-            const firstValue = await welcome.locator('option').evaluateAll(options => {
-              const item = options.find(option => String(option.textContent || '').trim().startsWith('Casa 1 -'));
-              return item ? item.value : '';
-            });
+            const firstValue = await optionValueForHouse(welcome, 1);
             if (!firstValue) throw new Error('No se encontró una Casa 1 válida después de cargar los propietarios.');
             await welcome.selectOption(firstValue);
             await page.getByRole('button', { name: /Consultar Estado de Cuenta/i }).click();
@@ -169,14 +184,10 @@ jobs:
             const balances = {};
             const selector = page.locator('#userSelector');
             for (const house of Object.keys(expected).map(Number).sort((a, b) => a - b)) {
-              const value = await selector.locator('option').evaluateAll((options, houseNumber) => {
-                const prefix = `Casa ${houseNumber} -`;
-                const item = options.find(option => String(option.textContent || '').trim().startsWith(prefix));
-                return item ? item.value : '';
-              }, house);
+              const value = await optionValueForHouse(selector, house);
               if (!value) throw new Error(`No se encontró la Casa ${house}.`);
               await selector.selectOption(value);
-              await waitForLocatorText(page, page.locator('#welcome-msg'), text => String(text || '').trim().startsWith(`Casa ${house} ·`), `el encabezado de Casa ${house}`, 5000);
+              await waitForLocatorText(page, page.locator('#welcome-msg'), text => new RegExp(`^Casa\\s+${house}\\b`).test(String(text || '').trim()), `el encabezado de Casa ${house}`, 5000);
               const shown = parseMoney(await page.locator('#m-total').innerText());
               balances[house] = shown;
               if (Math.abs(shown - expected[house].payable) > 0.009) {
@@ -189,9 +200,10 @@ jobs:
             const result = {
               target: process.env.TARGET_URL,
               status: response.status(),
+              ownerRelease: process.env.OWNER_RELEASE,
               sourceGeneratedAt: source.generatedAt || null,
               sourceBalanceEngineVersion: source.balanceEngineVersion || null,
-              balanceContract: 'independent-currencies-payable-v1',
+              balanceContract: 'independent-currencies-payable-v2',
               breakdownVisible: true,
               hasCostoTotal: /Costo\s*Total/i.test(breakdownText),
               hasSuParte: /Su\s*Parte/i.test(breakdownText),
