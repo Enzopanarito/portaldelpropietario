@@ -21,15 +21,11 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          body = json.loads(Path('body.json').read_text(errors='replace') or '{}')
-          owners = body.get('propietarios') or []
-          houses = sorted({int(o.get('Casa')) for o in owners if str(o.get('Casa','')).isdigit()})
-          print('OWNER_COUNT=', len(owners))
-          print('HOUSES=', houses)
-          print('ENGINE=', body.get('balanceEngineVersion'))
-          print('SOURCE=', body.get('officialBalanceSource'))
-          if len(owners) != 15 or houses != list(range(1,16)):
-              raise SystemExit('El deploy anterior no devolvió las 15 casas.')
+          body=json.loads(Path('body.json').read_text(errors='replace') or '{}')
+          owners=body.get('propietarios') or []
+          houses=sorted({int(o.get('Casa')) for o in owners if str(o.get('Casa','')).isdigit()})
+          print('OWNER_COUNT=',len(owners),'HOUSES=',houses,'ENGINE=',body.get('balanceEngineVersion'),'SOURCE=',body.get('officialBalanceSource'))
+          if len(owners)!=15 or houses!=list(range(1,16)): raise SystemExit(1)
           PY
 
   restore-production:
@@ -44,22 +40,19 @@ jobs:
         run: |
           set -euo pipefail
           test -n "${NETLIFY_AUTH_TOKEN:-}"
-          code=$(curl --silent --show-error --location \
-            --request POST \
+          code=$(curl --silent --show-error --location --request POST \
             --header "Authorization: Bearer ${NETLIFY_AUTH_TOKEN}" \
             --header 'Content-Type: application/json' \
             --output restore.json --write-out '%{http_code}' \
             "https://api.netlify.com/api/v1/sites/${SITE_ID}/deploys/${DEPLOY_ID}/restore")
           echo "RESTORE_HTTP=${code}"
-          if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then exit 1; fi
+          test "$code" -ge 200 -a "$code" -lt 300
           python - <<'PY'
           import json
           from pathlib import Path
           data=json.loads(Path('restore.json').read_text(errors='replace') or '{}')
-          print('RESTORED_DEPLOY=', data.get('id'))
-          print('STATE=', data.get('state'))
-          if data.get('id') != '6a6fb60be9396d08385ca58e':
-              raise SystemExit('Netlify no confirmó el deploy esperado.')
+          print('RESTORED_DEPLOY=',data.get('id'),'STATE=',data.get('state'))
+          if data.get('id')!='6a6fb60be9396d08385ca58e': raise SystemExit(1)
           PY
 
       - name: Verify production alias returns all 15 houses
@@ -68,43 +61,57 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in $(seq 1 30); do
-            code=$(curl --silent --show-error --location --max-time 60 \
-              --output body.json --write-out '%{http_code}' \
-              "${TARGET}&restore_check=${attempt}") || code=000
-            if [ "$code" = 200 ]; then
-              if python - <<'PY'
+            code=$(curl --silent --show-error --location --max-time 60 --output body.json --write-out '%{http_code}' "${TARGET}&restore_check=${attempt}") || code=000
+            if [ "$code" = 200 ] && python - <<'PY'
           import json
           from pathlib import Path
-          try:
-              body=json.loads(Path('body.json').read_text(errors='replace') or '{}')
-          except Exception:
-              raise SystemExit(1)
+          body=json.loads(Path('body.json').read_text(errors='replace') or '{}')
           owners=body.get('propietarios') or []
           houses=sorted({int(o.get('Casa')) for o in owners if str(o.get('Casa','')).isdigit()})
           print('OWNER_COUNT=',len(owners),'HOUSES=',houses,'ENGINE=',body.get('balanceEngineVersion'),'SOURCE=',body.get('officialBalanceSource'))
           raise SystemExit(0 if len(owners)==15 and houses==list(range(1,16)) else 1)
           PY
-              then
-                echo 'PRODUCTION_RESTORED=YES'
-                exit 0
-              fi
-            fi
+            then echo 'PRODUCTION_RESTORED=YES'; exit 0; fi
             sleep 5
           done
           exit 1
 
-  detect-airtable-credential:
+  verify-admin-session:
+    needs: restore-production
     runs-on: ubuntu-latest
     steps:
-      - name: Detect an existing Airtable credential without exposing it
+      - name: Log in and verify admin receives all 15 houses
         env:
-          AIRTABLE_API_TOKEN: ${{ secrets.AIRTABLE_API_TOKEN }}
-          AIRTABLE_TOKEN: ${{ secrets.AIRTABLE_TOKEN }}
-          AIRTABLE_PAT: ${{ secrets.AIRTABLE_PAT }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          TARGET: https://villalosapamates.netlify.app
         run: |
           set -euo pipefail
-          if [ -n "${AIRTABLE_API_TOKEN:-}" ]; then echo 'AVAILABLE=AIRTABLE_API_TOKEN'; exit 0; fi
-          if [ -n "${AIRTABLE_TOKEN:-}" ]; then echo 'AVAILABLE=AIRTABLE_TOKEN'; exit 0; fi
-          if [ -n "${AIRTABLE_PAT:-}" ]; then echo 'AVAILABLE=AIRTABLE_PAT'; exit 0; fi
-          echo 'AVAILABLE=NONE'
-          exit 2
+          test -n "${ADMIN_PASSWORD:-}"
+          python - <<'PY'
+          import json, os, urllib.request, urllib.error
+          base=os.environ['TARGET']
+          password=os.environ['ADMIN_PASSWORD']
+          req=urllib.request.Request(
+              base+'/.netlify/functions/login',
+              data=json.dumps({'password':password}).encode(),
+              headers={'Content-Type':'application/json'},
+              method='POST')
+          with urllib.request.urlopen(req, timeout=60) as response:
+              login=json.loads(response.read().decode() or '{}')
+          token=login.get('token')
+          if not login.get('success') or not token:
+              raise SystemExit('LOGIN_FAILED')
+          req=urllib.request.Request(
+              base+'/.netlify/functions/admin-data?force=1',
+              headers={'Authorization':'Bearer '+token})
+          with urllib.request.urlopen(req, timeout=60) as response:
+              data=json.loads(response.read().decode() or '{}')
+          owners=data.get('propietarios') or []
+          houses=sorted({int(o.get('Casa')) for o in owners if str(o.get('Casa','')).isdigit()})
+          print('ADMIN_LOGIN=OK')
+          print('ADMIN_OWNER_COUNT=',len(owners))
+          print('ADMIN_HOUSES=',houses)
+          print('ADMIN_ENGINE=',data.get('balanceEngineVersion'))
+          if len(owners)!=15 or houses!=list(range(1,16)):
+              raise SystemExit('ADMIN_DATA_INCOMPLETE')
+          PY
