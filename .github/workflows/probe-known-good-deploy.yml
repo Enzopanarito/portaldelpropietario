@@ -1,4 +1,4 @@
-name: Probe Known Good Deploy
+name: Restore Known Good Deploy
 
 on:
   pull_request:
@@ -12,22 +12,18 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe immutable deploy without exposing financial data
+      - name: Verify immutable deploy before restoration
         env:
           TARGET: https://6a6fb60be9396d08385ca58e--villalosapamates.netlify.app/.netlify/functions/public-data?force=1
         run: |
           set -euo pipefail
-          curl --silent --show-error --location --max-time 60 \
-            --dump-header headers.txt --output body.json "$TARGET"
+          curl --silent --show-error --location --max-time 60 --output body.json "$TARGET"
           python - <<'PY'
           import json
           from pathlib import Path
-          headers = Path('headers.txt').read_text(errors='replace')
           body = json.loads(Path('body.json').read_text(errors='replace') or '{}')
           owners = body.get('propietarios') or []
           houses = sorted({int(o.get('Casa')) for o in owners if str(o.get('Casa','')).isdigit()})
-          print('HTTP_HEADER_LAST_BLOCK')
-          print(headers.split('\r\n\r\n')[-2] if '\r\n\r\n' in headers else headers)
           print('OWNER_COUNT=', len(owners))
           print('HOUSES=', houses)
           print('ENGINE=', body.get('balanceEngineVersion'))
@@ -36,18 +32,71 @@ jobs:
               raise SystemExit('El deploy anterior no devolvió las 15 casas.')
           PY
 
-  check-restore-credential:
+  restore-production:
+    needs: probe
     runs-on: ubuntu-latest
     steps:
-      - name: Detect an existing Netlify API credential without exposing it
+      - name: Restore verified deploy through Netlify API
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_ACCESS_TOKEN: ${{ secrets.NETLIFY_ACCESS_TOKEN }}
-          NETLIFY_TOKEN: ${{ secrets.NETLIFY_TOKEN }}
+          SITE_ID: 74f4f122-352c-4a3b-aa6f-5937ab99f8d3
+          DEPLOY_ID: 6a6fb60be9396d08385ca58e
         run: |
           set -euo pipefail
-          if [ -n "${NETLIFY_AUTH_TOKEN:-}" ]; then echo 'AVAILABLE=NETLIFY_AUTH_TOKEN'; exit 0; fi
-          if [ -n "${NETLIFY_ACCESS_TOKEN:-}" ]; then echo 'AVAILABLE=NETLIFY_ACCESS_TOKEN'; exit 0; fi
-          if [ -n "${NETLIFY_TOKEN:-}" ]; then echo 'AVAILABLE=NETLIFY_TOKEN'; exit 0; fi
-          echo 'AVAILABLE=NONE'
-          exit 2
+          test -n "${NETLIFY_AUTH_TOKEN:-}"
+          code=$(curl --silent --show-error --location \
+            --request POST \
+            --header "Authorization: Bearer ${NETLIFY_AUTH_TOKEN}" \
+            --header 'Content-Type: application/json' \
+            --output restore.json --write-out '%{http_code}' \
+            "https://api.netlify.com/api/v1/sites/${SITE_ID}/deploys/${DEPLOY_ID}/restore")
+          echo "RESTORE_HTTP=${code}"
+          if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+            python - <<'PY'
+          from pathlib import Path
+          print(Path('restore.json').read_text(errors='replace')[:500])
+          PY
+            exit 1
+          fi
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path('restore.json').read_text(errors='replace') or '{}')
+          print('RESTORED_DEPLOY=', data.get('id'))
+          print('STATE=', data.get('state'))
+          if data.get('id') != '6a6fb60be9396d08385ca58e':
+              raise SystemExit('Netlify no confirmó el deploy esperado.')
+          PY
+
+      - name: Verify production alias returns all 15 houses
+        env:
+          TARGET: https://villalosapamates.netlify.app/.netlify/functions/public-data?force=1
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            code=$(curl --silent --show-error --location --max-time 60 \
+              --output body.json --write-out '%{http_code}' \
+              "${TARGET}&restore_check=${attempt}") || code=000
+            if [ "$code" = 200 ]; then
+              if python - <<'PY'
+          import json
+          from pathlib import Path
+          try:
+              body=json.loads(Path('body.json').read_text(errors='replace') or '{}')
+          except Exception:
+              raise SystemExit(1)
+          owners=body.get('propietarios') or []
+          houses=sorted({int(o.get('Casa')) for o in owners if str(o.get('Casa','')).isdigit()})
+          print('OWNER_COUNT=',len(owners),'HOUSES=',houses,'ENGINE=',body.get('balanceEngineVersion'),'SOURCE=',body.get('officialBalanceSource'))
+          raise SystemExit(0 if len(owners)==15 and houses==list(range(1,16)) else 1)
+          PY
+              then
+                echo 'PRODUCTION_RESTORED=YES'
+                exit 0
+              fi
+            fi
+            echo "Attempt ${attempt}: HTTP ${code}; esperando publicación..."
+            sleep 5
+          done
+          echo 'La URL productiva no recuperó las 15 casas dentro del tiempo esperado.'
+          exit 1
