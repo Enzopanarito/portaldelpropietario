@@ -33,13 +33,9 @@
 [functions."provisional-access-expiration-scheduled"]
   schedule = "*/15 * * * *"
 
-# Ventana temporal de validación productiva. El bloqueo diario interno evita ejecuciones duplicadas.
+# Cada lunes a las 05:15 a. m. de Caracas detecta y prueba los modelos compatibles.
 [functions."gemini-model-autodetect-scheduled"]
-  schedule = "*/5 * * * *"
-
-# Sonda temporal para confirmar que el programador de producción está invocando funciones.
-[functions."gemini-scheduler-probe-scheduled"]
-  schedule = "* * * * *"
+  schedule = "15 9 * * 1"
 
 [[edge_functions]]
 function = "pwa-head"
