@@ -1,0 +1,38 @@
+name: Reintentar corrección de reportes
+
+on:
+  push:
+    paths:
+      - .github/workflows/retrigger-payment-submit-hotfix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  retrigger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Corregir comprobación del módulo Edge
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path=Path('.github/workflows/payment-submit-hotfix.yml')
+          text=path.read_text(encoding='utf-8')
+          old='          node --check netlify/edge-functions/owner-mobile-assets.js\n'
+          new='          node --input-type=module --check < netlify/edge-functions/owner-mobile-assets.js\n'
+          if text.count(old)!=1:
+              raise SystemExit('No se encontró la comprobación que debía corregirse.')
+          path.write_text(text.replace(old,new,1),encoding='utf-8')
+          PY
+
+      - name: Publicar y reactivar el hotfix
+        run: |
+          git config user.name "VLA Build Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add .github/workflows/payment-submit-hotfix.yml
+          git commit -m "Corregir prueba de sintaxis del hotfix de pagos"
+          git push origin HEAD:main
