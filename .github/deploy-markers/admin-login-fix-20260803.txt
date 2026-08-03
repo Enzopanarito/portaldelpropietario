@@ -1,0 +1,3 @@
+Production deployment marker for PR #103.
+Executable application state: restored backup plus isolated admin session-signing repair.
+Payment flow remains the backup-2026-08-02-before-final-10of10 version.
