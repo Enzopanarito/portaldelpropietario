@@ -1,6 +1,6 @@
 'use strict';
 
-const sharp=require('sharp');
+const {benchmarkPng}=require('./_gemini_benchmark_fixture');
 const {withAirtableUsage}=require('./_airtable_meter');
 const contract=require('./_payment_ai_contract');
 const {createGeminiAnalysisRunner}=require('./_payment_ai_gemini');
@@ -33,24 +33,7 @@ async function listModels(){
   return data.models||[];
  }finally{clearTimeout(timer)}
 }
-async function benchmarkImage(){
- const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900">
- <rect width="1400" height="900" fill="#ffffff"/>
- <rect x="40" y="35" width="1320" height="830" rx="28" fill="#f8fafc" stroke="#0f172a" stroke-width="4"/>
- <text x="90" y="115" font-family="Arial" font-size="50" font-weight="700" fill="#0f172a">BANCO DE VENEZUELA</text>
- <text x="90" y="180" font-family="Arial" font-size="34" fill="#334155">Comprobante de Pago Móvil</text>
- <line x1="90" y1="215" x2="1310" y2="215" stroke="#94a3b8" stroke-width="3"/>
- <text x="90" y="285" font-family="Arial" font-size="36" fill="#0f172a">Estado: PROCESADO</text>
- <text x="90" y="350" font-family="Arial" font-size="36" fill="#0f172a">Monto: Bs. 12.345,67</text>
- <text x="90" y="415" font-family="Arial" font-size="36" fill="#0f172a">Fecha: 03/08/2026</text>
- <text x="90" y="480" font-family="Arial" font-size="36" fill="#0f172a">Hora: 09:41:22</text>
- <text x="90" y="545" font-family="Arial" font-size="36" fill="#0f172a">Referencia: 006543218765</text>
- <text x="90" y="610" font-family="Arial" font-size="36" fill="#0f172a">Receptor: ASOCIACIÓN CIVIL VILLA LOS APAMATES</text>
- <text x="90" y="675" font-family="Arial" font-size="36" fill="#0f172a">Teléfono receptor: 0412-555-0199</text>
- <text x="90" y="740" font-family="Arial" font-size="32" fill="#475569">Operación completada exitosamente</text>
- </svg>`;
- return sharp(Buffer.from(svg)).png({compressionLevel:9}).toBuffer();
-}
+async function benchmarkImage(){return benchmarkPng()}
 function evaluateAccuracy(analysis){
  const checks=[
   analysis.method==='MOBILE_PAYMENT_VE',
