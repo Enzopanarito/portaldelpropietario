@@ -1,8 +1,12 @@
 'use strict';
 
+const {schemaManifest}=require('./_payment_ai_contract');
+
 const API_ROOT='https://generativelanguage.googleapis.com/v1beta/models';
-const DEFAULT_TIMEOUT_MS=45000;
+const DEFAULT_TIMEOUT_MS=30000;
+const DEFAULT_MAX_OUTPUT_TOKENS=2048;
 const MODEL_PATTERN=/^[A-Za-z0-9._-]{3,120}$/;
+let cachedSchema=null;
 
 function clean(value){return String(value??'').trim()}
 function codedError(message,code,extra={}){return Object.assign(new Error(message),{code,...extra})}
@@ -16,28 +20,54 @@ function extractionPrompt({promptVersion='',report={}}={}){
  const reportedMode=clean(report.targetMode||fields['Forma de Pago Reportada']);
  return[
   `Contrato de extracción: ${clean(promptVersion)||'VLA_PAYMENT_PROOF_V2'}.`,
-  'Analiza exclusivamente el comprobante adjunto. Devuelve un único objeto JSON, sin Markdown ni texto adicional.',
+  'Analiza exclusivamente el comprobante adjunto. Devuelve únicamente el objeto JSON solicitado por el esquema.',
   'No apruebes ni rechaces pagos, no declares autenticidad y no decidas acceso al portón. Solo extrae evidencia visible.',
   `La cuenta indicada por el usuario es "${reportedMode||'no indicada'}"; úsala solo como contexto, nunca para inventar datos.`,
-  'Campos exactos requeridos:',
-  '{"method":"TRANSFER_VE|MOBILE_PAYMENT_VE|ZELLE|TRANSFER_US|BINANCE_PAY|CRYPTO_TRANSFER|OTHER|UNKNOWN","bank_or_platform":string|null,"amount":number|null,"currency":"VES|USD|UNKNOWN","transaction_date":"YYYY-MM-DD"|null,"transaction_time":"HH:mm:ss"|null,"reference":string|null,"transaction_status":"COMPLETED|SENT|PROCESSED|PENDING|SCHEDULED|FAILED|CANCELLED|REJECTED|UNKNOWN","recipient_name":string|null,"recipient_phone":string|null,"recipient_email":string|null,"recipient_account_visible":string|null,"memo":string|null,"confidence":number,"critical_fields_visible":boolean,"warnings":string[],"possible_visual_modification":boolean}',
-  'Reconoce expresamente comprobantes de Binance. Usa BINANCE_PAY para Binance Pay y CRYPTO_TRANSFER para transferencias on-chain. Si el activo visible es USDT, USDC o FDUSD, usa currency="USD", conserva el símbolo y red visibles en memo y agrega una advertencia descriptiva; nunca inventes equivalencias, red, TxID, Pay ID o receptor.',
-  'Usa como reference el ID de orden, TxID o referencia visible completa. Usa null cuando un dato no sea visible. confidence debe reflejar únicamente legibilidad y certeza de extracción. critical_fields_visible solo puede ser true si se ven monto, moneda/activo, fecha, referencia, estado y algún dato del receptor. Si detectas señales visuales sospechosas, marca possible_visual_modification=true y explícalas brevemente en warnings.'
+  'Lee con especial cuidado monto, moneda o activo, fecha, hora, referencia completa, estado y receptor.',
+  'Reconoce comprobantes de bancos venezolanos, pago móvil, Zelle, transferencias de Estados Unidos y Binance.',
+  'Para Binance usa BINANCE_PAY cuando sea Binance Pay y CRYPTO_TRANSFER cuando sea una transferencia on-chain.',
+  'Si el activo visible es USDT, USDC o FDUSD usa currency="USD", conserva activo y red visibles en memo y no inventes equivalencias, red, TxID, Pay ID ni receptor.',
+  'Usa null cuando un dato no sea visible. confidence refleja solo legibilidad y certeza de extracción.',
+  'critical_fields_visible solo puede ser true cuando se ven monto, moneda o activo, fecha, referencia, estado y algún dato del receptor.',
+  'Si observas señales de posible edición visual, marca possible_visual_modification=true y descríbelas brevemente en warnings.'
  ].join('\n');
 }
 function responseText(data){
  const parts=data&&data.candidates&&data.candidates[0]&&data.candidates[0].content&&data.candidates[0].content.parts;
  const value=Array.isArray(parts)?parts.map(part=>typeof part?.text==='string'?part.text:'').join('').trim():'';
- if(!value)throw codedError('El proveedor de análisis no devolvió datos utilizables.','EMPTY_OUTPUT');
+ if(!value){
+  const finishReason=clean(data?.candidates?.[0]?.finishReason);
+  throw codedError('El proveedor de análisis no devolvió datos utilizables.','EMPTY_OUTPUT',{finishReason});
+ }
  return value;
 }
-function createGeminiAnalysisRunner({fetchFn=global.fetch,apiKey=process.env.GEMINI_API_KEY,timeoutMs=DEFAULT_TIMEOUT_MS}={}){
+function structuredSchema(){
+ if(cachedSchema)return cachedSchema;
+ const schema=JSON.parse(JSON.stringify(schemaManifest()));
+ delete schema.$schema;delete schema.$id;delete schema.title;delete schema.description;delete schema.minProperties;delete schema.maxProperties;
+ cachedSchema=schema;
+ return cachedSchema;
+}
+function buildGenerationConfig(model,{maxOutputTokens=DEFAULT_MAX_OUTPUT_TOKENS,thinkingLevel='minimal'}={}){
+ const selected=safeModel(model),config={
+  maxOutputTokens:Math.max(512,Math.min(8192,Number(maxOutputTokens)||DEFAULT_MAX_OUTPUT_TOKENS)),
+  responseFormat:{text:{mimeType:'application/json',schema:structuredSchema()}}
+ };
+ if(/^gemini-3(?:\.|[-])/i.test(selected))config.thinkingConfig={thinkingLevel:clean(thinkingLevel).toLowerCase()||'minimal'};
+ return config;
+}
+function providerError(data,status){
+ const providerStatus=clean(data?.error?.status),providerMessage=clean(data?.error?.message).slice(0,300);
+ const code=status===429?'RATE_LIMIT':status===502||status===503||status===504?'PROVIDER_UNAVAILABLE':status===401||status===403?'AI_AUTH_FAILED':status===404?'AI_MODEL_NOT_FOUND':'AI_PROVIDER_ERROR';
+ return codedError('El proveedor de análisis no pudo procesar el comprobante.',code,{status,providerStatus,providerMessage});
+}
+function createGeminiAnalysisRunner({fetchFn=global.fetch,apiKey=process.env.GEMINI_API_KEY,timeoutMs=DEFAULT_TIMEOUT_MS,maxOutputTokens=DEFAULT_MAX_OUTPUT_TOKENS,thinkingLevel='minimal'}={}){
  if(typeof fetchFn!=='function')throw codedError('El cliente HTTP de análisis no está disponible.','AI_PROVIDER_UNAVAILABLE');
  return async function run({model,proof,report,promptVersion}={}){
   const key=clean(apiKey);if(!key)throw codedError('El proveedor de análisis no está configurado.','AI_NOT_CONFIGURED');
   const selectedModel=safeModel(model),content=Buffer.isBuffer(proof?.content)?proof.content:null,mimeType=clean(proof?.contentType);
   if(!content||!content.length||!mimeType)throw codedError('El comprobante no está disponible para análisis.','INVALID_ATTACHMENT');
-  const controller=new AbortController(),configured=Math.max(10000,Math.min(120000,Number(timeoutMs)||DEFAULT_TIMEOUT_MS));
+  const controller=new AbortController(),configured=Math.max(5000,Math.min(120000,Number(timeoutMs)||DEFAULT_TIMEOUT_MS));
   const timer=setTimeout(()=>controller.abort(),configured);
   try{
    const response=await fetchFn(`${API_ROOT}/${encodeURIComponent(selectedModel)}:generateContent`,{
@@ -46,20 +76,19 @@ function createGeminiAnalysisRunner({fetchFn=global.fetch,apiKey=process.env.GEM
     signal:controller.signal,
     body:JSON.stringify({
      contents:[{role:'user',parts:[{text:extractionPrompt({promptVersion,report})},{inlineData:{mimeType,data:content.toString('base64')}}]}],
-     generationConfig:{temperature:0,responseMimeType:'application/json'}
+     generationConfig:buildGenerationConfig(selectedModel,{maxOutputTokens,thinkingLevel})
     })
    });
    const data=await response.json().catch(()=>({}));
-   if(!response.ok){
-    const status=Number(response.status)||0,code=status===429?'RATE_LIMIT':status===502||status===503||status===504?'PROVIDER_UNAVAILABLE':'AI_PROVIDER_ERROR';
-    throw codedError('El proveedor de análisis no pudo procesar el comprobante.',code,{status});
-   }
+   if(!response.ok)throw providerError(data,Number(response.status)||0);
    return responseText(data);
   }catch(error){
-   if(error&&error.name==='AbortError')throw codedError('El análisis excedió el tiempo máximo.','TIMEOUT');
+   if(error&&error.name==='AbortError')throw codedError('El análisis excedió el tiempo máximo.','TIMEOUT',{status:504});
    throw error;
   }finally{clearTimeout(timer)}
  };
 }
 
-module.exports={API_ROOT,DEFAULT_TIMEOUT_MS,MODEL_PATTERN,clean,codedError,safeModel,extractionPrompt,responseText,createGeminiAnalysisRunner};
+module.exports={
+ API_ROOT,DEFAULT_TIMEOUT_MS,DEFAULT_MAX_OUTPUT_TOKENS,MODEL_PATTERN,clean,codedError,safeModel,extractionPrompt,responseText,structuredSchema,buildGenerationConfig,providerError,createGeminiAnalysisRunner
+};
