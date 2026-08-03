@@ -3,7 +3,7 @@
 const {withAirtableUsage}=require('./_airtable_meter');
 const {decodeAttachment}=require('./_payment_report_attachment');
 const {createGeminiAnalysisRunner}=require('./_payment_ai_gemini');
-const {discoverCompatibleModel}=require('./_payment_ai_model_discovery');
+const {getActiveModelSelection}=require('./_payment_ai_model_discovery');
 const contract=require('./_payment_ai_contract');
 const {consume}=require('./_persistent_rate_limit');
 const {safeDisplayText}=require('./_security_utils');
@@ -12,10 +12,10 @@ const {listAll,TABLES,aiConfig}=require('./_payment_report_automation');
 
 const WINDOW_MS=60*60*1000;
 const ACCEPTED_STATUSES=new Set(['COMPLETED','SENT','PROCESSED']);
-const FAST_MODEL='gemini-2.5-flash-lite';
-const FALLBACK_MODEL='gemini-2.5-flash';
-const FAST_TIMEOUT_MS=15000;
-const PROXY_TIMEOUT_MS=35000;
+const FAST_MODEL='gemini-3.5-flash-lite';
+const FALLBACK_MODEL='gemini-3.6-flash';
+const FAST_TIMEOUT_MS=8000;
+const PROXY_TIMEOUT_MS=10000;
 const PROXY_URL=String(process.env.PAYMENT_PROOF_AI_PROXY_URL||'https://gemini-proxy-seinca.vercel.app/api/payment-proof').trim();
 const PROXY_CLIENT='villa-los-apamates-payment-proof-v1';
 
@@ -35,9 +35,29 @@ function missingFields(analysis){
  return missing;
 }
 async function loadAiConfig(){const records=await listAll(TABLES.config,'?maxRecords=1'),record=records[0]||{fields:{}},rules=mergeConfig(record);return aiConfig(record,rules)}
-function modelCandidates(config={}){return[config.primaryModel,FAST_MODEL,config.secondaryModel,FALLBACK_MODEL].map(value=>String(value||'').trim()).filter((value,index,array)=>value&&array.indexOf(value)===index)}
-function canTryAnotherModel(error){const status=Number(error?.status||0);return['AI_MODEL_INVALID','RATE_LIMIT','PROVIDER_UNAVAILABLE','TIMEOUT','EMPTY_OUTPUT','AI_PROVIDER_ERROR'].includes(String(error?.code||''))&&(status!==401&&status!==403)}
+function unique(values){return[...new Set((values||[]).map(value=>String(value||'').trim()).filter(Boolean))]}
+function modelCandidates(config={},selection=null){
+ return unique([
+  selection?.primaryModel,
+  config.primaryModel,
+  FAST_MODEL,
+  selection?.secondaryModel,
+  config.secondaryModel,
+  FALLBACK_MODEL
+ ]).slice(0,4);
+}
+function canTryAnotherModel(error){
+ const status=Number(error?.status||0),code=String(error?.code||'');
+ return['AI_MODEL_INVALID','AI_MODEL_NOT_FOUND','RATE_LIMIT','PROVIDER_UNAVAILABLE','TIMEOUT','EMPTY_OUTPUT','AI_PROVIDER_ERROR','INVALID_OUTPUT','AI_AUTH_FAILED'].includes(code)&&(status!==400||code==='AI_MODEL_NOT_FOUND');
+}
 function localGeminiConfigured(){return Boolean(String(process.env.GEMINI_API_KEY||'').trim())}
+function validateRawForPrefill(raw){
+ const parsed=contract.parseRawJson(String(raw||''));
+ if(!parsed.ok)throw Object.assign(new Error('La IA no devolvió JSON válido.'),{code:'INVALID_OUTPUT'});
+ const validation=contract.validateAnalysis(parsed.value,{minimumConfidence:0}),fatal=(validation.issueCodes||[]).filter(code=>!['CRITICAL_FIELDS_MISSING','LOW_CONFIDENCE'].includes(code));
+ if(fatal.length)throw Object.assign(new Error('La IA devolvió un esquema inválido.'),{code:'INVALID_OUTPUT',detail:fatal[0]});
+ return String(raw).trim();
+}
 async function analyzeViaProxy({proof,promptVersion}={}){
  if(!PROXY_URL)throw Object.assign(new Error('No existe un lector alterno configurado.'),{code:'AI_NOT_CONFIGURED'});
  const content=Buffer.isBuffer(proof?.content)?proof.content:null,contentType=String(proof?.contentType||'').trim();
@@ -47,21 +67,34 @@ async function analyzeViaProxy({proof,promptVersion}={}){
   const response=await fetch(PROXY_URL,{method:'POST',headers:{'Content-Type':'application/json','X-VLA-Client':PROXY_CLIENT},signal:controller.signal,body:JSON.stringify({content:content.toString('base64'),contentType,promptVersion})});
   const payload=await response.json().catch(()=>({}));
   if(!response.ok||payload?.ok!==true||!String(payload?.raw||'').trim()){
-   const error=Object.assign(new Error(String(payload?.message||'El lector alterno no pudo procesar el comprobante.')),{code:String(payload?.code||'AI_PROVIDER_ERROR'),status:Number(response.status)||0});
-   throw error;
+   throw Object.assign(new Error(String(payload?.message||'El lector alterno no pudo procesar el comprobante.')),{code:String(payload?.code||'AI_PROVIDER_ERROR'),status:Number(response.status)||0});
   }
-  return{raw:String(payload.raw).trim(),model:`proxy:${String(payload.model||'gemini').trim()}`};
+  return{raw:validateRawForPrefill(payload.raw),model:`proxy:${String(payload.model||'gemini').trim()}`};
  }catch(error){
   if(error?.name==='AbortError')throw Object.assign(new Error('El análisis alterno excedió el tiempo máximo.'),{code:'TIMEOUT',status:504});
   throw error;
  }finally{clearTimeout(timer)}
 }
+async function analyzeDirect({model,proof,report,promptVersion}={}){
+ const runner=createGeminiAnalysisRunner({timeoutMs:FAST_TIMEOUT_MS,maxOutputTokens:2048,thinkingLevel:'minimal'});
+ const raw=await runner({model,proof,report,promptVersion});
+ return{raw:validateRawForPrefill(raw),model};
+}
+function bestAggregateError(error,lastError){
+ const errors=Array.isArray(error?.errors)?error.errors:[];
+ return errors.find(item=>['AI_AUTH_FAILED','INVALID_ATTACHMENT'].includes(String(item?.code||'')))||errors[0]||lastError||error;
+}
 async function analyzeWithFallback({config,proof,report,promptVersion}={}){
  if(!localGeminiConfigured())return analyzeViaProxy({proof,promptVersion});
- let detected='';try{detected=(await discoverCompatibleModel()).model}catch(error){if(Number(error?.status)===401||Number(error?.status)===403)throw error}
- const runner=createGeminiAnalysisRunner({timeoutMs:FAST_TIMEOUT_MS}),models=modelCandidates({...config,primaryModel:detected||config.primaryModel});let lastError=null;
- for(let index=0;index<models.length;index++)try{return{raw:await runner({model:models[index],proof,report,promptVersion}),model:models[index]}}catch(error){lastError=error;if(index===models.length-1||!canTryAnotherModel(error))break}
- try{return await analyzeViaProxy({proof,promptVersion})}catch(proxyError){proxyError.localProviderCode=String(lastError?.code||'');throw proxyError}
+ const selection=await getActiveModelSelection().catch(()=>null),models=modelCandidates(config,selection),primary=models[0]||FAST_MODEL;
+ let primaryError=null;
+ try{return await analyzeDirect({model:primary,proof,report,promptVersion})}
+ catch(error){primaryError=error;if(!canTryAnotherModel(error))throw error}
+ const alternatives=models.filter(model=>model!==primary).slice(0,2).map(model=>analyzeDirect({model,proof,report,promptVersion}));
+ if(PROXY_URL)alternatives.push(analyzeViaProxy({proof,promptVersion}));
+ if(!alternatives.length)throw primaryError;
+ try{return await Promise.any(alternatives)}
+ catch(error){const selected=bestAggregateError(error,primaryError);selected.primaryProviderCode=String(primaryError?.code||'');throw selected}
 }
 
 const handler=async event=>{
@@ -95,5 +128,7 @@ exports.missingFields=missingFields;
 exports.methodLabel=methodLabel;
 exports.modelCandidates=modelCandidates;
 exports.canTryAnotherModel=canTryAnotherModel;
+exports.validateRawForPrefill=validateRawForPrefill;
 exports.analyzeViaProxy=analyzeViaProxy;
+exports.analyzeDirect=analyzeDirect;
 exports.analyzeWithFallback=analyzeWithFallback;
