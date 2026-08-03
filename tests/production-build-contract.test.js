@@ -22,6 +22,20 @@ test('los recalculadores Edge de balances fueron retirados',()=>{
  assert.doesNotMatch(config,/function\s*=\s*"currency-balance-fix"/);
 });
 
+test('un crédito nunca se presenta como deuda negativa en Total pendiente',()=>{
+ const source=fs.readFileSync(path.join(root,'balance-contract-v1.js'),'utf8');
+ assert.match(source,/totalNode\.textContent=formatUsd\(root,fixed\.payableTotal\)/);
+ assert.doesNotMatch(source,/totalNode\.textContent[^\n]*saldoFavor[^\n]*'-'/);
+ const contract=require(path.join(root,'balance-contract-v1.js'));
+ const pureCredit=contract.authoritative({'Saldo USD Actual':-20,'Saldo Bs Ref Actual':0,'Saldo Total Actual':-20},{});
+ assert.equal(pureCredit.payableTotal,0);
+ assert.equal(pureCredit.saldoFavor,20);
+ const mixed=contract.authoritative({'Saldo USD Actual':50,'Saldo Bs Ref Actual':-294.76,'Saldo Total Actual':-244.76},{});
+ assert.equal(mixed.payableTotal,50);
+ assert.equal(mixed.debtUsd,50);
+ assert.equal(mixed.debtBs,-294.76);
+});
+
 test('la caché pública usa únicamente la API oficial de Netlify Blobs',()=>{
  const source=fs.readFileSync(path.join(root,'netlify','functions','_public_snapshot_store.js'),'utf8');
  assert.match(source,/getStore\(STORE_NAME,\{consistency:'strong'\}\)/);
