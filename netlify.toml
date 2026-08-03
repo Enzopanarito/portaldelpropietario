@@ -33,9 +33,9 @@
 [functions."provisional-access-expiration-scheduled"]
   schedule = "*/15 * * * *"
 
-# 06:10 a. m. de Caracas (10:10 UTC), una sola selección por día.
+# Ventana temporal de validación productiva. El bloqueo diario interno evita ejecuciones duplicadas.
 [functions."gemini-model-autodetect-scheduled"]
-  schedule = "10 10 * * *"
+  schedule = "*/5 * * * *"
 
 [[edge_functions]]
 function = "pwa-head"
