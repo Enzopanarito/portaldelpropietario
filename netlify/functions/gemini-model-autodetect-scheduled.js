@@ -91,21 +91,37 @@ async function patchConfiguration(selection){
  },typecast:true})});
  return{updated:true,recordId:record.id};
 }
-async function writeAudit({date,status,selection,benchmarks,reason=''}) {
- if(!process.env.AIRTABLE_API_TOKEN||!process.env.AIRTABLE_BASE_ID)return;
+function auditKey({date,status,selection,benchmarks,reason=''}){
  const primary=clean(selection?.primaryModel||'none'),secondary=clean(selection?.secondaryModel||'none');
  const primaryResult=(benchmarks||[]).find(item=>item.model===primary);
- const key=[
+ return[
   'GEMINI_DAILY_SELECTION',date,status,`PRIMARY_${primary}`,`SECONDARY_${secondary}`,
   primaryResult?`ACC_${Math.round(Number(primaryResult.accuracy||0)*100)}`:'ACC_NA',
   primaryResult?`MS_${Number(primaryResult.latencyMs)||0}`:'MS_NA',
   clean(reason).replace(/[^A-Za-z0-9._-]+/g,'_').slice(0,60)
  ].filter(Boolean).join('|').slice(0,250);
- await airtableJson(CONTROL_TABLE,'',{method:'POST',body:JSON.stringify({records:[{fields:{Key:key,Version:status==='SUCCESS'?1:0}}],typecast:true})});
+}
+async function writeAudit({date,status,selection,benchmarks,reason=''}) {
+ if(!process.env.AIRTABLE_API_TOKEN||!process.env.AIRTABLE_BASE_ID)return;
+ const prefix=`GEMINI_DAILY_SELECTION|${date}|`,formula=`LEFT({Key}, ${prefix.length})='${prefix}'`;
+ const lookup=await airtableJson(CONTROL_TABLE,`?maxRecords=1&filterByFormula=${encodeURIComponent(formula)}`),existing=lookup.records?.[0];
+ const fields={Key:auditKey({date,status,selection,benchmarks,reason}),Version:status==='SUCCESS'?1:0};
+ if(existing?.id)await airtableJson(CONTROL_TABLE,`/${encodeURIComponent(existing.id)}`,{method:'PATCH',body:JSON.stringify({fields,typecast:true})});
+ else await airtableJson(CONTROL_TABLE,'',{method:'POST',body:JSON.stringify({records:[{fields}],typecast:true})});
 }
 async function runDailySelection({now=()=>Date.now()}={}){
- const timestamp=Number(now()),date=caracasDate(timestamp),claim=await claimDailyRun({date,now});
- if(!claim.claimed)return{success:true,skipped:true,reason:'ALREADY_RAN_TODAY',date};
+ const timestamp=Number(now()),date=caracasDate(timestamp);let claim;
+ try{claim=await claimDailyRun({date,now})}
+ catch(error){
+  const reason=clean(error.code||error.message||'DAILY_CLAIM_FAILED').slice(0,160);
+  await writeAudit({date,status:'FAILED',selection:null,benchmarks:[],reason:`CLAIM_${reason}`}).catch(()=>null);
+  return{success:false,date,status:'FAILED',reason};
+ }
+ if(!claim.claimed){
+  const stored=claim.record||{},status=clean(stored.status);
+  if(['SUCCESS','FAILED','DEGRADED'].includes(status))await writeAudit({date,status,selection:stored.selection||null,benchmarks:stored.benchmarks||[],reason:stored.reason||''}).catch(()=>null);
+  return{success:status==='SUCCESS',skipped:true,reason:'ALREADY_RAN_TODAY',date,status:status||'UNKNOWN'};
+ }
  const previous=await getActiveModelSelection({allowStale:true,now}).catch(()=>null);
  try{
   if(!clean(process.env.GEMINI_API_KEY))throw Object.assign(new Error('Falta GEMINI_API_KEY.'),{code:'AI_NOT_CONFIGURED'});
@@ -140,5 +156,6 @@ exports.benchmarkImage=benchmarkImage;
 exports.evaluateAccuracy=evaluateAccuracy;
 exports.benchmarkModel=benchmarkModel;
 exports.patchConfiguration=patchConfiguration;
+exports.auditKey=auditKey;
 exports.writeAudit=writeAudit;
 exports.CANDIDATE_PRIORITY=CANDIDATE_PRIORITY;
