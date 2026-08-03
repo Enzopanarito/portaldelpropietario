@@ -25,7 +25,7 @@ async function airtableJson(table,query='',options={}){
  const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error?.message||data.message||`Error consultando ${table}.`);return data;
 }
 async function getRecord(table,id){return airtableJson(table,`/${encodeURIComponent(id)}`)}
-async function patchRecord(table,id,fields){return airtableJson(table,`/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify({fields,typecast:true})})
+async function patchRecord(table,id,fields){return airtableJson(table,`/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify({fields,typecast:true})})}
 async function listAll(table,query=''){
  let records=[],offset='',base=query||'',separator=base?'&':'?';
  do{const data=await airtableJson(table,`${base}${offset?`${separator}offset=${encodeURIComponent(offset)}`:''}`);records=records.concat(data.records||[]);offset=data.offset||''}while(offset);
