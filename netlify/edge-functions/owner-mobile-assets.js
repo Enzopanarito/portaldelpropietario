@@ -6,7 +6,7 @@ const LAYOUT_FIX_HREF=`/owner-mobile-v2-layout-fix.css?v=${MOBILE_RELEASE}`;
 const PAYMENT_STYLE_HREF=`/owner-payment-report-v3.css?v=${MOBILE_RELEASE}`;
 const DARK_STYLE_HREF=`/owner-dark-contrast-v1.css?v=${MOBILE_RELEASE}`;
 const PAYMENT_LOGIC_HREF=`/payment-report-intelligence.js?v=${MOBILE_RELEASE}`;
-const PAYMENT_UI_HREF=`/owner-payment-report-v3.js?v=${MOBILE_RELEASE}`;
+const PAYMENT_UI_HREF=`/owner-payment-report-v3.js?v=${MOBILE_RELEASE}-cash-confirm-r1`;
 
 const releaseGuard=`<script id="vla-owner-mobile-release">
 (function(){
