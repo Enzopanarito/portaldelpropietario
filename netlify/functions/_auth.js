@@ -30,6 +30,10 @@ function getSecret() {
   if (strong(proofKey)) return deriveSessionSecret(proofKey);
   const legacy = clean(process.env.ADMIN_TOKEN_SECRET);
   if (strong(legacy)) return legacy;
+  // Recuperación segura: el token de Airtable solo existe del lado del servidor.
+  // Se deriva una clave distinta para sesiones; el token nunca se incluye en el JWT ni llega al navegador.
+  const airtableToken = clean(process.env.AIRTABLE_API_TOKEN);
+  if (strong(airtableToken)) return deriveSessionSecret(airtableToken);
   const password = clean(process.env.ADMIN_PASSWORD);
   return strong(password) ? deriveSessionSecret(password) : '';
 }
