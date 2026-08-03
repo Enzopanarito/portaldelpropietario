@@ -35,3 +35,19 @@ jobs:
           if len(owners) != 15 or houses != list(range(1,16)):
               raise SystemExit('El deploy anterior no devolvió las 15 casas.')
           PY
+
+  check-restore-credential:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Detect an existing Netlify API credential without exposing it
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_ACCESS_TOKEN: ${{ secrets.NETLIFY_ACCESS_TOKEN }}
+          NETLIFY_TOKEN: ${{ secrets.NETLIFY_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${NETLIFY_AUTH_TOKEN:-}" ]; then echo 'AVAILABLE=NETLIFY_AUTH_TOKEN'; exit 0; fi
+          if [ -n "${NETLIFY_ACCESS_TOKEN:-}" ]; then echo 'AVAILABLE=NETLIFY_ACCESS_TOKEN'; exit 0; fi
+          if [ -n "${NETLIFY_TOKEN:-}" ]; then echo 'AVAILABLE=NETLIFY_TOKEN'; exit 0; fi
+          echo 'AVAILABLE=NONE'
+          exit 2
