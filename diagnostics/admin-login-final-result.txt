@@ -1,7 +1,7 @@
-checked_at=2026-08-03T08:42:55Z
-health_http_status=500
-login_invalid_password_http_status=429
+checked_at=2026-08-03T08:48:34Z
+health_http_status=200
+login_invalid_password_http_status=401
 health_body=
-{"ok":false,"checkedAt":"2026-08-03T08:42:55.567Z","environment":{"airtableToken":true,"airtableBase":true,"sessionKeyConfigured":false,"sessionSecretStrong":false},"config":{"recordFound":true,"parsed":true,"passwordConfigured":true,"algorithm":"scrypt-v1","version":6},"token":null,"stage":"session-token","error":"No existe una clave administrativa fuerte para firmar sesiones."}
+{"ok":true,"checkedAt":"2026-08-03T08:48:32.191Z","environment":{"airtableToken":true,"airtableBase":true,"sessionKeyConfigured":false,"sessionSecretStrong":true},"config":{"recordFound":true,"parsed":true,"passwordConfigured":true,"algorithm":"scrypt-v1","version":6},"token":{"issued":true,"verified":true,"authVersion":6},"stage":"ready"}
 login_body=
-{"success":false,"message":"Demasiados intentos incorrectos. Espere antes de intentar nuevamente."}
+{"success":false,"message":"Contraseña incorrecta."}
