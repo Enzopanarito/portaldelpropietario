@@ -15,7 +15,7 @@ const ACCEPTED_STATUSES=new Set(['COMPLETED','SENT','PROCESSED']);
 const FAST_MODEL='gemini-3.5-flash-lite';
 const FALLBACK_MODEL='gemini-3.6-flash';
 const FAST_TIMEOUT_MS=8000;
-const PROXY_TIMEOUT_MS=10000;
+const PROXY_TIMEOUT_MS=12000;
 const PROXY_URL=String(process.env.PAYMENT_PROOF_AI_PROXY_URL||'https://gemini-proxy-seinca.vercel.app/api/payment-proof').trim();
 const PROXY_CLIENT='villa-los-apamates-payment-proof-v1';
 
@@ -46,9 +46,16 @@ function modelCandidates(config={},selection=null){
   FALLBACK_MODEL
  ]).slice(0,4);
 }
+function errorCode(error){return String(error?.code||'').trim().toUpperCase()}
 function canTryAnotherModel(error){
- const status=Number(error?.status||0),code=String(error?.code||'');
- return['AI_MODEL_INVALID','AI_MODEL_NOT_FOUND','RATE_LIMIT','PROVIDER_UNAVAILABLE','TIMEOUT','EMPTY_OUTPUT','AI_PROVIDER_ERROR','INVALID_OUTPUT','AI_AUTH_FAILED'].includes(code)&&(status!==400||code==='AI_MODEL_NOT_FOUND');
+ const status=Number(error?.status||0),code=errorCode(error);
+ if(['INVALID_ATTACHMENT'].includes(code))return false;
+ if(['AI_MODEL_INVALID','AI_MODEL_NOT_FOUND','RATE_LIMIT','PROVIDER_UNAVAILABLE','TIMEOUT','EMPTY_OUTPUT','AI_PROVIDER_ERROR','INVALID_OUTPUT','AI_AUTH_FAILED','AI_NOT_CONFIGURED'].includes(code))return true;
+ return status===400||status===408||status===409||status===425||status===429||status>=500;
+}
+function canTryDirectAlternative(error){
+ const status=Number(error?.status||0),code=errorCode(error);
+ return code!=='AI_AUTH_FAILED'&&status!==401&&status!==403;
 }
 function localGeminiConfigured(){return Boolean(String(process.env.GEMINI_API_KEY||'').trim())}
 function validateRawForPrefill(raw){
@@ -82,7 +89,7 @@ async function analyzeDirect({model,proof,report,promptVersion}={}){
 }
 function bestAggregateError(error,lastError){
  const errors=Array.isArray(error?.errors)?error.errors:[];
- return errors.find(item=>['AI_AUTH_FAILED','INVALID_ATTACHMENT'].includes(String(item?.code||'')))||errors[0]||lastError||error;
+ return errors.find(item=>['AI_AUTH_FAILED','INVALID_ATTACHMENT'].includes(errorCode(item)))||errors[0]||lastError||error;
 }
 async function analyzeWithFallback({config,proof,report,promptVersion}={}){
  if(!localGeminiConfigured())return analyzeViaProxy({proof,promptVersion});
@@ -90,11 +97,14 @@ async function analyzeWithFallback({config,proof,report,promptVersion}={}){
  let primaryError=null;
  try{return await analyzeDirect({model:primary,proof,report,promptVersion})}
  catch(error){primaryError=error;if(!canTryAnotherModel(error))throw error}
- const alternatives=models.filter(model=>model!==primary).slice(0,2).map(model=>analyzeDirect({model,proof,report,promptVersion}));
+ const alternatives=[];
+ if(canTryDirectAlternative(primaryError)){
+  alternatives.push(...models.filter(model=>model!==primary).slice(0,2).map(model=>analyzeDirect({model,proof,report,promptVersion})));
+ }
  if(PROXY_URL)alternatives.push(analyzeViaProxy({proof,promptVersion}));
  if(!alternatives.length)throw primaryError;
  try{return await Promise.any(alternatives)}
- catch(error){const selected=bestAggregateError(error,primaryError);selected.primaryProviderCode=String(primaryError?.code||'');throw selected}
+ catch(error){const selected=bestAggregateError(error,primaryError);selected.primaryProviderCode=errorCode(primaryError);throw selected}
 }
 
 const handler=async event=>{
@@ -117,9 +127,9 @@ const handler=async event=>{
   return json(200,{success:true,complete:missing.length===0,analysis:{amount:analysis.amount,currency:analysis.currency,reference:analysis.reference||'',bank,method:analysis.method,transactionDate:analysis.transaction_date||'',transactionTime:analysis.transaction_time||'',transactionStatus:analysis.transaction_status,recipient:analysis.recipient_name||analysis.recipient_phone||analysis.recipient_email||analysis.recipient_account_visible||'',confidence:analysis.confidence,warnings:analysis.warnings||[],possibleVisualModification:analysis.possible_visual_modification===true},missing,analysisProvider:result.model});
  }catch(error){
   const message=String(error?.message||'');
-  if(['INVALID_ATTACHMENT'].includes(String(error?.code||''))||/adjunto|JPG|PNG|PDF|3 MB|formato/i.test(message))return json(400,{message:safeDisplayText(message,300),manualAvailable:false});
+  if(['INVALID_ATTACHMENT'].includes(errorCode(error))||/adjunto|JPG|PNG|PDF|3 MB|formato/i.test(message))return json(400,{message:safeDisplayText(message,300),manualAvailable:false});
   console.error('Prelectura de comprobante:',safeDisplayText(error?.code||message,300));
-  return json(503,{message:'La lectura inteligente no respondió. Intente nuevamente o complete los datos manualmente.',manualAvailable:true,reason:safeDisplayText(error?.code||'AI_PROVIDER_ERROR',80),providerStatus:Number(error?.status)||null});
+  return json(503,{message:'La lectura inteligente no respondió. Intente nuevamente o complete los datos manualmente.',manualAvailable:true,reason:safeDisplayText(error?.code||'AI_PROVIDER_ERROR',80),providerStatus:Number(error?.status)||null,primaryProviderCode:safeDisplayText(error?.primaryProviderCode||'',80)||null});
  }
 };
 
@@ -128,6 +138,7 @@ exports.missingFields=missingFields;
 exports.methodLabel=methodLabel;
 exports.modelCandidates=modelCandidates;
 exports.canTryAnotherModel=canTryAnotherModel;
+exports.canTryDirectAlternative=canTryDirectAlternative;
 exports.validateRawForPrefill=validateRawForPrefill;
 exports.analyzeViaProxy=analyzeViaProxy;
 exports.analyzeDirect=analyzeDirect;

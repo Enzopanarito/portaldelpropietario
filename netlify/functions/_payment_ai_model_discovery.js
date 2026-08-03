@@ -41,7 +41,12 @@ function isValidSelection(value){
 }
 async function defaultStore(){
  const{getStore}=await import('@netlify/blobs');
- return getStore({name:STORE_NAME,consistency:'strong'});
+ return getStore(STORE_NAME,{consistency:'strong'});
+}
+async function readJson(store,key){return store.get(key,{type:'json'})}
+async function readJsonWithMetadata(store,key){
+ if(typeof store.getWithMetadata==='function')return store.getWithMetadata(key,{type:'json'});
+ const data=await readJson(store,key);return data?{data,etag:'',metadata:{}}:null;
 }
 async function getActiveModelSelection({storeFactory=defaultStore,now=()=>Date.now(),allowStale=false}={}){
  const current=Number(now()),cached=memory.get(ACTIVE_KEY);
@@ -52,7 +57,7 @@ async function getActiveModelSelection({storeFactory=defaultStore,now=()=>Date.n
  let store;
  try{store=await storeFactory()}catch(_){return null}
  let saved=null;
- try{saved=await store.get(ACTIVE_KEY,{type:'json',consistency:'strong'})}catch(_){return null}
+ try{saved=await readJson(store,ACTIVE_KEY)}catch(_){return null}
  if(!isValidSelection(saved))return null;
  const validUntil=Number(saved.validUntil||0),selectedAt=Number(saved.selectedAt||0);
  if(!(validUntil>current||allowStale&&current-selectedAt<=STALE_TTL_MS))return null;
@@ -65,30 +70,29 @@ async function persistModelSelection(selection,{storeFactory=defaultStore,now=()
  if(!isValidSelection(value))throw codedError('La selección de modelos no es válida.','AI_MODEL_SELECTION_INVALID');
  const store=await storeFactory();
  await store.setJSON(ACTIVE_KEY,value);
- memory.set(ACTIVE_KEY,{value,memoryExpiresAt:Number(now())+MEMORY_TTL_MS});
- return value;
+ const confirmed=await readJson(store,ACTIVE_KEY);
+ if(!isValidSelection(confirmed)||clean(confirmed.primaryModel)!==value.primaryModel||Number(confirmed.selectedAt)!==value.selectedAt)throw codedError('No se pudo confirmar la selección diaria de Gemini.','AI_MODEL_SELECTION_WRITE_FAILED');
+ memory.set(ACTIVE_KEY,{value:confirmed,memoryExpiresAt:Number(now())+MEMORY_TTL_MS});
+ return confirmed;
 }
 async function claimDailyRun({date=caracasDate(),storeFactory=defaultStore,now=()=>Date.now()}={}){
- const store=await storeFactory(),key=`${DAILY_PREFIX}${clean(date)}`,currentTime=Number(now());
- const record={status:'RUNNING',date:clean(date),startedAt:currentTime,schemaVersion:2};
- const write=await store.setJSON(key,record,{onlyIfNew:true});
- if(!write||write.modified!==false)return{claimed:true,recovered:false,key,record,store};
- const current=typeof store.getWithMetadata==='function'
-  ?await store.getWithMetadata(key,{type:'json',consistency:'strong'}).catch(()=>null)
-  :null;
- const existing=current?.data||await store.get(key,{type:'json',consistency:'strong'}).catch(()=>null);
+ const store=await storeFactory(),key=`${DAILY_PREFIX}${clean(date)}`,currentTime=Number(now()),current=await readJsonWithMetadata(store,key).catch(()=>null),existing=current?.data||null;
  const stale=existing?.status==='RUNNING'&&currentTime-Number(existing.startedAt||0)>=CLAIM_STALE_MS;
- if(stale&&current?.etag){
-  const takeover=await store.setJSON(key,record,{onlyIfMatch:current.etag});
-  if(!takeover||takeover.modified!==false)return{claimed:true,recovered:true,key,record,store,previous:existing};
- }
- return{claimed:false,recovered:false,key,record:existing||{status:'ALREADY_CLAIMED',date:clean(date)},store};
+ if(existing&&!stale)return{claimed:false,recovered:false,key,record:existing,store};
+ const leaseToken=crypto.randomUUID(),record={status:'RUNNING',date:clean(date),startedAt:currentTime,leaseToken,schemaVersion:2,...(stale?{recoveredAt:currentTime}:{})};
+ await store.setJSON(key,record);
+ const confirmed=await readJsonWithMetadata(store,key).catch(()=>null),confirmedRecord=confirmed?.data||null;
+ if(confirmedRecord?.status==='RUNNING'&&confirmedRecord.leaseToken===leaseToken)return{claimed:true,recovered:Boolean(stale),key,record:confirmedRecord,store,previous:existing||null};
+ return{claimed:false,recovered:false,key,record:confirmedRecord||existing||{status:'ALREADY_CLAIMED',date:clean(date)},store};
 }
 async function finishDailyRun(claim,result,{now=()=>Date.now()}={}){
- if(!claim?.store||!claim?.key)return null;
- const record={...claim.record,...result,finishedAt:Number(now())};
+ if(!claim?.store||!claim?.key||!claim?.record?.leaseToken)return null;
+ const current=await readJson(claim.store,claim.key).catch(()=>null);
+ if(!current||current.leaseToken!==claim.record.leaseToken||current.status!=='RUNNING')return null;
+ const record={...current,...result,finishedAt:Number(now())};
  await claim.store.setJSON(claim.key,record);
- return record;
+ const confirmed=await readJson(claim.store,claim.key).catch(()=>null);
+ return confirmed?.leaseToken===claim.record.leaseToken?confirmed:null;
 }
 function benchmarkScore(result){
  if(!result?.compatible)return Number.NEGATIVE_INFINITY;
@@ -112,5 +116,5 @@ async function discoverCompatibleModel(options={}){
 module.exports={
  STORE_NAME,ACTIVE_KEY,DAILY_PREFIX,ACTIVE_TTL_MS,STALE_TTL_MS,CLAIM_STALE_MS,MEMORY_TTL_MS,CANDIDATE_PRIORITY,
  clean,codedError,modelId,supportsGenerate,score,compatibleModels,chooseCompatibleModel,cacheKey,caracasDate,uniqueModels,isValidSelection,
- defaultStore,getActiveModelSelection,persistModelSelection,claimDailyRun,finishDailyRun,benchmarkScore,rankBenchmarks,discoverCompatibleModel
+ defaultStore,readJson,readJsonWithMetadata,getActiveModelSelection,persistModelSelection,claimDailyRun,finishDailyRun,benchmarkScore,rankBenchmarks,discoverCompatibleModel
 };
