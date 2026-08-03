@@ -1,4 +1,4 @@
-name: Repair and verify admin login now
+name: Capture real admin login result now
 
 on:
   push:
@@ -11,57 +11,34 @@ permissions:
   contents: write
 
 jobs:
-  repair-and-verify:
+  capture-login-result:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
-    env:
-      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN || secrets.NETLIFY_TOKEN }}
-      NETLIFY_SITE_ID: 74f4f122-352c-4a3b-aa6f-5937ab99f8d3
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
-      - name: Trigger production build with repaired session key
+      - name: Capture health and login responses
         shell: bash
         run: |
-          set -euo pipefail
-          test -n "${NETLIFY_AUTH_TOKEN:-}" || { echo "::error::Missing Netlify token"; exit 1; }
-          curl -fsS -X POST \
-            -H "Authorization: Bearer ${NETLIFY_AUTH_TOKEN}" \
-            -H "Content-Type: application/json" \
-            "https://api.netlify.com/api/v1/sites/${NETLIFY_SITE_ID}/builds" >/dev/null
-
-      - name: Verify complete production login dependencies
-        shell: bash
-        run: |
-          set -euo pipefail
+          set -u -o pipefail
           mkdir -p diagnostics
           health_body=$(mktemp)
           login_body=$(mktemp)
           health_code="000"
           login_code="000"
 
-          for attempt in $(seq 1 48); do
-            sleep 10
-            health_code=$(curl -sS -o "$health_body" -w '%{http_code}' \
+          for attempt in $(seq 1 6); do
+            health_code=$(curl -sS --max-time 30 -o "$health_body" -w '%{http_code}' \
               -H 'Cache-Control: no-cache' \
-              "https://villalosapamates.netlify.app/.netlify/functions/admin-login-health?verify=${GITHUB_RUN_ID}-${attempt}" || true)
-            login_code=$(curl -sS -o "$login_body" -w '%{http_code}' \
+              "https://villalosapamates.netlify.app/.netlify/functions/admin-login-health?capture=${GITHUB_RUN_ID}-${attempt}" || true)
+            login_code=$(curl -sS --max-time 30 -o "$login_body" -w '%{http_code}' \
               -X POST \
               -H 'Content-Type: application/json' \
               -H 'Cache-Control: no-cache' \
               --data '{"password":"__VLA_DIAGNOSTIC_INVALID__"}' \
               "https://villalosapamates.netlify.app/.netlify/functions/login" || true)
-
-            if [ "$health_code" = "200" ] \
-              && grep -q '"ok":true' "$health_body" \
-              && grep -q '"sessionKeyConfigured":true' "$health_body" \
-              && grep -q '"sessionSecretStrong":true' "$health_body" \
-              && grep -q '"issued":true' "$health_body" \
-              && grep -q '"verified":true' "$health_body" \
-              && [ "$login_code" = "401" ] \
-              && grep -q 'Contraseña incorrecta' "$login_body"; then
-              break
-            fi
+            [ "$health_code" != "000" ] && [ "$login_code" != "000" ] && break
+            sleep 5
           done
 
           {
@@ -69,33 +46,22 @@ jobs:
             echo "health_http_status=$health_code"
             echo "login_invalid_password_http_status=$login_code"
             echo "health_body="
-            cat "$health_body"
+            cat "$health_body" 2>/dev/null || true
             echo
             echo "login_body="
-            cat "$login_body"
+            cat "$login_body" 2>/dev/null || true
             echo
           } > diagnostics/admin-login-final-result.txt
 
-          if [ "$health_code" != "200" ] \
-            || ! grep -q '"ok":true' "$health_body" \
-            || ! grep -q '"sessionKeyConfigured":true' "$health_body" \
-            || ! grep -q '"sessionSecretStrong":true' "$health_body" \
-            || ! grep -q '"issued":true' "$health_body" \
-            || ! grep -q '"verified":true' "$health_body" \
-            || [ "$login_code" != "401" ] \
-            || ! grep -q 'Contraseña incorrecta' "$login_body"; then
-            cat diagnostics/admin-login-final-result.txt
-            echo "::error::Admin login is not fully repaired yet."
-            exit 1
-          fi
+          cat diagnostics/admin-login-final-result.txt
 
-      - name: Commit verified result
+      - name: Commit captured result regardless of outcome
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "vla-diagnostic-bot"
           git config user.email "actions@users.noreply.github.com"
           git add diagnostics/admin-login-final-result.txt
-          git commit -m "Confirmar reparación final del acceso administrativo" || exit 0
+          git commit -m "Capturar resultado real del acceso administrativo" || exit 0
           git pull --rebase origin main
           git push
