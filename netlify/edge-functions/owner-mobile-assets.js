@@ -18,7 +18,7 @@ const releaseGuard=`<script id="vla-owner-mobile-release">
   var previous='';
   try{previous=localStorage.getItem(key)||'';localStorage.setItem(key,version)}catch(_){}
   if(previous&&previous!==version)clearCaches();
-  window.addEventListener('pageshow',function(event){if(event.persisted)location.reload()});
+  window.addEventListener('pageshow',function(event){if(event.persisted)clearCaches()});
   document.documentElement.dataset.vlaOwnerMobile='fluid-v2';
   document.documentElement.dataset.vlaOwnerDarkContrast='wcag-v1';
   document.documentElement.dataset.vlaOwnerRelease=version;
