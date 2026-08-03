@@ -20,7 +20,7 @@ function houseNumber(label){
 
 async function waitForExactPortal(page,timeout=45000){
   const deadline=Date.now()+timeout;
-  let last={release:'',houses:[],options:[]};
+  let last={release:'',houses:[],options:[],handler:false};
   while(Date.now()<deadline){
     last=await page.evaluate(()=>{
       const options=Array.from(document.querySelectorAll('#welcomeSelector option')).map(option=>({
@@ -33,14 +33,15 @@ async function waitForExactPortal(page,timeout=45000){
           const match=option.text.match(/^Casa\s+(\d+)\b/i);
           return match?Number(match[1]):null;
         }).filter(Number.isInteger),
-        options
+        options,
+        handler:typeof document.getElementById('enterBtn')?.onclick==='function'
       };
     }).catch(()=>last);
     const unique=[...new Set(last.houses)].sort((a,b)=>a-b);
     const complete=unique.length===15&&unique.every((house,index)=>house===index+1);
     const selectable=last.options.filter(option=>Number.isInteger(houseNumber(option.text))&&option.value).length===15;
     const releaseOk=!OWNER_RELEASE||last.release===OWNER_RELEASE;
-    if(complete&&selectable&&releaseOk)return last;
+    if(complete&&selectable&&releaseOk&&last.handler)return last;
     await page.waitForTimeout(250);
   }
   throw new Error(`El portal móvil no estabilizó la versión exacta con 15 casas seleccionables: ${JSON.stringify(last)}`);
@@ -113,13 +114,22 @@ async function loadPortal(page){
   if(welcomeMetrics.titleFont<25)throw new Error('El título móvil quedó demasiado pequeño.');
   if(welcomeMetrics.buttonHeight<50||!painted(welcomeMetrics.buttonBackground,welcomeMetrics.buttonBackgroundImage)||welcomeMetrics.buttonColor==='rgb(0, 0, 0)')throw new Error(`El botón de entrada perdió su estilo principal: ${JSON.stringify(welcomeMetrics)}.`);
 
-  const ownerOption=state.options.find(option=>houseNumber(option.text)===15&&option.value)
+  const ownerOption=state.options.find(option=>houseNumber(option.text)===1&&option.value)
     ||state.options.find(option=>Number.isInteger(houseNumber(option.text))&&option.value);
   if(!ownerOption)throw new Error(`No se encontró una casa seleccionable: ${JSON.stringify(state.options)}`);
   await page.locator('#welcomeSelector').selectOption(ownerOption.value);
   const selected=await page.locator('#welcomeSelector').inputValue();
   if(selected!==ownerOption.value)throw new Error('El selector no conservó el ID real de la casa elegida.');
-  await page.getByRole('button',{name:/Consultar Estado de Cuenta/i}).click();
+  await page.locator('#enterBtn').click();
+  await page.waitForTimeout(250);
+  const transition=await page.evaluate(()=>({
+    mainHidden:document.getElementById('main')?.classList.contains('hidden'),
+    welcomeHidden:document.getElementById('welcome')?.classList.contains('hidden'),
+    welcomeValue:document.getElementById('welcomeSelector')?.value||'',
+    userValue:document.getElementById('userSelector')?.value||'',
+    heading:document.getElementById('welcome-msg')?.textContent||''
+  }));
+  if(transition.mainHidden)throw new Error(`La transición móvil no abrió el portal: ${JSON.stringify({transition,pageErrors,consoleErrors})}`);
   await page.locator('#main').waitFor({state:'visible',timeout:15000});
   await page.locator('[data-vla-breakdown-host]').waitFor({state:'visible',timeout:30000});
 
@@ -182,7 +192,7 @@ async function loadPortal(page){
 
   if(pageErrors.length)throw new Error(`Errores JavaScript: ${pageErrors.join(' | ')}`);
   if(consoleErrors.length)throw new Error(`Errores de consola: ${consoleErrors.join(' | ')}`);
-  const output={target:TARGET,status:response.status(),ownerRelease:OWNER_RELEASE,selectedHouse:houseNumber(ownerOption.text),tailwindCdnRequested:blockedTailwind>0,blockedTailwind,welcome:welcomeMetrics,viewports:results,pageErrors,consoleErrors};
+  const output={target:TARGET,status:response.status(),ownerRelease:OWNER_RELEASE,selectedHouse:houseNumber(ownerOption.text),tailwindCdnRequested:blockedTailwind>0,blockedTailwind,welcome:welcomeMetrics,transition,viewports:results,pageErrors,consoleErrors};
   fs.writeFileSync('owner-mobile-result.json',JSON.stringify(output,null,2));
   console.log('OWNER_MOBILE_BROWSER_OK');
   await browser.close();
