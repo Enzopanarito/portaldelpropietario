@@ -96,6 +96,6 @@
   function schedule(){clearTimeout(window.__VLA_OWNER_FINANCIAL_TIMER);window.__VLA_OWNER_FINANCIAL_TIMER=setTimeout(render,30)}
   function boot(){installStyle();installRenderWrapper();schedule()}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
-  document.addEventListener('change',schedule,true);document.addEventListener('click',schedule,true);
+  document.addEventListener('change',render,false);document.addEventListener('click',schedule,true);
   let attempts=0;const timer=setInterval(function(){attempts+=1;installRenderWrapper();render();if(attempts>=120)clearInterval(timer)},100);
 })();
