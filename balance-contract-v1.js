@@ -26,7 +26,7 @@
   function selectName(value){return value&&typeof value==='object'&&value.name?String(value.name):String(value||'')}
   function linkedIds(value){return Array.isArray(value)?value.map(item=>typeof item==='string'?item:item&&item.id).filter(Boolean):[]}
   function fieldsOf(record){return record&&record.fields&&typeof record.fields==='object'?record.fields:(record||{})}
-  function escapeHtml(value){return String(value===undefined||value===null?'':value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;')}
+  function escapeHtml(value){return String(value===undefined||value===null?'':value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#039;')}
   function rateFrom(root){
     try{
       if(root&&typeof root.rate==='function')return Number(root.rate()||0);
@@ -116,7 +116,7 @@
     const fixed=authoritative(owner,existing,rateFrom(root));
     setCurrent(root,fixed);
     const totalNode=root.document.getElementById('m-total');
-    if(totalNode)totalNode.textContent=fixed.payableTotal>TOLERANCE?formatUsd(root,fixed.payableTotal):(fixed.saldoFavor>TOLERANCE?'-'+formatUsd(root,fixed.saldoFavor):formatUsd(root,0));
+    if(totalNode)totalNode.textContent=formatUsd(root,fixed.payableTotal);
     const expiredNode=root.document.getElementById('m-vencida');if(expiredNode)expiredNode.textContent=formatUsd(root,fixed.expired);
     const currentNode=root.document.getElementById('m-corriente');if(currentNode)currentNode.textContent=formatUsd(root,fixed.currentMonth);
     const summary=root.document.getElementById('summary');
