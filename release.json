@@ -9,6 +9,7 @@
   "productionPublishDirectory": "dist",
   "hardeningRelease": "2026-08-02-final-10of10",
   "configurationRebuildAt": "2026-08-03T07:52:00.000Z",
-  "paymentReportRelease": "smart-v6-submit-r1",
-  "paymentReportPublishedAt": "2026-08-03T09:45:00.000Z"
+  "paymentReportRelease": "smart-v6-submit-r2",
+  "paymentReportPublishedAt": "2026-08-03T10:20:00.000Z",
+  "paymentProofStorageRuntime": "modern-v2-compatible"
 }
