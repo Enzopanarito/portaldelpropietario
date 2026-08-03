@@ -1,0 +1,7 @@
+checked_at=2026-08-03T08:42:55Z
+health_http_status=500
+login_invalid_password_http_status=429
+health_body=
+{"ok":false,"checkedAt":"2026-08-03T08:42:55.567Z","environment":{"airtableToken":true,"airtableBase":true,"sessionKeyConfigured":false,"sessionSecretStrong":false},"config":{"recordFound":true,"parsed":true,"passwordConfigured":true,"algorithm":"scrypt-v1","version":6},"token":null,"stage":"session-token","error":"No existe una clave administrativa fuerte para firmar sesiones."}
+login_body=
+{"success":false,"message":"Demasiados intentos incorrectos. Espere antes de intentar nuevamente."}
