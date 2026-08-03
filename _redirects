@@ -1,3 +1,4 @@
+/api/vla/report-payment /.netlify/functions/public-report-payment-fixed 200!
 /app/admin.html /admin.html 301!
 /app/admin /admin.html 301!
 /admin /admin.html 200
