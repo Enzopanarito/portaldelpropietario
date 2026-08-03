@@ -16,7 +16,7 @@
   function realBs(value){return typeof bs==='function'?bs(value):'Bs. '+number(value).toFixed(2)}
   function fxRate(){try{return typeof rate==='function'?number(rate()):0}catch(_){return 0}}
   function enteredAmount(){return window.VLAPaymentIntelligence.parseAmountInput(byId('payAmount')?.value)}
-  function safeText(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'}[c]))}
+  function safeText(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
   function currentDateLabel(){try{return typeof caracasLabel==='function'?caracasLabel():new Date().toLocaleDateString('es-VE')}catch(_){return new Date().toLocaleDateString('es-VE')}}
   function currentDateISO(){try{return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Caracas',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())}catch(_){return new Date().toISOString().slice(0,10)}}
   function accountBalance(mode){if(typeof current==='undefined'||!current)return 0;return mode==='USD'?Math.max(0,number(current.debtUsd)):Math.max(0,number(current.debtBs))}
@@ -62,7 +62,7 @@
     byId('closeModal').onclick=hideSmartModal;byId('cancelModal').onclick=hideSmartModal;byId('payProof').addEventListener('change',onFileSelected);byId('vla-pay-manual').onclick=enableManual;
     document.querySelectorAll('input[name="payChannel"]').forEach(node=>node.addEventListener('change',switchPaymentChannel));
     ['payCurrency','payAmount','payMode','payBank','payCashReceiver','payRef','payTransactionDate','payTransactionStatus'].forEach(id=>{byId(id).addEventListener(['payAmount','payBank','payCashReceiver','payRef'].includes(id)?'input':'change',()=>{submitErrorActive=false;validateForm()})});
-    byId('payNotes').addEventListener('input',event=>{submitErrorActive=false;byId('vla-pay-notes-count').textContent=String(event.target.value.length)});
+    byId('payNotes').addEventListener('input',event=>{submitErrorActive=false;byId('vla-pay-notes-count').textContent=String(event.target.value.length);validateForm()});
     byId('reportForm').addEventListener('submit',submitSmartReport);modal.addEventListener('click',event=>{if(event.target===modal)hideSmartModal()});document.addEventListener('keydown',event=>{if(event.key==='Escape'&&modal.classList.contains('flex'))hideSmartModal()});
   }
 
