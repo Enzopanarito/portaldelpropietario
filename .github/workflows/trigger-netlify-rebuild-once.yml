@@ -1,4 +1,4 @@
-name: Trigger Netlify production rebuild once
+name: Diagnose production admin login once
 
 on:
   push:
@@ -8,26 +8,38 @@ on:
       - .github/workflows/trigger-netlify-rebuild-once.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  trigger:
+  diagnose:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    env:
-      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN || secrets.NETLIFY_TOKEN }}
-      NETLIFY_SITE_ID: 74f4f122-352c-4a3b-aa6f-5937ab99f8d3
     steps:
-      - name: Trigger production build
+      - uses: actions/checkout@v4
+      - name: Probe live login endpoint with an invalid diagnostic password
         shell: bash
         run: |
           set -euo pipefail
-          if [ -z "${NETLIFY_AUTH_TOKEN:-}" ]; then
-            echo "::error::Netlify auth secret is unavailable."
-            exit 1
-          fi
-          response=$(curl -fsS -X POST \
-            -H "Authorization: Bearer ${NETLIFY_AUTH_TOKEN}" \
+          mkdir -p diagnostics
+          body_file=$(mktemp)
+          status=$(curl -sS -o "$body_file" -w "%{http_code}" \
+            -X POST \
             -H "Content-Type: application/json" \
-            "https://api.netlify.com/api/v1/sites/${NETLIFY_SITE_ID}/builds")
-          node -e 'const x=JSON.parse(process.argv[1]); console.log(`Triggered build: ${x.id || "unknown"}`)' "$response"
+            --data '{"password":"__VLA_DIAGNOSTIC_INVALID_PASSWORD__"}' \
+            "https://villalosapamates.netlify.app/.netlify/functions/login")
+          {
+            echo "checked_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "http_status=$status"
+            echo "response_body="
+            cat "$body_file"
+            echo
+          } > diagnostics/live-login-invalid-response.txt
+      - name: Commit diagnostic result
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "vla-diagnostic-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add diagnostics/live-login-invalid-response.txt
+          git commit -m "Guardar diagnóstico del login en producción" || exit 0
+          git push
