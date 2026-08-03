@@ -1,5 +1,5 @@
 const OWNER_PATHS=['/','/index.html'];
-const MOBILE_RELEASE='owner-mobile-fluid-v2-payment-smart-v5-dark-wcag-v1-r3-2026-08-03';
+const MOBILE_RELEASE='owner-mobile-fluid-v2-payment-smart-v5-dark-wcag-v1-r4-2026-08-03';
 const BREAKDOWN_PRESENTATION='2026-07-11-photo-v6';
 const STYLE_HREF=`/owner-mobile-v2.css?v=${MOBILE_RELEASE}`;
 const LAYOUT_FIX_HREF=`/owner-mobile-v2-layout-fix.css?v=${MOBILE_RELEASE}`;
@@ -10,23 +10,14 @@ const PAYMENT_UI_HREF=`/owner-payment-report-v3.js?v=${MOBILE_RELEASE}`;
 
 const releaseGuard=`<script id="vla-owner-mobile-release">
 (function(){
-  var version='${MOBILE_RELEASE}',key='vla-owner-mobile-release',reloadKey=key+'-reloaded';
+  var version='${MOBILE_RELEASE}',key='vla-owner-mobile-release';
   function clearCaches(){
-    if(!('caches' in window))return Promise.resolve();
-    return caches.keys().then(function(keys){return Promise.all(keys.map(function(name){return caches.delete(name)}))}).catch(function(){return null});
+    if(!('caches' in window))return;
+    caches.keys().then(function(keys){return Promise.all(keys.map(function(name){return caches.delete(name)}))}).catch(function(){return null});
   }
-  function refreshIfNeeded(){
-    var previous='';
-    try{previous=localStorage.getItem(key)||'';localStorage.setItem(key,version)}catch(_){}
-    if(previous&&previous!==version){
-      try{if(sessionStorage.getItem(reloadKey)===version)return;sessionStorage.setItem(reloadKey,version)}catch(_){}
-      clearCaches().then(function(){
-        var url=new URL(location.href);url.searchParams.set('mobile_release',version);location.replace(url.toString());
-      });
-    }
-  }
-  refreshIfNeeded();
-  window.addEventListener('pageshow',function(event){if(event.persisted)location.reload()});
+  var previous='';
+  try{previous=localStorage.getItem(key)||'';localStorage.setItem(key,version)}catch(_){}
+  if(previous&&previous!==version)clearCaches();
   document.documentElement.dataset.vlaOwnerMobile='fluid-v2';
   document.documentElement.dataset.vlaOwnerDarkContrast='wcag-v1';
   document.documentElement.dataset.vlaOwnerRelease=version;
