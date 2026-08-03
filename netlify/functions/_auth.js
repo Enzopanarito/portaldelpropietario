@@ -8,6 +8,7 @@ const TOKEN_TTL_MS = 6 * 60 * 60 * 1000;
 const CLOCK_SKEW_MS = 60 * 1000;
 const ISSUER = 'villa-los-apamates';
 const AUDIENCE = 'vla-admin';
+const SESSION_KEY_DOMAIN = 'vla/admin/session-signing/v2';
 
 function base64url(input) {
   return Buffer.from(input).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
@@ -17,8 +18,24 @@ function fromBase64url(input) {
   const pad = normalized.length % 4 ? '='.repeat(4 - (normalized.length % 4)) : '';
   return Buffer.from(normalized + pad, 'base64').toString('utf8');
 }
+function clean(value) { return String(value || '').trim(); }
+function strong(value) { return Buffer.byteLength(clean(value), 'utf8') >= 32; }
+function deriveSessionSecret(root) {
+  return crypto.createHmac('sha256', Buffer.from(clean(root), 'utf8')).update(SESSION_KEY_DOMAIN, 'utf8').digest('hex');
+}
 function getSecret() {
-  return process.env.ADMIN_TOKEN_SECRET || process.env.ADMIN_PASSWORD || '';
+  const dedicated = clean(process.env.ADMIN_SESSION_SIGNING_KEY);
+  if (strong(dedicated)) return deriveSessionSecret(dedicated);
+  const proofKey = clean(process.env.PAYMENT_PROOF_ENCRYPTION_KEY);
+  if (strong(proofKey)) return deriveSessionSecret(proofKey);
+  const legacy = clean(process.env.ADMIN_TOKEN_SECRET);
+  if (strong(legacy)) return legacy;
+  // Recuperación segura: el token de Airtable solo existe del lado del servidor.
+  // Se deriva una clave distinta para sesiones; el token nunca se incluye en el JWT ni llega al navegador.
+  const airtableToken = clean(process.env.AIRTABLE_API_TOKEN);
+  if (strong(airtableToken)) return deriveSessionSecret(airtableToken);
+  const password = clean(process.env.ADMIN_PASSWORD);
+  return strong(password) ? deriveSessionSecret(password) : '';
 }
 function sign(payload, secret) {
   return crypto.createHmac('sha256', secret).update(payload).digest('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
@@ -30,7 +47,7 @@ function safeEqual(left, right) {
 }
 function issueAdminToken(extra = {}) {
   const secret = getSecret();
-  if (!secret) throw new Error('ADMIN_TOKEN_SECRET o ADMIN_PASSWORD no está configurada.');
+  if (!secret) throw Object.assign(new Error('No existe una clave administrativa fuerte para firmar sesiones.'), { code: 'ADMIN_SIGNING_KEY_WEAK' });
   const now = Date.now();
   const claims = {
     iss: ISSUER,
@@ -40,7 +57,8 @@ function issueAdminToken(extra = {}) {
     iat: now,
     nbf: now - CLOCK_SKEW_MS,
     exp: now + TOKEN_TTL_MS,
-    authVersion: Math.max(0, Number(extra.authVersion || 0))
+    authVersion: Math.max(0, Number(extra.authVersion || 0)),
+    keyVersion: 2
   };
   const payload = base64url(JSON.stringify(claims));
   return `${payload}.${sign(payload, secret)}`;
@@ -82,4 +100,4 @@ function requireAdmin(event) {
   };
 }
 
-module.exports = { issueAdminToken, verifyAdminToken, decodeAndVerifyAdminToken, requireAdmin };
+module.exports = { SESSION_KEY_DOMAIN, strong, deriveSessionSecret, getSecret, issueAdminToken, verifyAdminToken, decodeAndVerifyAdminToken, requireAdmin };
