@@ -1,0 +1,37 @@
+name: Probe Known Good Deploy
+
+on:
+  push:
+    branches:
+      - probe/known-good-deploy-20260803
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe immutable deploy without exposing financial data
+        env:
+          TARGET: https://6a6fb60be9396d08385ca58e--villalosapamates.netlify.app/.netlify/functions/public-data?force=1
+        run: |
+          set -euo pipefail
+          curl --silent --show-error --location --max-time 60 \
+            --dump-header headers.txt --output body.json "$TARGET"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          headers = Path('headers.txt').read_text(errors='replace')
+          body = json.loads(Path('body.json').read_text(errors='replace') or '{}')
+          owners = body.get('propietarios') or []
+          houses = sorted({int(o.get('Casa')) for o in owners if str(o.get('Casa','')).isdigit()})
+          print('HTTP_HEADER_LAST_BLOCK')
+          print(headers.split('\r\n\r\n')[-2] if '\r\n\r\n' in headers else headers)
+          print('OWNER_COUNT=', len(owners))
+          print('HOUSES=', houses)
+          print('ENGINE=', body.get('balanceEngineVersion'))
+          print('SOURCE=', body.get('officialBalanceSource'))
+          if len(owners) != 15 or houses != list(range(1,16)):
+              raise SystemExit('El deploy anterior no devolvió las 15 casas.')
+          PY
