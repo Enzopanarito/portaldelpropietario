@@ -1,0 +1,33 @@
+name: Trigger Netlify production rebuild once
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/trigger-netlify-rebuild-once.yml
+
+permissions:
+  contents: read
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN || secrets.NETLIFY_TOKEN }}
+      NETLIFY_SITE_ID: 74f4f122-352c-4a3b-aa6f-5937ab99f8d3
+    steps:
+      - name: Trigger production build
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${NETLIFY_AUTH_TOKEN:-}" ]; then
+            echo "::error::Netlify auth secret is unavailable."
+            exit 1
+          fi
+          response=$(curl -fsS -X POST \
+            -H "Authorization: Bearer ${NETLIFY_AUTH_TOKEN}" \
+            -H "Content-Type: application/json" \
+            "https://api.netlify.com/api/v1/sites/${NETLIFY_SITE_ID}/builds")
+          node -e 'const x=JSON.parse(process.argv[1]); console.log(`Triggered build: ${x.id || "unknown"}`)' "$response"
