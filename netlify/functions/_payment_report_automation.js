@@ -35,9 +35,9 @@ function aiConfig(configRecord,rules){
  const fields=fieldsOf(configRecord);
  return{
   aiEnabled:fields['AI Enabled']===true,
-  primaryModel:clean(fields['AI Primary Model']||process.env.PAYMENT_AI_PRIMARY_MODEL||'gemini-2.5-flash'),
-  secondaryModel:clean(fields['AI Secondary Model']||process.env.PAYMENT_AI_SECONDARY_MODEL||'gemini-3.5-flash'),
-  primaryTimeoutSeconds:Number(fields['AI Primary Timeout Seconds']||45),
+  primaryModel:clean(fields['AI Primary Model']||process.env.PAYMENT_AI_PRIMARY_MODEL||'gemini-3.5-flash-lite'),
+  secondaryModel:clean(fields['AI Secondary Model']||process.env.PAYMENT_AI_SECONDARY_MODEL||'gemini-3.6-flash'),
+  primaryTimeoutSeconds:Number(fields['AI Primary Timeout Seconds']||30),
   maximumPrimaryRetries:Number(fields['AI Maximum Primary Retries']||1),
   secondaryEnabled:fields['AI Secondary Enabled']===true,
   minimumConfidence:Number(fields['AI Minimum Confidence']||0.85),
@@ -115,7 +115,11 @@ async function defaultLoadBundle(reportId){
   require('./_bcv_store').loadLastGood({force:true})
  ]);
  const configRecord=configRecords[0]||{fields:{}},rules=mergeConfig(configRecord),proof=proofDescriptor(report),configuredAi=aiConfig(configRecord,rules);
- try{const discovery=await require('./_payment_ai_model_discovery').discoverCompatibleModel(),models=discovery.models||[discovery.model];if(models[0])configuredAi.primaryModel=models[0];const fallback=models.find(model=>model&&model!==configuredAi.primaryModel)||configuredAi.secondaryModel;if(fallback&&fallback!==configuredAi.primaryModel){configuredAi.secondaryModel=fallback;configuredAi.secondaryEnabled=true}}catch(error){if(Number(error?.status)===401||Number(error?.status)===403)configuredAi.aiEnabled=false}
+ try{
+  const selection=await require('./_payment_ai_model_discovery').getActiveModelSelection();
+  if(selection?.primaryModel)configuredAi.primaryModel=selection.primaryModel;
+  if(selection?.secondaryModel&&selection.secondaryModel!==configuredAi.primaryModel){configuredAi.secondaryModel=selection.secondaryModel;configuredAi.secondaryEnabled=true}
+ }catch(_){}
  if(!/^[a-f0-9]{64}$/.test(proof.sha256)||!proof.contentType)throw new Error('El reporte no tiene un comprobante cifrado disponible.');
  const proofStore=require('./_payment_proof_store').createProofStore(),stored=proof.blobKey?await proofStore.getByKey({key:proof.blobKey,attachmentSha:proof.sha256,contentType:proof.contentType}):await proofStore.get({reportId,attachmentSha:proof.sha256,contentType:proof.contentType});
  if(!stored)throw new Error('No se encontró el comprobante cifrado.');

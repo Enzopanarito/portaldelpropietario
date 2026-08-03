@@ -33,8 +33,9 @@
 [functions."provisional-access-expiration-scheduled"]
   schedule = "*/15 * * * *"
 
-[functions."gemini-direct-selftest-scheduled"]
-  schedule = "* * * * *"
+# 06:10 a. m. de Caracas (10:10 UTC), una sola selección por día.
+[functions."gemini-model-autodetect-scheduled"]
+  schedule = "10 10 * * *"
 
 [[edge_functions]]
 function = "pwa-head"
