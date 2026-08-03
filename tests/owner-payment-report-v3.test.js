@@ -17,7 +17,9 @@ assert(ui.includes('/api/vla/payment-proof-prefill'),'Debe analizar el comproban
 assert(ui.includes('/api/vla/report-payment'),'El envío debe usar almacenamiento fuerte de Blobs.');
 assert(ui.includes('submissionId'),'Cada envío digital debe incluir clave idempotente.');
 assert(ui.includes('readAsDataURL'),'Debe preparar el comprobante para análisis y envío.');
-assert(ui.includes('submit.disabled=missing.length>0'),'El envío debe permanecer bloqueado con datos incompletos.');
+assert(ui.includes('if(missing.length){'),'El manejador debe cortar el envío cuando falten datos.');
+assert(ui.includes("submit.setAttribute('aria-disabled',missing.length?'true':'false')"),'El botón debe anunciar correctamente el estado incompleto sin impedir mostrar los errores.');
+assert(ui.indexOf('if(missing.length){')<ui.indexOf("fetch('/api/vla/report-payment"),'La validación debe ocurrir antes de cualquier solicitud de envío.');
 assert(!ui.includes('Confirma si escribiste el monto'),'No debe reaparecer el mensaje confuso de moneda.');
 assert(!signature.includes('form.onsubmit'),'La firma no puede sobrescribir el envío inteligente.');
 assert(!signature.includes('vla-payment-report-submit-guard'),'La firma no puede inyectar el guard heredado.');
