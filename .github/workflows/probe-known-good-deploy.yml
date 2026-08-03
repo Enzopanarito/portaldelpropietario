@@ -1,9 +1,9 @@
 name: Probe Known Good Deploy
 
 on:
-  push:
+  pull_request:
     branches:
-      - probe/known-good-deploy-20260803
+      - main
 
 permissions:
   contents: read
