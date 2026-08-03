@@ -1,0 +1,176 @@
+'use strict';
+
+const { chromium } = require('playwright');
+const fs = require('fs');
+
+function parseMoney(text) {
+  const raw = String(text || '').trim();
+  const negative = raw.startsWith('-');
+  const value = Number(raw.replace(/[^0-9.]/g, '')) || 0;
+  return negative ? -value : value;
+}
+
+function money(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.round((number + Number.EPSILON) * 100) / 100 : 0;
+}
+
+function payableBalance(owner) {
+  const usd = money(owner['Saldo USD Actual']);
+  const bsRef = money(owner['Saldo Bs Ref Actual']);
+  return {
+    usd,
+    bsRef,
+    net: money(owner['Saldo Total Actual']),
+    payable: money(Math.max(0, usd) + Math.max(0, bsRef))
+  };
+}
+
+function houseFromLabel(label) {
+  const match = String(label || '').trim().match(/^Casa\s+(\d+)\b/i);
+  return match ? Number(match[1]) : null;
+}
+
+async function optionValueForHouse(selector, house) {
+  return selector.locator('option').evaluateAll((options, houseNumber) => {
+    const item = options.find(option => {
+      const match = String(option.textContent || '').trim().match(/^Casa\s+(\d+)\b/i);
+      return match && Number(match[1]) === Number(houseNumber) && String(option.value || '').trim();
+    });
+    return item ? item.value : '';
+  }, house);
+}
+
+async function waitForHouseOptions(page, expected = 15, timeout = 30000) {
+  const deadline = Date.now() + timeout;
+  let found = [];
+  while (Date.now() < deadline) {
+    const state = await page.evaluate(() => ({
+      labels: Array.from(document.querySelectorAll('#welcomeSelector option')).map(option => String(option.textContent || '').trim()),
+      enterHandler: typeof document.getElementById('enterBtn')?.onclick === 'function'
+    })).catch(() => ({ labels: [], enterHandler: false }));
+    found = [...new Set(state.labels.map(houseFromLabel).filter(Number.isInteger))].sort((a, b) => a - b);
+    if (state.enterHandler && found.length === expected && found.every((house, index) => house === index + 1)) return;
+    await page.waitForTimeout(250);
+  }
+  throw new Error(`Casas disponibles: ${JSON.stringify(found)}; se esperaban 1 a ${expected} y el manejador de entrada activo.`);
+}
+
+async function waitForLocatorText(page, locator, predicate, description, timeout = 30000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const value = await locator.innerText().catch(() => '');
+    if (predicate(value)) return value;
+    await page.waitForTimeout(200);
+  }
+  throw new Error(`No apareció ${description}.`);
+}
+
+async function loadPortalWithOwners(page) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await page.goto(`${process.env.TARGET_URL}/?browser=${Date.now()}-${attempt}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      if (!response || response.status() !== 200) throw new Error(`El portal respondió ${response && response.status()}.`);
+      await page.addStyleTag({ content: '[data-netlify-deploy-id],iframe[title="Netlify Drawer"]{display:none!important;pointer-events:none!important}' }).catch(() => {});
+      await page.waitForFunction(release => document.documentElement.dataset.vlaOwnerRelease === release, process.env.OWNER_RELEASE, { timeout: 30000 });
+      await waitForHouseOptions(page, 15, 30000);
+      return response;
+    } catch (error) {
+      lastError = error;
+      if (attempt < 3) await page.waitForTimeout(attempt * 1000);
+    }
+  }
+  throw new Error(`No se pudieron cargar las 15 casas en la versión exacta después de 3 intentos: ${lastError && lastError.message}`);
+}
+
+(async () => {
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  const pageErrors = [];
+  const consoleErrors = [];
+  page.on('pageerror', error => pageErrors.push(String(error.stack || error.message || error)));
+  page.on('console', msg => {
+    if (msg.type() === 'error' && !/app\.netlify\.com|favicon|permissions policy/i.test(msg.text())) consoleErrors.push(msg.text());
+  });
+
+  const sourceResponse = await page.request.get(`${process.env.TARGET_URL}/.netlify/functions/public-data?browser-source=${Date.now()}`, { timeout: 60000 });
+  if (!sourceResponse.ok()) throw new Error(`La fuente pública respondió ${sourceResponse.status()}.`);
+  const source = await sourceResponse.json();
+  const expected = {};
+  for (const owner of source.propietarios || []) {
+    const house = Number(owner.Casa);
+    const balance = payableBalance(owner);
+    if (Number.isFinite(house)) expected[house] = balance;
+  }
+  if (Object.keys(expected).length !== 15) throw new Error(`La fuente oficial devolvió ${Object.keys(expected).length} casas; se esperaban 15.`);
+
+  const response = await loadPortalWithOwners(page);
+  const welcome = page.locator('#welcomeSelector');
+  const firstValue = await optionValueForHouse(welcome, 1);
+  if (!firstValue) throw new Error('No se encontró una Casa 1 válida después de cargar los propietarios.');
+  await welcome.selectOption(firstValue);
+  if (await welcome.inputValue() !== firstValue) throw new Error('El selector de bienvenida no conservó el ID de Casa 1.');
+  await page.locator('#enterBtn').click();
+  await page.waitForTimeout(250);
+  const transition = await page.evaluate(() => ({
+    mainHidden: document.getElementById('main')?.classList.contains('hidden'),
+    welcomeHidden: document.getElementById('welcome')?.classList.contains('hidden'),
+    welcomeValue: document.getElementById('welcomeSelector')?.value || '',
+    userValue: document.getElementById('userSelector')?.value || '',
+    heading: document.getElementById('welcome-msg')?.textContent || ''
+  }));
+  if (transition.mainHidden) throw new Error(`La entrada al portal no se completó: ${JSON.stringify({ transition, pageErrors, consoleErrors })}`);
+  await page.locator('#main').waitFor({ state: 'visible', timeout: 15000 });
+
+  const breakdown = page.locator('[data-vla-breakdown-host="2026-07-11-photo-v6"]');
+  await breakdown.waitFor({ state: 'visible', timeout: 30000 });
+  await waitForLocatorText(page, breakdown, text => /Costo\s*Total/i.test(text) && /Su\s*Parte/i.test(text), 'el desglose completo', 30000);
+
+  const breakdownText = await breakdown.innerText();
+  if (!/VIGILANCIA/i.test(breakdownText)) throw new Error('El desglose visible no contiene VIGILANCIA.');
+  if (/Recargo 10% por pérdida del pronto pago/i.test(breakdownText)) throw new Error('El recargo prohibido aparece como renglón.');
+
+  const balances = {};
+  const selector = page.locator('#userSelector');
+  for (const house of Object.keys(expected).map(Number).sort((a, b) => a - b)) {
+    const value = await optionValueForHouse(selector, house);
+    if (!value) throw new Error(`No se encontró la Casa ${house}.`);
+    await selector.selectOption(value);
+    await waitForLocatorText(page, page.locator('#welcome-msg'), text => new RegExp(`^Casa\\s+${house}\\b`).test(String(text || '').trim()), `el encabezado de Casa ${house}`, 5000);
+    const shown = parseMoney(await page.locator('#m-total').innerText());
+    balances[house] = shown;
+    if (Math.abs(shown - expected[house].payable) > 0.009) {
+      throw new Error(`Casa ${house}: pagadero visible ${shown}, pagadero oficial ${expected[house].payable}; USD ${expected[house].usd}, Bs ref. ${expected[house].bsRef}, neto referencial ${expected[house].net}.`);
+    }
+  }
+
+  if (pageErrors.length) throw new Error(`Errores JavaScript: ${pageErrors.join(' | ')}`);
+  if (consoleErrors.length) throw new Error(`Errores de consola: ${consoleErrors.join(' | ')}`);
+  const result = {
+    target: process.env.TARGET_URL,
+    status: response.status(),
+    ownerRelease: process.env.OWNER_RELEASE,
+    sourceGeneratedAt: source.generatedAt || null,
+    sourceBalanceEngineVersion: source.balanceEngineVersion || null,
+    balanceContract: 'independent-currencies-payable-v3',
+    transition,
+    breakdownVisible: true,
+    hasCostoTotal: /Costo\s*Total/i.test(breakdownText),
+    hasSuParte: /Su\s*Parte/i.test(breakdownText),
+    hasVigilancia: /VIGILANCIA/i.test(breakdownText),
+    forbiddenRecargoVisible: /Recargo 10% por pérdida del pronto pago/i.test(breakdownText),
+    expected,
+    balances,
+    pageErrors,
+    consoleErrors
+  };
+  fs.writeFileSync('owner-browser-result.json', JSON.stringify(result, null, 2));
+  await page.screenshot({ path: 'owner-browser.png', fullPage: true });
+  console.log(JSON.stringify(result, null, 2));
+  await browser.close();
+})().catch(error => {
+  fs.writeFileSync('owner-browser-error.txt', String(error.stack || error));
+  console.error(error.stack || error);
+  process.exit(1);
+});
