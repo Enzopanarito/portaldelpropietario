@@ -64,7 +64,7 @@ function createHandler(deps={}){
    const fresh=await previousHandler(forceEvent(event)),payload=parseBody(fresh);
    if(fresh.statusCode===200){
     let writeWarning=null;
-    if(!blobReadError){try{await writeSnapshot(payload,snapshotEnv,versionRead)}catch(error){writeWarning=`${error.code||'PUBLIC_SNAPSHOT_WRITE'}: ${String(error.message||'').slice(0,240)}`}}
+    if(!blobReadError){try{await writeSnapshot(payload,snapshotEnv,versionRead,lease)}catch(error){writeWarning=`${error.code||'PUBLIC_SNAPSHOT_WRITE'}: ${String(error.message||'').slice(0,240)}`}}
     return response(200,payload,{...(fresh.headers||{}),'Cache-Control':'no-store','X-Public-Snapshot':blobReadError?'BLOB_UNAVAILABLE':writeWarning?'WRITE_WARNING':'REFRESH',...(writeWarning?{'X-Public-Snapshot-Warning':writeWarning}:{})});
    }
    if(cached&&cached.ok)return cachedResponse(cached.snapshot,'STALE_FALLBACK',{'Warning':'111 - "Airtable no disponible; se sirvió la última fotografía validada"'});

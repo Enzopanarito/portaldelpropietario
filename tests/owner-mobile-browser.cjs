@@ -1,8 +1,10 @@
 'use strict';
+
 const fs=require('fs');
 const {chromium}=require('playwright');
 
 const TARGET=process.env.TARGET_URL||'https://villalosapamates.netlify.app';
+const OWNER_RELEASE=process.env.OWNER_RELEASE||'';
 const viewports=[
   {name:'compact-320',width:320,height:740},
   {name:'iphone-390',width:390,height:844},
@@ -11,56 +13,54 @@ const viewports=[
 
 function transparent(value){return !value||value==='transparent'||value==='rgba(0, 0, 0, 0)'}
 function painted(color,image){return !transparent(color)||Boolean(image&&image!=='none')}
-function safeBodySample(value){return String(value||'').replace(/[\r\n\t]+/g,' ').slice(0,800)}
-
-async function publicDataDiagnostic(page){
-  try{
-    const response=await page.request.get(`${TARGET}/api/vla/public-data?force=1&diagnostic=${Date.now()}`,{timeout:30000});
-    const text=await response.text();
-    let parsed=null;try{parsed=JSON.parse(text)}catch(_){}
-    return{
-      status:response.status(),
-      ok:response.ok(),
-      contentType:response.headers()['content-type']||'',
-      snapshot:response.headers()['x-public-snapshot']||'',
-      environment:response.headers()['x-data-environment']||'',
-      airtableCalls:response.headers()['x-airtable-calls']||'',
-      owners:Array.isArray(parsed&&parsed.propietarios)?parsed.propietarios.length:null,
-      message:parsed&&parsed.message||'',
-      detail:parsed&&parsed.detail||'',
-      bodySample:safeBodySample(text)
-    };
-  }catch(error){return{error:String(error&&error.message||error)}}
+function houseNumber(label){
+  const match=String(label||'').trim().match(/^Casa\s+(\d+)\b/i);
+  return match?Number(match[1]):null;
 }
 
-async function waitForHouseOptions(page,expected=15,timeout=30000){
+async function waitForExactPortal(page,timeout=45000){
   const deadline=Date.now()+timeout;
-  let found=0;
+  let last={release:'',houses:[],options:[],handler:false};
   while(Date.now()<deadline){
-    const labels=await page.locator('#welcomeSelector option').allTextContents().catch(()=>[]);
-    found=labels.filter(label=>/^Casa\s+\d+\b/i.test(String(label||'').trim())).length;
-    if(found===expected)return;
+    last=await page.evaluate(()=>{
+      const options=Array.from(document.querySelectorAll('#welcomeSelector option')).map(option=>({
+        text:String(option.textContent||'').trim(),
+        value:String(option.value||'').trim()
+      }));
+      return{
+        release:document.documentElement.dataset.vlaOwnerRelease||'',
+        houses:options.map(option=>{
+          const match=option.text.match(/^Casa\s+(\d+)\b/i);
+          return match?Number(match[1]):null;
+        }).filter(Number.isInteger),
+        options,
+        handler:typeof document.getElementById('enterBtn')?.onclick==='function'
+      };
+    }).catch(()=>last);
+    const unique=[...new Set(last.houses)].sort((a,b)=>a-b);
+    const complete=unique.length===15&&unique.every((house,index)=>house===index+1);
+    const selectable=last.options.filter(option=>Number.isInteger(houseNumber(option.text))&&option.value).length===15;
+    const releaseOk=!OWNER_RELEASE||last.release===OWNER_RELEASE;
+    if(complete&&selectable&&releaseOk&&last.handler)return last;
     await page.waitForTimeout(250);
   }
-  const diagnostic=await publicDataDiagnostic(page);
-  throw new Error(`Se cargaron ${found} de ${expected} casas. Diagnóstico público: ${JSON.stringify(diagnostic)}`);
+  throw new Error(`El portal móvil no estabilizó la versión exacta con 15 casas seleccionables: ${JSON.stringify(last)}`);
 }
 
-async function loadPortalWithOwners(page){
+async function loadPortal(page){
   let lastError=null;
   for(let attempt=1;attempt<=3;attempt++){
     try{
       const response=await page.goto(`${TARGET}/?owner-mobile-test=${Date.now()}-${attempt}`,{waitUntil:'domcontentloaded',timeout:60000});
       if(!response||!response.ok())throw new Error(`El portal respondió ${response&&response.status()}.`);
-      await waitForHouseOptions(page,15,30000);
-      await page.waitForTimeout(300);
-      return response;
+      const state=await waitForExactPortal(page);
+      return{response,state};
     }catch(error){
       lastError=error;
-      if(attempt<3)await page.waitForTimeout(attempt*700);
+      if(attempt<3)await page.waitForTimeout(attempt*750);
     }
   }
-  throw new Error(`No se pudo estabilizar la bienvenida móvil después de la recarga de versión: ${lastError&&lastError.message}`);
+  throw new Error(`No se pudo estabilizar la bienvenida móvil: ${lastError&&lastError.message}`);
 }
 
 (async()=>{
@@ -76,9 +76,8 @@ async function loadPortalWithOwners(page){
     if(message.type()==='error'&&!expected.test(text))consoleErrors.push(text);
   });
 
-  // Reproduce el escenario vulnerable: el CDN visual no responde en el teléfono.
   await page.route(/https:\/\/cdn\.tailwindcss\.com(?:\/.*)?(?:\?.*)?$/,route=>{blockedTailwind++;return route.abort()});
-  const response=await loadPortalWithOwners(page);
+  const {response,state}=await loadPortal(page);
 
   const welcomeMetrics=await page.evaluate(()=>{
     const card=document.querySelector('#welcome>.card');
@@ -90,6 +89,7 @@ async function loadPortalWithOwners(page){
     const num=value=>Number.parseFloat(value)||0;
     return{
       marker:document.documentElement.dataset.vlaOwnerMobile||'',
+      release:document.documentElement.dataset.vlaOwnerRelease||'',
       stylesheetLink:Boolean(document.querySelector('link#vla-owner-mobile-v2')),
       stylesheetLoaded:Array.from(document.styleSheets).some(sheet=>String(sheet.href||'').includes('owner-mobile-v2.css')),
       documentWidth:document.documentElement.scrollWidth,
@@ -104,9 +104,9 @@ async function loadPortalWithOwners(page){
       buttonColor:style(button)?.color
     };
   });
-  // Si el CDN ya no está incluido, blockedTailwind queda en cero y el portal
-  // está en una condición todavía más segura: toda la presentación es local.
+
   if(welcomeMetrics.marker!=='fluid-v2')throw new Error('No se activó el marcador móvil fluid-v2.');
+  if(OWNER_RELEASE&&welcomeMetrics.release!==OWNER_RELEASE)throw new Error(`Se probó una versión distinta: ${welcomeMetrics.release||'sin marcador'}.`);
   if(!welcomeMetrics.stylesheetLink||!welcomeMetrics.stylesheetLoaded)throw new Error('No se cargó la hoja móvil local.');
   if(welcomeMetrics.documentWidth>welcomeMetrics.viewport+2)throw new Error('La bienvenida desborda horizontalmente.');
   if(!welcomeMetrics.card||welcomeMetrics.card.left<8||welcomeMetrics.card.right>welcomeMetrics.viewport-8)throw new Error('La tarjeta de bienvenida no cabe en el móvil.');
@@ -114,17 +114,22 @@ async function loadPortalWithOwners(page){
   if(welcomeMetrics.titleFont<25)throw new Error('El título móvil quedó demasiado pequeño.');
   if(welcomeMetrics.buttonHeight<50||!painted(welcomeMetrics.buttonBackground,welcomeMetrics.buttonBackgroundImage)||welcomeMetrics.buttonColor==='rgb(0, 0, 0)')throw new Error(`El botón de entrada perdió su estilo principal: ${JSON.stringify(welcomeMetrics)}.`);
 
-  const ownerOption=await page.locator('#welcomeSelector option').evaluateAll(options=>{
-    const candidates=options.map((item,index)=>({
-      index,
-      text:String(item.textContent||'').trim(),
-      value:String(item.value||'')
-    })).filter(item=>/^Casa\s+\d+\b/i.test(item.text));
-    return candidates.find(item=>/^Casa\s+15\b/i.test(item.text))||candidates[0]||null;
-  });
-  if(!ownerOption)throw new Error('No se encontró una casa válida.');
-  await page.locator('#welcomeSelector').selectOption({index:ownerOption.index});
-  await page.getByRole('button',{name:/Consultar Estado de Cuenta/i}).click();
+  const ownerOption=state.options.find(option=>houseNumber(option.text)===1&&option.value)
+    ||state.options.find(option=>Number.isInteger(houseNumber(option.text))&&option.value);
+  if(!ownerOption)throw new Error(`No se encontró una casa seleccionable: ${JSON.stringify(state.options)}`);
+  await page.locator('#welcomeSelector').selectOption(ownerOption.value);
+  const selected=await page.locator('#welcomeSelector').inputValue();
+  if(selected!==ownerOption.value)throw new Error('El selector no conservó el ID real de la casa elegida.');
+  await page.locator('#enterBtn').click();
+  await page.waitForTimeout(250);
+  const transition=await page.evaluate(()=>({
+    mainHidden:document.getElementById('main')?.classList.contains('hidden'),
+    welcomeHidden:document.getElementById('welcome')?.classList.contains('hidden'),
+    welcomeValue:document.getElementById('welcomeSelector')?.value||'',
+    userValue:document.getElementById('userSelector')?.value||'',
+    heading:document.getElementById('welcome-msg')?.textContent||''
+  }));
+  if(transition.mainHidden)throw new Error(`La transición móvil no abrió el portal: ${JSON.stringify({transition,pageErrors,consoleErrors})}`);
   await page.locator('#main').waitFor({state:'visible',timeout:15000});
   await page.locator('[data-vla-breakdown-host]').waitFor({state:'visible',timeout:30000});
 
@@ -187,7 +192,7 @@ async function loadPortalWithOwners(page){
 
   if(pageErrors.length)throw new Error(`Errores JavaScript: ${pageErrors.join(' | ')}`);
   if(consoleErrors.length)throw new Error(`Errores de consola: ${consoleErrors.join(' | ')}`);
-  const output={target:TARGET,status:response.status(),tailwindCdnRequested:blockedTailwind>0,blockedTailwind,welcome:welcomeMetrics,viewports:results,pageErrors,consoleErrors};
+  const output={target:TARGET,status:response.status(),ownerRelease:OWNER_RELEASE,selectedHouse:houseNumber(ownerOption.text),tailwindCdnRequested:blockedTailwind>0,blockedTailwind,welcome:welcomeMetrics,transition,viewports:results,pageErrors,consoleErrors};
   fs.writeFileSync('owner-mobile-result.json',JSON.stringify(output,null,2));
   console.log('OWNER_MOBILE_BROWSER_OK');
   await browser.close();
