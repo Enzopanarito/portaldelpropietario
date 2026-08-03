@@ -20,6 +20,10 @@ assert(ui.includes('readAsDataURL'),'Debe preparar el comprobante para análisis
 assert(ui.includes('if(missing.length){'),'El manejador debe cortar el envío cuando falten datos.');
 assert(ui.includes("submit.setAttribute('aria-disabled',missing.length?'true':'false')"),'El botón debe anunciar correctamente el estado incompleto sin impedir mostrar los errores.');
 assert(ui.indexOf('if(missing.length){')<ui.indexOf("fetch('/api/vla/report-payment"),'La validación debe ocurrir antes de cualquier solicitud de envío.');
+assert(ui.includes('submitErrorActive=true'),'El error real del servidor debe permanecer activo después de un rechazo.');
+assert(ui.includes('if(!submitErrorActive)'),'La validación no debe sobrescribir el mensaje real del servidor.');
+assert(ui.includes('toast(message,true)'),'El aviso rojo debe mostrar el motivo real y no un texto genérico.');
+assert(ui.includes('espera que la tasa BCV esté disponible'),'No se debe enviar un pago en bolívares sin tasa BCV disponible.');
 assert(!ui.includes('Confirma si escribiste el monto'),'No debe reaparecer el mensaje confuso de moneda.');
 assert(!signature.includes('form.onsubmit'),'La firma no puede sobrescribir el envío inteligente.');
 assert(!signature.includes('vla-payment-report-submit-guard'),'La firma no puede inyectar el guard heredado.');
