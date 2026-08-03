@@ -1,4 +1,4 @@
-name: Diagnose production admin login once
+name: Diagnose admin login health once
 
 on:
   push:
@@ -16,30 +16,28 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Probe live login endpoint with an invalid diagnostic password
+      - name: Probe full admin login health in production
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p diagnostics
           body_file=$(mktemp)
           status=$(curl -sS -o "$body_file" -w "%{http_code}" \
-            -X POST \
-            -H "Content-Type: application/json" \
-            --data '{"password":"__VLA_DIAGNOSTIC_INVALID_PASSWORD__"}' \
-            "https://villalosapamates.netlify.app/.netlify/functions/login")
+            -H "Cache-Control: no-cache" \
+            "https://villalosapamates.netlify.app/.netlify/functions/admin-login-health?ts=$(date +%s)")
           {
             echo "checked_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "http_status=$status"
             echo "response_body="
             cat "$body_file"
             echo
-          } > diagnostics/live-login-invalid-response.txt
+          } > diagnostics/admin-login-health-response.txt
       - name: Commit diagnostic result
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "vla-diagnostic-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add diagnostics/live-login-invalid-response.txt
-          git commit -m "Guardar diagnóstico del login en producción" || exit 0
+          git add diagnostics/admin-login-health-response.txt
+          git commit -m "Guardar salud del acceso administrativo" || exit 0
           git push
