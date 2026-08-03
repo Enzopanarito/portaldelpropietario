@@ -1,0 +1,4 @@
+checked_at=2026-08-03T08:12:35Z
+http_status=200
+response_body=
+{"ok":true,"checkedAt":"2026-08-03T08:12:34.907Z","environment":{"airtableToken":true,"airtableBase":true,"sessionKeyConfigured":false,"sessionSecretStrong":true},"config":{"recordFound":true,"parsed":true,"passwordConfigured":true,"algorithm":"scrypt-v1","version":6},"token":{"issued":true,"verified":true,"authVersion":6},"stage":"ready"}
