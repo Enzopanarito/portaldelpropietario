@@ -33,6 +33,9 @@
 [functions."provisional-access-expiration-scheduled"]
   schedule = "*/15 * * * *"
 
+[functions."gemini-direct-selftest-scheduled"]
+  schedule = "* * * * *"
+
 [[edge_functions]]
 function = "pwa-head"
 path = "/*"
