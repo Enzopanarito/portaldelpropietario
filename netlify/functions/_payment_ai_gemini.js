@@ -20,10 +20,11 @@ function extractionPrompt({promptVersion='',report={}}={}){
  const reportedMode=clean(report.targetMode||fields['Forma de Pago Reportada']);
  return[
   `Contrato de extracción: ${clean(promptVersion)||'VLA_PAYMENT_PROOF_V2'}.`,
-  'Analiza exclusivamente el comprobante adjunto. Devuelve únicamente el objeto JSON solicitado por el esquema.',
+  'Analiza exclusivamente el comprobante adjunto. Devuelve únicamente un objeto JSON, sin Markdown ni texto adicional.',
   'No apruebes ni rechaces pagos, no declares autenticidad y no decidas acceso al portón. Solo extrae evidencia visible.',
   `La cuenta indicada por el usuario es "${reportedMode||'no indicada'}"; úsala solo como contexto, nunca para inventar datos.`,
-  'Lee con especial cuidado monto, moneda o activo, fecha, hora, referencia completa, estado y receptor.',
+  'Campos exactos requeridos:',
+  '{"method":"TRANSFER_VE|MOBILE_PAYMENT_VE|ZELLE|TRANSFER_US|BINANCE_PAY|CRYPTO_TRANSFER|OTHER|UNKNOWN","bank_or_platform":string|null,"amount":number|null,"currency":"VES|USD|UNKNOWN","transaction_date":"YYYY-MM-DD"|null,"transaction_time":"HH:mm:ss"|null,"reference":string|null,"transaction_status":"COMPLETED|SENT|PROCESSED|PENDING|SCHEDULED|FAILED|CANCELLED|REJECTED|UNKNOWN","recipient_name":string|null,"recipient_phone":string|null,"recipient_email":string|null,"recipient_account_visible":string|null,"memo":string|null,"confidence":number,"critical_fields_visible":boolean,"warnings":string[],"possible_visual_modification":boolean}',
   'Reconoce comprobantes de bancos venezolanos, pago móvil, Zelle, transferencias de Estados Unidos y Binance.',
   'Para Binance usa BINANCE_PAY cuando sea Binance Pay y CRYPTO_TRANSFER cuando sea una transferencia on-chain.',
   'Si el activo visible es USDT, USDC o FDUSD usa currency="USD", conserva activo y red visibles en memo y no inventes equivalencias, red, TxID, Pay ID ni receptor.',
@@ -48,20 +49,19 @@ function structuredSchema(){
  cachedSchema=schema;
  return cachedSchema;
 }
-function buildGenerationConfig(model,{maxOutputTokens=DEFAULT_MAX_OUTPUT_TOKENS,thinkingLevel='minimal'}={}){
- const selected=safeModel(model),config={
+function buildGenerationConfig(_model,{maxOutputTokens=DEFAULT_MAX_OUTPUT_TOKENS}={}){
+ return{
+  temperature:0,
   maxOutputTokens:Math.max(512,Math.min(8192,Number(maxOutputTokens)||DEFAULT_MAX_OUTPUT_TOKENS)),
-  responseFormat:{text:{mimeType:'application/json',schema:structuredSchema()}}
+  responseMimeType:'application/json'
  };
- if(/^gemini-3(?:\.|[-])/i.test(selected))config.thinkingConfig={thinkingLevel:clean(thinkingLevel).toLowerCase()||'minimal'};
- return config;
 }
 function providerError(data,status){
  const providerStatus=clean(data?.error?.status),providerMessage=clean(data?.error?.message).slice(0,300);
  const code=status===429?'RATE_LIMIT':status===502||status===503||status===504?'PROVIDER_UNAVAILABLE':status===401||status===403?'AI_AUTH_FAILED':status===404?'AI_MODEL_NOT_FOUND':'AI_PROVIDER_ERROR';
  return codedError('El proveedor de análisis no pudo procesar el comprobante.',code,{status,providerStatus,providerMessage});
 }
-function createGeminiAnalysisRunner({fetchFn=global.fetch,apiKey=process.env.GEMINI_API_KEY,timeoutMs=DEFAULT_TIMEOUT_MS,maxOutputTokens=DEFAULT_MAX_OUTPUT_TOKENS,thinkingLevel='minimal'}={}){
+function createGeminiAnalysisRunner({fetchFn=global.fetch,apiKey=process.env.GEMINI_API_KEY,timeoutMs=DEFAULT_TIMEOUT_MS,maxOutputTokens=DEFAULT_MAX_OUTPUT_TOKENS}={}){
  if(typeof fetchFn!=='function')throw codedError('El cliente HTTP de análisis no está disponible.','AI_PROVIDER_UNAVAILABLE');
  return async function run({model,proof,report,promptVersion}={}){
   const key=clean(apiKey);if(!key)throw codedError('El proveedor de análisis no está configurado.','AI_NOT_CONFIGURED');
@@ -76,7 +76,7 @@ function createGeminiAnalysisRunner({fetchFn=global.fetch,apiKey=process.env.GEM
     signal:controller.signal,
     body:JSON.stringify({
      contents:[{role:'user',parts:[{text:extractionPrompt({promptVersion,report})},{inlineData:{mimeType,data:content.toString('base64')}}]}],
-     generationConfig:buildGenerationConfig(selectedModel,{maxOutputTokens,thinkingLevel})
+     generationConfig:buildGenerationConfig(selectedModel,{maxOutputTokens})
     })
    });
    const data=await response.json().catch(()=>({}));

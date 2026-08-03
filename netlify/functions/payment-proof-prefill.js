@@ -3,7 +3,7 @@
 const {withAirtableUsage}=require('./_airtable_meter');
 const {decodeAttachment}=require('./_payment_report_attachment');
 const {createGeminiAnalysisRunner}=require('./_payment_ai_gemini');
-const {getActiveModelSelection}=require('./_payment_ai_model_discovery');
+const {discoverCompatibleModel}=require('./_payment_ai_model_discovery');
 const contract=require('./_payment_ai_contract');
 const {consume}=require('./_persistent_rate_limit');
 const {safeDisplayText}=require('./_security_utils');
@@ -12,10 +12,10 @@ const {listAll,TABLES,aiConfig}=require('./_payment_report_automation');
 
 const WINDOW_MS=60*60*1000;
 const ACCEPTED_STATUSES=new Set(['COMPLETED','SENT','PROCESSED']);
-const FAST_MODEL='gemini-3.5-flash-lite';
-const FALLBACK_MODEL='gemini-3.6-flash';
-const FAST_TIMEOUT_MS=8000;
-const PROXY_TIMEOUT_MS=12000;
+const FAST_MODEL='gemini-2.5-flash-lite';
+const FALLBACK_MODEL='gemini-2.5-flash';
+const FAST_TIMEOUT_MS=15000;
+const PROXY_TIMEOUT_MS=15000;
 const PROXY_URL=String(process.env.PAYMENT_PROOF_AI_PROXY_URL||'https://gemini-proxy-seinca.vercel.app/api/payment-proof').trim();
 const PROXY_CLIENT='villa-los-apamates-payment-proof-v1';
 
@@ -39,23 +39,20 @@ function unique(values){return[...new Set((values||[]).map(value=>String(value||
 function modelCandidates(config={},selection=null){
  return unique([
   selection?.primaryModel,
-  config.primaryModel,
-  FAST_MODEL,
+  ...(Array.isArray(selection?.models)?selection.models:[]),
   selection?.secondaryModel,
-  config.secondaryModel,
-  FALLBACK_MODEL
- ]).slice(0,4);
+  FAST_MODEL,
+  FALLBACK_MODEL,
+  config.primaryModel,
+  config.secondaryModel
+ ]).slice(0,6);
 }
 function errorCode(error){return String(error?.code||'').trim().toUpperCase()}
 function canTryAnotherModel(error){
  const status=Number(error?.status||0),code=errorCode(error);
  if(['INVALID_ATTACHMENT'].includes(code))return false;
- if(['AI_MODEL_INVALID','AI_MODEL_NOT_FOUND','RATE_LIMIT','PROVIDER_UNAVAILABLE','TIMEOUT','EMPTY_OUTPUT','AI_PROVIDER_ERROR','INVALID_OUTPUT','AI_AUTH_FAILED','AI_NOT_CONFIGURED'].includes(code))return true;
- return status===400||status===408||status===409||status===425||status===429||status>=500;
-}
-function canTryDirectAlternative(error){
- const status=Number(error?.status||0),code=errorCode(error);
- return code!=='AI_AUTH_FAILED'&&status!==401&&status!==403;
+ if(['AI_MODEL_INVALID','AI_MODEL_NOT_FOUND','RATE_LIMIT','PROVIDER_UNAVAILABLE','TIMEOUT','EMPTY_OUTPUT','AI_PROVIDER_ERROR','INVALID_OUTPUT','AI_MODEL_SELECTION_MISSING','AI_MODEL_DISCOVERY_FAILED'].includes(code))return true;
+ return status===400||status===404||status===408||status===409||status===425||status===429||status>=500;
 }
 function localGeminiConfigured(){return Boolean(String(process.env.GEMINI_API_KEY||'').trim())}
 function validateRawForPrefill(raw){
@@ -83,28 +80,28 @@ async function analyzeViaProxy({proof,promptVersion}={}){
  }finally{clearTimeout(timer)}
 }
 async function analyzeDirect({model,proof,report,promptVersion}={}){
- const runner=createGeminiAnalysisRunner({timeoutMs:FAST_TIMEOUT_MS,maxOutputTokens:2048,thinkingLevel:'minimal'});
+ const runner=createGeminiAnalysisRunner({timeoutMs:FAST_TIMEOUT_MS,maxOutputTokens:2048});
  const raw=await runner({model,proof,report,promptVersion});
  return{raw:validateRawForPrefill(raw),model};
 }
-function bestAggregateError(error,lastError){
- const errors=Array.isArray(error?.errors)?error.errors:[];
- return errors.find(item=>['AI_AUTH_FAILED','INVALID_ATTACHMENT'].includes(errorCode(item)))||errors[0]||lastError||error;
-}
 async function analyzeWithFallback({config,proof,report,promptVersion}={}){
  if(!localGeminiConfigured())return analyzeViaProxy({proof,promptVersion});
- const selection=await getActiveModelSelection().catch(()=>null),models=modelCandidates(config,selection),primary=models[0]||FAST_MODEL;
- let primaryError=null;
- try{return await analyzeDirect({model:primary,proof,report,promptVersion})}
- catch(error){primaryError=error;if(!canTryAnotherModel(error))throw error}
- const alternatives=[];
- if(canTryDirectAlternative(primaryError)){
-  alternatives.push(...models.filter(model=>model!==primary).slice(0,2).map(model=>analyzeDirect({model,proof,report,promptVersion})));
+ let selection=null,discoveryError=null;
+ try{selection=await discoverCompatibleModel()}
+ catch(error){discoveryError=error}
+ const discoveryCode=errorCode(discoveryError),models=modelCandidates(config,selection),directAllowed=!['AI_AUTH_FAILED','AI_NOT_CONFIGURED'].includes(discoveryCode);
+ let lastError=discoveryError;
+ if(directAllowed){
+  for(const model of models.slice(0,3)){
+   try{return await analyzeDirect({model,proof,report,promptVersion})}
+   catch(error){lastError=error;if(!canTryAnotherModel(error))break}
+  }
  }
- if(PROXY_URL)alternatives.push(analyzeViaProxy({proof,promptVersion}));
- if(!alternatives.length)throw primaryError;
- try{return await Promise.any(alternatives)}
- catch(error){const selected=bestAggregateError(error,primaryError);selected.primaryProviderCode=errorCode(primaryError);throw selected}
+ if(PROXY_URL){
+  try{return await analyzeViaProxy({proof,promptVersion})}
+  catch(error){if(!lastError||['AI_AUTH_FAILED','AI_NOT_CONFIGURED'].includes(errorCode(lastError)))lastError=error}
+ }
+ throw lastError||Object.assign(new Error('No hay un modelo disponible para analizar el comprobante.'),{code:'AI_NOT_CONFIGURED'});
 }
 
 const handler=async event=>{
@@ -129,7 +126,7 @@ const handler=async event=>{
   const message=String(error?.message||'');
   if(['INVALID_ATTACHMENT'].includes(errorCode(error))||/adjunto|JPG|PNG|PDF|3 MB|formato/i.test(message))return json(400,{message:safeDisplayText(message,300),manualAvailable:false});
   console.error('Prelectura de comprobante:',safeDisplayText(error?.code||message,300));
-  return json(503,{message:'La lectura inteligente no respondió. Intente nuevamente o complete los datos manualmente.',manualAvailable:true,reason:safeDisplayText(error?.code||'AI_PROVIDER_ERROR',80),providerStatus:Number(error?.status)||null,primaryProviderCode:safeDisplayText(error?.primaryProviderCode||'',80)||null});
+  return json(503,{message:'La lectura inteligente no respondió. Intente nuevamente o complete los datos manualmente.',manualAvailable:true,reason:safeDisplayText(error?.code||'AI_PROVIDER_ERROR',80),providerStatus:Number(error?.status)||null});
  }
 };
 
@@ -138,7 +135,6 @@ exports.missingFields=missingFields;
 exports.methodLabel=methodLabel;
 exports.modelCandidates=modelCandidates;
 exports.canTryAnotherModel=canTryAnotherModel;
-exports.canTryDirectAlternative=canTryDirectAlternative;
 exports.validateRawForPrefill=validateRawForPrefill;
 exports.analyzeViaProxy=analyzeViaProxy;
 exports.analyzeDirect=analyzeDirect;
