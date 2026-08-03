@@ -11,6 +11,9 @@ permissions:
   contents: read
   statuses: write
 
+env:
+  OWNER_RELEASE: owner-mobile-fluid-v2-payment-smart-v5-dark-wcag-v1-r3-2026-08-03
+
 jobs:
   verify-owner-mobile:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
@@ -42,23 +45,25 @@ jobs:
             echo "url=https://villalosapamates.netlify.app" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Wait for preview assets
+      - name: Wait for exact preview assets
         env:
           TARGET_URL: ${{ steps.target.outputs.url }}
         shell: bash
         run: |
           set -euo pipefail
           for attempt in $(seq 1 90); do
-            html_code="$(curl --silent --show-error --location --output /tmp/owner.html --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/?owner-release=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            headers="$(curl --silent --show-error --location --dump-header - --output /tmp/owner.html --max-time 30 "${TARGET_URL}/?owner-release=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            html_code="$(printf '%s' "$headers" | awk 'toupper($1) ~ /^HTTP\// {code=$2} END{print code}')"
+            marker="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-owner-release"{gsub("\r","");print $2}' | tail -1)"
             dark_code="$(curl --silent --show-error --location --output /tmp/owner-dark.css --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/owner-dark-contrast-v1.css?v=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
-            if [ "$html_code" = "200" ] && [ "$dark_code" = "200" ] && grep -q 'Contraste integral modo oscuro wcag-v1' /tmp/owner-dark.css; then
-              echo "Preview y capa de contraste disponibles en $TARGET_URL"
+            if [ "$html_code" = "200" ] && [ "$dark_code" = "200" ] && [ "$marker" = "$OWNER_RELEASE" ] && grep -q 'Contraste integral modo oscuro wcag-v1' /tmp/owner-dark.css; then
+              echo "Preview exacto y capa de contraste disponibles en $TARGET_URL"
               exit 0
             fi
-            echo "Attempt $attempt: html=${html_code:-missing} dark=${dark_code:-missing}"
+            echo "Attempt $attempt: html=${html_code:-missing} dark=${dark_code:-missing} owner-release=${marker:-missing}"
             sleep 10
           done
-          echo "La preview o la capa de contraste no estuvieron disponibles."
+          echo "La versión exacta del preview o la capa de contraste no estuvieron disponibles."
           exit 1
 
       - name: Install Chromium
