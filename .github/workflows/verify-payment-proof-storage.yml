@@ -18,7 +18,7 @@ jobs:
         run: |
           set -euo pipefail
           tmp="$(mktemp)"
-          status="$(curl --silent --show-error --max-time 45 -o "$tmp" -w '%{http_code}' 'https://villalosapamates.netlify.app/.netlify/functions/payment-proof-storage-probe?token=E3PV8TwOndstfutuJDbk-8Y983R3EFpQ')"
+          status="$(curl --silent --show-error --max-time 45 -o "$tmp" -w '%{http_code}' 'https://villalosapamates.netlify.app/api/vla/internal/payment-proof-storage-probe-20260803?token=E3PV8TwOndstfutuJDbk-8Y983R3EFpQ')"
           response="$(cat "$tmp")"
           rm -f "$tmp"
           echo "HTTP_STATUS=${status}"
