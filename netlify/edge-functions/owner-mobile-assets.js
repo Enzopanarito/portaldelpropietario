@@ -1,5 +1,5 @@
 const OWNER_PATHS=['/','/index.html'];
-const MOBILE_RELEASE='owner-mobile-fluid-v2-payment-smart-v5-dark-wcag-v1-r3-2026-08-03';
+const MOBILE_RELEASE='owner-mobile-fluid-v2-payment-smart-v5-dark-wcag-v1-r5-2026-08-03';
 const BREAKDOWN_PRESENTATION='2026-07-11-photo-v6';
 const STYLE_HREF=`/owner-mobile-v2.css?v=${MOBILE_RELEASE}`;
 const LAYOUT_FIX_HREF=`/owner-mobile-v2-layout-fix.css?v=${MOBILE_RELEASE}`;
@@ -18,6 +18,7 @@ const releaseGuard=`<script id="vla-owner-mobile-release">
   var previous='';
   try{previous=localStorage.getItem(key)||'';localStorage.setItem(key,version)}catch(_){}
   if(previous&&previous!==version)clearCaches();
+  window.addEventListener('pageshow',function(event){if(event.persisted)location.reload()});
   document.documentElement.dataset.vlaOwnerMobile='fluid-v2';
   document.documentElement.dataset.vlaOwnerDarkContrast='wcag-v1';
   document.documentElement.dataset.vlaOwnerRelease=version;
