@@ -1,4 +1,4 @@
-name: Repair production admin session once
+name: Verify repaired admin login once
 
 on:
   push:
@@ -11,58 +11,20 @@ permissions:
   contents: write
 
 jobs:
-  repair:
+  verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN || secrets.NETLIFY_TOKEN }}
-      NETLIFY_SITE_ID: 74f4f122-352c-4a3b-aa6f-5937ab99f8d3
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-
-      - name: Restore strong production session key
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -z "${NETLIFY_AUTH_TOKEN:-}" ]; then
-            echo "::error::Netlify authentication secret is unavailable."
-            exit 1
-          fi
-          session_key=$(openssl rand -hex 48)
-          echo "::add-mask::$session_key"
-          npx -y netlify-cli@latest env:set ADMIN_TOKEN_SECRET "$session_key" \
-            --context production \
-            --scope functions \
-            --secret \
-            --force \
-            --site "$NETLIFY_SITE_ID" \
-            --auth "$NETLIFY_AUTH_TOKEN"
-
-      - name: Trigger production rebuild
-        shell: bash
-        run: |
-          set -euo pipefail
-          curl -fsS -X POST \
-            -H "Authorization: Bearer ${NETLIFY_AUTH_TOKEN}" \
-            -H "Content-Type: application/json" \
-            "https://api.netlify.com/api/v1/sites/${NETLIFY_SITE_ID}/builds" >/dev/null
-
-      - name: Wait for production and verify session issuance
+      - name: Verify complete session issuance in production
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p diagnostics
           body_file=$(mktemp)
-          status="000"
-          for attempt in $(seq 1 30); do
-            sleep 10
-            status=$(curl -sS -o "$body_file" -w "%{http_code}" \
-              -H "Cache-Control: no-cache" \
-              "https://villalosapamates.netlify.app/.netlify/functions/admin-login-health?ts=$(date +%s)")
-            if [ "$status" = "200" ] && grep -q '"ok":true' "$body_file"; then
-              break
-            fi
-          done
+          status=$(curl -sS -o "$body_file" -w "%{http_code}" \
+            -H "Cache-Control: no-cache" \
+            "https://villalosapamates.netlify.app/.netlify/functions/admin-login-health?ts=$(date +%s)")
           {
             echo "checked_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "http_status=$status"
@@ -71,12 +33,10 @@ jobs:
             echo
           } > diagnostics/admin-login-repair-result.txt
           if [ "$status" != "200" ] || ! grep -q '"ok":true' "$body_file"; then
-            echo "::error::Admin session health check still failed."
+            echo "::error::Admin session health check failed."
             exit 1
           fi
-
-      - name: Commit verified repair result
-        if: success()
+      - name: Commit verified result
         shell: bash
         run: |
           set -euo pipefail
