@@ -1,0 +1,29 @@
+name: Verificar almacenamiento de comprobantes
+
+on:
+  pull_request:
+    paths:
+      - '.github/payment-proof-storage-probe-trigger.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-storage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Probar cifrado, lectura y limpieza
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl --fail --silent --show-error --max-time 45 'https://villalosapamates.netlify.app/.netlify/functions/payment-proof-storage-probe?token=E3PV8TwOndstfutuJDbk-8Y983R3EFpQ')"
+          echo "PROBE_RESPONSE=${response}"
+          python3 - "$response" <<'PY'
+          import json, sys
+          data = json.loads(sys.argv[1])
+          required = ('ok', 'encryptedWrite', 'decryptedRead', 'cleanup')
+          if not all(data.get(key) is True for key in required):
+              raise SystemExit(f"Storage probe failed: {data}")
+          print('PAYMENT_PROOF_STORAGE_OK')
+          PY
