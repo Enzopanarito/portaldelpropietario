@@ -7,6 +7,7 @@ const ACTIVE_KEY='active';
 const DAILY_PREFIX='daily/';
 const ACTIVE_TTL_MS=36*60*60*1000;
 const STALE_TTL_MS=7*24*60*60*1000;
+const CLAIM_STALE_MS=2*60*1000;
 const MEMORY_TTL_MS=5*60*1000;
 const CANDIDATE_PRIORITY=Object.freeze([
  'gemini-3.5-flash-lite',
@@ -68,14 +69,20 @@ async function persistModelSelection(selection,{storeFactory=defaultStore,now=()
  return value;
 }
 async function claimDailyRun({date=caracasDate(),storeFactory=defaultStore,now=()=>Date.now()}={}){
- const store=await storeFactory(),key=`${DAILY_PREFIX}${clean(date)}`;
- const record={status:'RUNNING',date:clean(date),startedAt:Number(now()),schemaVersion:2};
+ const store=await storeFactory(),key=`${DAILY_PREFIX}${clean(date)}`,currentTime=Number(now());
+ const record={status:'RUNNING',date:clean(date),startedAt:currentTime,schemaVersion:2};
  const write=await store.setJSON(key,record,{onlyIfNew:true});
- if(write&&write.modified===false){
-  const existing=await store.get(key,{type:'json',consistency:'strong'}).catch(()=>null);
-  return{claimed:false,key,record:existing||{status:'ALREADY_CLAIMED',date:clean(date)},store};
+ if(!write||write.modified!==false)return{claimed:true,recovered:false,key,record,store};
+ const current=typeof store.getWithMetadata==='function'
+  ?await store.getWithMetadata(key,{type:'json',consistency:'strong'}).catch(()=>null)
+  :null;
+ const existing=current?.data||await store.get(key,{type:'json',consistency:'strong'}).catch(()=>null);
+ const stale=existing?.status==='RUNNING'&&currentTime-Number(existing.startedAt||0)>=CLAIM_STALE_MS;
+ if(stale&&current?.etag){
+  const takeover=await store.setJSON(key,record,{onlyIfMatch:current.etag});
+  if(!takeover||takeover.modified!==false)return{claimed:true,recovered:true,key,record,store,previous:existing};
  }
- return{claimed:true,key,record,store};
+ return{claimed:false,recovered:false,key,record:existing||{status:'ALREADY_CLAIMED',date:clean(date)},store};
 }
 async function finishDailyRun(claim,result,{now=()=>Date.now()}={}){
  if(!claim?.store||!claim?.key)return null;
@@ -103,7 +110,7 @@ async function discoverCompatibleModel(options={}){
 }
 
 module.exports={
- STORE_NAME,ACTIVE_KEY,DAILY_PREFIX,ACTIVE_TTL_MS,STALE_TTL_MS,MEMORY_TTL_MS,CANDIDATE_PRIORITY,
+ STORE_NAME,ACTIVE_KEY,DAILY_PREFIX,ACTIVE_TTL_MS,STALE_TTL_MS,CLAIM_STALE_MS,MEMORY_TTL_MS,CANDIDATE_PRIORITY,
  clean,codedError,modelId,supportsGenerate,score,compatibleModels,chooseCompatibleModel,cacheKey,caracasDate,uniqueModels,isValidSelection,
  defaultStore,getActiveModelSelection,persistModelSelection,claimDailyRun,finishDailyRun,benchmarkScore,rankBenchmarks,discoverCompatibleModel
 };
