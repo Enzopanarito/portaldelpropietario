@@ -7,14 +7,17 @@ const gemini=require('../netlify/functions/_payment_ai_gemini');
 const prefill=require('../netlify/functions/payment-proof-prefill');
 
 function memoryStore(){
- const values=new Map();
+ const values=new Map(),etags=new Map();let version=0;
  return{
   values,
   async get(key){return values.has(key)?structuredClone(values.get(key)):null},
+  async getWithMetadata(key){return values.has(key)?{data:structuredClone(values.get(key)),etag:etags.get(key),metadata:{}}:null},
   async setJSON(key,value,options={}){
-   if(options.onlyIfNew&&values.has(key))return{modified:false};
+   if(options.onlyIfNew&&values.has(key))return{modified:false,etag:etags.get(key)};
+   if(options.onlyIfMatch&&options.onlyIfMatch!==etags.get(key))return{modified:false,etag:etags.get(key)};
    values.set(key,structuredClone(value));
-   return{modified:true,etag:'test-etag'};
+   const etag=`test-etag-${++version}`;etags.set(key,etag);
+   return{modified:true,etag};
   }
  };
 }
@@ -38,6 +41,25 @@ test('la selección diaria se reclama una sola vez por fecha',async()=>{
  assert.equal(first.claimed,true);
  assert.equal(second.claimed,false);
  assert.equal(second.record.status,'RUNNING');
+});
+
+test('un bloqueo RUNNING vencido se recupera atómicamente',async()=>{
+ const store=memoryStore(),factory=async()=>store;
+ const first=await discovery.claimDailyRun({date:'2026-08-03',storeFactory:factory,now:()=>100});
+ const recovered=await discovery.claimDailyRun({date:'2026-08-03',storeFactory:factory,now:()=>100+discovery.CLAIM_STALE_MS+1});
+ assert.equal(first.claimed,true);
+ assert.equal(recovered.claimed,true);
+ assert.equal(recovered.recovered,true);
+ assert.equal(recovered.previous.startedAt,100);
+});
+
+test('un día finalizado nunca se vuelve a reclamar',async()=>{
+ const store=memoryStore(),factory=async()=>store;
+ const claim=await discovery.claimDailyRun({date:'2026-08-03',storeFactory:factory,now:()=>100});
+ await discovery.finishDailyRun(claim,{status:'SUCCESS'},{now:()=>200});
+ const later=await discovery.claimDailyRun({date:'2026-08-03',storeFactory:factory,now:()=>100+discovery.CLAIM_STALE_MS+5000});
+ assert.equal(later.claimed,false);
+ assert.equal(later.record.status,'SUCCESS');
 });
 
 test('clasifica modelos por precisión y después por latencia',()=>{
