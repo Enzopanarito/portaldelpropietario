@@ -11,7 +11,11 @@ function memoryStore(){
  return{
   values,
   async get(key){return values.has(key)?structuredClone(values.get(key)):null},
-  async setJSON(key,value){values.set(key,structuredClone(value))}
+  async setJSON(key,value,options={}){
+   if(options.onlyIfNew&&values.has(key))return{modified:false};
+   values.set(key,structuredClone(value));
+   return{modified:true,etag:'test-etag'};
+  }
  };
 }
 
