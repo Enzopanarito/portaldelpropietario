@@ -22,10 +22,16 @@ test('los recalculadores Edge de balances fueron retirados',()=>{
  assert.doesNotMatch(config,/function\s*=\s*"currency-balance-fix"/);
 });
 
+test('existe una sola capa responsable de envolver renderUser',()=>{
+ const contractSource=fs.readFileSync(path.join(root,'balance-contract-v1.js'),'utf8');
+ const viewSource=fs.readFileSync(path.join(root,'owner-financial-view-v1.js'),'utf8');
+ assert.doesNotMatch(contractSource,/installRender/);
+ assert.doesNotMatch(contractSource,/function\s+currentOwner\s*\(/);
+ assert.match(viewSource,/function\s+installRenderWrapper\s*\(/);
+ assert.match(viewSource,/total\.textContent=usd\(fixed\.payableTotal\)/);
+});
+
 test('un crédito nunca se presenta como deuda negativa en Total pendiente',()=>{
- const source=fs.readFileSync(path.join(root,'balance-contract-v1.js'),'utf8');
- assert.match(source,/totalNode\.textContent=formatUsd\(root,fixed\.payableTotal\)/);
- assert.doesNotMatch(source,/totalNode\.textContent[^\n]*saldoFavor[^\n]*'-'/);
  const contract=require(path.join(root,'balance-contract-v1.js'));
  const pureCredit=contract.authoritative({'Saldo USD Actual':-20,'Saldo Bs Ref Actual':0,'Saldo Total Actual':-20},{});
  assert.equal(pureCredit.payableTotal,0);
@@ -34,6 +40,8 @@ test('un crédito nunca se presenta como deuda negativa en Total pendiente',()=>
  assert.equal(mixed.payableTotal,50);
  assert.equal(mixed.debtUsd,50);
  assert.equal(mixed.debtBs,-294.76);
+ const house10=contract.authoritative({'Saldo USD Actual':170,'Saldo Bs Ref Actual':304.99,'Saldo Total Actual':474.99},{});
+ assert.equal(house10.payableTotal,474.99);
 });
 
 test('la caché pública usa únicamente la API oficial de Netlify Blobs',()=>{
