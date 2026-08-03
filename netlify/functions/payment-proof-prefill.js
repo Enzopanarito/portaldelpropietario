@@ -15,6 +15,9 @@ const ACCEPTED_STATUSES=new Set(['COMPLETED','SENT','PROCESSED']);
 const FAST_MODEL='gemini-2.5-flash-lite';
 const FALLBACK_MODEL='gemini-2.5-flash';
 const FAST_TIMEOUT_MS=15000;
+const PROXY_TIMEOUT_MS=35000;
+const PROXY_URL=String(process.env.PAYMENT_PROOF_AI_PROXY_URL||'https://gemini-proxy-seinca.vercel.app/api/payment-proof').trim();
+const PROXY_CLIENT='villa-los-apamates-payment-proof-v1';
 
 function json(statusCode,body,headers={}){return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store, no-cache, must-revalidate','X-Content-Type-Options':'nosniff',...headers},body:JSON.stringify(body)}}
 function validRecordId(value){return /^rec[A-Za-z0-9]{14}$/.test(String(value||'').trim())}
@@ -34,11 +37,31 @@ function missingFields(analysis){
 async function loadAiConfig(){const records=await listAll(TABLES.config,'?maxRecords=1'),record=records[0]||{fields:{}},rules=mergeConfig(record);return aiConfig(record,rules)}
 function modelCandidates(config={}){return[config.primaryModel,FAST_MODEL,config.secondaryModel,FALLBACK_MODEL].map(value=>String(value||'').trim()).filter((value,index,array)=>value&&array.indexOf(value)===index)}
 function canTryAnotherModel(error){const status=Number(error?.status||0);return['AI_MODEL_INVALID','RATE_LIMIT','PROVIDER_UNAVAILABLE','TIMEOUT','EMPTY_OUTPUT','AI_PROVIDER_ERROR'].includes(String(error?.code||''))&&(status!==401&&status!==403)}
+function localGeminiConfigured(){return Boolean(String(process.env.GEMINI_API_KEY||'').trim())}
+async function analyzeViaProxy({proof,promptVersion}={}){
+ if(!PROXY_URL)throw Object.assign(new Error('No existe un lector alterno configurado.'),{code:'AI_NOT_CONFIGURED'});
+ const content=Buffer.isBuffer(proof?.content)?proof.content:null,contentType=String(proof?.contentType||'').trim();
+ if(!content||!content.length||!contentType)throw Object.assign(new Error('El comprobante no está disponible para análisis.'),{code:'INVALID_ATTACHMENT'});
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),PROXY_TIMEOUT_MS);
+ try{
+  const response=await fetch(PROXY_URL,{method:'POST',headers:{'Content-Type':'application/json','X-VLA-Client':PROXY_CLIENT},signal:controller.signal,body:JSON.stringify({content:content.toString('base64'),contentType,promptVersion})});
+  const payload=await response.json().catch(()=>({}));
+  if(!response.ok||payload?.ok!==true||!String(payload?.raw||'').trim()){
+   const error=Object.assign(new Error(String(payload?.message||'El lector alterno no pudo procesar el comprobante.')),{code:String(payload?.code||'AI_PROVIDER_ERROR'),status:Number(response.status)||0});
+   throw error;
+  }
+  return{raw:String(payload.raw).trim(),model:`proxy:${String(payload.model||'gemini').trim()}`};
+ }catch(error){
+  if(error?.name==='AbortError')throw Object.assign(new Error('El análisis alterno excedió el tiempo máximo.'),{code:'TIMEOUT',status:504});
+  throw error;
+ }finally{clearTimeout(timer)}
+}
 async function analyzeWithFallback({config,proof,report,promptVersion}={}){
+ if(!localGeminiConfigured())return analyzeViaProxy({proof,promptVersion});
  let detected='';try{detected=(await discoverCompatibleModel()).model}catch(error){if(Number(error?.status)===401||Number(error?.status)===403)throw error}
  const runner=createGeminiAnalysisRunner({timeoutMs:FAST_TIMEOUT_MS}),models=modelCandidates({...config,primaryModel:detected||config.primaryModel});let lastError=null;
  for(let index=0;index<models.length;index++)try{return{raw:await runner({model:models[index],proof,report,promptVersion}),model:models[index]}}catch(error){lastError=error;if(index===models.length-1||!canTryAnotherModel(error))break}
- throw lastError||Object.assign(new Error('No hay un modelo disponible para analizar el comprobante.'),{code:'AI_NOT_CONFIGURED'});
+ try{return await analyzeViaProxy({proof,promptVersion})}catch(proxyError){proxyError.localProviderCode=String(lastError?.code||'');throw proxyError}
 }
 
 const handler=async event=>{
@@ -58,7 +81,7 @@ const handler=async event=>{
   const validation=contract.validateAnalysis(parsed.value,{minimumConfidence:0}),fatal=(validation.issueCodes||[]).filter(code=>!['CRITICAL_FIELDS_MISSING','LOW_CONFIDENCE'].includes(code));
   if(fatal.length)return json(422,{message:'El comprobante no devolvió datos utilizables. Complete los datos manualmente.',manualAvailable:true,reason:fatal[0]});
   const analysis=contract.normalizeAnalysis(parsed.value),missing=missingFields(analysis),bank=analysis.bank_or_platform||methodLabel(analysis.method);
-  return json(200,{success:true,complete:missing.length===0,analysis:{amount:analysis.amount,currency:analysis.currency,reference:analysis.reference||'',bank,method:analysis.method,transactionDate:analysis.transaction_date||'',transactionTime:analysis.transaction_time||'',transactionStatus:analysis.transaction_status,recipient:analysis.recipient_name||analysis.recipient_phone||analysis.recipient_email||analysis.recipient_account_visible||'',confidence:analysis.confidence,warnings:analysis.warnings||[],possibleVisualModification:analysis.possible_visual_modification===true},missing});
+  return json(200,{success:true,complete:missing.length===0,analysis:{amount:analysis.amount,currency:analysis.currency,reference:analysis.reference||'',bank,method:analysis.method,transactionDate:analysis.transaction_date||'',transactionTime:analysis.transaction_time||'',transactionStatus:analysis.transaction_status,recipient:analysis.recipient_name||analysis.recipient_phone||analysis.recipient_email||analysis.recipient_account_visible||'',confidence:analysis.confidence,warnings:analysis.warnings||[],possibleVisualModification:analysis.possible_visual_modification===true},missing,analysisProvider:result.model});
  }catch(error){
   const message=String(error?.message||'');
   if(['INVALID_ATTACHMENT'].includes(String(error?.code||''))||/adjunto|JPG|PNG|PDF|3 MB|formato/i.test(message))return json(400,{message:safeDisplayText(message,300),manualAvailable:false});
@@ -72,4 +95,5 @@ exports.missingFields=missingFields;
 exports.methodLabel=methodLabel;
 exports.modelCandidates=modelCandidates;
 exports.canTryAnotherModel=canTryAnotherModel;
+exports.analyzeViaProxy=analyzeViaProxy;
 exports.analyzeWithFallback=analyzeWithFallback;
