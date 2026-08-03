@@ -40,7 +40,7 @@ function isValidSelection(value){
 }
 async function defaultStore(){
  const{getStore}=await import('@netlify/blobs');
- return getStore(STORE_NAME,{consistency:'strong'});
+ return getStore({name:STORE_NAME,consistency:'strong'});
 }
 async function getActiveModelSelection({storeFactory=defaultStore,now=()=>Date.now(),allowStale=false}={}){
  const current=Number(now()),cached=memory.get(ACTIVE_KEY);
@@ -51,7 +51,7 @@ async function getActiveModelSelection({storeFactory=defaultStore,now=()=>Date.n
  let store;
  try{store=await storeFactory()}catch(_){return null}
  let saved=null;
- try{saved=await store.get(ACTIVE_KEY,{type:'json'})}catch(_){return null}
+ try{saved=await store.get(ACTIVE_KEY,{type:'json',consistency:'strong'})}catch(_){return null}
  if(!isValidSelection(saved))return null;
  const validUntil=Number(saved.validUntil||0),selectedAt=Number(saved.selectedAt||0);
  if(!(validUntil>current||allowStale&&current-selectedAt<=STALE_TTL_MS))return null;
@@ -68,10 +68,13 @@ async function persistModelSelection(selection,{storeFactory=defaultStore,now=()
  return value;
 }
 async function claimDailyRun({date=caracasDate(),storeFactory=defaultStore,now=()=>Date.now()}={}){
- const store=await storeFactory(),key=`${DAILY_PREFIX}${clean(date)}`,existing=await store.get(key,{type:'json'}).catch(()=>null);
- if(existing)return{claimed:false,key,record:existing,store};
+ const store=await storeFactory(),key=`${DAILY_PREFIX}${clean(date)}`;
  const record={status:'RUNNING',date:clean(date),startedAt:Number(now()),schemaVersion:2};
- await store.setJSON(key,record);
+ const write=await store.setJSON(key,record,{onlyIfNew:true});
+ if(write&&write.modified===false){
+  const existing=await store.get(key,{type:'json',consistency:'strong'}).catch(()=>null);
+  return{claimed:false,key,record:existing||{status:'ALREADY_CLAIMED',date:clean(date)},store};
+ }
  return{claimed:true,key,record,store};
 }
 async function finishDailyRun(claim,result,{now=()=>Date.now()}={}){
