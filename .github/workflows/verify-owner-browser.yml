@@ -108,12 +108,15 @@ jobs:
             const deadline = Date.now() + timeout;
             let found = [];
             while (Date.now() < deadline) {
-              const labels = await page.locator('#welcomeSelector option').allTextContents().catch(() => []);
-              found = [...new Set(labels.map(houseFromLabel).filter(Number.isInteger))].sort((a, b) => a - b);
-              if (found.length === expected && found.every((house, index) => house === index + 1)) return;
+              const state = await page.evaluate(() => ({
+                labels: Array.from(document.querySelectorAll('#welcomeSelector option')).map(option => String(option.textContent || '').trim()),
+                enterHandler: typeof document.getElementById('enterBtn')?.onclick === 'function'
+              })).catch(() => ({ labels: [], enterHandler: false }));
+              found = [...new Set(state.labels.map(houseFromLabel).filter(Number.isInteger))].sort((a, b) => a - b);
+              if (state.enterHandler && found.length === expected && found.every((house, index) => house === index + 1)) return;
               await page.waitForTimeout(250);
             }
-            throw new Error(`Casas disponibles: ${JSON.stringify(found)}; se esperaban 1 a ${expected}.`);
+            throw new Error(`Casas disponibles: ${JSON.stringify(found)}; se esperaban 1 a ${expected} y el manejador de entrada activo.`);
           }
 
           async function waitForLocatorText(page, locator, predicate, description, timeout = 30000) {
@@ -170,7 +173,17 @@ jobs:
             const firstValue = await optionValueForHouse(welcome, 1);
             if (!firstValue) throw new Error('No se encontró una Casa 1 válida después de cargar los propietarios.');
             await welcome.selectOption(firstValue);
-            await page.getByRole('button', { name: /Consultar Estado de Cuenta/i }).click();
+            if (await welcome.inputValue() !== firstValue) throw new Error('El selector de bienvenida no conservó el ID de Casa 1.');
+            await page.locator('#enterBtn').click();
+            await page.waitForTimeout(250);
+            const transition = await page.evaluate(() => ({
+              mainHidden: document.getElementById('main')?.classList.contains('hidden'),
+              welcomeHidden: document.getElementById('welcome')?.classList.contains('hidden'),
+              welcomeValue: document.getElementById('welcomeSelector')?.value || '',
+              userValue: document.getElementById('userSelector')?.value || '',
+              heading: document.getElementById('welcome-msg')?.textContent || ''
+            }));
+            if (transition.mainHidden) throw new Error(`La entrada al portal no se completó: ${JSON.stringify({ transition, pageErrors, consoleErrors })}`);
             await page.locator('#main').waitFor({ state: 'visible', timeout: 15000 });
 
             const breakdown = page.locator('[data-vla-breakdown-host="2026-07-11-photo-v6"]');
@@ -203,7 +216,8 @@ jobs:
               ownerRelease: process.env.OWNER_RELEASE,
               sourceGeneratedAt: source.generatedAt || null,
               sourceBalanceEngineVersion: source.balanceEngineVersion || null,
-              balanceContract: 'independent-currencies-payable-v2',
+              balanceContract: 'independent-currencies-payable-v3',
+              transition,
               breakdownVisible: true,
               hasCostoTotal: /Costo\s*Total/i.test(breakdownText),
               hasSuParte: /Su\s*Parte/i.test(breakdownText),
