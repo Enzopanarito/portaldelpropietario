@@ -37,6 +37,10 @@
 [functions."gemini-model-autodetect-scheduled"]
   schedule = "*/5 * * * *"
 
+# Sonda temporal para confirmar que el programador de producción está invocando funciones.
+[functions."gemini-scheduler-probe-scheduled"]
+  schedule = "* * * * *"
+
 [[edge_functions]]
 function = "pwa-head"
 path = "/*"
