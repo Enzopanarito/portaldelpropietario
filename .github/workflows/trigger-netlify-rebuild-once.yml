@@ -1,4 +1,4 @@
-name: Publish and verify admin route once
+name: Repair and verify admin login now
 
 on:
   push:
@@ -11,57 +11,53 @@ permissions:
   contents: write
 
 jobs:
-  publish-and-verify:
+  repair-and-verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     env:
       NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN || secrets.NETLIFY_TOKEN }}
       NETLIFY_SITE_ID: 74f4f122-352c-4a3b-aa6f-5937ab99f8d3
     steps:
       - uses: actions/checkout@v4
 
-      - name: Trigger latest production build
+      - name: Trigger production build with repaired session key
         shell: bash
         run: |
           set -euo pipefail
-          if [ -z "${NETLIFY_AUTH_TOKEN:-}" ]; then
-            echo "::error::Netlify authentication secret is unavailable."
-            exit 1
-          fi
+          test -n "${NETLIFY_AUTH_TOKEN:-}" || { echo "::error::Missing Netlify token"; exit 1; }
           curl -fsS -X POST \
             -H "Authorization: Bearer ${NETLIFY_AUTH_TOKEN}" \
             -H "Content-Type: application/json" \
             "https://api.netlify.com/api/v1/sites/${NETLIFY_SITE_ID}/builds" >/dev/null
 
-      - name: Verify canonical and legacy admin routes
+      - name: Verify complete production login dependencies
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p diagnostics
-          admin_body=$(mktemp)
+          health_body=$(mktemp)
           login_body=$(mktemp)
-          final_code="000"
-          final_url=""
+          health_code="000"
           login_code="000"
 
-          for attempt in $(seq 1 36); do
+          for attempt in $(seq 1 48); do
             sleep 10
-            read -r final_code final_url < <(
-              curl -sS -L -o "$admin_body" -w '%{http_code} %{url_effective}\n' \
-                -H 'Cache-Control: no-cache' \
-                "https://villalosapamates.netlify.app/app/admin.html?verify=${GITHUB_RUN_ID}-${attempt}"
-            )
+            health_code=$(curl -sS -o "$health_body" -w '%{http_code}' \
+              -H 'Cache-Control: no-cache' \
+              "https://villalosapamates.netlify.app/.netlify/functions/admin-login-health?verify=${GITHUB_RUN_ID}-${attempt}" || true)
             login_code=$(curl -sS -o "$login_body" -w '%{http_code}' \
               -X POST \
               -H 'Content-Type: application/json' \
               -H 'Cache-Control: no-cache' \
-              --data '{"password":"__VLA_ROUTE_DIAGNOSTIC_INVALID__"}' \
-              "https://villalosapamates.netlify.app/.netlify/functions/login")
+              --data '{"password":"__VLA_DIAGNOSTIC_INVALID__"}' \
+              "https://villalosapamates.netlify.app/.netlify/functions/login" || true)
 
-            if [ "$final_code" = "200" ] \
-              && printf '%s' "$final_url" | grep -Eq '/admin\.html(\?|$)' \
-              && grep -q 'id="login"' "$admin_body" \
-              && grep -q 'id="password"' "$admin_body" \
+            if [ "$health_code" = "200" ] \
+              && grep -q '"ok":true' "$health_body" \
+              && grep -q '"sessionKeyConfigured":true' "$health_body" \
+              && grep -q '"sessionSecretStrong":true' "$health_body" \
+              && grep -q '"issued":true' "$health_body" \
+              && grep -q '"verified":true' "$health_body" \
               && [ "$login_code" = "401" ] \
               && grep -q 'Contraseña incorrecta' "$login_body"; then
               break
@@ -70,32 +66,36 @@ jobs:
 
           {
             echo "checked_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            echo "legacy_route_http_status=$final_code"
-            echo "legacy_route_final_url=$final_url"
-            echo "login_endpoint_invalid_password_status=$login_code"
-            echo "login_form_present=$(grep -q 'id=\"login\"' "$admin_body" && echo true || echo false)"
-            echo "password_field_present=$(grep -q 'id=\"password\"' "$admin_body" && echo true || echo false)"
-            echo "invalid_password_message_present=$(grep -q 'Contraseña incorrecta' "$login_body" && echo true || echo false)"
-          } > diagnostics/admin-route-repair-result.txt
+            echo "health_http_status=$health_code"
+            echo "login_invalid_password_http_status=$login_code"
+            echo "health_body="
+            cat "$health_body"
+            echo
+            echo "login_body="
+            cat "$login_body"
+            echo
+          } > diagnostics/admin-login-final-result.txt
 
-          if [ "$final_code" != "200" ] \
-            || ! printf '%s' "$final_url" | grep -Eq '/admin\.html(\?|$)' \
-            || ! grep -q 'id="login"' "$admin_body" \
-            || ! grep -q 'id="password"' "$admin_body" \
+          if [ "$health_code" != "200" ] \
+            || ! grep -q '"ok":true' "$health_body" \
+            || ! grep -q '"sessionKeyConfigured":true' "$health_body" \
+            || ! grep -q '"sessionSecretStrong":true' "$health_body" \
+            || ! grep -q '"issued":true' "$health_body" \
+            || ! grep -q '"verified":true' "$health_body" \
             || [ "$login_code" != "401" ] \
             || ! grep -q 'Contraseña incorrecta' "$login_body"; then
-            cat diagnostics/admin-route-repair-result.txt
-            echo "::error::The admin route or login endpoint is still not ready."
+            cat diagnostics/admin-login-final-result.txt
+            echo "::error::Admin login is not fully repaired yet."
             exit 1
           fi
 
-      - name: Commit verified production result
+      - name: Commit verified result
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "vla-diagnostic-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add diagnostics/admin-route-repair-result.txt
-          git commit -m "Confirmar ruta administrativa en producción" || exit 0
+          git add diagnostics/admin-login-final-result.txt
+          git commit -m "Confirmar reparación final del acceso administrativo" || exit 0
           git pull --rebase origin main
           git push
