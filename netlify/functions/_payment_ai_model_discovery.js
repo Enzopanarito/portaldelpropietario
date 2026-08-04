@@ -6,7 +6,7 @@ const MODELS_URL='https://generativelanguage.googleapis.com/v1beta/models?pageSi
 const STORE_NAME='vla-ai-model-catalog-v2';
 const TTL_MS=24*60*60*1000;
 const STALE_TTL_MS=7*24*60*60*1000;
-const DISCOVERY_TIMEOUT_MS=10000;
+const DISCOVERY_TIMEOUT_MS=4000;
 const memory=new Map();
 
 function clean(value){return String(value??'').trim()}
@@ -21,8 +21,8 @@ function score(model){
  if(!id.startsWith('gemini-')||!methods.includes('generateContent'))return-1;
  if(/(?:embedding|embed|aqa|tts|live|image|imagen|robotics|computer-use|deep-research)/.test(id))return-1;
  let value=0;
- if(/flash-lite/.test(id))value+=500;
- else if(/flash/.test(id))value+=460;
+ if(/flash-lite/.test(id))value+=430;
+ else if(/flash/.test(id))value+=500;
  else if(/pro/.test(id))value+=260;
  else value+=120;
  if(/(?:preview|experimental|exp)/.test(id))value-=160;
@@ -50,7 +50,7 @@ async function readCached(store,key){
 async function fetchCatalog({apiKey,fetchFn=global.fetch,timeoutMs=DISCOVERY_TIMEOUT_MS}={}){
  const key=clean(apiKey);
  if(!key)throw codedError('Gemini no está configurado.','AI_NOT_CONFIGURED');
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),Math.max(3000,Math.min(30000,Number(timeoutMs)||DISCOVERY_TIMEOUT_MS)));
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),Math.max(2000,Math.min(10000,Number(timeoutMs)||DISCOVERY_TIMEOUT_MS)));
  try{
   const response=await fetchFn(MODELS_URL,{headers:{'x-goog-api-key':key},signal:controller.signal});
   const data=await response.json().catch(()=>({}));
