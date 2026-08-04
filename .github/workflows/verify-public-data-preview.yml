@@ -1,0 +1,35 @@
+name: Verify Public Data Preview
+
+on:
+  pull_request:
+    paths:
+      - 'netlify/functions/_public_preview_fixture.js'
+      - 'netlify/functions/public-data-v3.js'
+      - 'tests/public-data-preview-fixture.test.js'
+      - '.github/workflows/verify-public-data-preview.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'netlify/functions/_public_preview_fixture.js'
+      - 'netlify/functions/public-data-v3.js'
+      - 'tests/public-data-preview-fixture.test.js'
+      - '.github/workflows/verify-public-data-preview.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-preview-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm ci
+      - name: Verify preview fixture and production isolation
+        run: node --test tests/public-data-preview-fixture.test.js
