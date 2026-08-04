@@ -19,7 +19,7 @@ jobs:
       - name: Generate synthetic receipt
         shell: bash
         env:
-          OWNER_ID: rec5z2pY1lFljVjnt
+          OWNER_ID: recSyntheticAI001
         run: |
           set -euo pipefail
           python3 -m pip install --quiet pillow
