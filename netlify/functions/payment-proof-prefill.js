@@ -13,8 +13,8 @@ const {listAll,TABLES,aiConfig}=require('./_payment_report_automation');
 const WINDOW_MS=60*60*1000;
 const ACCEPTED_STATUSES=new Set(['COMPLETED','SENT','PROCESSED']);
 const CURRENT_STABLE_MODELS=Object.freeze(['gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-2.5-flash']);
-const DIRECT_TIMEOUT_MS=18000;
-const PROXY_TIMEOUT_MS=18000;
+const DIRECT_TIMEOUT_MS=9000;
+const PROXY_TIMEOUT_MS=12000;
 const MAX_DIRECT_ATTEMPTS=4;
 const PROXY_URL=String(process.env.PAYMENT_PROOF_AI_PROXY_URL||'https://gemini-proxy-seinca.vercel.app/api/payment-proof').trim();
 const PROXY_CLIENT='villa-los-apamates-payment-proof-v1';
@@ -39,18 +39,18 @@ function unique(values){return[...new Set((values||[]).map(value=>String(value||
 function modelCandidates(config={},selection=null){
  return unique([
   config.primaryModel,
+  config.secondaryModel,
   selection?.model,
   ...(Array.isArray(selection?.models)?selection.models:[]),
-  config.secondaryModel,
   ...CURRENT_STABLE_MODELS
  ]).slice(0,10);
 }
 function errorCode(error){return String(error?.code||'').trim().toUpperCase()}
 function canTryAnotherModel(error){
  const status=Number(error?.status||0),code=errorCode(error);
- if(['INVALID_ATTACHMENT','AI_AUTH_FAILED','AI_NOT_CONFIGURED'].includes(code))return false;
- if(['AI_MODEL_INVALID','AI_MODEL_NOT_FOUND','RATE_LIMIT','PROVIDER_UNAVAILABLE','TIMEOUT','EMPTY_OUTPUT','AI_PROVIDER_ERROR','INVALID_OUTPUT','AI_MODEL_DISCOVERY_FAILED'].includes(code))return true;
- return status===400||status===404||status===408||status===409||status===425||status===429||status>=500;
+ if(['INVALID_ATTACHMENT','AI_AUTH_FAILED','AI_NOT_CONFIGURED','RATE_LIMIT','PROVIDER_UNAVAILABLE','TIMEOUT'].includes(code))return false;
+ if(['AI_MODEL_INVALID','AI_MODEL_NOT_FOUND','EMPTY_OUTPUT','INVALID_OUTPUT'].includes(code))return true;
+ return status===400||status===404;
 }
 function localGeminiConfigured(){return Boolean(String(process.env.GEMINI_API_KEY||'').trim())}
 function validateRawForPrefill(raw){
