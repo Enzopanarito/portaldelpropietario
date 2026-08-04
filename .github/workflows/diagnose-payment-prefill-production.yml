@@ -1,0 +1,93 @@
+name: Diagnose Payment Prefill Production
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-payment-prefill-production.yml'
+      - 'netlify/functions/payment-proof-prefill.js'
+      - 'netlify/functions/_payment_ai_gemini.js'
+      - 'netlify/functions/_payment_ai_model_discovery.js'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-prefill:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - name: Generate synthetic receipt and call read-only production prefill
+        shell: bash
+        env:
+          OWNER_ID: rec5z2pY1lFljVjnt
+          TARGET_URL: https://villalosapamates.netlify.app/api/vla/payment-proof-prefill
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet pillow
+          python3 - <<'PY'
+          import base64, json, os
+          from PIL import Image, ImageDraw, ImageFont
+
+          image = Image.new('RGB', (1000, 850), 'white')
+          draw = ImageDraw.Draw(image)
+          font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 42)
+          title = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 50)
+          lines = [
+              ('PAGO MOVIL COMPLETADO', title),
+              ('Banco de Venezuela', font),
+              ('Monto: Bs. 12.345,67', font),
+              ('Fecha: 04/08/2026', font),
+              ('Referencia: 987654321012', font),
+              ('Estado: COMPLETADO', font),
+              ('Receptor: Villa Los Apamates', font),
+          ]
+          y = 80
+          for text, selected_font in lines:
+              draw.text((70, y), text, fill='black', font=selected_font)
+              y += 100
+          image.save('synthetic-receipt.png', optimize=True)
+          content = open('synthetic-receipt.png', 'rb').read()
+          payload = {
+              'ownerId': os.environ['OWNER_ID'],
+              'attachment': {
+                  'name': 'synthetic-receipt.png',
+                  'type': 'image/png',
+                  'size': len(content),
+                  'base64': base64.b64encode(content).decode('ascii'),
+              },
+          }
+          open('prefill-request.json', 'w').write(json.dumps(payload))
+          PY
+
+          status="$(curl --silent --show-error --location \
+            --output prefill-response.json \
+            --write-out '%{http_code}' \
+            --max-time 90 \
+            --request POST "$TARGET_URL" \
+            --header 'Content-Type: application/json' \
+            --data-binary @prefill-request.json)"
+
+          python3 - "$status" <<'PY'
+          import json, sys
+          status = int(sys.argv[1])
+          try:
+              payload = json.load(open('prefill-response.json'))
+          except Exception:
+              payload = {'message': 'Respuesta no JSON'}
+          safe = {
+              'status': status,
+              'success': payload.get('success'),
+              'complete': payload.get('complete'),
+              'reason': payload.get('reason'),
+              'providerStatus': payload.get('providerStatus'),
+              'analysisProvider': payload.get('analysisProvider'),
+              'message': payload.get('message'),
+              'detectedCurrency': (payload.get('analysis') or {}).get('currency'),
+              'detectedAmount': (payload.get('analysis') or {}).get('amount'),
+              'detectedReferencePresent': bool((payload.get('analysis') or {}).get('reference')),
+          }
+          print(json.dumps(safe, indent=2, ensure_ascii=False))
+          if status != 200 or not payload.get('success'):
+              raise SystemExit(f'Production prefill returned HTTP {status}')
+          PY
