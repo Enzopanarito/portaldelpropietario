@@ -1,0 +1,129 @@
+name: Verify Payment Prefill Production
+
+on:
+  workflow_run:
+    workflows: ["Deploy Netlify Production"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  verify-production-prefill:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Generate synthetic receipt
+        shell: bash
+        env:
+          OWNER_ID: recSyntheticAI001
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet pillow
+          python3 - <<'PY'
+          import base64, json, os
+          from PIL import Image, ImageDraw, ImageFont
+
+          image = Image.new('RGB', (1000, 850), 'white')
+          draw = ImageDraw.Draw(image)
+          font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 42)
+          title = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 50)
+          lines = [
+              ('PAGO MOVIL COMPLETADO', title),
+              ('Banco de Venezuela', font),
+              ('Monto: Bs. 12.345,67', font),
+              ('Fecha: 04/08/2026', font),
+              ('Referencia: 987654321012', font),
+              ('Estado: COMPLETADO', font),
+              ('Receptor: Villa Los Apamates', font),
+          ]
+          y = 80
+          for text, selected_font in lines:
+              draw.text((70, y), text, fill='black', font=selected_font)
+              y += 100
+          image.save('synthetic-receipt.png', optimize=True)
+          content = open('synthetic-receipt.png', 'rb').read()
+          payload = {
+              'ownerId': os.environ['OWNER_ID'],
+              'attachment': {
+                  'name': 'synthetic-receipt.png',
+                  'type': 'image/png',
+                  'size': len(content),
+                  'base64': base64.b64encode(content).decode('ascii'),
+              },
+          }
+          open('prefill-request.json', 'w').write(json.dumps(payload))
+          PY
+
+      - name: Verify production prefill
+        id: production
+        shell: bash
+        env:
+          TARGET_URL: https://villalosapamates.netlify.app/api/vla/payment-proof-prefill
+        run: |
+          set -euo pipefail
+          status="$(curl --silent --show-error --location \
+            --output prefill-response.json \
+            --write-out '%{http_code}' \
+            --max-time 90 \
+            --request POST "$TARGET_URL" \
+            --header 'Content-Type: application/json' \
+            --data-binary @prefill-request.json)"
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          python3 - "$status" <<'PY'
+          import json, sys
+          status = int(sys.argv[1])
+          try:
+              payload = json.load(open('prefill-response.json'))
+          except Exception:
+              payload = {'message': 'Respuesta no JSON'}
+          safe = {
+              'status': status,
+              'success': payload.get('success'),
+              'complete': payload.get('complete'),
+              'reason': payload.get('reason'),
+              'providerStatus': payload.get('providerStatus'),
+              'analysisProvider': payload.get('analysisProvider'),
+              'message': payload.get('message'),
+              'detectedCurrency': (payload.get('analysis') or {}).get('currency'),
+              'detectedAmount': (payload.get('analysis') or {}).get('amount'),
+              'detectedReferencePresent': bool((payload.get('analysis') or {}).get('reference')),
+          }
+          print(json.dumps(safe, indent=2, ensure_ascii=False))
+          if status != 200 or payload.get('success') is not True:
+              raise SystemExit(f'Production prefill returned HTTP {status}')
+          if not payload.get('analysisProvider'):
+              raise SystemExit('Production prefill did not identify the provider used')
+          analysis = payload.get('analysis') or {}
+          if analysis.get('currency') != 'VES' or abs(float(analysis.get('amount') or 0)-12345.67) > 0.01:
+              raise SystemExit('Production prefill did not extract the expected amount and currency')
+          if not analysis.get('reference'):
+              raise SystemExit('Production prefill did not extract the reference')
+          PY
+
+      - name: Publish successful production status
+        if: success() && github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+            -f state=success \
+            -f context='Payment Prefill Production Verification' \
+            -f description='La lectura IA extrajo monto, moneda y referencia en producción.' \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+      - name: Publish failed production status
+        if: failure() && github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+            -f state=failure \
+            -f context='Payment Prefill Production Verification' \
+            -f description='La lectura IA real falló en producción.' \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
