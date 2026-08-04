@@ -52,7 +52,7 @@ test('un modelo con HTTP 404 no bloquea el siguiente modelo compatible',async()=
  assert.equal(result.provider,'direct');
 });
 
-test('cuando todos los modelos directos fallan se usa el lector alterno',async()=>{
+test('cuando todos los modelos directos devuelven 404 se usa el lector alterno',async()=>{
  let proxyCalls=0,directCalls=0;
  const result=await prefill.analyzeWithFallback(baseArgs,{
   localGeminiConfigured:()=>true,
@@ -61,6 +61,19 @@ test('cuando todos los modelos directos fallan se usa el lector alterno',async()
   analyzeViaProxy:async()=>{proxyCalls+=1;return{raw:VALID_RAW,model:'proxy:gemini-2.5-flash',provider:'proxy'}}
  });
  assert.equal(directCalls,4);
+ assert.equal(proxyCalls,1);
+ assert.equal(result.provider,'proxy');
+});
+
+test('un timeout salta al respaldo sin esperar los demás modelos directos',async()=>{
+ let proxyCalls=0,directCalls=0;
+ const result=await prefill.analyzeWithFallback(baseArgs,{
+  localGeminiConfigured:()=>true,
+  discoverCompatibleModel:async()=>({models:['gemini-primary','gemini-secondary']}),
+  analyzeDirect:async()=>{directCalls+=1;throw coded('TIMEOUT',504)},
+  analyzeViaProxy:async()=>{proxyCalls+=1;return{raw:VALID_RAW,model:'proxy:gemini-2.5-flash',provider:'proxy'}}
+ });
+ assert.equal(directCalls,1);
  assert.equal(proxyCalls,1);
  assert.equal(result.provider,'proxy');
 });
