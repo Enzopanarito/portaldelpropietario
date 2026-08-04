@@ -2,6 +2,7 @@
 
 const previous=require('./public-data-v2');
 const snapshotStore=require('./_public_snapshot_store');
+const previewFixture=require('./_public_preview_fixture');
 
 function response(statusCode,payload,headers={}){return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...headers},body:JSON.stringify(payload)}}
 function parseBody(result){try{return JSON.parse(result&&result.body||'{}')}catch(_){return{}}}
@@ -20,10 +21,26 @@ function createHandler(deps={}){
  const claimRefresh=deps.claimPublicRefresh||snapshotStore.claimPublicRefresh;
  const releaseRefresh=deps.releasePublicRefresh||snapshotStore.releasePublicRefresh;
  const expectedEtag=deps.snapshotExpectedEtag||snapshotStore.snapshotExpectedEtag;
+ const previewEnabled=deps.previewEnabled||previewFixture.enabled;
+ const createPreviewPayload=deps.createPreviewPayload||previewFixture.createPayload;
+ const previewHeaders=deps.previewHeaders||previewFixture.headers;
+ const now=deps.now||(()=>new Date());
 
  return async function handler(event){
   const host=eventHost(event);
   const snapshotEnv=eventEnvironment(event);
+
+  // Los Deploy Previews, branch deploys y el entorno local nunca consultan la
+  // base de producción. Reciben una fotografía ficticia y determinista que
+  // permite probar las 15 casas, el desglose y el diseño sin escrituras ni
+  // dependencia de credenciales o del esquema incompleto de staging.
+  if(previewEnabled(snapshotEnv)){
+   return response(200,createPreviewPayload(now()),{
+    ...previewHeaders(),
+    'X-Public-Snapshot':'PREVIEW_FIXTURE'
+   });
+  }
+
   if(!isEnabled(snapshotEnv,snapshotStore.runtimeConfig,host))return previousHandler(event);
   const waitSnapshot=deps.waitForSnapshot||(()=>waitForSnapshot(readSnapshot,deps.sleep||sleep,snapshotEnv));
   let cached=null,blobReadError=null;
