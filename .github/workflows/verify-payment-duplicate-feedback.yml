@@ -1,0 +1,35 @@
+name: Verify Payment Duplicate Feedback
+
+on:
+  pull_request:
+    paths:
+      - 'owner-payment-report-v3.js'
+      - 'owner-payment-report-v3.css'
+      - 'payment-report-intelligence.js'
+      - 'tests/payment-duplicate-feedback-browser.cjs'
+      - '.github/workflows/verify-payment-duplicate-feedback.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'owner-payment-report-v3.js'
+      - 'owner-payment-report-v3.css'
+      - 'payment-report-intelligence.js'
+      - 'tests/payment-duplicate-feedback-browser.cjs'
+      - '.github/workflows/verify-payment-duplicate-feedback.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  duplicate-feedback:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.53.0
+          npx playwright install --with-deps chromium
+      - name: Verify persistent duplicate feedback
+        run: node --test tests/payment-duplicate-feedback-browser.cjs

@@ -3,7 +3,7 @@
 
   const MAX_FILE_BYTES=3*1024*1024;
   const ACCEPTED_STATUSES=new Set(['COMPLETED','SENT','PROCESSED']);
-  let selectedFile=null,analysisController=null,analyzing=false,manualMode=false,submissionId='';
+  let selectedFile=null,analysisController=null,analyzing=false,manualMode=false,submissionId='',submitErrorActive=false;
 
   function byId(id){return document.getElementById(id)}
   function newSubmissionId(){return globalThis.crypto?.randomUUID?.()||`vla_${Date.now()}_${Math.random().toString(36).slice(2)}`}
@@ -17,6 +17,7 @@
   function currentDateISO(){try{return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Caracas',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())}catch(_){return new Date().toISOString().slice(0,10)}}
   function accountBalance(mode){if(typeof current==='undefined'||!current)return 0;return mode==='USD'?Math.max(0,number(current.debtUsd)):Math.max(0,number(current.debtBs))}
   function paymentChannel(){return document.querySelector('input[name="payChannel"]:checked')?.value||'DIGITAL'}
+  function clearSubmitError(){submitErrorActive=false;validateForm()}
 
   function modalMarkup(){
     return `<div class="vla-pay-sheet modal-card" role="dialog" aria-modal="true" aria-labelledby="vla-pay-title">
@@ -45,7 +46,7 @@
           <label class="vla-pay-field"><span>Observaciones <em>Opcional</em></span><textarea id="payNotes" maxlength="300" rows="3" placeholder="Agrega información que ayude a verificar el pago"></textarea><small><span id="vla-pay-notes-count">0</span>/300</small></label>
           <div class="vla-pay-date"><span><b>Fecha del reporte</b><small>Se registra automáticamente con hora de Venezuela.</small></span><strong id="vla-pay-date-label"></strong></div>
         </section>
-        <div id="vla-pay-validation" class="vla-pay-validation" aria-live="polite"><b>Falta el comprobante.</b><span>No se enviará ningún reporte hasta completar los datos obligatorios.</span></div>
+        <div id="vla-pay-validation" class="vla-pay-validation" aria-live="assertive"><b>Falta el comprobante.</b><span>No se enviará ningún reporte hasta completar los datos obligatorios.</span></div>
         <div class="vla-pay-review-note"><span aria-hidden="true">i</span><p>La lectura inicial solo agiliza el formulario. El motor seguro volverá a verificar comprobante, receptor, duplicados y saldo antes de aprobar.</p></div>
         <div class="vla-pay-actions"><button id="submitReport" type="submit" class="vla-pay-submit" disabled>Enviar reporte</button><button type="button" id="cancelModal" class="vla-pay-cancel">Cancelar</button></div>
       </form>
@@ -57,8 +58,8 @@
     modal.innerHTML=modalMarkup();
     byId('closeModal').onclick=hideSmartModal;byId('cancelModal').onclick=hideSmartModal;byId('payProof').addEventListener('change',onFileSelected);byId('vla-pay-manual').onclick=enableManual;
     document.querySelectorAll('input[name="payChannel"]').forEach(node=>node.addEventListener('change',switchPaymentChannel));
-    ['payCurrency','payAmount','payMode','payBank','payCashReceiver','payRef','payTransactionDate','payTransactionStatus'].forEach(id=>{byId(id).addEventListener(['payAmount','payBank','payCashReceiver','payRef'].includes(id)?'input':'change',validateForm)});
-    byId('payNotes').addEventListener('input',event=>{byId('vla-pay-notes-count').textContent=String(event.target.value.length)});
+    ['payCurrency','payAmount','payMode','payBank','payCashReceiver','payRef','payTransactionDate','payTransactionStatus'].forEach(id=>{byId(id).addEventListener(['payAmount','payBank','payCashReceiver','payRef'].includes(id)?'input':'change',clearSubmitError)});
+    byId('payNotes').addEventListener('input',event=>{submitErrorActive=false;byId('vla-pay-notes-count').textContent=String(event.target.value.length);validateForm()});
     byId('reportForm').addEventListener('submit',submitSmartReport);modal.addEventListener('click',event=>{if(event.target===modal)hideSmartModal()});document.addEventListener('keydown',event=>{if(event.key==='Escape'&&modal.classList.contains('flex'))hideSmartModal()});
   }
 
@@ -87,7 +88,7 @@
   }
 
   function switchPaymentChannel(){
-    const cash=paymentChannel()==='CASH',proofSection=byId('vla-pay-proof-section');
+    submitErrorActive=false;const cash=paymentChannel()==='CASH',proofSection=byId('vla-pay-proof-section');
     if(analysisController)analysisController.abort();analyzing=false;manualMode=cash;
     proofSection.classList.toggle('hidden',cash);byId('payProof').disabled=cash;byId('vla-pay-bank-field').classList.toggle('hidden',cash);byId('vla-pay-cash-field').classList.toggle('hidden',!cash);
     byId('payTransactionStatus').closest('.vla-pay-field').classList.toggle('hidden',cash);byId('vla-pay-ref-label').innerHTML=cash?'Recibo o constancia <em>Opcional</em>':'Referencia o confirmación <b>*</b>';
@@ -109,7 +110,7 @@
   function enableManual(){if(!selectedFile)return;manualMode=true;if(analysisController)analysisController.abort();analyzing=false;showDetails(true);scanMessage('manual','Carga manual activa','Completa los campos obligatorios; el comprobante se verificará igualmente después del envío.');validateForm();setTimeout(()=>byId('payCurrency').focus(),30)}
 
   function onFileSelected(event){
-    const file=event.target.files&&event.target.files[0],label=byId('vla-pay-file-label');selectedFile=file||null;
+    submitErrorActive=false;const file=event.target.files&&event.target.files[0],label=byId('vla-pay-file-label');selectedFile=file||null;
     if(!file){label.textContent='Tomar foto o elegir archivo';showDetails(false);byId('vla-pay-manual').disabled=true;scanMessage('neutral','Primero adjunta el comprobante','La inteligencia leerá moneda, monto, banco, referencia, fecha y estado, incluidos comprobantes de Binance.');return validateForm()}
     if(!['image/jpeg','image/png','application/pdf'].includes(file.type)){event.target.value='';selectedFile=null;label.textContent='Tomar foto o elegir archivo';scanMessage('error','Archivo no válido','El comprobante debe ser JPG, PNG o PDF.');return validateForm()}
     if(file.size>MAX_FILE_BYTES){event.target.value='';selectedFile=null;label.textContent='Tomar foto o elegir archivo';scanMessage('error','Archivo demasiado grande','El comprobante no puede superar 3 MB.');return validateForm()}
@@ -123,23 +124,23 @@
 
   function validateForm(){
     const missing=missingData(),box=byId('vla-pay-validation'),submit=byId('submitReport');document.querySelectorAll('.vla-pay-field input,.vla-pay-field select').forEach(node=>node.removeAttribute('aria-invalid'));missing.forEach(item=>{if(item.id&&byId(item.id))byId(item.id).setAttribute('aria-invalid','true')});
-    if(missing.length){box.className='vla-pay-validation warn';box.innerHTML=`<b>Falta completar:</b><span>${safeText(missing.map(item=>item.label).join(' · '))}</span>`}else{box.className='vla-pay-validation ok';box.innerHTML='<b>Todo listo para enviar</b><span>Revisa los datos y confirma el reporte.</span>'}
+    if(!submitErrorActive){if(missing.length){box.className='vla-pay-validation warn';box.innerHTML=`<b>Falta completar:</b><span>${safeText(missing.map(item=>item.label).join(' · '))}</span>`}else{box.className='vla-pay-validation ok';box.innerHTML='<b>Todo listo para enviar</b><span>Revisa los datos y confirma el reporte.</span>'}}
     submit.disabled=missing.length>0;return missing;
   }
 
   function openSmartReport(){
-    if(typeof currentOwner==='undefined'||!currentOwner)return;installMarkup();selectedFile=null;submissionId=newSubmissionId();manualMode=false;analyzing=false;if(analysisController)analysisController.abort();byId('reportForm').reset();byId('payChannelDigital').checked=true;byId('vla-pay-file-label').textContent='Tomar foto o elegir archivo';byId('vla-pay-notes-count').textContent='0';byId('vla-pay-manual').disabled=true;setupModesSmart();renderSummary();switchPaymentChannel();const modal=byId('modal');modal.classList.remove('hidden');modal.classList.add('flex');document.documentElement.classList.add('vla-pay-open');setTimeout(()=>byId('payProof').focus(),40)
+    if(typeof currentOwner==='undefined'||!currentOwner)return;installMarkup();selectedFile=null;submissionId=newSubmissionId();manualMode=false;analyzing=false;submitErrorActive=false;if(analysisController)analysisController.abort();byId('reportForm').reset();byId('payChannelDigital').checked=true;byId('vla-pay-file-label').textContent='Tomar foto o elegir archivo';byId('vla-pay-notes-count').textContent='0';byId('vla-pay-manual').disabled=true;setupModesSmart();renderSummary();switchPaymentChannel();const modal=byId('modal');modal.classList.remove('hidden');modal.classList.add('flex');document.documentElement.classList.add('vla-pay-open');setTimeout(()=>byId('payProof').focus(),40)
   }
-  function hideSmartModal(){const modal=byId('modal');if(!modal)return;if(analysisController)analysisController.abort();modal.classList.add('hidden');modal.classList.remove('flex');document.documentElement.classList.remove('vla-pay-open');selectedFile=null;analyzing=false;manualMode=false}
+  function hideSmartModal(){const modal=byId('modal');if(!modal)return;if(analysisController)analysisController.abort();modal.classList.add('hidden');modal.classList.remove('flex');document.documentElement.classList.remove('vla-pay-open');selectedFile=null;analyzing=false;manualMode=false;submitErrorActive=false}
 
   async function submitSmartReport(event){
-    event.preventDefault();const missing=validateForm();if(missing.length){const first=missing.find(item=>item.id&&byId(item.id));if(first)byId(first.id).focus();return}
+    event.preventDefault();submitErrorActive=false;const missing=validateForm();if(missing.length){const first=missing.find(item=>item.id&&byId(item.id));if(first)byId(first.id).focus();return}
     const submit=byId('submitReport');submit.disabled=true;submit.textContent='Enviando…';
     try{
       const amount=enteredAmount(),enteredCurrency=byId('payCurrency').value,mode=byId('payMode').value,channel=paymentChannel(),attachment=channel==='DIGITAL'?await fileToPayload(selectedFile):null,payload={ownerId:currentOwner.id,submissionId,mode,amount,enteredCurrency,paymentChannel:channel,reference:byId('payRef').value.trim(),rate:fxRate(),bank:channel==='DIGITAL'?byId('payBank').value.trim():'Efectivo',cashReceiver:channel==='CASH'?byId('payCashReceiver').value.trim():'',transactionDate:byId('payTransactionDate').value,transactionStatus:channel==='CASH'?'COMPLETED':byId('payTransactionStatus').value,observations:byId('payNotes').value.trim(),attachment};
-      const response=await fetch('/api/vla/report-payment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.detail||data.message||'Error reportando pago.');hideSmartModal();if(typeof toast==='function')toast(data.message||'Reporte recibido y enviado al motor de validación.',false);
-    }catch(error){const box=byId('vla-pay-validation');box.className='vla-pay-validation warn';box.innerHTML=`<b>No se envió el reporte</b><span>${safeText(error.message||'Revise los datos e intente nuevamente.')}</span>`}
-    finally{submit.textContent='Enviar reporte';validateForm()}
+      const response=await fetch('/api/vla/report-payment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),data=await response.json().catch(()=>({}));if(!response.ok)throw Object.assign(new Error(data.message||data.detail||'Error reportando pago.'),{status:response.status,data});hideSmartModal();if(typeof toast==='function')toast(data.message||'Reporte recibido y enviado al motor de validación.',false);
+    }catch(error){const box=byId('vla-pay-validation'),duplicate=Number(error.status)===409||error.data?.duplicate===true,message=error.message||'Revise los datos e intente nuevamente.';submitErrorActive=true;box.className='vla-pay-validation warn';box.innerHTML=`<b>${duplicate?'Comprobante ya utilizado':'No se envió el reporte'}</b><span>${safeText(message)}</span>`;if(duplicate)scanMessage('warn','Comprobante ya utilizado','Selecciona otro comprobante para crear un reporte nuevo.');box.scrollIntoView({behavior:'smooth',block:'center'});if(typeof toast==='function')toast(message,true)}
+    finally{submit.textContent='Enviar reporte';if(!byId('modal').classList.contains('hidden'))validateForm()}
   }
 
   function bindButtons(){['reportBtn','reportSide','reportMobile'].forEach(id=>{const button=byId(id);if(button)button.onclick=openSmartReport})}
