@@ -1,0 +1,38 @@
+name: Verify Payment Prefill Resilience
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'netlify/functions/payment-proof-prefill.js'
+      - 'netlify/functions/_payment_ai_gemini.js'
+      - 'netlify/functions/_payment_ai_model_discovery.js'
+      - 'tests/payment-proof-prefill-resilience.test.js'
+      - '.github/workflows/verify-payment-prefill-resilience.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'netlify/functions/payment-proof-prefill.js'
+      - 'netlify/functions/_payment_ai_gemini.js'
+      - 'netlify/functions/_payment_ai_model_discovery.js'
+      - 'tests/payment-proof-prefill-resilience.test.js'
+      - '.github/workflows/verify-payment-prefill-resilience.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-resilience:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm ci
+      - name: Run payment proof resilience tests
+        run: node --test tests/payment-proof-prefill-resilience.test.js
