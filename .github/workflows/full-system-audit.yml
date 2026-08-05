@@ -1,0 +1,164 @@
+name: Full System Audit
+
+on:
+  push:
+    branches:
+      - audit-integral-2026-07-11
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies safely
+        run: npm install --ignore-scripts --no-audit --no-fund
+
+      - name: Inventory and structural audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re, json
+          root=Path('.'); report=[]; critical=[]; warnings=[]
+          def ok(t): report.append(f'- ✅ {t}')
+          def warn(t): warnings.append(t); report.append(f'- ⚠️ {t}')
+          def fail(t): critical.append(t); report.append(f'- ❌ {t}')
+          functions=sorted((root/'netlify/functions').glob('*.js')); edges=sorted((root/'netlify/edge-functions').glob('*.js')); htmls=sorted(root.glob('*.html')); tests=sorted((root/'tests').glob('*.test.js'))
+          report += ['# Auditoría integral Villa Los Apamates','','## Inventario',f'- Funciones Netlify: {len(functions)}',f'- Edge Functions: {len(edges)}',f'- Páginas HTML: {len(htmls)}',f'- Pruebas automatizadas: {len(tests)}','']
+          toml=(root/'netlify.toml').read_text('utf-8')
+          for name in sorted(set(re.findall(r'\[\[edge_functions\]\]\s*function\s*=\s*"([^"]+)"',toml))):
+            p=root/'netlify/edge-functions'/f'{name}.js'; ok(f'Ruta Edge `{name}` tiene archivo correspondiente.') if p.exists() else fail(f'Ruta Edge `{name}` apunta a un archivo inexistente.')
+          proxy=(root/'netlify/functions/airtable-v2.js').read_text('utf-8')
+          for table in {'Pagos','Reportes de Pago','Historial de Cargos','Gastos del Mes','Recibos de Pago'}:
+            ok(f'La tabla protegida `{table}` aparece en la política del proxy.') if table in proxy else fail(f'La tabla `{table}` no aparece en la política del proxy.')
+          ok('El proxy genérico bloquea escrituras directas en tablas financieras.') if 'Las escrituras directas en ${target.table} están bloqueadas' in proxy else fail('No se encontró el bloqueo de escrituras financieras en el proxy.')
+          admin=(root/'admin.html').read_text('utf-8'); pay_edge=(root/'netlify/edge-functions/admin-payment-flow.js').read_text('utf-8')
+          ok('La aprobación/rechazo de pagos usa el endpoint protegido v3.') if '/.netlify/functions/process-payment-report' in pay_edge and 'protected-v3' in pay_edge else fail('El flujo protegido de aprobación de pagos no está completo.')
+          if 'TABLE_PAGOS' in admin and "method:'POST'" in admin: warn('La fuente base de admin.html todavía contiene código financiero heredado; la Edge Function lo neutraliza en producción, pero debe eliminarse para reducir riesgo futuro.')
+          required={
+            'netlify/functions/process-payment-report.js':['requireAdmin','airtableCreateRecord','createAndSendReceipt','syncOwnerAccess','begin('],
+            'netlify/functions/admin-manual-payment.js':['requireAdmin','createAndSendReceipt','syncOwnerAccess'],
+            'netlify/functions/monthly-close-v4.js':['requireAdmin','dryRun','planHash'],
+            'netlify/functions/_receipt_service.js':['sendMail','buildReceiptPdf','TABLE_RECEIPTS'],
+            'netlify/functions/_mailer.js':['nodemailer','createTransport','sendMail','OFFICIAL_EMAIL'],
+            'netlify/functions/_access_control.js':['MKJ','syncOwnerAccess','calculateExpiredAccessDebt'],
+            'netlify/functions/bcv-rate.js':['last-good','FETCH_TIMEOUT_MS'],
+            'netlify/functions/airtable-backup.js':['manifestHash','fileContentHash'],
+            'netlify/functions/system-health-advanced.js':['Operaciones financieras pendientes','Transparencia pública']}
+          wrapper=(root/'netlify/functions/monthly-close.js').read_text('utf-8')
+          ok('`monthly-close.js` delega en `monthly-close-v4`.') if "require('./monthly-close-v4')" in wrapper else fail('El wrapper mensual no apunta a monthly-close-v4.')
+          for filename,markers in required.items():
+            p=root/filename
+            if not p.exists(): fail(f'Falta archivo crítico `{filename}`.'); continue
+            text=p.read_text('utf-8'); missing=[m for m in markers if m not in text]
+            fail(f'`{filename}` no contiene controles esperados: {missing}.') if missing else ok(f'`{filename}` contiene los controles críticos esperados.')
+          env_names=set()
+          for p in functions+edges:
+            txt=p.read_text('utf-8',errors='ignore'); env_names.update(re.findall(r'process\.env\.([A-Z][A-Z0-9_]+)',txt)); env_names.update(re.findall(r'Netlify\.env\.get\([\'\"]([A-Z][A-Z0-9_]+)',txt))
+          report += ['','## Variables de entorno referenciadas','- '+', '.join(sorted(env_names))]
+          suspects=[]
+          for p in htmls+edges:
+            txt=p.read_text('utf-8',errors='ignore')
+            for table in ['TABLE_PAGOS','TABLE_REPORTES','TABLE_GASTOS']:
+              if table in txt and '/.netlify/functions/airtable/' in txt and "method:'POST'" in txt: suspects.append(f'{p}:{table}')
+          warn('Se encontraron referencias heredadas a escritura genérica que deben revisarse: '+', '.join(sorted(set(suspects)))) if suspects else ok('No hay escrituras genéricas financieras en páginas o Edge Functions.')
+          for p in list(root.rglob('*.js'))+htmls:
+            if p.stat().st_size==0: fail(f'Archivo vacío: `{p}`.')
+          for p in root.glob('*.json'):
+            try: json.loads(p.read_text('utf-8'))
+            except Exception as e: fail(f'JSON inválido `{p}`: {e}')
+          report += ['','## Resultado estructural',f'- Críticos: {len(critical)}',f'- Advertencias: {len(warnings)}']
+          Path('audit-structural.md').write_text('\n'.join(report),encoding='utf-8'); Path('audit-structural.json').write_text(json.dumps({'critical':critical,'warnings':warnings,'envNames':sorted(env_names)},indent=2,ensure_ascii=False),encoding='utf-8'); print('\n'.join(report))
+          if critical: raise SystemExit(1)
+          PY
+
+      - name: Check all JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          find netlify/functions -maxdepth 1 -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+          while IFS= read -r -d '' file; do node --input-type=module --check < "$file"; done < <(find netlify/edge-functions -maxdepth 1 -type f -name '*.js' -print0)
+
+      - name: Validate browser scripts and complete test suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tests/injected-browser-scripts.test.js
+          node tests/admin-payment-flow.test.js
+          node tests/stage1-security.test.js
+          node tests/stage2-audit-cleanup.test.js
+          node tests/stage3-monthly-close.test.js
+          node tests/final-hardening.test.js
+          node tests/balance-engine-v4.test.js
+          node tests/visual-breakdown-v4.test.js
+          node tests/all-houses-current-balance.test.js
+          node tests/access-balance-engine.test.js
+          node tests/official-balance-sync.test.js
+
+      - name: Scan protected write paths
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs=require('fs'),path=require('path');const walk=d=>fs.readdirSync(d,{withFileTypes:true}).flatMap(e=>e.name==='node_modules'||e.name==='.git'?[]:e.isDirectory()?walk(path.join(d,e.name)):[path.join(d,e.name)]);const files=walk('.').filter(f=>/\.(js|html)$/.test(f));const findings=[];for(const file of files){const s=fs.readFileSync(file,'utf8');if(s.includes("/.netlify/functions/airtable/")&&/(TABLE_PAGOS|TABLE_REPORTES)/.test(s)&&/method:\s*['\"](?:POST|PATCH|DELETE)/.test(s))findings.push(file)}fs.writeFileSync('audit-write-paths.json',JSON.stringify({legacyGenericWriteReferences:[...new Set(findings)]},null,2));console.log(fs.readFileSync('audit-write-paths.json','utf8'));
+          NODE
+
+      - name: Production HTTP smoke tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://villalosapamates.netlify.app'; : > audit-http.txt
+          for path in / /index.html /admin.html /mkj-access.html /seguridad.html /auditoria.html /verificar-respaldo.html /release.json /.netlify/functions/bcv-rate; do code=$(curl -L -sS -o /tmp/body -w '%{http_code}' --max-time 30 "$base$path?audit=$GITHUB_RUN_ID"); size=$(wc -c </tmp/body); printf '%-55s %s %s bytes\n' "$path" "$code" "$size" | tee -a audit-http.txt; test "$code" -ge 200 -a "$code" -lt 400; test "$size" -gt 20; done
+          for path in /.netlify/functions/process-payment-report /.netlify/functions/admin-manual-payment /.netlify/functions/monthly-close /.netlify/functions/system-health-advanced; do code=$(curl -L -sS -o /tmp/body -w '%{http_code}' --max-time 30 "$base$path"); printf '%-55s %s (auth esperado)\n' "$path" "$code" | tee -a audit-http.txt; test "$code" = 401 -o "$code" = 405; done
+
+      - name: Verify final production admin payment route
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -L -sS -D audit-admin-headers.txt "https://villalosapamates.netlify.app/admin.html?audit=$GITHUB_RUN_ID" -o audit-admin.html
+          grep -qi '^x-vla-admin-payment-flow: protected-v3' audit-admin-headers.txt
+          node <<'NODE'
+          const fs=require('fs'),vm=require('vm');const h=fs.readFileSync('audit-admin.html','utf8');const a=h.indexOf('async function handleReport'),b=h.indexOf('function closeRows',a);if(a<0||b<a)throw Error('handleReport ausente');const s=h.slice(a,b);if(!s.includes('/.netlify/functions/process-payment-report'))throw Error('endpoint protegido ausente');if(s.includes('/.netlify/functions/airtable/')||s.includes('TABLE_PAGOS')||s.includes('TABLE_REPORTES'))throw Error('escritura directa presente');new vm.Script(s);console.log('PRODUCTION_ADMIN_PAYMENT_FLOW_OK');
+          NODE
+
+      - name: Dependency and secret audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm audit --omit=dev --audit-level=critical
+          if grep -RIE --exclude-dir=.git --exclude-dir=.github --exclude-dir=node_modules --exclude='*.md' --exclude='package-lock.json' '(sk_live_[A-Za-z0-9]{16,}|pat[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----)' .; then exit 1; fi
+
+      - name: Build final audit summary
+        if: always()
+        shell: bash
+        run: |
+          { echo '# Resultado de auditoría integral'; echo; echo "Commit auditado: $GITHUB_SHA"; echo; test -f audit-structural.md && cat audit-structural.md || true; echo; echo '## Pruebas HTTP'; echo '```'; test -f audit-http.txt && cat audit-http.txt || true; echo '```'; } > full-system-audit-report.md
+
+      - name: Upload audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-system-audit-report
+          path: |
+            full-system-audit-report.md
+            audit-structural.md
+            audit-structural.json
+            audit-write-paths.json
+            audit-http.txt
+            audit-admin-headers.txt
+          retention-days: 14
