@@ -7,6 +7,10 @@ const meter=require('../netlify/functions/_airtable_meter');
 // Esta prueba se ejecuta también sobre el merge sintético actual de main.
 (async()=>{
  const original=snapshotStore.invalidatePublicSnapshot;
+ const originalCacheEnabled=process.env.PUBLIC_BLOB_CACHE_ENABLED;
+ const originalDataEnvironment=process.env.VLA_DATA_ENVIRONMENT;
+ process.env.PUBLIC_BLOB_CACHE_ENABLED='true';
+ process.env.VLA_DATA_ENVIRONMENT='production';
  const calls=[];
  snapshotStore.invalidatePublicSnapshot=async(reason,env)=>{
   calls.push({reason,env});
@@ -35,5 +39,9 @@ const meter=require('../netlify/functions/_airtable_meter');
   await meter._test.invalidatePublicSnapshotAfterMutation('admin-manual-payment',{httpMethod:'POST',headers:{host:'villalosapamates.netlify.app'}},{statusCode:500,body:'{}'},ignoredState);
   assert.strictEqual(calls.length,2,'Lecturas, fuentes no financieras y errores no deben invalidar.');
   console.log('PUBLIC_SNAPSHOT_HOST_INVALIDATION_OK');
- }finally{snapshotStore.invalidatePublicSnapshot=original}
+ }finally{
+  snapshotStore.invalidatePublicSnapshot=original;
+  if(originalCacheEnabled===undefined)delete process.env.PUBLIC_BLOB_CACHE_ENABLED;else process.env.PUBLIC_BLOB_CACHE_ENABLED=originalCacheEnabled;
+  if(originalDataEnvironment===undefined)delete process.env.VLA_DATA_ENVIRONMENT;else process.env.VLA_DATA_ENVIRONMENT=originalDataEnvironment;
+ }
 })().catch(error=>{console.error(error);process.exit(1)});
