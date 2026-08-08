@@ -177,7 +177,8 @@ async function waitForLocatorText(page,locator,pattern,timeout=10000){
   await page.locator('#vla-pay-details').waitFor({state:'visible',timeout:10000});
   const rate=await page.evaluate(()=>Number(window.rate()));
   await page.selectOption('#payCurrency','BS');
-  await page.selectOption('#payMode','USD');
+  const cashMode=await page.locator('#payMode').inputValue();
+  assert(cashMode==='Bs BCV',`El flujo oscuro no reflejó la asignación automática del efectivo en Bs: ${cashMode}.`);
   await page.fill('#payAmount',String(Math.round(85*rate*100)/100));
   await page.locator('#payAmount').blur();
   await page.fill('#payCashReceiver','Administración');
