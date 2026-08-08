@@ -27,3 +27,9 @@ test('el analizador entra en la función background nativa que recibe event.blob
   const source=fs.readFileSync('netlify/functions/payment-report-analyzer-background.js','utf8');
   assert.match(source,/connectLambdaEvent\(event\)/);
 });
+
+test('la sonda temporal quedó anulada de forma permanente',()=>{
+  const source=fs.readFileSync('netlify/functions/payment-storage-probe.js','utf8');
+  assert.match(source,/statusCode:404/);
+  assert.doesNotMatch(source,/createProofStore|connectLambdaEvent|\.put\(|\.getByKey\(/);
+});
