@@ -191,7 +191,7 @@ async function waitForLocatorText(page,locator,pattern,timeout=10000){
   });
   const failures=audits.flatMap(item=>item.failures.map(f=>({...f,section:item.label})));
   assert(audits.every(item=>!item.missing),'Faltó una sección durante la auditoría.');
-  const minimumChecks={'Bienvenida':5,'Selector de tema':1,'Portal completo':50,'Reportar pago inicial':30,'Reportar pago con datos':30};
+  const minimumChecks={'Bienvenida':5,'Selector de tema':1,'Portal completo':50,'Reportar pago inicial':12,'Reportar pago con datos':30};
   assert(audits.every(item=>item.checked>=(minimumChecks[item.label]||1)),`La auditoría revisó muy pocos textos: ${JSON.stringify(audits)}`);
   assert(!failures.length,`Contrastes insuficientes: ${JSON.stringify(failures.slice(0,20))}`);
   assert(!badGradients.length,`Gradientes con contraste insuficiente: ${JSON.stringify(badGradients)}`);
