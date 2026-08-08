@@ -5,10 +5,12 @@ const {verify}=require('./_internal_job_auth');
 const {createPaymentReportAutomation}=require('./_payment_report_automation');
 const {createRuntime}=require('./_provisional_access_runtime');
 const {safeDisplayText}=require('./_security_utils');
+const {connectLambdaEvent}=require('./_blobs_compat');
 
 const handler=async function(event){
  if(event.httpMethod!=='POST')return{statusCode:405,body:JSON.stringify({message:'Method Not Allowed'})};
  if(!verify(event.body||'',event.headers||{}))return{statusCode:401,body:JSON.stringify({message:'No autorizado.'})};
+ connectLambdaEvent(event);
  let body={};try{body=JSON.parse(event.body||'{}')}catch(_){return{statusCode:400,body:JSON.stringify({message:'Solicitud inválida.'})}}
  try{
   const result=await createPaymentReportAutomation().process(String(body.reportId||'').trim());
