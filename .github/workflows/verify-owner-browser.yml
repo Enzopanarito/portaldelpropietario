@@ -150,7 +150,7 @@ jobs:
             const response = await loadPortalWithOwners(page);
             const welcome = page.locator('#welcomeSelector');
             const firstValue = await welcome.locator('option').evaluateAll(options => {
-              const item = options.find(option => String(option.textContent || '').trim().startsWith('Casa 1 -'));
+              const item = options.find(option => /^Casa\s+1\s+-/.test(String(option.textContent || '').trim()));
               return item ? item.value : '';
             });
             if (!firstValue) throw new Error('No se encontró una Casa 1 válida después de cargar los propietarios.');
@@ -181,8 +181,10 @@ jobs:
             const selector = page.locator('#userSelector');
             for (const house of Object.keys(expected).map(Number).sort((a, b) => a - b)) {
               const value = await selector.locator('option').evaluateAll((options, houseNumber) => {
-                const prefix = `Casa ${houseNumber} -`;
-                const item = options.find(option => String(option.textContent || '').trim().startsWith(prefix));
+                const item = options.find(option => {
+                  const match = /^Casa\s+(\d+)\s+-/.exec(String(option.textContent || '').trim());
+                  return Number(match && match[1]) === Number(houseNumber);
+                });
                 return item ? item.value : '';
               }, house);
               if (!value) throw new Error(`No se encontró la Casa ${house}.`);
