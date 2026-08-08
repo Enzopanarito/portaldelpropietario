@@ -16,6 +16,7 @@ function createHandler(deps={}){
  const isEnabled=deps.enabled||snapshotStore.enabled;
  const eventEnvironment=deps.environmentForEvent||snapshotStore.environmentForEvent;
  const eventHost=deps.requestHost||snapshotStore.requestHost;
+ const connectSnapshot=deps.connectPublicSnapshot||snapshotStore.connectPublicSnapshot;
  const readSnapshot=deps.readPublicSnapshot||snapshotStore.readPublicSnapshot;
  const writeSnapshot=deps.writePublicSnapshot||snapshotStore.writePublicSnapshot;
  const claimRefresh=deps.claimPublicRefresh||snapshotStore.claimPublicRefresh;
@@ -44,7 +45,7 @@ function createHandler(deps={}){
   if(!isEnabled(snapshotEnv,snapshotStore.runtimeConfig,host))return previousHandler(event);
   const waitSnapshot=deps.waitForSnapshot||(()=>waitForSnapshot(readSnapshot,deps.sleep||sleep,snapshotEnv));
   let cached=null,blobReadError=null;
-  try{cached=await readSnapshot(snapshotEnv)}catch(error){blobReadError=error}
+  try{await connectSnapshot(event);cached=await readSnapshot(snapshotEnv)}catch(error){blobReadError=error}
   if(cached&&cached.ok&&cached.fresh)return cachedResponse(cached.snapshot,'HIT');
   const versionRead=blobReadError?undefined:expectedEtag(cached);
 
