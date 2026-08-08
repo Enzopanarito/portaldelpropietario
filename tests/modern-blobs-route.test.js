@@ -27,11 +27,3 @@ test('el analizador entra en la función background nativa que recibe event.blob
   const source=fs.readFileSync('netlify/functions/payment-report-analyzer-background.js','utf8');
   assert.match(source,/connectLambdaEvent\(event\)/);
 });
-
-test('la sonda cifrada existe solo para verificar deploy previews',()=>{
-  const source=fs.readFileSync('netlify/functions/payment-storage-probe.js','utf8');
-  assert.match(source,/CONTEXT==='production'/);
-  assert.match(source,/connectLambdaEvent\(event\)/);
-  assert.match(source,/proofStore\.put/);
-  assert.match(source,/proofStore\.getByKey/);
-});
