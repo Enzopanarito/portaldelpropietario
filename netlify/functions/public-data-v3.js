@@ -9,6 +9,7 @@ function parseBody(result){try{return JSON.parse(result&&result.body||'{}')}catc
 function cachedResponse(snapshot,state,extra={}){return response(200,snapshot.payload,{'X-Public-Snapshot':state,'X-Airtable-Calls':'0','X-Balance-Engine':'5',...extra})}
 function forceEvent(event){return{...event,queryStringParameters:{...(event.queryStringParameters||{}),force:'1'}}}
 function sleep(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
+function blobErrorCode(error){const code=String(error?.code||'');if(/^BLOBS_[A-Z0-9_]+$/.test(code))return code;if(error?.name==='MissingBlobsEnvironmentError')return'BLOBS_CONTEXT_MISSING';return'BLOBS_UNAVAILABLE'}
 async function waitForSnapshot(readSnapshot=snapshotStore.readPublicSnapshot,sleepFn=sleep,env=process.env){for(let attempt=0;attempt<12;attempt+=1){await sleepFn(250);const current=await readSnapshot(env).catch(()=>null);if(current&&current.ok&&current.fresh)return current}return null}
 
 function createHandler(deps={}){
@@ -63,7 +64,7 @@ function createHandler(deps={}){
    if(fresh.statusCode===200){
     let writeWarning=null;
     if(!blobReadError){try{await writeSnapshot(payload,snapshotEnv,versionRead)}catch(error){writeWarning=`${error.code||'PUBLIC_SNAPSHOT_WRITE'}: ${String(error.message||'').slice(0,240)}`}}
-    return response(200,payload,{...(fresh.headers||{}),'Cache-Control':'no-store','X-Public-Snapshot':blobReadError?'BLOB_UNAVAILABLE':writeWarning?'WRITE_WARNING':'REFRESH',...(writeWarning?{'X-Public-Snapshot-Warning':writeWarning}:{})});
+    return response(200,payload,{...(fresh.headers||{}),'Cache-Control':'no-store','X-Public-Snapshot':blobReadError?'BLOB_UNAVAILABLE':writeWarning?'WRITE_WARNING':'REFRESH',...(blobReadError?{'X-Public-Snapshot-Error':blobErrorCode(blobReadError)}:{}),...(writeWarning?{'X-Public-Snapshot-Warning':writeWarning}:{})});
    }
    if(cached&&cached.ok)return cachedResponse(cached.snapshot,'STALE_FALLBACK',{'Warning':'111 - "Airtable no disponible; se sirvió la última fotografía validada"'});
    return fresh;
@@ -76,4 +77,4 @@ function createHandler(deps={}){
 
 const handler=createHandler();
 exports.handler=handler;
-module.exports={handler,createHandler,response,parseBody,forceEvent,cachedResponse,waitForSnapshot};
+module.exports={handler,createHandler,response,parseBody,forceEvent,cachedResponse,waitForSnapshot,blobErrorCode};

@@ -39,7 +39,7 @@ async function request(label){
  const response=await fetch(url,{headers:{'User-Agent':'VLA-Public-Snapshot-Production-Smoke/1.1','Cache-Control':'no-cache'}});
  const text=await response.text();
  let payload={};try{payload=JSON.parse(text)}catch(_){throw new Error(`Respuesta no JSON (${response.status}): ${text.slice(0,160)}`)}
- return{response,payload,state:String(response.headers.get('x-public-snapshot')||''),airtableCalls:String(response.headers.get('x-airtable-calls')||''),warning:String(response.headers.get('x-public-snapshot-warning')||response.headers.get('warning')||'')};
+ return{response,payload,state:String(response.headers.get('x-public-snapshot')||''),airtableCalls:String(response.headers.get('x-airtable-calls')||''),warning:String(response.headers.get('x-public-snapshot-error')||response.headers.get('x-public-snapshot-warning')||response.headers.get('warning')||'')};
 }
 
 (async()=>{

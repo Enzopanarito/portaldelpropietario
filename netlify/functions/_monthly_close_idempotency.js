@@ -26,7 +26,8 @@ function publicResult(body, month) {
     repairOperationId:String(body.repairOperationId||'')
   };
 }
-async function beginMonthlyClose(month, planHash, env=process.env) {
+async function beginMonthlyClose(month, planHash, env=process.env, event=null) {
+  if (event) require('./_idempotency_blobs').connectForEvent(event);
   return claim({
     scope:'MONTHLY_CLOSE',
     businessKey:String(month||''),

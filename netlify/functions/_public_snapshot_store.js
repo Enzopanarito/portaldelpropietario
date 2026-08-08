@@ -2,6 +2,7 @@
 
 const crypto=require('crypto');
 const runtimeConfig=require('./_runtime_config_generated');
+const blobsCompat=require('./_blobs_compat');
 
 const STORE_NAME='vla-public-snapshots-v1';
 const SCHEMA_VERSION='vla-public-snapshot-v1';
@@ -47,12 +48,10 @@ function refreshKey(env=process.env,config=runtimeConfig){return`${namespace(env
 function clone(value){return value===undefined?undefined:JSON.parse(JSON.stringify(value))}
 function createMemoryStore(){const entries=new Map();let version=0;return{async getWithMetadata(key){const entry=entries.get(key);return entry?{data:clone(entry.data),etag:entry.etag,metadata:clone(entry.metadata)}:null},async setJSON(key,data,options={}){const current=entries.get(key);if(options.onlyIfNew&&current)return{modified:false,etag:current.etag};if(options.onlyIfMatch&&(!current||current.etag!==options.onlyIfMatch))return{modified:false,etag:current?.etag||''};const etag=`memory-${++version}`;entries.set(key,{data:clone(data),etag,metadata:clone(options.metadata||{})});return{modified:true,etag}}}}
 let memoryStore=null;
-async function defaultStore(){if(process.env.VLA_PUBLIC_SNAPSHOT_TEST_MEMORY==='1'){if(runtimeConfig.deployContext==='production'||process.env.CONTEXT==='production')throw new Error('El almacén público de prueba está prohibido en producción.');if(!memoryStore)memoryStore=createMemoryStore();return memoryStore}const{getStore}=await import('@netlify/blobs');return getStore({name:STORE_NAME})}
+async function defaultStore(){if(process.env.VLA_PUBLIC_SNAPSHOT_TEST_MEMORY==='1'){if(runtimeConfig.deployContext==='production'||process.env.CONTEXT==='production')throw new Error('El almacén público de prueba está prohibido en producción.');if(!memoryStore)memoryStore=createMemoryStore();return memoryStore}return blobsCompat.getAtomicStore(STORE_NAME)}
 async function connectForEvent(event){
- if(process.env.VLA_PUBLIC_SNAPSHOT_TEST_MEMORY==='1'||!event?.blobs)return false;
- const{connectLambda}=await import('@netlify/blobs');
- connectLambda(event);
- return true;
+ if(process.env.VLA_PUBLIC_SNAPSHOT_TEST_MEMORY==='1')return false;
+ return blobsCompat.connectLambdaEvent(event);
 }
 function validOwner(owner){
  const house=Number(owner&&owner.Casa),usd=Number(owner&&owner['Saldo USD Actual']),bs=Number(owner&&owner['Saldo Bs Ref Actual']),total=Number(owner&&(owner['Saldo Total Actual']??owner['Deuda Restante']));

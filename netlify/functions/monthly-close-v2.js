@@ -91,7 +91,7 @@ const handler = async function(event) {
   try { body = JSON.parse(event.body || '{}'); } catch (_) { body = {}; }
   const month = normalizeMonth(body.month);
   if (body.action === 'repair') {
-    return repairOperation({ month, operationId: String(body.operationId || '').trim(), token: AIRTABLE_API_TOKEN, baseId: AIRTABLE_BASE_ID, counter, json });
+    return repairOperation({ month, operationId: String(body.operationId || '').trim(), token: AIRTABLE_API_TOKEN, baseId: AIRTABLE_BASE_ID, counter, json, event });
   }
 
   const dryRun = body.dryRun === true;
@@ -134,7 +134,7 @@ const handler = async function(event) {
   let closeLock = null;
   let handedOff = false;
   try {
-    atomicClose = await beginMonthlyClose(month, submittedPlanHash);
+    atomicClose = await beginMonthlyClose(month, submittedPlanHash, process.env, event);
     if (!atomicClose.ok) return atomicResponse(atomicClose, month, counter);
 
     const lockResult = await acquireCloseLock(month, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);

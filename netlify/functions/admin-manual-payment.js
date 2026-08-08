@@ -120,7 +120,7 @@ const handler = async function(event) {
 
     operationBusinessKey = operationKey(body, ownerId, mode, amountUsdRef, rate, reference, paymentDate, enteredCurrency);
     const payloadHash = hashPayload(operationPayload(ownerId, mode, amountUsdRef, rate, reference, paymentDate, enteredCurrency));
-    const guard = await begin('MANUAL_PAYMENT', operationBusinessKey, { payloadHash });
+    const guard = await begin('MANUAL_PAYMENT', operationBusinessKey, { payloadHash, event });
     if (!guard.ok) {
       if (guard.reason === 'done') {
         return json(200, {

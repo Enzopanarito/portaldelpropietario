@@ -65,7 +65,7 @@ const handler = async function(event) {
     const owners = await existingOwnerIds();
     if (ownerIds.some(id => !owners.has(id))) return json(400, { message:'La selección contiene un propietario inválido.' });
     key = businessKey({ concept, amount, type, mode, frequency, ownerIds, month });
-    const guard = await begin('EXPENSE_CREATE', key);
+    const guard = await begin('EXPENSE_CREATE', key, { event });
     if (!guard.ok) {
       if (guard.reason === 'done') return json(200, { success:true,idempotent:true,recordId:guard.marker?.resultId||null,message:'Este gasto ya había sido creado. No se duplicó.' });
       if (guard.reason === 'partial') return json(409, { success:false,protected:true,partial:true,recordId:guard.marker?.resultId||null,message:'La creación anterior tuvo un resultado parcial. Revise Gastos antes de repetir.' });

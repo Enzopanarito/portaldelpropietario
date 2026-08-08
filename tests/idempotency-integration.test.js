@@ -27,7 +27,9 @@ assert.strictEqual(pkg.dependencies['@netlify/blobs'],'9.1.5');
 const installedBlobs=String(lock.packages?.['node_modules/@netlify/blobs']?.version||'');
 assert.strictEqual(installedBlobs,'9.1.5','Netlify Blobs queda fijado en la versión compatible sin la dependencia vulnerable image-size.');
 assert.strictEqual(pkg.overrides?.nanoid,'3.3.17','nanoid debe permanecer en la versión corregida.');
-assert(ledger.includes("consistency:'strong'"));
+assert(ledger.includes("require('./_blobs_compat')"));
+assert(ledger.includes('blobsCompat.getAtomicStore(STORE_NAME)'));
+assert(ledger.includes('connectForEvent'));
 assert(ledger.includes('onlyIfNew:true'));
 assert(ledger.includes('onlyIfMatch:current.etag'));
 assert(ledger.includes("process.env.VLA_IDEMPOTENCY_TEST_MEMORY==='1'"));
@@ -36,18 +38,18 @@ assert(ledger.indexOf("process.env.CONTEXT==='production'")<ledger.indexOf('retu
 assert(!ledger.includes('Registro de Idempotencia'),'Airtable no debe convertirse en el candado primario nuevo.');
 
 assert(manual.includes("const { hashPayload } = require('./_idempotency_blobs')"));
-assert(manual.includes("begin('MANUAL_PAYMENT', operationBusinessKey, { payloadHash })"));
+assert(manual.includes("begin('MANUAL_PAYMENT', operationBusinessKey, { payloadHash, event })"));
 assert(manual.includes('operationPayload(ownerId, mode, amountUsdRef, rate, reference, paymentDate, enteredCurrency)'));
 assert(manual.includes('idempotencyConflict:true'));
 assert(manual.indexOf("begin('MANUAL_PAYMENT'")<manual.indexOf('airtableCreateRecord(TABLES.pagos'),'Debe adquirir el candado antes de crear el pago.');
 
 assert(report.includes("const { hashPayload } = require('./_idempotency_blobs')"));
-assert(report.includes("begin('PAYMENT_REPORT', reportId, { payloadHash })"));
+assert(report.includes("begin('PAYMENT_REPORT', reportId, { payloadHash, event })"));
 assert(report.includes('idempotencyConflict:true'));
 assert(report.indexOf("begin('PAYMENT_REPORT'")<report.indexOf('airtableCreateRecord(TABLES.pagos'),'Debe adquirir el candado antes de aprobar el reporte.');
 
-assert(close.includes('beginMonthlyClose(month, submittedPlanHash)'));
-assert(close.indexOf('beginMonthlyClose(month, submittedPlanHash)')<close.indexOf('acquireCloseLock(month'),'El candado atómico debe preceder al bloqueo Airtable.');
+assert(close.includes('beginMonthlyClose(month, submittedPlanHash, process.env, event)'));
+assert(close.indexOf('beginMonthlyClose(month, submittedPlanHash, process.env, event)')<close.indexOf('acquireCloseLock(month'),'El candado atómico debe preceder al bloqueo Airtable.');
 assert(close.includes("blockMonthlyClose(atomicClose, 'EXECUTOR_THROWN_UNCERTAIN'"));
 assert(close.includes('finalizeMonthlyClose(atomicClose, response, month)'));
 assert(closeAtomic.includes("scope:'MONTHLY_CLOSE'"));

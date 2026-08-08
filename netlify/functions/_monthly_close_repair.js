@@ -12,7 +12,7 @@ const {
 
 const VALID_OPERATION_ID = /^[A-Za-z0-9_-]{8,120}$/;
 
-async function repairOperation({ month, operationId, token, baseId, counter, json }) {
+async function repairOperation({ month, operationId, token, baseId, counter, json, event }) {
   if (!VALID_OPERATION_ID.test(operationId)) return json(400, { success: false, message: 'Identificador de operación inválido.' }, counter);
   const log = await findOperationLog(month, operationId, token, baseId, counter);
   if (!log) return json(404, { success: false, message: 'No se encontró la bitácora del cierre parcial.' }, counter);
@@ -22,7 +22,7 @@ async function repairOperation({ month, operationId, token, baseId, counter, jso
   }
 
   const key = `${month}|${operationId}`;
-  const guard = await begin('MONTHLY_CLOSE_REPAIR', key);
+  const guard = await begin('MONTHLY_CLOSE_REPAIR', key, { event });
   if (!guard.ok) {
     return json(guard.reason === 'done' ? 200 : 409, {
       success: guard.reason === 'done',

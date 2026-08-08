@@ -18,13 +18,14 @@ function isBlobsConfigurationError(error) {
   const message = String(error?.message || error || '');
   return /environment has not been configured to use Netlify Blobs/i.test(message)
     || /supply the following properties when creating a store:\s*siteID,\s*token/i.test(message)
-    || String(error?.code || '') === 'BLOBS_CONTEXT_MISSING';
+    || ['BLOBS_CONTEXT_MISSING','BLOBS_EVENT_CONTEXT_MISSING'].includes(String(error?.code || ''));
 }
 
 async function begin(scope,key,options={}) {
   const payloadHash=options.payloadHash || blobs.hashPayload({scope,key});
   let atomic;
   try {
+    if (options.event) blobs.connectForEvent(options.event);
     atomic=await blobs.claim({scope,businessKey:key,payloadHash,ttlMs:options.ttlMs,env:options.env||process.env});
   } catch (error) {
     if (!isBlobsConfigurationError(error)) throw error;
