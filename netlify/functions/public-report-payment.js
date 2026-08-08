@@ -18,6 +18,7 @@ const { createProofStore } = require('./_payment_proof_store');
 const { computePerceptualHash } = require('./_payment_visual_hash');
 const { findDuplicateMatches } = require('./_payment_duplicate_core');
 const { sign } = require('./_internal_job_auth');
+const { connectLambdaEvent } = require('./_blobs_compat');
 
 const ALLOWED_MODES = new Set(['USD', 'Bs BCV']);
 const ALLOWED_ENTERED_CURRENCIES = new Set(['USD', 'BS']);
@@ -27,6 +28,7 @@ const DUPLICATE_WINDOW_MS = 5 * 60 * 1000;
 const ABUSE_WINDOW_MS = 60 * 60 * 1000;
 const MAX_REPORTS_PER_IP = 12;
 const MAX_REPORTS_PER_OWNER = 6;
+const POST_CREATE_TIMEOUT_MS = 8000;
 
 function todayCaracasISO(){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Caracas',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
 function nowCaracasLabel(){return new Intl.DateTimeFormat('es-VE',{timeZone:'America/Caracas',dateStyle:'medium',timeStyle:'short'}).format(new Date());}
@@ -56,6 +58,7 @@ function validTransactionDate(value){
 function json(statusCode,body,headers={}){return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store, no-cache, must-revalidate','X-Content-Type-Options':'nosniff',...headers},body:JSON.stringify(body)};}
 function airtableUrl(tableName,query=''){return `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}${query}`;}
 function clientIp(event){const h=event.headers||{};return String(h['x-nf-client-connection-ip']||h['X-Nf-Client-Connection-Ip']||h['x-forwarded-for']||h['X-Forwarded-For']||'unknown').split(',')[0].trim().slice(0,120);}
+async function within(promise,timeoutMs,fallback){let timer;try{return await Promise.race([promise,new Promise(resolve=>{timer=setTimeout(()=>resolve(fallback),timeoutMs)})])}finally{clearTimeout(timer)}}
 
 async function rateLimit(scope,identity,max){
   try{return await consume({scope,identity,max,windowMs:ABUSE_WINDOW_MS,countBeforeRecord:true});}
@@ -168,6 +171,7 @@ const handler = async function(event){
     if(!transactionDate)return json(400,{message:'El comprobante necesita una fecha de operación válida para este método.'});
     const attachment=paymentChannel==='DIGITAL'?decodeAttachment(body.attachment):null;
     if(paymentChannel==='DIGITAL'&&!attachment)return json(400,{message:'Debe adjuntar el comprobante antes de enviar el reporte.'});
+    if(paymentChannel==='DIGITAL')connectLambdaEvent(event);
     const reference=rawReference||(paymentChannel==='CASH'?`EFECTIVO · ${cashReceiver} · ${transactionDate}`:'');
 
     const [ipLimit,ownerLimit]=await Promise.all([rateLimit('PUBLIC_REPORT_IP',ip,MAX_REPORTS_PER_IP),rateLimit('PUBLIC_REPORT_OWNER',ownerId,MAX_REPORTS_PER_OWNER)]);
@@ -203,8 +207,9 @@ const handler = async function(event){
     const report=await airtableCreateRecord(TABLES.reportes,fields);
     if(identityReservation)await proofStore.completeIdentity({reservation:identityReservation,reportId:report.id}).catch(error=>console.warn('No se pudo completar la reserva idempotente:',error.message));
     const access=pendingReportAccessDecision(report?.id);
-    let automation=paymentChannel==='CASH'?{queued:false,status:'CASH_ADMIN_CONFIRMATION_REQUIRED'}:await triggerBackgroundAnalysis(report.id).catch(error=>({queued:false,status:safeDisplayText(error.code||error.message,160)}));
-    let adminNotification=null;try{adminNotification=await notifyAdminPaymentReport({ownerId,owner,mode,enteredCurrency,amountEntered:amount,usdEq,amountBs,reference,rateInfo,reportId:report?.id,access,bank,transactionDate,transactionDateSource,transactionStatus,observations,attachment,paymentChannel,cashReceiver});}catch(error){adminNotification={sent:false,status:'Error enviando notificación admin',detail:safeDisplayText(error.message,500)};}
+    const automationTask=paymentChannel==='CASH'?Promise.resolve({queued:false,status:'CASH_ADMIN_CONFIRMATION_REQUIRED'}):triggerBackgroundAnalysis(report.id).catch(error=>({queued:false,status:safeDisplayText(error.code||error.message,160)}));
+    const notificationTask=notifyAdminPaymentReport({ownerId,owner,mode,enteredCurrency,amountEntered:amount,usdEq,amountBs,reference,rateInfo,reportId:report?.id,access,bank,transactionDate,transactionDateSource,transactionStatus,observations,attachment,paymentChannel,cashReceiver}).catch(error=>({sent:false,status:'Error enviando notificación admin',detail:safeDisplayText(error.message,500)}));
+    const [automation,adminNotification]=await Promise.all([within(automationTask,POST_CREATE_TIMEOUT_MS,{queued:false,status:'BACKGROUND_TRIGGER_TIMEOUT'}),within(notificationTask,POST_CREATE_TIMEOUT_MS,{sent:false,status:'Notificación diferida para proteger la respuesta del portal'})]);
     const message=paymentChannel==='CASH'?'Efectivo reportado. Quedó pendiente de confirmación administrativa; no se modificará el saldo ni el acceso hasta que la entrega sea verificada.':automation.queued?'Pago recibido. El motor inteligente está validando el comprobante, el receptor y posibles duplicados.':'Pago recibido y protegido. La validación se reintentará automáticamente.';
     console.info(JSON.stringify({event:'VLA_PAYMENT_REPORT_CREATED',reportId:report?.id||null,ownerId,paymentChannel,method,submissionId,transactionDateSource,targetMode:mode,proofStored:Boolean(proof?.verified),analysisQueued:Boolean(automation.queued)}));
     return json(200,deepEscapeStrings({success:true,message,reportId:report?.id,paymentChannel,targetMode:mode,enteredCurrency,amountEntered:amount,amountUsdRef:usdEq,amountBs,rateApplied:rateInfo.rate||null,method,transactionDate,transactionDateSource,reportTimestamp,attachmentIncluded:Boolean(attachment),proofStored:Boolean(proof?.verified),visualHashStored:Boolean(identity?.visualHash),automation,access,adminNotification}));

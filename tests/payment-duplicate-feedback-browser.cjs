@@ -14,7 +14,7 @@ test('un comprobante duplicado muestra un mensaje persistente y permite elegir o
     await page.addStyleTag({path:path.resolve('owner-payment-report-v3.css')});
     await page.addScriptTag({path:path.resolve('payment-report-intelligence.js')});
     await page.addScriptTag({path:path.resolve('owner-payment-report-v3.js')});
-    await page.locator('html[data-vla-owner-payment-report="progressive-v6"]').waitFor({state:'attached'});
+    await page.locator('html[data-vla-owner-payment-report="progressive-v7"]').waitFor({state:'attached'});
     await page.click('#reportBtn');
     await page.getByText('Pago digital',{exact:true}).click();
     const first=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),Buffer.from('duplicate-fixture')]);

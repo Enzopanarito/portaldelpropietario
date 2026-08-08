@@ -11,7 +11,7 @@ Esta entrega elimina la superposición de cálculos y parches visuales que podí
 | Cálculo financiero por propietario | `vla-finance-v7.js` | `vla-balance-contract-v7` |
 | DTO público | `netlify/functions/public-data-v2.js` | Campos canónicos y aliases de compatibilidad |
 | Desglose en el portal | `owner-breakdown-v7.js` | `owner-breakdown-v7` |
-| Reporte progresivo de pagos | `owner-payment-report-v3.js` | `progressive-v6` |
+| Reporte progresivo de pagos | `owner-payment-report-v3.js` | `progressive-v7` |
 | Estado operacional | `netlify/functions/system-health.js` | Verificación canónica 15/15 |
 
 Los edge functions `balance-fix`, `currency-balance-fix`, `accounting-health-fix` y `admin-payment-flow` permanecen en el repositorio únicamente como historial compatible. Ya no están registrados en `netlify.toml` y no participan en producción. Sus responsabilidades quedaron integradas en las fuentes canónicas correspondientes. `pwa-head` se limita a metadatos, tema y presentación de la tasa BCV; no reescribe saldos ni pagos.

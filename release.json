@@ -7,7 +7,7 @@
   "canonicalBalanceRelease": "2026-07-11-v6",
   "balanceSource": "canonical-july-2026",
   "breakdownPresentation": "owner-breakdown-v7",
-  "paymentReport": "progressive-v6",
+  "paymentReport": "progressive-v7",
   "cutoff": "2026-08-08T00:00:00.000Z",
   "productionPublishDirectory": "dist"
 }
