@@ -33,6 +33,21 @@
 [functions."provisional-access-expiration-scheduled"]
   schedule = "*/15 * * * *"
 
+# Las rutas públicas se reescriben directamente a Functions Lambda v1.
+# Netlify conserva método, cabeceras, cuerpo y query string, y además adjunta
+# `event.blobs`, necesario para las escrituras cifradas y atómicas.
+[[redirects]]
+from = "/api/vla/public-data"
+to = "/.netlify/functions/public-data-v3"
+status = 200
+force = true
+
+[[redirects]]
+from = "/api/vla/report-payment"
+to = "/.netlify/functions/public-report-payment"
+status = 200
+force = true
+
 [[edge_functions]]
 function = "pwa-head"
 path = "/*"
