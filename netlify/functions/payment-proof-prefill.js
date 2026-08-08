@@ -9,9 +9,9 @@ const {consume}=require('./_persistent_rate_limit');
 const {safeDisplayText}=require('./_security_utils');
 const {mergeConfig}=require('./_automation_rules');
 const {listAll,TABLES,aiConfig}=require('./_payment_report_automation');
+const {resolvePrefillDate}=require('./_payment_date_resolver');
 
 const WINDOW_MS=60*60*1000;
-const DATE_FALLBACK_METHODS=new Set(['ZELLE','BINANCE_PAY','CRYPTO_TRANSFER']);
 const CURRENT_STABLE_MODELS=Object.freeze(['gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-2.5-flash']);
 const DIRECT_TIMEOUT_MS=9000;
 const PROXY_TIMEOUT_MS=12000;
@@ -24,19 +24,13 @@ function validRecordId(value){return /^rec[A-Za-z0-9]{14}$/.test(String(value||'
 function clientIp(event){const headers=event.headers||{};return String(headers['x-nf-client-connection-ip']||headers['X-Nf-Client-Connection-Ip']||headers['x-forwarded-for']||headers['X-Forwarded-For']||'unknown').split(',')[0].trim().slice(0,120)}
 async function allowed(scope,identity,max){try{return await consume({scope,identity,max,windowMs:WINDOW_MS,countBeforeRecord:true})}catch(error){console.warn('Límite de prelectura no disponible:',error.message);return{allowed:true,retryAfter:3600}}}
 function methodLabel(method){return({TRANSFER_VE:'Transferencia bancaria',MOBILE_PAYMENT_VE:'Pago móvil',ZELLE:'Zelle',TRANSFER_US:'Transferencia bancaria internacional',BINANCE_PAY:'Binance Pay',CRYPTO_TRANSFER:'Binance / transferencia cripto',OTHER:'Otro método'}[method]||'')}
-function requiredFieldsFor(method){
- const normalized=String(method||'OTHER').trim().toUpperCase();
- const required=['amount','currency','reference','method'];
- if(!DATE_FALLBACK_METHODS.has(normalized))required.push('transactionDate');
- return required;
-}
+function requiredFieldsFor(){return['amount','currency','reference','method']}
 function missingFields(analysis){
  const required=new Set(requiredFieldsFor(analysis?.method)),missing=[];
  if(required.has('amount')&&(!analysis||!Number(analysis.amount)))missing.push({field:'amount',label:'monto'});
  if(required.has('currency')&&(!analysis||!['VES','USD'].includes(analysis.currency)))missing.push({field:'currency',label:'moneda'});
  if(required.has('reference')&&!analysis?.reference)missing.push({field:'reference',label:'referencia'});
  if(required.has('method')&&!analysis?.bank_or_platform&&!methodLabel(analysis?.method))missing.push({field:'bank',label:'banco o método'});
- if(required.has('transactionDate')&&!analysis?.transaction_date)missing.push({field:'transactionDate',label:'fecha de la operación'});
  return missing;
 }
 async function loadAiConfig(){const records=await listAll(TABLES.config,'?maxRecords=1'),record=records[0]||{fields:{}},rules=mergeConfig(record);return aiConfig(record,rules)}
@@ -136,8 +130,8 @@ const handler=async event=>{
   if(!parsed.ok)return json(422,{message:'No pudimos leer el comprobante con seguridad. Complete los datos manualmente.',manualAvailable:true,reason:parsed.reason});
   const validation=contract.validateAnalysis(parsed.value,{minimumConfidence:0}),fatal=(validation.issueCodes||[]).filter(code=>!['CRITICAL_FIELDS_MISSING','LOW_CONFIDENCE'].includes(code));
   if(fatal.length)return json(422,{message:'El comprobante no devolvió datos utilizables. Complete los datos manualmente.',manualAvailable:true,reason:fatal[0]});
-  const analysis=contract.normalizeAnalysis(parsed.value),missing=missingFields(analysis),bank=analysis.bank_or_platform||methodLabel(analysis.method),dateFallback=DATE_FALLBACK_METHODS.has(analysis.method)&&!analysis.transaction_date;
-  return json(200,{success:true,complete:missing.length===0,analysis:{amount:analysis.amount,currency:analysis.currency,reference:analysis.reference||'',bank,method:analysis.method,transactionDate:analysis.transaction_date||'',transactionDateSource:dateFallback?'REPORT_TIMESTAMP_FALLBACK':'PROOF_EXTRACTED',transactionTime:analysis.transaction_time||'',transactionStatus:analysis.transaction_status,recipient:analysis.recipient_name||analysis.recipient_phone||analysis.recipient_email||analysis.recipient_account_visible||'',confidence:analysis.confidence,warnings:analysis.warnings||[],possibleVisualModification:analysis.possible_visual_modification===true},missing,analysisProvider:result.model},{'X-Payment-AI-Provider':result.provider||'unknown'});
+  const analysis=contract.normalizeAnalysis(parsed.value),missing=missingFields(analysis),bank=analysis.bank_or_platform||methodLabel(analysis.method),date=resolvePrefillDate({proofDate:analysis.transaction_date,attachment:body.attachment});
+  return json(200,{success:true,complete:missing.length===0,analysis:{amount:analysis.amount,currency:analysis.currency,reference:analysis.reference||'',bank,method:analysis.method,...date,transactionTime:analysis.transaction_time||'',transactionStatus:analysis.transaction_status,recipient:analysis.recipient_name||analysis.recipient_phone||analysis.recipient_email||analysis.recipient_account_visible||'',confidence:analysis.confidence,warnings:analysis.warnings||[],possibleVisualModification:analysis.possible_visual_modification===true},missing,analysisProvider:result.model,analysisRoute:result.provider||'unknown'},{'X-Payment-AI-Provider':result.provider||'unknown'});
  }catch(error){
   const message=String(error?.message||'');
   if(['INVALID_ATTACHMENT'].includes(errorCode(error))||/adjunto|JPG|PNG|PDF|3 MB|formato/i.test(message))return json(400,{message:safeDisplayText(message,300),manualAvailable:false});
@@ -149,7 +143,6 @@ const handler=async event=>{
 exports.handler=withAirtableUsage('payment-proof-prefill',handler);
 exports.missingFields=missingFields;
 exports.requiredFieldsFor=requiredFieldsFor;
-exports.DATE_FALLBACK_METHODS=DATE_FALLBACK_METHODS;
 exports.methodLabel=methodLabel;
 exports.unique=unique;
 exports.modelCandidates=modelCandidates;

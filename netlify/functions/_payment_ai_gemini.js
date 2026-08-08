@@ -25,6 +25,9 @@ function extractionPrompt({promptVersion='',report={}}={}){
   'Reconoce comprobantes de bancos venezolanos, pago móvil, Zelle, transferencias de Estados Unidos y Binance.',
   'Para Binance usa BINANCE_PAY cuando sea Binance Pay y CRYPTO_TRANSFER cuando sea una transferencia on-chain.',
   'Si el activo visible es USDT, USDC o FDUSD usa currency="USD", conserva activo y red visibles en memo y no inventes equivalencias, red, TxID, Pay ID ni receptor.',
+  'Haz una segunda revisión enfocada en la fecha: examina encabezado, detalle de operación, línea cercana al monto, referencia, estado y receptor; reconoce DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD y fechas con meses en español o inglés, y normalízalas a YYYY-MM-DD.',
+  'Prioriza la fecha que pertenezca a la operación o confirmación. No confundas la hora o fecha de la barra del teléfono, la fecha de descarga, la fecha del archivo ni una fecha ajena al movimiento.',
+  'Si solo hay una fecha contextual junto a los datos del pago y no existe una contradicción visible, úsala como transaction_date. Si hay dos candidatas ambiguas o ninguna fecha legible, usa null y enumera brevemente las candidatas o la ambigüedad en warnings.',
   'Usa null cuando un dato no sea visible. confidence refleja solo legibilidad y certeza de extracción.',
   'critical_fields_visible solo puede ser true cuando se ven monto, moneda o activo, fecha, referencia, estado y algún dato del receptor.',
   'Si observas señales de posible edición visual, marca possible_visual_modification=true y descríbelas brevemente en warnings.'
