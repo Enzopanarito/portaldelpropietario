@@ -51,7 +51,7 @@ jobs:
           for attempt in $(seq 1 90); do
             html_code="$(curl --silent --show-error --location --output /tmp/owner.html --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/?owner-release=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
             dark_code="$(curl --silent --show-error --location --output /tmp/owner-dark.css --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/owner-dark-contrast-v1.css?v=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
-            if [ "$html_code" = "200" ] && [ "$dark_code" = "200" ] && grep -q 'Contraste integral modo oscuro wcag-v1' /tmp/owner-dark.css; then
+            if [ "$html_code" = "200" ] && [ "$dark_code" = "200" ] && grep -q 'data-vla-owner-mobile="fluid-v2"' /tmp/owner.html && grep -q 'Contraste integral modo oscuro wcag-v1' /tmp/owner-dark.css; then
               echo "Preview y capa de contraste disponibles en $TARGET_URL"
               exit 0
             fi
