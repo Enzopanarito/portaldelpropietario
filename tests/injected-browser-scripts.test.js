@@ -48,16 +48,12 @@ function scriptById(html, idPrefix) {
 }
 
 (async () => {
-  const balance = await renderEdge('netlify/edge-functions/balance-fix.js', '/');
-  const breakdown = scriptById(balance.html, 'vla-visual-breakdown-');
-  assert.doesNotThrow(() => new vm.Script(breakdown.source), 'El desglose inyectado debe ser JavaScript válido');
-  assert(balance.html.includes("'$'+m(n).toFixed(2)"), 'El símbolo $ debe conservarse literalmente');
-  assert(!balance.html.includes("'\n</html>+m(n).toFixed(2)"), 'La inyección no puede convertir $ en </html>');
-  assert.strictEqual(balance.response.headers.get('x-vla-breakdown-presentation'), '2026-07-11-photo-v6');
-
   const pwa = await renderEdge('netlify/edge-functions/pwa-head.js', '/');
   const bcv = scriptById(pwa.html, 'vla-bcv-official-logo-fix');
   assert.doesNotThrow(() => new vm.Script(bcv.source), 'El script visual del BCV debe ser JavaScript válido');
+  assert.strictEqual(pwa.response.headers.get('x-vla-balance-contract'), 'vla-balance-contract-v7');
+  assert.strictEqual(pwa.response.headers.get('x-vla-breakdown-presentation'), 'owner-breakdown-v7');
+  assert(!pwa.html.includes('vla-visual-breakdown-2026-07-11-photo-v6'), 'No debe inyectarse el desglose histórico');
 
   console.log('INJECTED_BROWSER_SCRIPTS_OK');
 })().catch(error => {

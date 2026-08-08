@@ -39,7 +39,7 @@ jobs:
           for attempt in $(seq 1 90); do
             headers="$(curl --silent --show-error --location --dump-header - --output /dev/null --max-time 30 "${TARGET_URL}/?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
             marker="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-breakdown-presentation"{gsub("\r","");print $2}' | tail -1)"
-            if [ "$marker" = "2026-07-11-photo-v6" ]; then
+            if [ "$marker" = "owner-breakdown-v7" ]; then
               echo "Browser release available at $TARGET_URL"
               exit 0
             fi
@@ -150,7 +150,7 @@ jobs:
             const response = await loadPortalWithOwners(page);
             const welcome = page.locator('#welcomeSelector');
             const firstValue = await welcome.locator('option').evaluateAll(options => {
-              const item = options.find(option => String(option.textContent || '').trim().startsWith('Casa 1 -'));
+              const item = options.find(option => /^Casa\s+1\s+-/.test(String(option.textContent || '').trim()));
               return item ? item.value : '';
             });
             if (!firstValue) throw new Error('No se encontró una Casa 1 válida después de cargar los propietarios.');
@@ -159,7 +159,7 @@ jobs:
             await page.getByRole('button', { name: /Consultar Estado de Cuenta/i }).click();
             await page.locator('#main').waitFor({ state: 'visible', timeout: 15000 });
 
-            const breakdown = page.locator('[data-vla-breakdown-host="2026-07-11-photo-v6"]');
+            const breakdown = page.locator('[data-vla-breakdown-host="owner-breakdown-v7"]');
             await breakdown.waitFor({ state: 'visible', timeout: 30000 });
             await waitForLocatorText(
               page,
@@ -181,8 +181,10 @@ jobs:
             const selector = page.locator('#userSelector');
             for (const house of Object.keys(expected).map(Number).sort((a, b) => a - b)) {
               const value = await selector.locator('option').evaluateAll((options, houseNumber) => {
-                const prefix = `Casa ${houseNumber} -`;
-                const item = options.find(option => String(option.textContent || '').trim().startsWith(prefix));
+                const item = options.find(option => {
+                  const match = /^Casa\s+(\d+)\s+-/.exec(String(option.textContent || '').trim());
+                  return Number(match && match[1]) === Number(houseNumber);
+                });
                 return item ? item.value : '';
               }, house);
               if (!value) throw new Error(`No se encontró la Casa ${house}.`);

@@ -126,6 +126,28 @@ async function waitForHouseOptions(page,expected=15,timeout=30000){
   throw new Error(`Se cargaron ${found} de ${expected} casas.`);
 }
 
+async function selectStableHouse(page,houseNumber,timeout=15000){
+  const selector=page.locator('#welcomeSelector'),deadline=Date.now()+timeout;
+  while(Date.now()<deadline){
+    const value=await selector.locator('option').evaluateAll((options,house)=>{
+      const option=options.find(item=>{
+        const match=/^Casa\s+(\d+)\s+-/i.exec(String(item.textContent||'').trim());
+        return Number(match&&match[1])===Number(house);
+      });
+      return option?option.value:'';
+    },houseNumber).catch(()=>'');
+    if(value){
+      try{
+        await selector.selectOption(value);
+        await page.waitForTimeout(200);
+        if(await selector.inputValue()===value)return value;
+      }catch(_){}
+    }
+    await page.waitForTimeout(250);
+  }
+  return'';
+}
+
 async function waitForLocatorText(page,locator,pattern,timeout=10000){
   const deadline=Date.now()+timeout;
   while(Date.now()<deadline){
@@ -158,9 +180,8 @@ async function waitForLocatorText(page,locator,pattern,timeout=10000){
   audits.push(await contrastAudit(page,'#theme-welcome','Selector de tema'));
   await page.screenshot({path:'owner-dark-welcome.png',fullPage:true});
 
-  const ownerValue=await page.locator('#welcomeSelector option').evaluateAll(options=>options.find(o=>/^Casa\s+4\s+-/.test(String(o.textContent||'').trim()))?.value||'');
+  const ownerValue=await selectStableHouse(page,4);
   assert(ownerValue,'No se encontró Casa 4.');
-  await page.selectOption('#welcomeSelector',ownerValue);
   await page.click('#enterBtn');
   await page.locator('#main').waitFor({state:'visible',timeout:15000});
   await page.locator('[data-vla-breakdown-host]').waitFor({state:'visible',timeout:30000});
@@ -177,7 +198,8 @@ async function waitForLocatorText(page,locator,pattern,timeout=10000){
   await page.locator('#vla-pay-details').waitFor({state:'visible',timeout:10000});
   const rate=await page.evaluate(()=>Number(window.rate()));
   await page.selectOption('#payCurrency','BS');
-  await page.selectOption('#payMode','USD');
+  const cashMode=await page.locator('#payMode').inputValue();
+  assert(cashMode==='Bs BCV',`El flujo oscuro no reflejó la asignación automática del efectivo en Bs: ${cashMode}.`);
   await page.fill('#payAmount',String(Math.round(85*rate*100)/100));
   await page.locator('#payAmount').blur();
   await page.fill('#payCashReceiver','Administración');
@@ -190,7 +212,7 @@ async function waitForLocatorText(page,locator,pattern,timeout=10000){
   });
   const failures=audits.flatMap(item=>item.failures.map(f=>({...f,section:item.label})));
   assert(audits.every(item=>!item.missing),'Faltó una sección durante la auditoría.');
-  const minimumChecks={'Bienvenida':5,'Selector de tema':1,'Portal completo':50,'Reportar pago inicial':30,'Reportar pago con datos':30};
+  const minimumChecks={'Bienvenida':5,'Selector de tema':1,'Portal completo':50,'Reportar pago inicial':12,'Reportar pago con datos':30};
   assert(audits.every(item=>item.checked>=(minimumChecks[item.label]||1)),`La auditoría revisó muy pocos textos: ${JSON.stringify(audits)}`);
   assert(!failures.length,`Contrastes insuficientes: ${JSON.stringify(failures.slice(0,20))}`);
   assert(!badGradients.length,`Gradientes con contraste insuficiente: ${JSON.stringify(badGradients)}`);

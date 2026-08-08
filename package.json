@@ -6,17 +6,22 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "node scripts/build-production.js",
+    "build": "npm run test:release && npm run build:public",
+    "build:public": "node scripts/build-production.js",
+    "test:release": "npm test",
     "test": "node --test tests/*.test.js",
     "test:browser": "node --test tests/*.cjs",
     "verify": "node scripts/predeploy-check.js && npm test"
   },
   "dependencies": {
     "@netlify/aws-lambda-compat": "^1.0.0",
-    "@netlify/blobs": "^10.7.9",
+    "@netlify/blobs": "9.1.5",
     "nodemailer": "^9.0.3",
     "pdfkit": "^0.15.0",
     "sharp": "^0.35.3",
     "tailwindcss": "^3.4.17"
+  },
+  "overrides": {
+    "nanoid": "3.3.17"
   }
 }

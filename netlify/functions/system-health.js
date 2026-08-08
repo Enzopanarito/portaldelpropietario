@@ -79,6 +79,14 @@ function newestRecords(records, limit = 20) {
     .sort((a, b) => String(b.createdTime || (b.fields || {})['Enviado En'] || (b.fields || {}).Fecha || '').localeCompare(String(a.createdTime || (a.fields || {})['Enviado En'] || (a.fields || {}).Fecha || '')))
     .slice(0, limit);
 }
+function canonicalFinancialState(payload){
+  const owners=Array.isArray(payload?.propietarios)?payload.propietarios:[],houses=owners.map(owner=>Number(owner?.Casa)).sort((a,b)=>a-b),expected=Array.from({length:15},(_,index)=>index+1);
+  const invalid=owners.filter(owner=>{
+    const usd=Number(owner?.saldoUsd),bs=Number(owner?.saldoBsRef),payable=Number(owner?.totalPagadero),net=Number(owner?.saldoNetoReferencial);
+    return owner?.balanceEngineVersion!=='vla-balance-contract-v7'||![usd,bs,payable,net].every(Number.isFinite)||money(Math.max(0,usd)+Math.max(0,bs))!==money(payable)||money(usd+bs)!==money(net);
+  }).map(owner=>Number(owner?.Casa)||'?');
+  return{ok:owners.length===15&&JSON.stringify(houses)===JSON.stringify(expected)&&invalid.length===0,count:owners.length,invalid};
+}
 
 const handler = async function(event) {
   const auth = requireAdmin(event);
@@ -131,8 +139,15 @@ const handler = async function(event) {
 
     add('Tablas principales Airtable', true, `Propietarios: ${propietarios.length}; Gastos: ${gastos.length}; Pagos: ${pagos.length}; Reportes: ${reportes.length}; Recibos: ${recibos.length}.`);
 
-    const legacyCount = gastos.filter(g => String((g.fields || {}).Concepto || '').toLowerCase().includes('(cargo individual)')).length;
-    add('Modo contable', true, legacyCount > 0 ? `Transición activa: ${legacyCount} cargo(s) individual(es) legacy.` : 'Modo doble moneda limpio.', legacyCount > 0 ? 'warning' : 'ok');
+    const activeExpenses=filterActiveExpenses(gastos,currentMonthCaracas());
+    const totalLegacyCount=gastos.filter(g=>String((g.fields||{}).Concepto||'').toLowerCase().includes('(cargo individual)')).length;
+    const activeLegacyCount=activeExpenses.filter(g=>String((g.fields||{}).Concepto||'').toLowerCase().includes('(cargo individual)')).length;
+    const historicalLegacyCount=Math.max(0,totalLegacyCount-activeLegacyCount);
+    add('Modo contable',activeLegacyCount===0,activeLegacyCount>0
+      ?`Transición activa: ${activeLegacyCount} cargo(s) individual(es) legacy vigentes en el mes operativo. Históricos excluidos: ${historicalLegacyCount}.`
+      :historicalLegacyCount>0
+        ?`Modo doble moneda limpio. ${historicalLegacyCount} cargo(s) individual(es) legacy están cerrados como histórico y no participan en el cálculo actual.`
+        :'Modo doble moneda limpio.',activeLegacyCount>0?'warning':'ok',{activeLegacyCount,historicalLegacyCount,source:'active-expense-lifecycle'});
 
     const unclassified = gastos.filter(g => !((g.fields || {})['Forma de Pago'])).length;
     add('Gastos con forma de pago', unclassified === 0, unclassified ? `${unclassified} gasto(s) sin Forma de Pago.` : 'Todos clasificados.', unclassified ? 'warning' : 'ok');
@@ -156,7 +171,7 @@ const handler = async function(event) {
     const status = statusCount(propietarios, 'Estado Acceso Portón');
     add('Estados de acceso portón', true, `Habilitado: ${status.Habilitado || 0}; Limitado: ${status.Limitado || 0}; Excepción: ${status['Excepción Manual'] || 0}; Error: ${status['Error Sync'] || 0}; Sin configurar: ${status['Sin configurar'] || 0}.`, status['Error Sync'] ? 'warning' : 'ok', status);
 
-    const activeExpenses=filterActiveExpenses(gastos,currentMonthCaracas()),rules=automationInfo?.rules;
+    const rules=automationInfo?.rules;
     const expired = propietarios.map(owner => ({ owner, calc: calculateExpiredAccessDebt(owner, pagos, reportes, {expenses:activeExpenses,dueDay:rules?.payment?.dueDay||10,surchargeRate:rules?.payment?.surchargeRate??0.10}) }));
     const withExpiredDebt = expired.filter(x => x.calc.hasExpiredDebt).length;
     const pendingCovered = expired.filter(x => x.calc.hasExpiredDebt && x.calc.pendingCoversExpiredDebt).length;
@@ -228,6 +243,22 @@ const handler = async function(event) {
       add('Tasa BCV', false, error.message, 'warning');
     }
 
+    try {
+      counter.external += 1;
+      const origin=`${event.headers['x-forwarded-proto'] || 'https'}://${event.headers.host}`,publicResponse=await fetch(`${origin}/api/vla/public-data`),publicPayload=await publicResponse.json(),financial=canonicalFinancialState(publicPayload),snapshot=String(publicResponse.headers.get('x-public-snapshot')||'DIRECT');
+      add('Contabilidad canónica',financial.ok,financial.ok?'Contrato v7 consistente: total pagadero separa USD y Bs en las 15 casas.':`Contrato financiero incompleto o inconsistente en: ${financial.invalid.length?financial.invalid.map(casa=>`Casa ${casa}`).join(', '):'respuesta pública'}.`,financial.ok?'ok':'error',{invalidHouses:financial.invalid});
+      add('Casas financieras 15/15',financial.count===15,`${financial.count}/15 casas recibidas desde la fuente pública oficial.`,financial.count===15?'ok':'error');
+      const snapshotOk=publicResponse.ok&&!['ERROR','REFRESH_BUSY','STALE','STALE_FALLBACK','STALE_EXCEPTION','BLOB_UNAVAILABLE','WRITE_WARNING'].includes(snapshot);
+      add('Snapshot público',snapshotOk,`Estado: ${snapshot}.`,snapshotOk?'ok':'warning',{state:snapshot});
+    } catch (error) {
+      add('Contabilidad canónica',false,`No se pudo contrastar el contrato público: ${error.message}`,'error');
+      add('Casas financieras 15/15',false,'No fue posible verificar el conjunto público de casas.','error');
+      add('Snapshot público',false,'No fue posible leer el estado del snapshot.','warning');
+    }
+
+    const closeRules=automationInfo?.rules?.monthlyClose;
+    add('Cierre mensual',Boolean(closeRules),closeRules?`Configurado para el día ${closeRules.day} a las ${String(closeRules.hour).padStart(2,'0')}:00, con recuperación los días ${(closeRules.retryDays||[]).join(', ')}. Modo automático: ${closeRules.automaticEnabled?'activo':'pausado'}.`:'No fue posible cargar las reglas de cierre.',closeRules?'ok':'error');
+
     add('Uso de API en Salud', true, `Lectura ampliada: ${counter.airtable} llamada(s) a Airtable y ${counter.external} llamada(s) externa(s). No se prueba login MKJ automáticamente.`);
 
     const hasError = checks.some(c => c.severity === 'error');
@@ -244,3 +275,4 @@ const handler = async function(event) {
 };
 
 exports.handler = withAirtableUsage('system-health', handler);
+exports.canonicalFinancialState = canonicalFinancialState;

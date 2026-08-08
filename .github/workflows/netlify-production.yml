@@ -23,6 +23,28 @@ jobs:
       - name: Checkout exact production commit
         uses: actions/checkout@v4
 
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies safely
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run financial, payment, snapshot, close and security release gates
+        run: npm test
+
+      - name: Build the exact public artifact
+        run: npm run build:public
+
+      - name: Install Chromium for critical browser gates
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.53.0
+          npx playwright install --with-deps chromium
+
+      - name: Run critical payment and admin browser gates
+        run: node --test tests/owner-payment-report-browser.cjs tests/payment-duplicate-feedback-browser.cjs tests/admin-owner-access-browser.cjs tests/admin-premium-browser.cjs tests/admin-responsive-fouc-browser.cjs
+
       - name: Resolve Netlify credentials safely
         id: credentials
         shell: bash
@@ -81,8 +103,8 @@ jobs:
           for attempt in $(seq 1 90); do
             if body="$(curl --fail --silent --show-error --location --max-time 30 \
               "https://villalosapamates.netlify.app/release.json?run=$GITHUB_RUN_ID&attempt=$attempt" 2>/dev/null)"; then
-              if printf '%s' "$body" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);if(j.release!=='2026-07-11-v6'||j.expectedHouses!==15||j.breakdownPresentation!=='2026-07-11-photo-v6')process.exit(1)})"; then
-                echo "Production verified: release 2026-07-11-v6, 15 houses, visual breakdown 2026-07-11-photo-v6."
+              if printf '%s' "$body" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);if(j.release!=='2026-08-08-v7'||j.expectedHouses!==15||j.breakdownPresentation!=='owner-breakdown-v7'||j.paymentReport!=='progressive-v6')process.exit(1)})"; then
+                echo "Production verified: release 2026-08-08-v7, 15 houses, owner-breakdown-v7 and progressive-v6."
                 exit 0
               fi
             fi
@@ -126,7 +148,7 @@ jobs:
             if (!ready) {
               body = `### Producción Netlify bloqueada\n\nLos secretos de Netlify no están disponibles para el flujo. No se modificó producción.\n\nCommit: \`${context.sha}\` · [Ejecución](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
             } else if (triggered && verified) {
-              body = `### Desglose visual v6 publicado y verificado ✅\n\nNetlify confirmó la versión \`2026-07-11-v6\`, las 15 casas y el desglose visual \`2026-07-11-photo-v6\`. La comprobación final en navegador se ejecuta después de este flujo.\n\nRama de producción: \`${branch}\` · Build: \`${buildId}\` · Commit del flujo: \`${context.sha}\` · [Ejecución](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
+              body = `### Contrato financiero v7 publicado y verificado ✅\n\nNetlify confirmó \`2026-08-08-v7\`, las 15 casas, \`owner-breakdown-v7\` y \`progressive-v6\`. Los gates unitarios y de navegador se ejecutaron antes de disparar el build.\n\nRama de producción: \`${branch}\` · Build: \`${buildId}\` · Commit del flujo: \`${context.sha}\` · [Ejecución](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
             } else {
               body = `### Desglose visual de producción no verificado ⚠️\n\nRama de producción: \`${branch}\`. Build: \`${buildId}\`. Disparo: \`${process.env.TRIGGER_OUTCOME || 'no ejecutado'}\`. Verificación: \`${process.env.VERIFY_OUTCOME || 'no ejecutada'}\`.\n\nCommit: \`${context.sha}\` · [Ejecución](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
             }

@@ -1,4 +1,4 @@
-/* Villa Los Apamates · Reporte de pago inteligente smart-v4 */
+/* Villa Los Apamates · Reporte de pago progresivo v6 */
 html.vla-pay-open,html.vla-pay-open body{overflow:hidden!important}
 #modal{padding:18px;background:rgba(2,11,23,.68);backdrop-filter:blur(5px)}
 #modal .vla-pay-sheet{width:min(100%,680px);max-height:calc(100svh - 36px);overflow:auto;background:#fff;border:1px solid rgba(15,23,42,.1);border-radius:28px;padding:22px;box-shadow:0 32px 90px rgba(2,6,23,.38);color:#0f172a;overscroll-behavior:contain}
@@ -30,6 +30,14 @@ html.vla-pay-open,html.vla-pay-open body{overflow:hidden!important}
 .vla-pay-channel-grid input:checked+span{border-color:#12823d;background:#effaf3;box-shadow:0 0 0 3px rgba(18,130,61,.1)}
 .vla-pay-channel-grid input:focus-visible+span{outline:3px solid rgba(14,165,233,.28);outline-offset:2px}
 #vla-pay-details.hidden{display:none!important}
+.hidden{display:none!important}
+.vla-pay-confirmation{background:linear-gradient(145deg,#fbfffc,#eef9f2);border-color:#b9ddc4}
+#vla-pay-confirm-card{display:grid;gap:7px;padding:16px;border:1px solid #cfe4d4;border-radius:16px;background:#fff}
+#vla-pay-confirm-card .vla-pay-detected-amount{font-size:28px;line-height:1.1;color:#087332}
+#vla-pay-confirm-card span{font-size:14px;color:#334155}
+#vla-pay-confirm-card small{margin-top:6px;color:#64748b;font-size:11px;text-transform:uppercase;font-weight:800}
+#vla-pay-confirm-card b{font-size:18px}.vla-pay-review-warning{margin:8px 0 0;padding:11px;border-radius:12px;background:#fffbeb;color:#854d0e;font-size:12px;line-height:1.45}
+.vla-pay-edit{min-height:44px;border:0;background:transparent;color:#0b6d32;text-decoration:underline;font-size:13px;font-weight:850}
 .vla-pay-two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .vla-pay-optional{background:#fbfcfd}
 .vla-pay-section-title{display:flex;align-items:center;gap:9px;padding-bottom:11px;border-bottom:1px solid #e9eef3}

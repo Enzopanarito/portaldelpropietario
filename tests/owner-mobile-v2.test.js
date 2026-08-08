@@ -7,7 +7,11 @@ const edge=read('netlify/edge-functions/owner-mobile-assets.js');
 const css=read('owner-mobile-v2.css');
 const layoutFix=read('owner-mobile-v2-layout-fix.css');
 const netlify=read('netlify.toml');
+const index=read('index.html');
+const workflow=read('.github/workflows/verify-owner-mobile.yml');
 
+assert(index.includes('data-vla-owner-mobile="fluid-v2"'),'El documento debe declarar el marcador móvil antes de ejecutar JavaScript.');
+assert(index.includes('data-vla-owner-payment-cash="currency-mapped-v1"'),'El documento debe versionar la asignación automática del efectivo.');
 assert(edge.includes("x-vla-owner-mobile','fluid-v2"),'Falta el encabezado verificable fluid-v2.');
 assert(edge.includes('owner-mobile-v2.css?v='),'La Edge Function no carga la hoja móvil versionada.');
 assert(edge.includes('owner-mobile-v2-layout-fix.css?v='),'La Edge Function no carga el ajuste de jerarquía del encabezado.');
@@ -17,6 +21,8 @@ assert(edge.includes("caches.keys()"),'Falta limpiar cachés antiguas del acceso
 assert(edge.includes("window.addEventListener('pageshow'"),'Falta recuperar páginas restauradas desde bfcache en Safari.');
 assert(netlify.includes('function = "owner-mobile-assets"'),'La Edge Function móvil no está activada.');
 assert(netlify.includes('path = "/index.html"'),'La protección móvil debe cubrir /index.html.');
+assert(workflow.includes("grep -q 'data-vla-owner-mobile=\"fluid-v2\"' /tmp/owner.html"),'La compuerta móvil podría probar una preview anterior.');
+assert(workflow.includes("grep -q 'data-vla-owner-payment-cash=\"currency-mapped-v1\"' /tmp/owner.html"),'La compuerta móvil podría probar el flujo de efectivo anterior.');
 
 assert(css.includes('.hidden{display:none!important}'),'Falta el fallback crítico de visibilidad sin Tailwind.');
 assert(css.includes('@media(max-width:767px)'),'Falta la capa móvil principal.');

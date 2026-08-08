@@ -1,0 +1,16 @@
+[data-vla-breakdown-host="owner-breakdown-v7"]{display:block;width:100%}
+[data-vla-breakdown-host="owner-breakdown-v7"] .vla-breakdown-wrap{width:100%;overflow:hidden}
+[data-vla-breakdown-host="owner-breakdown-v7"] .vla-breakdown-scroll{width:100%;overflow-x:auto}
+[data-vla-breakdown-host="owner-breakdown-v7"] table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:14px}
+[data-vla-breakdown-host="owner-breakdown-v7"] th{padding:0 8px 12px;font-weight:800;color:#475569;border-bottom:1px solid #cbd5e1}
+[data-vla-breakdown-host="owner-breakdown-v7"] td{padding:12px 8px;border-bottom:1px solid #e2e8f0;vertical-align:middle}
+[data-vla-breakdown-host="owner-breakdown-v7"] td:first-child,[data-vla-breakdown-host="owner-breakdown-v7"] th:first-child{text-align:left}
+[data-vla-breakdown-host="owner-breakdown-v7"] td:not(:first-child),[data-vla-breakdown-host="owner-breakdown-v7"] th:not(:first-child){text-align:right}
+[data-vla-breakdown-host="owner-breakdown-v7"] .vla-concept{font-weight:500;color:#334155;line-height:1.35}
+[data-vla-breakdown-host="owner-breakdown-v7"] .vla-total{color:#64748b;white-space:nowrap}
+[data-vla-breakdown-host="owner-breakdown-v7"] .vla-share{font-weight:700;color:#334155;white-space:nowrap}
+[data-vla-breakdown-host="owner-breakdown-v7"] .vla-previous td{font-weight:800;color:#1e293b;border-bottom-color:#cbd5e1}
+[data-vla-breakdown-host="owner-breakdown-v7"] .vla-summary td{color:#16a34a;font-weight:800;border-bottom:0;padding-top:18px;padding-bottom:6px}
+html.dark [data-vla-breakdown-host="owner-breakdown-v7"] th,html.dark [data-vla-breakdown-host="owner-breakdown-v7"] td,html.dark [data-vla-breakdown-host="owner-breakdown-v7"] .vla-concept,html.dark [data-vla-breakdown-host="owner-breakdown-v7"] .vla-total,html.dark [data-vla-breakdown-host="owner-breakdown-v7"] .vla-share,html.dark [data-vla-breakdown-host="owner-breakdown-v7"] .vla-previous td{color:#f8fafc!important;border-color:#334155}
+html.dark [data-vla-breakdown-host="owner-breakdown-v7"] .vla-summary td{color:#4ade80!important}
+@media(min-width:640px){[data-vla-breakdown-host="owner-breakdown-v7"] table{font-size:16px}}

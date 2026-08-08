@@ -18,6 +18,7 @@
     return{total,debtUsd:Number(owner&&owner['Saldo USD Actual']||0),debtBs:Number(owner&&owner['Saldo Bs Ref Actual']||0)};
   }
   function stateFor(total){return total>EPS?'debt':total<-EPS?'credit':'solvent'}
+  function stateAmount(balance){const payable=Number(balance?.total||0);if(payable>EPS)return payable;const net=Number(balance?.netTotal??payable);return net<-EPS?net:0}
   function stateLabel(state){return state==='debt'?'Pendiente':state==='credit'?'Saldo a favor':'Solvente'}
   function parseHouse(value){const match=text(value).match(/\d+/);return match?Number(match[0]):NaN}
 
@@ -85,11 +86,11 @@
 
   function updateExecutiveNumbers(){
     const balances=ownerList().map(owner=>({owner,balance:ownerBalance(owner)}));
-    const debt=balances.filter(item=>Number(item.balance.total)>EPS);
-    const credit=balances.filter(item=>Number(item.balance.total)<-EPS);
-    const solvent=balances.filter(item=>Math.abs(Number(item.balance.total))<=EPS);
+    const debt=balances.filter(item=>stateAmount(item.balance)>EPS);
+    const credit=balances.filter(item=>stateAmount(item.balance)<-EPS);
+    const solvent=balances.filter(item=>Math.abs(stateAmount(item.balance))<=EPS);
     const debtTotal=debt.reduce((sum,item)=>sum+Number(item.balance.total||0),0);
-    const creditTotal=Math.abs(credit.reduce((sum,item)=>sum+Number(item.balance.total||0),0));
+    const creditTotal=Math.abs(credit.reduce((sum,item)=>sum+stateAmount(item.balance),0));
     const values={
       'vla-overview-solvent':solvent.length,'vla-overview-debt':debt.length,'vla-overview-credit':credit.length,
       'vla-owner-solvent':solvent.length,'vla-owner-debt':debt.length,'vla-owner-credit':credit.length
@@ -127,7 +128,7 @@
         const owner=all.find(item=>Number(item.Casa)===house);
         if(!owner)return;
         const balance=ownerBalance(owner);
-        const state=stateFor(Number(balance.total||0));
+        const state=stateFor(stateAmount(balance));
         row.dataset.vlaState=state;
         row.setAttribute('aria-label',`Casa ${house}, ${text(owner.Propietario)}, ${stateLabel(state)}, ${currency(balance.total)}`);
         const ownerCell=cells[1];

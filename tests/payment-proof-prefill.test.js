@@ -5,6 +5,7 @@ const Module=require('module');
 const path=require('path');
 
 function loadWithAnalysis(analysis,{runnerFactory}={}){
+ process.env.GEMINI_API_KEY='test-key';
  const original=Module._load;
  Module._load=function(request,parent,isMain){
   if(parent&&String(parent.filename||'').endsWith(path.join('netlify','functions','payment-proof-prefill.js'))){
@@ -30,3 +31,5 @@ test('identifica campos faltantes y mantiene disponible la carga manual',async()
 test('no analiza sin comprobante',async()=>{const {handler}=loadWithAnalysis(base()),response=await handler(event(null));assert.equal(response.statusCode,400);assert.match(JSON.parse(response.body).message,/Adjunte/i)});
 test('usa el modelo rápido y cambia al respaldo cuando el proveedor rechaza el primero',async()=>{const calls=[],runnerFactory=()=>async({model})=>{calls.push(model);if(model==='gemini-2.5-flash-lite')throw Object.assign(new Error('modelo temporalmente no disponible'),{code:'AI_PROVIDER_ERROR',status:404});return JSON.stringify(base())};const {handler}=loadWithAnalysis(base(),{runnerFactory}),response=await handler(event());assert.equal(response.statusCode,200);assert.deepEqual(calls,['gemini-2.5-flash-lite','gemini-2.5-flash'])});
 test('un error del proveedor no se presenta como archivo inválido',async()=>{const runnerFactory=()=>async()=>{throw Object.assign(new Error('El proveedor de análisis no pudo procesar el comprobante.'),{code:'AI_PROVIDER_ERROR',status:403})};const {handler}=loadWithAnalysis(base(),{runnerFactory}),response=await handler(event()),body=JSON.parse(response.body);assert.equal(response.statusCode,503);assert.equal(body.manualAvailable,true);assert.equal(body.reason,'AI_PROVIDER_ERROR')});
+test('Zelle y Binance no bloquean la prelectura cuando la fecha no aparece',()=>{const {missingFields}=loadWithAnalysis(base());for(const method of ['ZELLE','BINANCE_PAY','CRYPTO_TRANSFER'])assert(!missingFields(base({method,transaction_date:null})).some(item=>item.field==='transactionDate'))});
+test('transferencia y pago móvil sí conservan fecha como dato requerido',()=>{const {missingFields}=loadWithAnalysis(base());for(const method of ['TRANSFER_VE','MOBILE_PAYMENT_VE'])assert(missingFields(base({method,transaction_date:null})).some(item=>item.field==='transactionDate'))});

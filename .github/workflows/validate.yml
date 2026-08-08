@@ -108,7 +108,12 @@ jobs:
         run: node tests/visual-breakdown-v4.test.js
 
       - name: Audit all 15 current house balances
-        run: node tests/all-houses-current-balance.test.js
+        run: |
+          node tests/all-houses-current-balance.test.js
+          node tests/vla-finance-v7.test.js
+          node tests/canonical-balance-release-gate.test.js
+          node tests/owner-breakdown-v7.test.js
+          node tests/system-health-canonical.test.js
 
       - name: Validate gate expired-debt calculations
         run: node tests/access-balance-engine.test.js

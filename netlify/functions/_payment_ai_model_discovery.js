@@ -21,7 +21,7 @@ function score(model){
  if(!id.startsWith('gemini-')||!methods.includes('generateContent'))return-1;
  if(/(?:embedding|embed|aqa|tts|live|image|imagen|robotics|computer-use|deep-research)/.test(id))return-1;
  let value=0;
- if(/flash-lite/.test(id))value+=430;
+ if(/flash-lite/.test(id))value+=530;
  else if(/flash/.test(id))value+=500;
  else if(/pro/.test(id))value+=260;
  else value+=120;

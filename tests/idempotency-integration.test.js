@@ -23,9 +23,10 @@ assert(guard.includes('blobs.complete'));
 assert(guard.includes('blobs.partial'));
 assert(guard.includes('blobs.failSafe'));
 
-assert.strictEqual(pkg.dependencies['@netlify/blobs'],'^10.7.9');
+assert.strictEqual(pkg.dependencies['@netlify/blobs'],'9.1.5');
 const installedBlobs=String(lock.packages?.['node_modules/@netlify/blobs']?.version||'');
-assert(/^10\./.test(installedBlobs),`La versión instalada de @netlify/blobs debe ser 10.x y fue ${installedBlobs||'ausente'}.`);
+assert.strictEqual(installedBlobs,'9.1.5','Netlify Blobs queda fijado en la versión compatible sin la dependencia vulnerable image-size.');
+assert.strictEqual(pkg.overrides?.nanoid,'3.3.17','nanoid debe permanecer en la versión corregida.');
 assert(ledger.includes("consistency:'strong'"));
 assert(ledger.includes('onlyIfNew:true'));
 assert(ledger.includes('onlyIfMatch:current.etag'));
