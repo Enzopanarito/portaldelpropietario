@@ -24,6 +24,26 @@ async function waitForHouseOptions(page,expected=15,timeout=30000){
   throw new Error(`Se cargaron ${found} de ${expected} casas.`);
 }
 
+async function selectStableHouse(page,timeout=15000){
+  const selector=page.locator('#welcomeSelector'),deadline=Date.now()+timeout;
+  while(Date.now()<deadline){
+    const value=await selector.locator('option').evaluateAll(options=>{
+      const valid=options.filter(item=>/^Casa\s+\d+\s+-/i.test(String(item.textContent||'').trim()));
+      const option=valid.find(item=>/^Casa\s+15\s+-/i.test(String(item.textContent||'').trim()))||valid.find(item=>/^Casa\s+1\s+-/i.test(String(item.textContent||'').trim()))||valid[0]||options.find(item=>String(item.value||'').trim());
+      return option?option.value:'';
+    }).catch(()=>'');
+    if(value){
+      try{
+        await selector.selectOption(value);
+        await page.waitForTimeout(200);
+        if(await selector.inputValue()===value)return value;
+      }catch(_){}
+    }
+    await page.waitForTimeout(250);
+  }
+  return'';
+}
+
 async function loadPortalWithOwners(page){
   let lastError=null;
   for(let attempt=1;attempt<=3;attempt++){
@@ -92,11 +112,7 @@ async function loadPortalWithOwners(page){
   if(welcomeMetrics.titleFont<25)throw new Error('El título móvil quedó demasiado pequeño.');
   if(welcomeMetrics.buttonHeight<50||!painted(welcomeMetrics.buttonBackground,welcomeMetrics.buttonBackgroundImage)||welcomeMetrics.buttonColor==='rgb(0, 0, 0)')throw new Error(`El botón de entrada perdió su estilo principal: ${JSON.stringify(welcomeMetrics)}.`);
 
-  const ownerValue=await page.locator('#welcomeSelector option').evaluateAll(options=>{
-    const valid=options.filter(item=>/^Casa\s+\d+\s+-/i.test(String(item.textContent||'').trim()));
-    const option=valid.find(item=>/^Casa\s+15\s+-/i.test(String(item.textContent||'').trim()))||valid.find(item=>/^Casa\s+1\s+-/i.test(String(item.textContent||'').trim()))||valid[0];
-    return option?option.value:'';
-  });
+  const ownerValue=await selectStableHouse(page);
   if(!ownerValue)throw new Error('No se encontró una casa válida.');
   await page.locator('#welcomeSelector').selectOption(ownerValue);
   await page.getByRole('button',{name:/Consultar Estado de Cuenta/i}).click();
