@@ -8,13 +8,14 @@ function snapshot(payload,expiresAt=Date.now()+60000,etag='etag-current'){return
 (async()=>{
  const event={httpMethod:'GET',headers:{host:'villalosapamates.netlify.app'},queryStringParameters:{force:'1',house:'4'}};
  const testEnv={AIRTABLE_BASE_ID:'appPRODUCTION0001',PUBLIC_BLOB_CACHE_ENABLED:'true',VLA_DATA_ENVIRONMENT:'production'};
- const baseDeps={requestHost:()=>event.headers.host,environmentForEvent:()=>testEnv};
+ let connections=0;
+ const baseDeps={requestHost:()=>event.headers.host,environmentForEvent:()=>testEnv,connectPublicSnapshot:async received=>{connections+=1;assert.strictEqual(received,event)}};
  assert.strictEqual(forceEvent({queryStringParameters:{house:'4'}}).queryStringParameters.force,'1');assert.deepStrictEqual(parseBody(apiResponse(200,{ok:true})),{ok:true});
  let previousCalls=0;
  const disabled=createHandler({...baseDeps,enabled:()=>false,previousHandler:async received=>{previousCalls+=1;assert.strictEqual(received,event);return apiResponse(200,{legacy:true},{'X-Legacy':'1'})}}),disabledResult=await disabled(event);assert.strictEqual(previousCalls,1);assert.strictEqual(parseBody(disabledResult).legacy,true);assert.strictEqual(disabledResult.headers['X-Legacy'],'1');
 
  previousCalls=0;const cachedPayload={balanceEngineVersion:5,officialBalanceSource:'ControlVersiones',propietarios:[]};let receivedReadEnv=null;
- const hit=createHandler({...baseDeps,enabled:()=>true,readPublicSnapshot:async env=>{receivedReadEnv=env;return snapshot(cachedPayload)},previousHandler:async()=>{previousCalls+=1;return apiResponse(500,{})}}),hitResult=await hit(event);assert.strictEqual(previousCalls,0);assert.strictEqual(receivedReadEnv,testEnv);assert.strictEqual(hitResult.headers['X-Public-Snapshot'],'HIT');assert.deepStrictEqual(parseBody(hitResult),cachedPayload);
+ const hit=createHandler({...baseDeps,enabled:()=>true,readPublicSnapshot:async env=>{receivedReadEnv=env;return snapshot(cachedPayload)},previousHandler:async()=>{previousCalls+=1;return apiResponse(500,{})}}),hitResult=await hit(event);assert.strictEqual(previousCalls,0);assert.strictEqual(connections,1);assert.strictEqual(receivedReadEnv,testEnv);assert.strictEqual(hitResult.headers['X-Public-Snapshot'],'HIT');assert.deepStrictEqual(parseBody(hitResult),cachedPayload);
 
  let writes=0,releases=0;previousCalls=0;let claimEnv=null,releaseEnv=null;
  const freshPayload={generatedAt:'2026-07-13T06:00:00.000Z',balanceEngineVersion:5,officialBalanceSource:'ControlVersiones',propietarios:Array.from({length:15},(_,index)=>({Casa:index+1,'Saldo USD Actual':0,'Saldo Bs Ref Actual':0,'Saldo Total Actual':0}))};
