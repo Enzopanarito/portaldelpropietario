@@ -1,7 +1,7 @@
 'use strict';
 
 const assert=require('assert');
-const{connectLambdaEvent,wrapStore}=require('../netlify/functions/_blobs_compat');
+const{environmentValue,connectLambdaEvent,wrapStore}=require('../netlify/functions/_blobs_compat');
 
 function response(status,etag=''){return{status,headers:{get:name=>String(name).toLowerCase()==='etag'?etag:null}}}
 
@@ -24,9 +24,12 @@ function response(status,etag=''){return{status,headers:{get:name=>String(name).
  const previous=process.env.NETLIFY_BLOBS_CONTEXT;
  try{
   delete process.env.NETLIFY_BLOBS_CONTEXT;
-  await assert.rejects(async()=>connectLambdaEvent({},process.env),error=>error.code==='BLOBS_EVENT_CONTEXT_MISSING');
+  assert.strictEqual(environmentValue({get:key=>key==='NETLIFY_BLOBS_CONTEXT'?'modern-context':''},'NETLIFY_BLOBS_CONTEXT'),'modern-context');
+  assert.strictEqual(connectLambdaEvent({},process.env,{get:()=> 'modern-context'},'').source,'netlify-runtime');
+  assert.strictEqual(connectLambdaEvent({},process.env,null,'global-context').source,'netlify-global');
+  await assert.rejects(async()=>connectLambdaEvent({},process.env,null,''),error=>error.code==='BLOBS_EVENT_CONTEXT_MISSING');
   const event={blobs:Buffer.from(JSON.stringify({url:'https://example.test',token:'test-token'})).toString('base64'),headers:{'x-nf-deploy-id':'deploy1','x-nf-site-id':'site1'}};
-  assert.strictEqual(connectLambdaEvent(event,process.env).source,'event');
+  assert.strictEqual(connectLambdaEvent(event,process.env,null,'').source,'event');
   assert(process.env.NETLIFY_BLOBS_CONTEXT);
  }finally{if(previous===undefined)delete process.env.NETLIFY_BLOBS_CONTEXT;else process.env.NETLIFY_BLOBS_CONTEXT=previous}
  console.log('BLOBS_COMPAT_OK');
