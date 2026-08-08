@@ -36,7 +36,7 @@ jobs:
               for (let index = 0; index < count; index += 1) {
                 const option = options.nth(index);
                 const label = String(await option.innerText().catch(() => '')).trim();
-                if (/^Casa 1 -/.test(label)) return option.getAttribute('value');
+                if (/^Casa\s+1\s+-/.test(label)) return option.getAttribute('value');
               }
               await page.waitForTimeout(250);
             }
