@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const blobsCompat = require('./_blobs_compat');
 
 const STORE_NAME = 'vla-idempotency-v1';
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
@@ -61,13 +62,12 @@ async function defaultStore() {
     if (!testMemoryStore) testMemoryStore=createMemoryStore();
     return testMemoryStore;
   }
-  const { getStore } = await import('@netlify/blobs');
-  return getStore({name:STORE_NAME,consistency:'strong'});
+  return blobsCompat.getAtomicStore(STORE_NAME);
 }
 
 function createLedger({storeFactory=defaultStore,now=()=>Date.now(),newOperationId=()=>operationId(now())}={}) {
   async function read(store,key) {
-    return normalizeEntry(await store.getWithMetadata(key,{consistency:'strong',type:'json'}));
+    return normalizeEntry(await store.getWithMetadata(key,{type:'json'}));
   }
   async function replaceExpired(store,key,current,next) {
     if (!current?.etag) return {modified:false};
@@ -111,20 +111,18 @@ function createLedger({storeFactory=defaultStore,now=()=>Date.now(),newOperation
   async function transition(marker,status,{result=null,partial=false,errorCode='',expireNow=false}={}) {
     if (!marker?.key || !marker?.record?.operationId) throw new Error('Marcador idempotente inválido.');
     const store=await storeFactory();
-    const current=await read(store,marker.key);
-    if (!current) throw new Error('El marcador idempotente desapareció.');
-    if (current.data.operationId!==marker.record.operationId) throw new Error('La operación perdió la propiedad del marcador idempotente.');
+    if (!marker.etag) throw new Error('El marcador idempotente no contiene la versión adquirida.');
     const timestamp=now();
     const next={
-      ...current.data,
+      ...marker.record,
       status,
       updatedAt:timestamp,
       partial:Boolean(partial),
       errorCode:errorCode?cleanSegment(errorCode):'',
       result:safeResult(result),
-      expiresAt:expireNow?timestamp:Number(current.data.expiresAt||timestamp+DEFAULT_TTL_MS)
+      expiresAt:expireNow?timestamp:Number(marker.record.expiresAt||timestamp+DEFAULT_TTL_MS)
     };
-    const updated=await store.setJSON(marker.key,next,{onlyIfMatch:current.etag,metadata:{expiresAt:next.expiresAt,status:next.status,scope:next.scope}});
+    const updated=await store.setJSON(marker.key,next,{onlyIfMatch:marker.etag,metadata:{expiresAt:next.expiresAt,status:next.status,scope:next.scope}});
     if (!updated.modified) {
       const after=await read(store,marker.key);
       if (after?.data?.operationId===next.operationId && after.data.status===status) return {ok:true,idempotent:true,key:marker.key,record:after.data};
@@ -146,6 +144,7 @@ const defaultLedger=createLedger();
 
 module.exports={
   STORE_NAME,DEFAULT_TTL_MS,MAX_RESULT_BYTES,canonicalJson,sha256,hashPayload,environmentNamespace,ledgerKey,safeResult,createMemoryStore,createLedger,
+  connectForEvent:event=>blobsCompat.connectLambdaEvent(event),
   claim:options=>defaultLedger.claim(options),
   complete:(marker,result)=>defaultLedger.complete(marker,result),
   partial:(marker,result,errorCode)=>defaultLedger.partial(marker,result,errorCode),

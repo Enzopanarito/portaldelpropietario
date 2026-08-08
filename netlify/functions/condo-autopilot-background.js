@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto=require('crypto');
+const {connectForEvent}=require('./_idempotency_blobs');
 const {issueAdminToken}=require('./_auth');
 const {begin,setState}=require('./_operation_guard');
 const {getAccessMode,getAutomationRules,loadAccessContext,calculateExpiredAccessDebt,autoSyncAll}=require('./_access_control');
@@ -101,6 +102,7 @@ const handler=async function(event){
  const counter={calls:0},token=process.env.AIRTABLE_API_TOKEN,baseId=process.env.AIRTABLE_BASE_ID;
  if(!token||!baseId)return response(500,{success:false,message:'Airtable no está configurado.'});
  try{
+  connectForEvent(event);
   const modeInfo=await getAccessMode(),automation=await getAutomationRules(modeInfo),rules=automation.rules,validation=validateRules(rules),cycle=cycleStatus(rules),results={generatedAt:new Date().toISOString(),cycle,configured:automation.configured,validation,actions:{}};
   if(!automation.configured||!rules.masterEnabled||!validation.ok)return response(200,{...results,skipped:true,reason:!automation.configured?'not-configured':!rules.masterEnabled?'master-disabled':'rules-invalid'});
   let context=await loadAccessContext();

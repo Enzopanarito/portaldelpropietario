@@ -2,7 +2,7 @@
 
 const {withAirtableUsage}=require('./_airtable_meter');
 const {verify}=require('./_internal_job_auth');
-const {hashPayload,claim,complete,failSafe}=require('./_idempotency_blobs');
+const {hashPayload,connectForEvent,claim,complete,failSafe}=require('./_idempotency_blobs');
 const {retryExistingReceipt,finalizeExistingReceiptDelivery}=require('./_receipt_service');
 const {safeDisplayText}=require('./_security_utils');
 
@@ -19,6 +19,7 @@ const handler=async function(event){
  const receiptId=String(body.receiptId||'').trim();
  if(!/^rec[A-Za-z0-9]{10,}$/.test(receiptId))return response(400,{message:'Recibo inválido.'});
 
+ connectForEvent(event);
  const marker=await claim({
   scope:'receipt-delivery-recovery',
   businessKey:receiptId,

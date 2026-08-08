@@ -243,7 +243,7 @@ const handler = async function(event) {
     }
 
     guardKey = `${month}|${hashJson(missingRows.map(row => row.fields[HF.concepto]).sort())}`;
-    const guardResult = await begin('AUDIT_SNAPSHOT', guardKey);
+    const guardResult = await begin('AUDIT_SNAPSHOT', guardKey, { event });
     if (!guardResult.ok) {
       return json(guardResult.reason === 'done' ? 200 : 409, {
         success: guardResult.reason === 'done',

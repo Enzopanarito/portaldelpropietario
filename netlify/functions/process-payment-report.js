@@ -93,7 +93,7 @@ const handler = async function(event) {
     }
 
     const payloadHash = hashPayload({ reportId, decision });
-    const guard = await begin('PAYMENT_REPORT', reportId, { payloadHash });
+    const guard = await begin('PAYMENT_REPORT', reportId, { payloadHash, event });
     if (!guard.ok) {
       if (guard.reason === 'done') {
         report = await airtableGetRecord(TABLES.reportes, reportId).catch(() => report);

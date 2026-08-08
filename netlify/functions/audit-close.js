@@ -537,7 +537,7 @@ const handler = async function(event) {
     }
 
     const guardKey = `${month}|${cutoff}|${plan.planHash}`;
-    const guard = await begin('AUDIT_CLEANUP', guardKey);
+    const guard = await begin('AUDIT_CLEANUP', guardKey, { event });
     if (!guard.ok) {
       const messages = {
         running: 'Esta limpieza ya está en proceso. Espere y actualice la pantalla.',
