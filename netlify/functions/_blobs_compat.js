@@ -2,13 +2,14 @@
 
 // La referencia estática permite que el empaquetador de Netlify habilite el
 // contexto Blobs en funciones que usan el formato Lambda compatible.
-const netlifyBlobs=require('@netlify/blobs');
+let netlifyBlobs=null;
+function sdk(){if(!netlifyBlobs)netlifyBlobs=require('@netlify/blobs');return netlifyBlobs}
 
 function codedError(code,message){const error=new Error(message);error.code=code;return error}
 function connectLambdaEvent(event,env=process.env){
  if(env.NETLIFY_BLOBS_CONTEXT)return{connected:true,source:'environment'};
  if(!event?.blobs)throw codedError('BLOBS_EVENT_CONTEXT_MISSING','Netlify no entregó el contexto Blobs para esta función Lambda.');
- netlifyBlobs.connectLambda(event);
+ sdk().connectLambda(event);
  return{connected:true,source:'event'};
 }
 function validateConditions(options){
@@ -33,6 +34,6 @@ function wrapStore(store){
   setJSON:(key,data,options)=>atomicSetJSON(store,key,data,options)
  };
 }
-function getAtomicStore(name,options={}){return wrapStore(netlifyBlobs.getStore({name,...options}))}
+function getAtomicStore(name,options={}){return wrapStore(sdk().getStore({name,...options}))}
 
 module.exports={connectLambdaEvent,validateConditions,atomicSetJSON,wrapStore,getAtomicStore};
