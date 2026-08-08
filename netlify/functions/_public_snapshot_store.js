@@ -48,6 +48,12 @@ function clone(value){return value===undefined?undefined:JSON.parse(JSON.stringi
 function createMemoryStore(){const entries=new Map();let version=0;return{async getWithMetadata(key){const entry=entries.get(key);return entry?{data:clone(entry.data),etag:entry.etag,metadata:clone(entry.metadata)}:null},async setJSON(key,data,options={}){const current=entries.get(key);if(options.onlyIfNew&&current)return{modified:false,etag:current.etag};if(options.onlyIfMatch&&(!current||current.etag!==options.onlyIfMatch))return{modified:false,etag:current?.etag||''};const etag=`memory-${++version}`;entries.set(key,{data:clone(data),etag,metadata:clone(options.metadata||{})});return{modified:true,etag}}}}
 let memoryStore=null;
 async function defaultStore(){if(process.env.VLA_PUBLIC_SNAPSHOT_TEST_MEMORY==='1'){if(runtimeConfig.deployContext==='production'||process.env.CONTEXT==='production')throw new Error('El almacén público de prueba está prohibido en producción.');if(!memoryStore)memoryStore=createMemoryStore();return memoryStore}const{getStore}=await import('@netlify/blobs');return getStore({name:STORE_NAME})}
+async function connectForEvent(event){
+ if(process.env.VLA_PUBLIC_SNAPSHOT_TEST_MEMORY==='1'||!event?.blobs)return false;
+ const{connectLambda}=await import('@netlify/blobs');
+ connectLambda(event);
+ return true;
+}
 function validOwner(owner){
  const house=Number(owner&&owner.Casa),usd=Number(owner&&owner['Saldo USD Actual']),bs=Number(owner&&owner['Saldo Bs Ref Actual']),total=Number(owner&&(owner['Saldo Total Actual']??owner['Deuda Restante']));
  if(!(Number.isInteger(house)&&house>=1&&house<=EXPECTED_HOUSES&&[usd,bs,total].every(Number.isFinite)&&Math.abs((usd+bs)-total)<=0.011))return false;
@@ -73,4 +79,4 @@ function createSnapshotStore({storeFactory=defaultStore,now=()=>Date.now(),confi
  return{read,write,invalidate,claimRefresh,releaseRefresh}
 }
 const defaultSnapshotStore=createSnapshotStore();
-module.exports={STORE_NAME,SCHEMA_VERSION,DEFAULT_MAX_AGE_MS,REFRESH_LEASE_MS,EXPECTED_HOUSES,PRODUCTION_HOSTS,runtimeConfig,parseBoolean,normalizeHost,requestHost,isProductionHost,enabled,environmentForEvent,maxAgeMs,dataEnvironment,namespace,snapshotKey,refreshKey,createMemoryStore,validOwner,validatePayload,buildSnapshot,snapshotExpectedEtag,createSnapshotStore,readPublicSnapshot:env=>defaultSnapshotStore.read(env),writePublicSnapshot:(payload,env,expectedEtag)=>defaultSnapshotStore.write(payload,env,expectedEtag),invalidatePublicSnapshot:(reason,env)=>defaultSnapshotStore.invalidate(reason,env),claimPublicRefresh:env=>defaultSnapshotStore.claimRefresh(env),releasePublicRefresh:(marker,env)=>defaultSnapshotStore.releaseRefresh(marker,env)};
+module.exports={STORE_NAME,SCHEMA_VERSION,DEFAULT_MAX_AGE_MS,REFRESH_LEASE_MS,EXPECTED_HOUSES,PRODUCTION_HOSTS,runtimeConfig,parseBoolean,normalizeHost,requestHost,isProductionHost,enabled,environmentForEvent,maxAgeMs,dataEnvironment,namespace,snapshotKey,refreshKey,createMemoryStore,connectForEvent,validOwner,validatePayload,buildSnapshot,snapshotExpectedEtag,createSnapshotStore,connectPublicSnapshot:connectForEvent,readPublicSnapshot:env=>defaultSnapshotStore.read(env),writePublicSnapshot:(payload,env,expectedEtag)=>defaultSnapshotStore.write(payload,env,expectedEtag),invalidatePublicSnapshot:(reason,env)=>defaultSnapshotStore.invalidate(reason,env),claimPublicRefresh:env=>defaultSnapshotStore.claimRefresh(env),releasePublicRefresh:(marker,env)=>defaultSnapshotStore.releaseRefresh(marker,env)};
