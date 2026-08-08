@@ -12,6 +12,7 @@ function load(fields,{proof=Buffer.from('proof'),authorized=true}={}){
    if(request==='./_auth')return{requireAdmin:()=>authorized?{ok:true}:{ok:false,response:{statusCode:401,body:'{}'}}};
    if(request==='./_access_control')return{airtableGetRecord:async()=>({fields}),TABLES:{reportes:'Reportes'}};
    if(request==='./_payment_proof_store')return{createProofStore:()=>({getByKey:async()=>proof?{content:proof}:null,get:async()=>proof?{content:proof}:null})};
+   if(request==='./_blobs_compat')return{connectLambdaEvent:()=>({connected:true,source:'test'})};
   }
   return original.apply(this,arguments);
  };

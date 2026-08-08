@@ -21,6 +21,13 @@ test('el reporte entra directamente en la Lambda que recibe event.blobs',()=>{
   assert.equal(fs.existsSync('netlify/functions/public-report-payment-modern.mjs'),false);
 });
 
+test('el administrador recupera el comprobante desde Lambda nativa',()=>{
+  assert.match(config,rewrite('/api/vla/payment-proof','/.netlify/functions/_admin_payment_proof'));
+  assert.equal(fs.existsSync('netlify/functions/admin-payment-proof-modern.mjs'),false);
+  const source=fs.readFileSync('netlify/functions/_admin_payment_proof.js','utf8');
+  assert.match(source,/connectLambdaEvent\(event\)/);
+});
+
 test('el analizador entra en la función background nativa que recibe event.blobs',()=>{
   assert.match(config,rewrite('/api/vla/payment-report-analyzer','/.netlify/functions/payment-report-analyzer-background'));
   assert.equal(fs.existsSync('netlify/functions/payment-report-analyzer-modern-background.mjs'),false);

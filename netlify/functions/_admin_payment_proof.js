@@ -3,6 +3,7 @@
 const {requireAdmin}=require('./_auth');
 const {airtableGetRecord,TABLES}=require('./_access_control');
 const {createProofStore}=require('./_payment_proof_store');
+const {connectLambdaEvent}=require('./_blobs_compat');
 
 function json(statusCode,body){return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'},body:JSON.stringify(body)}}
 function validRecordId(value){return /^rec[A-Za-z0-9]{14}$/.test(String(value||'').trim())}
@@ -13,6 +14,7 @@ async function handler(event){
  if(event.httpMethod!=='GET')return json(405,{message:'Method Not Allowed'});
  const reportId=String(event.queryStringParameters?.reportId||'').trim();if(!validRecordId(reportId))return json(400,{message:'Reporte inválido.'});
  try{
+  connectLambdaEvent(event);
   const report=await airtableGetRecord(TABLES.reportes,reportId),fields=report?.fields||{},sha=String(fields['Hash SHA-256']||'').trim().toLowerCase(),contentType=String(fields['Comprobante MIME']||'').trim().toLowerCase(),blobKey=String(fields['Comprobante Blob Key']||'').trim();
   if(!/^[a-f0-9]{64}$/.test(sha)||!contentType)return json(404,{message:fields['Archivo Obligatorio']===false?'Este reporte corresponde a efectivo y no requiere captura.':'El reporte no tiene un comprobante almacenado.'});
   const store=createProofStore(),proof=blobKey?await store.getByKey({key:blobKey,attachmentSha:sha,contentType}):await store.get({reportId,attachmentSha:sha,contentType});
