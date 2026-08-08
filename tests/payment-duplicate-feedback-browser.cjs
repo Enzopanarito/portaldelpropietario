@@ -28,10 +28,10 @@ test('un comprobante duplicado muestra un mensaje persistente y permite elegir o
     assert.equal(await page.locator('#submitReport').isDisabled(),false);
     assert.equal(await page.locator('#modal').evaluate(node=>node.classList.contains('hidden')),false);
     await page.waitForTimeout(500);
-    assert.match(await validation.innerText(),/Comprobante ya utilizado/,'La validación no debe borrar el mensaje de duplicado.');
+    assert.match(await validation.innerText(),/Este comprobante ya fue (?:reportado|utilizado)/i,'La validación no debe borrar el mensaje de duplicado.');
     const second=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),Buffer.from('new-fixture')]);
     await page.setInputFiles('#payProof',{name:'comprobante-nuevo.png',mimeType:'image/png',buffer:second});
     await page.getByText(/^Listo$/).waitFor({state:'visible',timeout:10000});
-    assert.doesNotMatch(await validation.innerText(),/Comprobante ya utilizado/,'Elegir otro archivo debe limpiar el error anterior.');
+    assert.doesNotMatch(await validation.innerText(),/Este comprobante ya fue (?:reportado|utilizado)/i,'Elegir otro archivo debe limpiar el error anterior.');
   }finally{await browser.close()}
 });
