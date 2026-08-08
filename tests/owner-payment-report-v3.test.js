@@ -13,6 +13,8 @@ assert(/id="vla-pay-details"[^>]*hidden/.test(ui),'El formulario no puede aparec
 assert(/id="payTransactionStatus" type="hidden"/.test(ui),'El estado técnico debe ser invisible para el propietario.');
 assert(!ui.includes('Estado visible'),'El propietario no debe elegir estados técnicos.');
 assert(ui.includes('FALLBACK_DATE_METHODS')&&ui.includes('transactionDateSource'),'Debe aceptar y transmitir la política de fecha de Zelle/Binance.');
+assert(ui.includes("cash?(currency==='BS'?'Bs BCV':currency==='USD'?'USD':'')"),'El efectivo debe asignar la cuenta desde su moneda sin pedir un campo oculto.');
+assert(!/function cashMissing\(\)\{[^}]*missing\.push\('mode'\)/.test(ui),'El flujo de efectivo no puede exigir una cuenta oculta.');
 assert(ui.includes("if(!selectedFile)return['proof']"),'Antes del comprobante solo debe pedirse el comprobante.');
 assert(ui.includes("openReport=openSmartReport"),'Debe sustituir el flujo heredado.');
 assert(ui.includes("addEventListener('submit',submitSmartReport)"),'Debe existir un único manejador de envío.');
