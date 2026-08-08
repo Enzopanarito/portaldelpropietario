@@ -126,6 +126,28 @@ async function waitForHouseOptions(page,expected=15,timeout=30000){
   throw new Error(`Se cargaron ${found} de ${expected} casas.`);
 }
 
+async function selectStableHouse(page,houseNumber,timeout=15000){
+  const selector=page.locator('#welcomeSelector'),deadline=Date.now()+timeout;
+  while(Date.now()<deadline){
+    const value=await selector.locator('option').evaluateAll((options,house)=>{
+      const option=options.find(item=>{
+        const match=/^Casa\s+(\d+)\s+-/i.exec(String(item.textContent||'').trim());
+        return Number(match&&match[1])===Number(house);
+      });
+      return option?option.value:'';
+    },houseNumber).catch(()=>'');
+    if(value){
+      try{
+        await selector.selectOption(value);
+        await page.waitForTimeout(200);
+        if(await selector.inputValue()===value)return value;
+      }catch(_){}
+    }
+    await page.waitForTimeout(250);
+  }
+  return'';
+}
+
 async function waitForLocatorText(page,locator,pattern,timeout=10000){
   const deadline=Date.now()+timeout;
   while(Date.now()<deadline){
@@ -158,9 +180,8 @@ async function waitForLocatorText(page,locator,pattern,timeout=10000){
   audits.push(await contrastAudit(page,'#theme-welcome','Selector de tema'));
   await page.screenshot({path:'owner-dark-welcome.png',fullPage:true});
 
-  const ownerValue=await page.locator('#welcomeSelector option').evaluateAll(options=>options.find(o=>/^Casa\s+4\s+-/.test(String(o.textContent||'').trim()))?.value||'');
+  const ownerValue=await selectStableHouse(page,4);
   assert(ownerValue,'No se encontró Casa 4.');
-  await page.selectOption('#welcomeSelector',ownerValue);
   await page.click('#enterBtn');
   await page.locator('#main').waitFor({state:'visible',timeout:15000});
   await page.locator('[data-vla-breakdown-host]').waitFor({state:'visible',timeout:30000});
