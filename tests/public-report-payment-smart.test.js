@@ -49,7 +49,7 @@ function parse(response){return JSON.parse(response.body)}
 const png=Buffer.concat([Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]),Buffer.from('proof')]);
 
 (async()=>{
-  let response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:'15.300,00',enteredCurrency:'BS',reference:'ABC-123',rate:100,bank:'Pago móvil',transactionDate:'2026-07-31',transactionStatus:'COMPLETED',observations:'Prueba',attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}}));
+  let response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:'15.300,00',enteredCurrency:'BS',reference:'ABC-123',rate:100,bank:'Pago móvil',method:'MOBILE_PAYMENT_VE',transactionDate:'2026-07-31',observations:'Prueba',attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}}));
   assert.equal(response.statusCode,200,JSON.stringify(parse(response)));
   let body=parse(response);
   assert.equal(body.amountUsdRef,85);
@@ -58,14 +58,15 @@ const png=Buffer.concat([Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]),
   assert.equal(created[0]['Forma de Pago Reportada'],'USD');
   assert.equal(created[0]['Monto Reportado'],85);
   assert.equal(created[0]['Archivo Obligatorio'],true);
-  assert(created[0]['Observaciones Reportadas'].includes('Fecha de operación indicada: 2026-07-31'));
+  assert(created[0]['Observaciones Reportadas'].includes('Fecha de operación: 2026-07-31'));
+  assert(created[0]['Observaciones Reportadas'].includes('Fuente de fecha: USER_CONFIRMED'));
   assert(!Object.hasOwn(created[0],'Monto Reportado Bs'),'Una cuenta USD no debe convertirse en cuenta Bs.');
   assert.equal(mails[0].attachments.length,1);
   assert.equal(mails[0].attachments[0].filename,'casa4.png');
   assert(mails[0].attachments[0].content.equals(png));
   assert(mails[0].html.includes('Pago móvil'));
 
-  response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'Bs BCV',amount:'221,40',enteredCurrency:'USD',reference:'BS-123',rate:180,bank:'Zelle',transactionDate:'2026-07-30',transactionStatus:'SENT',attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}}));
+  response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'Bs BCV',amount:'221,40',enteredCurrency:'USD',reference:'BS-123',rate:180,bank:'Zelle',method:'ZELLE',attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}}));
   assert.equal(response.statusCode,200,JSON.stringify(parse(response)));
   body=parse(response);
   assert.equal(body.amountUsdRef,221.4);
@@ -73,27 +74,34 @@ const png=Buffer.concat([Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]),
   assert.equal(created[1]['Forma de Pago Reportada'],'Bs BCV');
   assert.equal(created[1]['Monto Reportado Bs'],39852);
   assert.equal(created[1]['Tasa BCV Reporte'],180);
+  assert.equal(body.transactionDateSource,'REPORT_TIMESTAMP_FALLBACK');
+  assert.match(body.transactionDate,/^\d{4}-\d{2}-\d{2}$/);
+  assert(created[1]['Observaciones Reportadas'].includes('Fuente de fecha: REPORT_TIMESTAMP_FALLBACK'));
 
-  response=await handler(event({ownerId:'recABCDEFGHIJKLMN',paymentChannel:'CASH',mode:'USD',amount:'50,00',enteredCurrency:'USD',cashReceiver:'Administración',transactionDate:'2026-07-31'}));
+  response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:'20,00',enteredCurrency:'USD',reference:'BIN-123',bank:'Binance Pay',method:'BINANCE_PAY',attachment:{name:'binance.png',type:'image/png',base64:png.toString('base64')}}));
+  assert.equal(response.statusCode,200,JSON.stringify(parse(response)));body=parse(response);
+  assert.equal(body.method,'BINANCE_PAY');assert.equal(body.transactionDateSource,'REPORT_TIMESTAMP_FALLBACK');
+
+  response=await handler(event({ownerId:'recABCDEFGHIJKLMN',paymentChannel:'CASH',mode:'USD',amount:'50,00',enteredCurrency:'USD',cashReceiver:'Administración'}));
   assert.equal(response.statusCode,200,JSON.stringify(parse(response)));body=parse(response);
   assert.equal(body.paymentChannel,'CASH');assert.equal(body.attachmentIncluded,false);assert.equal(body.automation.status,'CASH_ADMIN_CONFIRMATION_REQUIRED');
-  assert.equal(created[2]['Archivo Obligatorio'],false);assert.equal(created[2]['Estado de Procesamiento'],'Pendiente de administrador');assert.match(created[2].Referencia,/EFECTIVO/);
-  assert.equal(mails[2].attachments.length,0);
+  assert.equal(body.transactionDateSource,'REPORT_TIMESTAMP_FALLBACK');
+  assert.equal(created[3]['Archivo Obligatorio'],false);assert.equal(created[3]['Estado de Procesamiento'],'Pendiente de administrador');assert.match(created[3].Referencia,/EFECTIVO/);
+  assert.equal(mails[3].attachments.length,0);
 
   const before=created.length;
-  response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:85,enteredCurrency:'USD',reference:'BAD-PROOF',bank:'Banco',transactionDate:'2026-07-31',transactionStatus:'PROCESSED',attachment:{name:'falso.png',type:'image/png',base64:Buffer.from('not-png').toString('base64')}}));
+  response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:85,enteredCurrency:'USD',reference:'BAD-PROOF',bank:'Banco',method:'TRANSFER_VE',transactionDate:'2026-07-31',attachment:{name:'falso.png',type:'image/png',base64:Buffer.from('not-png').toString('base64')}}));
   assert.equal(response.statusCode,400);
   assert.equal(created.length,before,'Un comprobante inválido no debe crear el reporte.');
 
-  response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:85,reference:'NO-CURRENCY',bank:'Banco',transactionDate:'2026-07-31',transactionStatus:'COMPLETED',attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}}));
+  response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:85,reference:'NO-CURRENCY',bank:'Banco',method:'TRANSFER_VE',transactionDate:'2026-07-31',attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}}));
   assert.equal(response.statusCode,400);
   assert.match(parse(response).message,/confirmar/i);
 
   for(const incomplete of [
-    {ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:85,enteredCurrency:'USD',reference:'NO-PROOF',bank:'Banco',transactionDate:'2026-07-31',transactionStatus:'COMPLETED'},
-    {ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:85,enteredCurrency:'USD',reference:'NO-BANK',transactionDate:'2026-07-31',transactionStatus:'COMPLETED',attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}},
-    {ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:85,enteredCurrency:'USD',reference:'NO-DATE',bank:'Banco',transactionStatus:'COMPLETED',attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}},
-    {ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:85,enteredCurrency:'USD',reference:'PENDING',bank:'Banco',transactionDate:'2026-07-31',transactionStatus:'PENDING',attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}}
+    {ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:85,enteredCurrency:'USD',reference:'NO-PROOF',bank:'Banco',method:'TRANSFER_VE',transactionDate:'2026-07-31'},
+    {ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:85,enteredCurrency:'USD',reference:'NO-BANK',method:'OTHER',transactionDate:'2026-07-31',attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}},
+    {ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:85,enteredCurrency:'USD',reference:'NO-DATE',bank:'Banco',method:'TRANSFER_VE',attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}}
   ]){
     const count=created.length;response=await handler(event(incomplete));assert.equal(response.statusCode,400);assert.equal(created.length,count,'Los datos incompletos no deben crear reportes.');
   }

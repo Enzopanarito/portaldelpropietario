@@ -3,7 +3,7 @@
 const { withAirtableUsage } = require('./_airtable_meter');
 
 const { deepEscapeStrings } = require('./_security_utils');
-const { calculateAllOwners, calculatedFields } = require('./_balance_engine_v4');
+const { calculateAllOwners, calculatedFields, money } = require('./_balance_engine_v4');
 const { attachOfficialBalances, officialControlQuery } = require('./_official_balances');
 const { filterActiveExpenses, currentMonthCaracas, FIELDS:EXPENSE_FIELDS } = require('./_expense_lifecycle');
 const { mergeConfig, publicRules } = require('./_automation_rules');
@@ -50,6 +50,9 @@ async function airtableGetAll(tableName, query, token, baseId, counter) {
 }
 function compactOwner(record, balance) {
   const f = record.fields || {};
+  const saldoUsd=money(balance.usd),saldoBsRef=money(balance.bsRef);
+  const totalPagadero=money(Math.max(0,saldoUsd)+Math.max(0,saldoBsRef));
+  const saldoNetoReferencial=money(balance.totalRef);
   return Object.assign({
     id: record.id, Casa: f.Casa, Propietario: f.Propietario, Alicuota: f.Alicuota,
     'Deuda Anterior': f['Deuda Anterior'],
@@ -65,7 +68,22 @@ function compactOwner(record, balance) {
     'Corte Saldo Oficial': f['Corte Saldo Oficial'] || '',
     'Estado Acceso Portón': f['Estado Acceso Portón'] || 'Sin configurar',
     'Motivo Limitación Acceso': f['Motivo Limitación Acceso'] || '',
-    'Última Sync MKJ': f['Última Sync MKJ'] || ''
+    'Última Sync MKJ': f['Última Sync MKJ'] || '',
+    // Contrato financiero canónico para interfaces y consumidores nuevos.
+    // Los campos históricos se conservan debajo para compatibilidad temporal.
+    saldoUsd,
+    saldoBsRef,
+    totalPagadero,
+    saldoNetoReferencial,
+    saldoFavorUsd:money(Math.max(0,-saldoUsd)),
+    saldoFavorBs:money(Math.max(0,-saldoBsRef)),
+    deudaVencidaUsd:money(Math.max(0,balance.expiredUsd)),
+    deudaVencidaBs:money(Math.max(0,balance.expiredBsRef)),
+    mesCorrienteUsd:money(balance.currentUsd),
+    mesCorrienteBs:money(balance.currentBsRef),
+    estadoMorosidad:totalPagadero>0.009?'PENDIENTE':'SOLVENTE',
+    accesoEsperado:f['Estado Acceso Portón'] || 'Sin configurar',
+    balanceEngineVersion:'vla-balance-contract-v7'
   }, calculatedFields(balance, record));
 }
 function compactGasto(record) {
@@ -128,3 +146,4 @@ const handler = async function(event) {
 };
 
 exports.handler = withAirtableUsage('public-data-v2', handler);
+exports.compactOwner = compactOwner;

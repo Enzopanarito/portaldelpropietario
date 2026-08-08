@@ -20,7 +20,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          marker='vla-currency-balance-fix-2026-08-02-currency-v2'
+          marker='vla-finance-v7.js'
           for attempt in $(seq 1 36); do
             html="$(curl --fail --silent --show-error --location "https://villalosapamates.netlify.app/?house11-release=${GITHUB_RUN_ID}-${attempt}" || true)"
             if grep -Fq "$marker" <<<"$html"; then

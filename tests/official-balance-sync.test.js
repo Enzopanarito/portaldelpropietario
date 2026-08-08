@@ -128,16 +128,12 @@ assert.strictEqual(charged.currentTotalRef,316.40);
 const nextMonth = calculateOwnerBalance(house10, [], [], {month:'2026-08',day:1});
 assert.strictEqual(nextMonth.officialSnapshotActive, false);
 
-// El portal ya no puede depender de reemplazos regex de la función calc.
-const edgeSource = fs.readFileSync(path.join(__dirname, '../netlify/edge-functions/balance-fix.js'), 'utf8');
-assert.ok(edgeSource.includes("const RELEASE = '2026-07-11-v6'"));
-assert.ok(edgeSource.includes("headers.set('x-vla-balance-engine', 'v6')"));
-assert.ok(!edgeSource.includes("replace(/function calc"), 'No debe reescribir calc mediante regex');
-
 const netlifyConfig = fs.readFileSync(path.join(__dirname, '../netlify.toml'), 'utf8');
 assert.ok(/\[build\][\s\S]*publish\s*=\s*"dist"/.test(netlifyConfig), 'Netlify debe publicar únicamente el build público permitido');
+assert.ok(!/function = "(?:balance-fix|currency-balance-fix)"/.test(netlifyConfig), 'Los parches históricos no pueden seguir activos');
 const release = JSON.parse(fs.readFileSync(path.join(__dirname, '../release.json'), 'utf8'));
-assert.strictEqual(release.release, CANONICAL_CONTRACT.release);
+assert.strictEqual(release.release, '2026-08-08-v7');
+assert.strictEqual(release.canonicalBalanceRelease, CANONICAL_CONTRACT.release);
 assert.strictEqual(release.expectedHouses, 15);
 
 console.log('OFFICIAL_BALANCE_SYNC_TESTS_OK');

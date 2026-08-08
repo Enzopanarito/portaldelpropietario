@@ -64,7 +64,7 @@ jobs:
             await page.locator('#main').waitFor({ state: 'visible', timeout: 15000 });
             await page.waitForTimeout(3000);
             const state = await page.evaluate(() => {
-              const host = document.querySelector('[data-vla-breakdown-host="2026-07-11-photo-v6"]');
+              const host = document.querySelector('[data-vla-breakdown-host="owner-breakdown-v7"]');
               const breakdown = document.getElementById('breakdown');
               const lexical = {
                 currentOwnerType: typeof window.currentOwner,
@@ -77,9 +77,9 @@ jobs:
                 mainDisplay: getComputedStyle(document.getElementById('main')).display,
                 welcomeValue: document.getElementById('welcomeSelector')?.value,
                 userValue: document.getElementById('userSelector')?.value,
-                visualScript: Boolean(document.getElementById('vla-visual-breakdown-2026-07-11-photo-v6')),
-                visualFlag: window.__VLA_VISUAL_BREAKDOWN || null,
-                drawType: typeof window.__VLA_RENDER_BREAKDOWN,
+                visualScript: Boolean(window.VLABreakdown && window.VLABreakdown.VERSION==='owner-breakdown-v7'),
+                visualFlag: window.VLABreakdown?.VERSION || null,
+                drawType: typeof window.VLABreakdown?.render,
                 hostExists: Boolean(host),
                 hostOwner: host?.getAttribute('data-vla-breakdown-owner') || null,
                 breakdownAttribute: breakdown?.getAttribute('data-vla-breakdown-host') || null,

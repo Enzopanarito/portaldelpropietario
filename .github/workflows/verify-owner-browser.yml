@@ -39,7 +39,7 @@ jobs:
           for attempt in $(seq 1 90); do
             headers="$(curl --silent --show-error --location --dump-header - --output /dev/null --max-time 30 "${TARGET_URL}/?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
             marker="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-breakdown-presentation"{gsub("\r","");print $2}' | tail -1)"
-            if [ "$marker" = "2026-07-11-photo-v6" ]; then
+            if [ "$marker" = "owner-breakdown-v7" ]; then
               echo "Browser release available at $TARGET_URL"
               exit 0
             fi
@@ -159,7 +159,7 @@ jobs:
             await page.getByRole('button', { name: /Consultar Estado de Cuenta/i }).click();
             await page.locator('#main').waitFor({ state: 'visible', timeout: 15000 });
 
-            const breakdown = page.locator('[data-vla-breakdown-host="2026-07-11-photo-v6"]');
+            const breakdown = page.locator('[data-vla-breakdown-host="owner-breakdown-v7"]');
             await breakdown.waitFor({ state: 'visible', timeout: 30000 });
             await waitForLocatorText(
               page,

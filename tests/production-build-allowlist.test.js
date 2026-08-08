@@ -11,7 +11,7 @@ execFileSync(process.execPath,[path.join(root,'scripts','build-production.js')],
 for(const forbidden of ['package.json','package-lock.json','netlify.toml','config','tests','scripts','netlify','node_modules']){
  assert(!fs.existsSync(path.join(dist,forbidden)),`${forbidden} no puede publicarse.`);
 }
-for(const required of ['index.html','admin.html','owner-payment-report-v3.js','tailwind.generated.css','release.json']){
+for(const required of ['index.html','admin.html','owner-payment-report-v3.js','vla-finance-v7.js','owner-breakdown-v7.js','owner-breakdown-v7.css','tailwind.generated.css','release.json']){
  assert(fs.existsSync(path.join(dist,required)),`Falta ${required} en el build público.`);
 }
 for(const html of fs.readdirSync(dist).filter(name=>name.endsWith('.html'))){
