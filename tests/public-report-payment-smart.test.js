@@ -26,6 +26,7 @@ Module._load=function(request,parent,isMain){
     if(request==='./_persistent_rate_limit')return{consume:async()=>({allowed:true,retryAfter:0})};
     if(request==='./_bcv_store')return{loadLastGood:async()=>({rate:180,source:'bcv-test'})};
     if(request==='./_payment_visual_hash')return{computePerceptualHash:async()=>({hash:'0123456789abcdef',algorithm:'dhash-64-v1'})};
+    if(request==='./_blobs_compat')return{connectLambdaEvent:()=>({connected:true,source:'test'})};
     if(request==='./_payment_proof_store')return{createProofStore:()=>({
       reserveIdentity:async()=>({acquired:true,created:true,key:`reservation-${++reservationCount}`,requestId:`request-${reservationCount}`}),
       completeIdentity:async()=>({completed:true}),

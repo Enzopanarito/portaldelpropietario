@@ -202,6 +202,12 @@ html.dark .vla-pay-scan.error,
 html.dark .vla-pay-validation.warn{background:#422006!important;color:#fef3c7!important;border-color:#d97706!important}
 html.dark .vla-pay-scan.manual{background:#2e1065!important;color:#ede9fe!important;border-color:#8b5cf6!important}
 html.dark .vla-pay-manual{background:var(--vla-dark-surface-3)!important;color:var(--vla-dark-text)!important;border-color:#64748b!important}
+html.dark #vla-pay-confirm-card{background:var(--vla-dark-surface-2)!important;color:var(--vla-dark-text-soft)!important;border-color:var(--vla-dark-border)!important}
+html.dark #vla-pay-confirm-card .vla-pay-detected-amount{color:var(--vla-dark-green)!important}
+html.dark #vla-pay-confirm-card span,
+html.dark #vla-pay-confirm-card b{color:var(--vla-dark-text)!important}
+html.dark #vla-pay-confirm-card small{color:var(--vla-dark-text-muted)!important}
+html.dark .vla-pay-edit{color:var(--vla-dark-green)!important}
 
 html.dark .vla-pay-submit{background:linear-gradient(135deg,#15803d,#166534)!important;color:#fff!important}
 html.dark .vla-pay-cancel{background:var(--vla-dark-surface-3)!important;color:var(--vla-dark-text)!important;border-color:#64748b!important}

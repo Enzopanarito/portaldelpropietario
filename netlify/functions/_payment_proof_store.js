@@ -2,6 +2,7 @@
 
 const crypto=require('crypto');
 const{sha256,clean}=require('./_payment_proof_core');
+const{getAtomicStore}=require('./_blobs_compat');
 
 const STORE_NAME='vla-payment-proofs-v2';
 const ENVELOPE_MAGIC=Buffer.from('VLAPROOF2','ascii');
@@ -72,7 +73,7 @@ function decryptBuffer(envelope,{key,contentType,sha,encryptionKey}={}){
 }
 function asBuffer(value){if(Buffer.isBuffer(value))return Buffer.from(value);if(value instanceof ArrayBuffer)return Buffer.from(new Uint8Array(value));if(ArrayBuffer.isView(value))return Buffer.from(value.buffer,value.byteOffset,value.byteLength);return Buffer.from(value)}
 function createMemoryStore(){let version=0;const entries=new Map();return{async get(key,options={}){const value=entries.get(key);if(!value)return null;return options.type==='json'?JSON.parse(Buffer.from(value.data).toString('utf8')):Buffer.from(value.data)},async getWithMetadata(key,options={}){const value=entries.get(key);if(!value)return null;return{data:options.type==='json'?JSON.parse(Buffer.from(value.data).toString('utf8')):Buffer.from(value.data),metadata:{...value.metadata},etag:value.etag}},async set(key,data,options={}){const current=entries.get(key);if(options.onlyIfNew&&current)return{modified:false,etag:current.etag};if(options.onlyIfMatch&&(!current||current.etag!==options.onlyIfMatch))return{modified:false,etag:current?.etag||''};const etag=`memory-${++version}`;entries.set(key,{data:asBuffer(data),metadata:{...(options.metadata||{})},etag});return{modified:true,etag}},async setJSON(key,data,options={}){return this.set(key,Buffer.from(JSON.stringify(data),'utf8'),options)},async delete(key){return entries.delete(key)},_entries:entries}}
-async function defaultStore(){const{getStore}=await import('@netlify/blobs');return getStore({name:STORE_NAME,consistency:'strong'})}
+async function defaultStore(){return getAtomicStore(STORE_NAME,{consistency:'strong'})}
 function createProofStore({storeFactory=defaultStore,encryptionKey,encryptionKeys,now=()=>new Date()}={}){
  const explicit=Buffer.isBuffer(encryptionKey)?[{key:Buffer.from(encryptionKey),source:'explicit',derived:false,version:'explicit-v1'}]:encryptionKey?[{key:parseEncryptionKey(encryptionKey),source:'explicit',derived:false,version:'explicit-v1'}]:Array.isArray(encryptionKeys)?encryptionKeys:null;
  const keyring=(explicit||resolveEncryptionKeyring(process.env)).map(item=>({...item,key:Buffer.from(item.key)}));if(!keyring.length||keyring.some(item=>item.key.length!==32))throw codedError('La clave de cifrado debe tener 32 bytes.','PROOF_ENCRYPTION_KEY_INVALID');

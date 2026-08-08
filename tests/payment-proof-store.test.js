@@ -2,10 +2,14 @@
 
 const assert=require('assert');
 const crypto=require('crypto');
+const fs=require('fs');
 const core=require('../netlify/functions/_payment_proof_core');
 const storeModule=require('../netlify/functions/_payment_proof_store');
 
 (async()=>{
+ const source=fs.readFileSync('netlify/functions/_payment_proof_store.js','utf8');
+ assert(source.includes("require('./_blobs_compat')")&&source.includes('getAtomicStore(STORE_NAME'),'Producción debe usar el adaptador compatible con Blobs 9.1.5.');
+ assert(!source.includes("import('@netlify/blobs')"),'La importación dinámica impide que Netlify inyecte el contexto Blobs.');
  const key=Buffer.alloc(32,0x42),content=Buffer.from('comprobante bancario ficticio para pruebas','utf8'),sha=core.sha256(content),env={VLA_DATA_ENVIRONMENT:'staging',AIRTABLE_BASE_ID:'appSTAGING0000001'};
  assert.strictEqual(storeModule.parseEncryptionKey(key.toString('hex')).length,32);
  assert.strictEqual(storeModule.parseEncryptionKey(key.toString('base64')).length,32);

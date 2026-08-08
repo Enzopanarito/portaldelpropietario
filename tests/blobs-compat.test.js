@@ -7,7 +7,7 @@ function response(status,etag=''){return{status,headers:{get:name=>String(name).
 
 (async()=>{
  const calls=[];
- const transport={name:'site:vla-test',client:{makeRequest:async request=>{calls.push(request);return response(200,`etag-${calls.length}`)}},getWithMetadata:async()=>null};
+ const transport={name:'site:vla-test',client:{makeRequest:async request=>{calls.push(request);return response(200,`etag-${calls.length}`)}},get:async()=>null,getWithMetadata:async()=>null};
  const store=wrapStore(transport);
  const created=await store.setJSON('snapshot',{ok:true},{onlyIfNew:true,metadata:{schemaVersion:1}});
  assert.deepStrictEqual(created,{modified:true,etag:'etag-1'});
@@ -15,6 +15,8 @@ function response(status,etag=''){return{status,headers:{get:name=>String(name).
  assert.deepStrictEqual(calls[0].metadata,{schemaVersion:1});
  const replaced=await store.setJSON('snapshot',{ok:true},{onlyIfMatch:'etag-1'});
  assert.strictEqual(replaced.modified,true);assert.strictEqual(calls[1].headers['if-match'],'etag-1');
+ const proof=new Uint8Array([1,2,3,4]).buffer,binary=await store.set('proof',proof,{onlyIfNew:true,metadata:{encrypted:true}});
+ assert.deepStrictEqual(binary,{modified:true,etag:'etag-3'});assert.strictEqual(calls[2].body,proof);assert.strictEqual(calls[2].headers['if-none-match'],'*');assert.deepStrictEqual(calls[2].metadata,{encrypted:true});
  transport.client.makeRequest=async request=>{calls.push(request);return response(412,'etag-current')};
  assert.deepStrictEqual(await store.setJSON('snapshot',{ok:false},{onlyIfMatch:'etag-old'}),{modified:false,etag:'etag-current'});
  await assert.rejects(()=>store.setJSON('snapshot',{}, {onlyIfNew:true,onlyIfMatch:'etag'}),error=>error.code==='BLOBS_CONDITION_CONFLICT');
