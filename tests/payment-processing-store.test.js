@@ -1,8 +1,12 @@
 'use strict';
 const assert=require('assert');
+const fs=require('fs');
 const storeModule=require('../netlify/functions/_payment_processing_store');
 
 (async()=>{
+ const source=fs.readFileSync('netlify/functions/_payment_processing_store.js','utf8');
+ assert(source.includes("require('./_blobs_compat')")&&source.includes('getAtomicStore(STORE_NAME)'));
+ assert(!source.includes("consistency:'strong'"));
  let clock=Date.parse('2026-07-13T16:30:00.000Z');let random=0;
  const memory=storeModule.createMemoryStore(),store=storeModule.createProcessingStore({storeFactory:async()=>memory,now:()=>clock,randomBytes:size=>Buffer.alloc(size,++random),leaseMs:30000});
  const env={VLA_DATA_ENVIRONMENT:'staging',AIRTABLE_BASE_ID:'appSTAGING0000001'},identity={reportId:'recReport0000001',idempotencyKey:'recReport0000001|'+'a'.repeat(64)+'|PROMPT_V2',payloadHash:'b'.repeat(64)};
