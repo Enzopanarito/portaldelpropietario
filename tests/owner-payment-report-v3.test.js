@@ -12,7 +12,9 @@ assert(/id="vla-pay-proof-section"[^>]*hidden/.test(ui),'La carga debe aparecer 
 assert(/id="vla-pay-details"[^>]*hidden/.test(ui),'El formulario no puede aparecer completo inicialmente.');
 assert(/id="payTransactionStatus" type="hidden"/.test(ui),'El estado técnico debe ser invisible para el propietario.');
 assert(!ui.includes('Estado visible'),'El propietario no debe elegir estados técnicos.');
-assert(ui.includes('FALLBACK_DATE_METHODS')&&ui.includes('transactionDateSource'),'Debe aceptar y transmitir la política de fecha de Zelle/Binance.');
+assert(!ui.includes('FALLBACK_DATE_METHODS')&&ui.includes('automaticDateFromFile')&&ui.includes('transactionDateSource'),'La fecha debe resolverse automáticamente para todos los métodos.');
+assert(!/function digitalMissing\(\)\{[^}]*missing\.push\('date'\)/.test(ui),'La fecha nunca debe bloquear el envío digital.');
+assert(ui.includes('analysisSummary')&&ui.includes('possibleVisualModification'),'El administrador debe recibir la mayor información de la prelectura.');
 assert(ui.includes("cash?(currency==='BS'?'Bs BCV':currency==='USD'?'USD':'')"),'El efectivo debe asignar la cuenta desde su moneda sin pedir un campo oculto.');
 assert(!/function cashMissing\(\)\{[^}]*missing\.push\('mode'\)/.test(ui),'El flujo de efectivo no puede exigir una cuenta oculta.');
 assert(ui.includes("if(!selectedFile)return['proof']"),'Antes del comprobante solo debe pedirse el comprobante.');
@@ -26,11 +28,11 @@ assert(!signature.includes('form.onsubmit')&&!signature.includes('/.netlify/func
 assert(!/recargo/i.test(ui+css),'El portal público no debe mencionar el recargo.');
 assert(css.includes('.vla-pay-two{display:grid')&&css.includes('font-size:16px'),'Debe seguir siendo móvil y evitar zoom en iPhone.');
 const darkCss=fs.readFileSync('owner-dark-contrast-v1.css','utf8');assert(darkCss.includes('html.dark #vla-pay-confirm-card')&&darkCss.includes('html.dark .vla-pay-edit'),'La confirmación detectada debe conservar contraste real en modo oscuro.');
-assert(edge.includes('progressive-v7'),'Falta el marcador del flujo progresivo.');
+assert(edge.includes('progressive-v8'),'Falta el marcador del flujo progresivo.');
 for(const asset of ['owner-payment-report-v3.css','payment-report-intelligence.js','owner-payment-report-v3.js'])assert(edge.includes(asset),`Falta inyección de ${asset}`);
-assert(server.includes('DATE_FALLBACK_METHODS')&&server.includes('REPORT_TIMESTAMP_FALLBACK'),'El servidor debe controlar el fallback de fecha.');
+assert(server.includes('resolveSubmittedDate')&&server.includes('REPORT_TIMESTAMP_FALLBACK'),'El servidor debe controlar la jerarquía automática de fecha.');
 assert(server.includes("paymentChannel==='DIGITAL'?decodeAttachment(body.attachment):null"),'El comprobante es obligatorio solo para digital.');
 assert(server.includes("'Archivo Obligatorio':paymentChannel==='DIGITAL'")&&server.includes('reserveIdentity'),'Debe conservar comprobante condicional y deduplicación.');
 assert(server.includes('connectLambdaEvent(event)')&&server.includes('POST_CREATE_TIMEOUT_MS'),'El guardado Blobs y las tareas posteriores deben estar protegidos.');
 assert(!server.includes('ACCEPTED_TRANSACTION_STATUSES'),'El cliente no decide si una transacción está completada.');
-console.log('owner-payment-report-progressive-v7: OK');
+console.log('owner-payment-report-progressive-v8: OK');

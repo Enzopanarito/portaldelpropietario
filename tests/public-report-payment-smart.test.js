@@ -50,7 +50,7 @@ function parse(response){return JSON.parse(response.body)}
 const png=Buffer.concat([Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]),Buffer.from('proof')]);
 
 (async()=>{
-  let response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:'15.300,00',enteredCurrency:'BS',reference:'ABC-123',rate:100,bank:'Pago móvil',method:'MOBILE_PAYMENT_VE',transactionDate:'2026-07-31',observations:'Prueba',attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}}));
+  let response=await handler(event({ownerId:'recABCDEFGHIJKLMN',submissionId:'submission-smart-001',mode:'USD',amount:'15.300,00',enteredCurrency:'BS',reference:'ABC-123',rate:100,bank:'Pago móvil',method:'MOBILE_PAYMENT_VE',transactionDate:'2026-07-31',transactionDateSource:'PROOF_EXTRACTED',analysisSummary:{provider:'gemini-test',route:'direct',confidence:.98,transactionTime:'10:30:00',transactionStatus:'COMPLETED',recipient:'Enzo Panarito',warnings:['Lectura clara'],possibleVisualModification:false,prefillComplete:true,missingLabels:[]},observations:'Prueba',attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}}));
   assert.equal(response.statusCode,200,JSON.stringify(parse(response)));
   let body=parse(response);
   assert.equal(body.amountUsdRef,85);
@@ -59,13 +59,17 @@ const png=Buffer.concat([Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]),
   assert.equal(created[0]['Forma de Pago Reportada'],'USD');
   assert.equal(created[0]['Monto Reportado'],85);
   assert.equal(created[0]['Archivo Obligatorio'],true);
-  assert(created[0]['Observaciones Reportadas'].includes('Fecha de operación: 2026-07-31'));
-  assert(created[0]['Observaciones Reportadas'].includes('Fuente de fecha: USER_CONFIRMED'));
+  assert(created[0]['Observaciones Reportadas'].includes('Fecha usada por el portal: 2026-07-31'));
+  assert(created[0]['Observaciones Reportadas'].includes('Fuente de fecha: PROOF_EXTRACTED'));
+  assert(created[0]['Observaciones Reportadas'].includes('Proveedor/modelo de prelectura: gemini-test'));
+  assert(created[0]['Observaciones Reportadas'].includes('Receptor visible detectado: Enzo Panarito'));
+  assert.equal(body.transactionDateConfidence,'HIGH');assert.equal(body.transactionDateNeedsReview,false);
   assert(!Object.hasOwn(created[0],'Monto Reportado Bs'),'Una cuenta USD no debe convertirse en cuenta Bs.');
   assert.equal(mails[0].attachments.length,1);
   assert.equal(mails[0].attachments[0].filename,'casa4.png');
   assert(mails[0].attachments[0].content.equals(png));
   assert(mails[0].html.includes('Pago móvil'));
+  assert(mails[0].html.includes('gemini-test'));assert(mails[0].html.includes('REQUIERE CONTRASTE')===false);
 
   response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'Bs BCV',amount:'221,40',enteredCurrency:'USD',reference:'BS-123',rate:180,bank:'Zelle',method:'ZELLE',attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}}));
   assert.equal(response.statusCode,200,JSON.stringify(parse(response)));
@@ -101,11 +105,15 @@ const png=Buffer.concat([Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]),
 
   for(const incomplete of [
     {ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:85,enteredCurrency:'USD',reference:'NO-PROOF',bank:'Banco',method:'TRANSFER_VE',transactionDate:'2026-07-31'},
-    {ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:85,enteredCurrency:'USD',reference:'NO-BANK',method:'OTHER',transactionDate:'2026-07-31',attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}},
-    {ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:85,enteredCurrency:'USD',reference:'NO-DATE',bank:'Banco',method:'TRANSFER_VE',attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}}
+    {ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:85,enteredCurrency:'USD',reference:'NO-BANK',method:'OTHER',transactionDate:'2026-07-31',attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}}
   ]){
     const count=created.length;response=await handler(event(incomplete));assert.equal(response.statusCode,400);assert.equal(created.length,count,'Los datos incompletos no deben crear reportes.');
   }
+
+  response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:85,enteredCurrency:'USD',reference:'NO-DATE',bank:'Pago móvil',method:'MOBILE_PAYMENT_VE',attachment:{name:'sin-fecha.png',type:'image/png',base64:png.toString('base64')}}));
+  assert.equal(response.statusCode,200,JSON.stringify(parse(response)));body=parse(response);
+  assert.equal(body.transactionDateSource,'REPORT_TIMESTAMP_FALLBACK');assert.equal(body.transactionDateConfidence,'LOW');assert.equal(body.transactionDateNeedsReview,true);
+  assert(created.at(-1)['Observaciones Reportadas'].includes('Fecha requiere contraste: SÍ'));
 
   console.log('PUBLIC_REPORT_PAYMENT_SMART_OK');
 })().catch(error=>{console.error(error);process.exit(1)});
