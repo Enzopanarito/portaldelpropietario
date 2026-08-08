@@ -28,6 +28,8 @@ assert(store.includes("require('./_runtime_config_generated')"),'El runtime debe
 assert(store.includes('config.publicBlobCacheEnabled===true'),'La activación debe usar el valor generado cuando no existe una variable runtime explícita.');
 assert(!store.includes("consistency:'strong'"),'La caché pública debe usar el endpoint de lectura disponible en Netlify Functions.');
 assert(store.includes('onlyIfNew:true')&&store.includes('onlyIfMatch:'),'La concurrencia debe seguir protegida con escrituras condicionales por ETag.');
+assert(store.includes('connectLambda(event)'),'El modo Lambda compatible debe inicializar Blobs con el evento de Netlify.');
+assert(route.includes('await connectSnapshot(event)'),'La ruta pública debe conectar Blobs antes de leer la fotografía.');
 assert(route.includes('if(!isEnabled(snapshotEnv,snapshotStore.runtimeConfig,host))return previousHandler(event)'),'El rollback debe restaurar exactamente la ruta anterior al apagar la bandera.');
 assert(route.includes("'X-Airtable-Calls':'0'"));
 assert(route.includes("'X-Public-Snapshot':state"));
