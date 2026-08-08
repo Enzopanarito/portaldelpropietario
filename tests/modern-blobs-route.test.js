@@ -20,3 +20,18 @@ test('el reporte entra directamente en la Lambda que recibe event.blobs',()=>{
   assert.match(config,rewrite('/api/vla/report-payment','/.netlify/functions/public-report-payment'));
   assert.equal(fs.existsSync('netlify/functions/public-report-payment-modern.mjs'),false);
 });
+
+test('el analizador entra en la función background nativa que recibe event.blobs',()=>{
+  assert.match(config,rewrite('/api/vla/payment-report-analyzer','/.netlify/functions/payment-report-analyzer-background'));
+  assert.equal(fs.existsSync('netlify/functions/payment-report-analyzer-modern-background.mjs'),false);
+  const source=fs.readFileSync('netlify/functions/payment-report-analyzer-background.js','utf8');
+  assert.match(source,/connectLambdaEvent\(event\)/);
+});
+
+test('la sonda cifrada existe solo para verificar deploy previews',()=>{
+  const source=fs.readFileSync('netlify/functions/payment-storage-probe.js','utf8');
+  assert.match(source,/CONTEXT==='production'/);
+  assert.match(source,/connectLambdaEvent\(event\)/);
+  assert.match(source,/proofStore\.put/);
+  assert.match(source,/proofStore\.getByKey/);
+});
