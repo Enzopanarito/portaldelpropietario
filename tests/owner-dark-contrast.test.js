@@ -7,6 +7,7 @@ function assert(condition,message){if(!condition)throw new Error(message)}
 const css=read('owner-dark-contrast-v1.css');
 const edge=read('netlify/edge-functions/owner-mobile-assets.js');
 const workflow=read('.github/workflows/verify-owner-mobile.yml');
+const runtime=read('tests/owner-dark-runtime-browser.cjs');
 
 assert(css.includes('Contraste integral modo oscuro wcag-v1'),'Falta marcador de la capa oscura.');
 assert(css.includes('html.dark #modal .vla-pay-sheet'),'El modal de reportar pago no está cubierto.');
@@ -34,8 +35,14 @@ assert(edge.includes("x-vla-owner-dark-contrast','wcag-v1"),'Falta el encabezado
 assert(edge.indexOf('owner-dark-contrast-v1.css')>edge.indexOf('owner-payment-report-v3.css'),'La capa oscura debe cargarse después del modal.');
 
 assert(workflow.includes('owner-dark-contrast-v1.css'),'El workflow no espera el asset oscuro.');
-assert(workflow.includes('owner-dark-contrast-browser.cjs'),'El workflow no ejecuta la auditoría de contraste.');
+assert(workflow.includes('owner-dark-runtime-browser.cjs'),'El workflow no ejecuta la auditoría runtime estable.');
+assert(!workflow.includes('node tests/owner-dark-contrast-browser.cjs'),'El workflow volvió a activar el auditor oscuro frágil.');
 assert(workflow.includes('owner-dark-contrast-result.json'),'El workflow no conserva evidencia técnica.');
 assert(workflow.includes('owner-dark-payment.png'),'El workflow no conserva captura del modal oscuro.');
+
+assert(runtime.includes("page.locator('#theme1').click()"),'La auditoría runtime no activa el tema mediante la interacción real.');
+assert(runtime.includes("localStorage.getItem('theme')==='dark'"),'La auditoría runtime no confirma persistencia del tema.');
+assert(runtime.includes('page.reload'),'La auditoría runtime no comprueba persistencia después de recargar.');
+assert(runtime.includes('OWNER_DARK_RUNTIME_OK'),'Falta marcador verificable del auditor runtime.');
 
 console.log('OWNER_DARK_CONTRAST_STATIC_OK');

@@ -12,19 +12,22 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout exact PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Use Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
+          package-manager-cache: false
 
-      - name: Resolve preview URL
+      - name: Resolve CLI preview URL
         id: target
         run: echo "url=https://deploy-preview-${{ github.event.pull_request.number }}--villalosapamates.netlify.app" >> "$GITHUB_OUTPUT"
 
-      - name: Wait for exact preview assets
+      - name: Wait for exact CLI preview assets
         env:
           TARGET_URL: ${{ steps.target.outputs.url }}
         shell: bash
@@ -51,13 +54,13 @@ jobs:
             printf '%s' "$porton" | grep -q 'admin-session-bridge.js' || ready=0
             printf '%s' "$seguridad" | grep -q 'admin-session-bridge.js' || ready=0
             if [ "$ready" = "1" ]; then
-              echo "Preview exacta disponible en ${TARGET_URL}"
+              echo "CLI preview exacta disponible en ${TARGET_URL}"
               exit 0
             fi
             echo "Intento ${attempt}: ui=${ui:-missing}, session=${session:-missing}, quality=${quality:-missing}, ready=${ready}"
             sleep 10
           done
-          echo "La vista previa exacta no estuvo disponible."
+          echo "La vista previa CLI exacta no estuvo disponible."
           exit 1
 
       - name: Install Chromium
@@ -113,7 +116,7 @@ jobs:
 
       - name: Upload preview evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: admin-preview-evidence
           path: |

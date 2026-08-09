@@ -11,7 +11,7 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       NETLIFY_AUTH_TOKEN_PRIMARY: ${{ secrets.NETLIFY_AUTH_TOKEN }}
       NETLIFY_AUTH_TOKEN_FALLBACK: ${{ secrets.NETLIFY_TOKEN }}
@@ -19,12 +19,13 @@ jobs:
       NETLIFY_SITE_ID_FALLBACK: ${{ secrets.NETLIFY_SITE_ID_VILLALOSAPAMATES }}
     steps:
       - name: Checkout exact production commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
-      - name: Use Node.js
-        uses: actions/setup-node@v4
+      - name: Use Node.js 22
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
+          package-manager-cache: false
 
       - name: Install dependencies safely
         run: npm ci --ignore-scripts --no-audit --no-fund
@@ -32,12 +33,22 @@ jobs:
       - name: Run financial, payment, snapshot, close and security release gates
         run: npm test
 
-      - name: Build the exact public artifact
+      - name: Resolve canonical publish directory
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          publish_dir="$(node -e "const r=require('./release.json');const d=String(r.productionPublishDirectory||'').trim();if(!d)process.exit(1);process.stdout.write(d)")"
+          echo "publish_dir=$publish_dir" >> "$GITHUB_OUTPUT"
+
+      - name: Build the exact production artifact in GitHub
+        env:
+          CONTEXT: production
+          VLA_DATA_ENVIRONMENT: production
         run: npm run build:public
 
       - name: Install Chromium for critical browser gates
-        run: |
-          npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium
 
       - name: Run critical payment and admin browser gates
         run: node --test tests/owner-payment-report-browser.cjs tests/payment-duplicate-feedback-browser.cjs tests/admin-owner-access-browser.cjs tests/admin-premium-browser.cjs tests/admin-responsive-fouc-browser.cjs
@@ -46,122 +57,154 @@ jobs:
         id: credentials
         shell: bash
         run: |
+          set -euo pipefail
           AUTH_TOKEN="${NETLIFY_AUTH_TOKEN_PRIMARY:-${NETLIFY_AUTH_TOKEN_FALLBACK:-}}"
           SITE_ID="${NETLIFY_SITE_ID_PRIMARY:-${NETLIFY_SITE_ID_FALLBACK:-}}"
           if [ -n "$AUTH_TOKEN" ]; then echo "::add-mask::$AUTH_TOKEN"; fi
           if [ -n "$SITE_ID" ]; then echo "::add-mask::$SITE_ID"; fi
           if [ -z "$AUTH_TOKEN" ] || [ -z "$SITE_ID" ]; then
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            exit 0
+            echo "Faltan credenciales Netlify. Producción no será modificada."
+            exit 1
           fi
-          echo "ready=true" >> "$GITHUB_OUTPUT"
           echo "NETLIFY_AUTH_TOKEN=$AUTH_TOKEN" >> "$GITHUB_ENV"
           echo "NETLIFY_SITE_ID=$SITE_ID" >> "$GITHUB_ENV"
 
       - name: Inspect Netlify production configuration
         id: site
-        if: steps.credentials.outputs.ready == 'true'
         shell: bash
         run: |
+          set -euo pipefail
           site_json="$(curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
             -H "User-Agent: VLA-GitHub-Actions" \
             "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID")"
           production_branch="$(printf '%s' "$site_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);process.stdout.write(String(j.build_settings?.repo_branch||j.repo?.branch||'unknown'))})")"
-          repo_url="$(printf '%s' "$site_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);process.stdout.write(String(j.build_settings?.repo_url||j.repo?.repo_path||'connected'))})")"
+          [ "$production_branch" = "main" ] || { echo "La rama de producción es $production_branch, no main."; exit 1; }
           echo "production_branch=$production_branch" >> "$GITHUB_OUTPUT"
           echo "Production branch: $production_branch"
-          echo "Repository connection: $repo_url"
 
-      - name: Trigger server-side production build
-        id: trigger
-        if: steps.site.outcome == 'success'
+      - name: Capture immediate BEFORE financial baseline
+        id: before
         shell: bash
         run: |
-          build_json="$(curl --fail-with-body --silent --show-error --request POST \
+          set -euo pipefail
+          before="${RUNNER_TEMP}/vla-before.json"
+          curl --fail-with-body --silent --show-error --location --max-time 60 \
+            "https://villalosapamates.netlify.app/api/vla/public-data?force=1&before=${GITHUB_SHA}-${GITHUB_RUN_ID}" \
+            --output "$before"
+          node - "$before" <<'NODE'
+          const fs=require('fs');
+          const data=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+          const owners=Array.isArray(data.propietarios)?data.propietarios:[];
+          if(owners.length!==15)throw new Error(`BEFORE devolvió ${owners.length}/15 casas.`);
+          for(let casa=1;casa<=15;casa++)if(!owners.some(owner=>Number(owner.Casa)===casa))throw new Error(`BEFORE no contiene Casa ${casa}.`);
+          console.log('BEFORE_FINANCIAL_BASELINE_OK 15/15');
+          NODE
+          echo "path=$before" >> "$GITHUB_OUTPUT"
+
+      - name: Upload prepared production deploy without hosted build
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="${RUNNER_TEMP}/netlify-cli-production.json"
+          npx --yes netlify-cli@latest deploy \
+            --prod \
+            --no-build \
+            --dir="${{ steps.release.outputs.publish_dir }}" \
+            --functions=netlify/functions \
+            --site="$NETLIFY_SITE_ID" \
+            --auth="$NETLIFY_AUTH_TOKEN" \
+            --skip-functions-cache \
+            --message="VLA production commit=${GITHUB_SHA}" \
+            --json > "$output"
+          cat "$output"
+          node - "$output" "$GITHUB_OUTPUT" <<'NODE'
+          const fs=require('fs');
+          const [file,out]=process.argv.slice(2);
+          const data=JSON.parse(fs.readFileSync(file,'utf8'));
+          const id=String(data.deploy_id||data.id||'');
+          if(!id)throw new Error('Netlify CLI no devolvió deploy_id.');
+          fs.appendFileSync(out,`deploy_id=${id}\n`);
+          NODE
+
+      - name: Verify production deploy metadata and canonical release contract
+        id: verify
+        env:
+          DEPLOY_ID: ${{ steps.deploy.outputs.deploy_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          deploy_json="$(curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
             -H "User-Agent: VLA-GitHub-Actions" \
-            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/builds?clear_cache=true")"
-          build_id="$(printf '%s' "$build_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);process.stdout.write(String(j.id||j.build_id||''))})")"
-          if [ -z "$build_id" ]; then
-            echo "Netlify did not return a build ID."
-            exit 1
-          fi
-          echo "build_id=$build_id" >> "$GITHUB_OUTPUT"
-          echo "Server-side production build triggered: $build_id"
+            "https://api.netlify.com/api/v1/deploys/$DEPLOY_ID")"
+          printf '%s' "$deploy_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const d=JSON.parse(s);if(d.state!=='ready')throw new Error('Deploy state='+d.state);if(d.context!=='production')throw new Error('Deploy context='+d.context);console.log(JSON.stringify({id:d.id,state:d.state,context:d.context,commit_ref:d.commit_ref,created_via:d.created_via},null,2))})"
+          production_release="${RUNNER_TEMP}/vla-production-release.json"
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error --location --max-time 30 \
+              "https://villalosapamates.netlify.app/release.json?commit=$GITHUB_SHA&attempt=$attempt" \
+              --output "$production_release" \
+              && node scripts/verify-release-contract.js release.json "$production_release"; then
+              echo "deploy_id=$DEPLOY_ID" >> "$GITHUB_OUTPUT"
+              echo "Canonical production release verified for $GITHUB_SHA."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Producción no expuso el contrato canónico esperado."
+          exit 1
 
-      - name: Verify exact production deploy and canonical release contract
-        id: verify
-        if: steps.trigger.outcome == 'success'
+      - name: Compare AFTER against immediate BEFORE in exact cents
+        id: finance
         env:
-          BUILD_ID: ${{ steps.trigger.outputs.build_id }}
+          BEFORE_PATH: ${{ steps.before.outputs.path }}
         shell: bash
         run: |
-          production_release="${RUNNER_TEMP}/vla-production-release.json"
-          for attempt in $(seq 1 90); do
-            build_json="$(curl --fail --silent --show-error \
-              -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
-              -H "User-Agent: VLA-GitHub-Actions" \
-              "https://api.netlify.com/api/v1/builds/$BUILD_ID" 2>/dev/null || true)"
-            if [ -n "$build_json" ]; then
-              build_state="$(printf '%s' "$build_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);process.stdout.write(String(j.state||(j.done?'done':'pending')))})")"
-              build_error="$(printf '%s' "$build_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);const e=j.error;process.stdout.write(e?String(e):'')})")"
-              echo "Attempt $attempt: Netlify build state $build_state"
-              if [ -n "$build_error" ]; then
-                echo "Netlify build error: $build_error"
-                exit 1
-              fi
-            fi
-
-            deploy_json="$(curl --fail --silent --show-error \
-              -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
-              -H "User-Agent: VLA-GitHub-Actions" \
-              "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/deploys?per_page=20" 2>/dev/null || true)"
-            deploy_id="$(printf '%s' "$deploy_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const a=JSON.parse(s||'[]');const d=a.find(x=>x.context==='production'&&x.commit_ref===process.env.GITHUB_SHA);process.stdout.write(String(d?.id||''))})" 2>/dev/null || true)"
-            deploy_state="$(printf '%s' "$deploy_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const a=JSON.parse(s||'[]');const d=a.find(x=>x.context==='production'&&x.commit_ref===process.env.GITHUB_SHA);process.stdout.write(String(d?.state||''))})" 2>/dev/null || true)"
-            if [ -n "$deploy_id" ]; then
-              echo "Attempt $attempt: exact commit deploy $deploy_id is $deploy_state"
-            fi
-            if [ "$deploy_state" = "ready" ] && curl --fail --silent --show-error --location --max-time 30 \
-              "https://villalosapamates.netlify.app/release.json?commit=$GITHUB_SHA&attempt=$attempt" \
-              --output "$production_release"; then
-              if node scripts/verify-release-contract.js release.json "$production_release"; then
-                echo "deploy_id=$deploy_id" >> "$GITHUB_OUTPUT"
-                echo "Production verified for exact commit $GITHUB_SHA with canonical release.json."
-                exit 0
-              fi
-            fi
-            sleep 10
-          done
-          echo "Production did not expose the exact commit and canonical release contract before timeout."
-          exit 1
+          set -euo pipefail
+          after="${RUNNER_TEMP}/vla-after.json"
+          curl --fail-with-body --silent --show-error --location --max-time 60 \
+            "https://villalosapamates.netlify.app/api/vla/public-data?force=1&after=${GITHUB_SHA}-${GITHUB_RUN_ID}" \
+            --output "$after"
+          node - "$BEFORE_PATH" "$after" <<'NODE'
+          const fs=require('fs');
+          const [beforePath,afterPath]=process.argv.slice(2);
+          const fields=['saldoUsd','saldoBsRef','totalPagadero','saldoNetoReferencial','saldoFavorUsd','saldoFavorBs','deudaVencidaUsd','deudaVencidaBs','mesCorrienteUsd','mesCorrienteBs'];
+          const money=value=>Math.round((Number(value)||0)*100);
+          const load=path=>{const data=JSON.parse(fs.readFileSync(path,'utf8'));const owners=Array.isArray(data.propietarios)?data.propietarios:[];if(owners.length!==15)throw new Error(`${path}: ${owners.length}/15 casas`);return new Map(owners.map(owner=>[Number(owner.Casa),owner]))};
+          const before=load(beforePath),after=load(afterPath),diffs=[];
+          let absolute=0;
+          for(let casa=1;casa<=15;casa++){
+            const a=before.get(casa),b=after.get(casa);
+            if(!a||!b)throw new Error(`Casa ${casa} ausente en BEFORE/AFTER.`);
+            for(const field of fields){const av=money(a[field]),bv=money(b[field]),delta=bv-av;absolute+=Math.abs(delta);if(delta!==0)diffs.push({casa,field,before:av/100,after:bv/100,diff:delta/100});}
+          }
+          console.log(`FINANCIAL_FIELDS_CHECKED=${15*fields.length}`);
+          console.log(`ABSOLUTE_DIFFERENCE=${(absolute/100).toFixed(2)}`);
+          if(diffs.length){console.error(JSON.stringify({diffs},null,2));process.exit(1)}
+          console.log('FINANCIAL_BEFORE_AFTER_OK 15/15 houses · 150/150 fields · $0.00');
+          NODE
 
       - name: Report deployment result
         if: always()
         shell: bash
         env:
-          CREDENTIALS_READY: ${{ steps.credentials.outputs.ready }}
-          SITE_OUTCOME: ${{ steps.site.outcome }}
-          TRIGGER_OUTCOME: ${{ steps.trigger.outcome }}
+          DEPLOY_ID: ${{ steps.deploy.outputs.deploy_id }}
           VERIFY_OUTCOME: ${{ steps.verify.outcome }}
+          FINANCE_OUTCOME: ${{ steps.finance.outcome }}
           PRODUCTION_BRANCH: ${{ steps.site.outputs.production_branch }}
-          BUILD_ID: ${{ steps.trigger.outputs.build_id }}
-          DEPLOY_ID: ${{ steps.verify.outputs.deploy_id }}
         run: |
-          if [ "$CREDENTIALS_READY" != "true" ]; then
-            title="Producción Netlify bloqueada"
-            detail="Los secretos de Netlify no estuvieron disponibles. No se modificó producción."
-          elif [ "$TRIGGER_OUTCOME" = "success" ] && [ "$VERIFY_OUTCOME" = "success" ]; then
-            title="Contrato canónico publicado y verificado ✅"
-            detail="Netlify confirmó el commit exacto y release.json coincide clave por clave con el artefacto servido."
+          if [ "$VERIFY_OUTCOME" = "success" ] && [ "$FINANCE_OUTCOME" = "success" ]; then
+            title="Producción publicada y certificada ✅"
+            detail="Artefacto construido en GitHub, release canónico verificado y BEFORE/AFTER financiero = $0.00."
           else
-            title="Producción no verificada ⚠️"
-            detail="El despliegue o la verificación canónica no concluyeron correctamente."
+            title="Producción no certificada ⚠️"
+            detail="El despliegue, el contrato canónico o la comparación financiera no concluyeron correctamente."
           fi
           {
             echo "### $title"
             echo
             echo "$detail"
             echo
-            echo "Rama: \`${PRODUCTION_BRANCH:-unknown}\` · Build: \`${BUILD_ID:-not-returned}\` · Deploy: \`${DEPLOY_ID:-not-returned}\` · Commit: \`$GITHUB_SHA\`"
+            echo "Rama: \`${PRODUCTION_BRANCH:-unknown}\` · Deploy: \`${DEPLOY_ID:-not-returned}\` · Commit: \`$GITHUB_SHA\`"
           } >> "$GITHUB_STEP_SUMMARY"
