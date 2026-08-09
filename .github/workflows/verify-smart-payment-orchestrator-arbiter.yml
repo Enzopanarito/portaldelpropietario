@@ -43,9 +43,9 @@ jobs:
 
       - name: Check syntax
         run: |
-          node --check netlify/functions/_payment_processing_store.js
-          node --check netlify/functions/_payment_processing_orchestrator.js
-          node --check netlify/functions/_payment_deterministic_arbiter.js
+          node --check netlify/functions/_shared/_payment_processing_store.js
+          node --check netlify/functions/_shared/_payment_processing_orchestrator.js
+          node --check netlify/functions/_shared/_payment_deterministic_arbiter.js
           node --check tests/payment-processing-store.test.js
           node --check tests/payment-processing-orchestrator.test.js
           node --check tests/payment-deterministic-arbiter.test.js

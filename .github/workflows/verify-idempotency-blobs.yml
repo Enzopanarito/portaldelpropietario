@@ -53,9 +53,9 @@ jobs:
 
       - name: Check syntax
         run: |
-          node --check netlify/functions/_idempotency_blobs.js
-          node --check netlify/functions/_operation_guard_v3.js
-          node --check netlify/functions/_monthly_close_idempotency.js
+          node --check netlify/functions/_shared/_idempotency_blobs.js
+          node --check netlify/functions/_shared/_operation_guard_v3.js
+          node --check netlify/functions/_shared/_monthly_close_idempotency.js
           node --check netlify/functions/admin-manual-payment.js
           node --check netlify/functions/process-payment-report.js
           node --check netlify/functions/monthly-close-v2.js

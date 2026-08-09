@@ -30,7 +30,7 @@ jobs:
           node-version: '22'
       - name: Check syntax
         run: |
-          node --check netlify/functions/_provisional_access_authorization.js
+          node --check netlify/functions/_shared/_provisional_access_authorization.js
           node --check tests/provisional-access-authorization.test.js
       - name: Verify exact report authorization and stale-job protection
         run: node tests/provisional-access-authorization.test.js

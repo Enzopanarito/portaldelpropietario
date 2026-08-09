@@ -51,10 +51,10 @@ jobs:
 
       - name: Check JavaScript syntax
         run: |
-          node --check netlify/functions/_public_snapshot_store.js
+          node --check netlify/functions/_shared/_public_snapshot_store.js
           node --check netlify/functions/public-data-v2.js
           node --check netlify/functions/public-data-v3.js
-          node --check netlify/functions/_airtable_meter.js
+          node --check netlify/functions/_shared/_airtable_meter.js
           node --check tests/public-snapshot-store.test.js
           node --check tests/public-data-v3.test.js
           node --check tests/public-snapshot-invalidation.test.js

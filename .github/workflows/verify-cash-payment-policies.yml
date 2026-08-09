@@ -30,7 +30,7 @@ jobs:
           node-version: '22'
       - name: Check syntax
         run: |
-          node --check netlify/functions/_cash_payment_policy.js
+          node --check netlify/functions/_shared/_cash_payment_policy.js
           node --check tests/cash-payment-policy.test.js
       - name: Verify direct, security-pending and contingency rules
         run: node tests/cash-payment-policy.test.js
