@@ -7,6 +7,7 @@ const path = require('node:path');
 const auth = require('../netlify/functions/_shared/_auth');
 const health = require('../netlify/functions/system-health-advanced');
 const backup = require('../netlify/functions/airtable-backup');
+const inventory = require('../netlify/functions/_shared/_backup_inventory');
 
 const STRONG_A = 'a'.repeat(64);
 const STRONG_B = 'b'.repeat(64);
@@ -119,14 +120,30 @@ test('Health exige PAYMENT_PROOF_ENCRYPTION_KEY dedicada', () => {
   assert.equal(Object.hasOwn(result.meta, 'key'), false);
 });
 
-test('el respaldo operativo cubre todas las tablas productivas controladas', () => {
-  assert.equal(backup.TABLES.length, 12);
-  assert.equal(new Set(backup.TABLES).size, 12);
-  assert.equal(backup.TABLES.includes('Cuentas de Cobro Autorizadas'), true);
+test('el respaldo operativo usa el mismo inventario canónico que Health', () => {
+  assert.equal(backup.TABLES, inventory.TABLES);
+  assert.equal(inventory.TABLES.length, 12);
+  assert.equal(new Set(inventory.TABLES).size, 12);
+  assert.equal(inventory.TABLES.includes('Cuentas de Cobro Autorizadas'), true);
+  const healthSource = fs.readFileSync(path.join(__dirname, '..', 'netlify', 'functions', 'system-health-advanced.js'), 'utf8');
+  assert.match(healthSource, /BACKUP_TABLES\.length/);
+  assert.doesNotMatch(healthSource, /EXPECTED_BACKUP_TABLES\s*=\s*\d+/);
 });
 
 test('2FA deshabilitado se registra como riesgo aceptado, no como falso verde', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'netlify', 'functions', 'system-health-advanced.js'), 'utf8');
   assert.match(source, /Autenticación de dos pasos'[\s\S]*'info'[\s\S]*acceptedRisk:true/);
   assert.doesNotMatch(source, /Autenticación de dos pasos',\s*true/);
+});
+
+test('el modo skip-netlify bloquea el workflow CLI de preview', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'netlify-cli-preview.yml'), 'utf8');
+  assert.match(source, /!contains\(github\.event\.pull_request\.title, '\[skip netlify\]'\)/);
+});
+
+test('el baseline financiero se liga al commit base y release reales, sin SHA hardcodeado', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'capture-final-financial-baseline.yml'), 'utf8');
+  assert.match(source, /PR_BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/);
+  assert.match(source, /sourceRelease:release\.release/);
+  assert.doesNotMatch(source, /sourceCommit:'[a-f0-9]{40}'/);
 });
