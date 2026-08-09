@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 
 const fixture = require('../netlify/functions/_shared/_public_preview_fixture');
 const { createHandler } = require('../netlify/functions/public-data-v3');
+const { validatePayload } = require('../netlify/functions/_shared/_public_snapshot_store');
 
 const FIXED_NOW = new Date('2026-08-04T13:30:00.000Z');
 
@@ -20,6 +21,9 @@ test('la fotografía de preview contiene 15 casas ficticias, saldos consistentes
   assert.ok(payload.propietarios.every(owner => Math.abs(
     Number(owner['Saldo USD Actual']) + Number(owner['Saldo Bs Ref Actual']) - Number(owner['Saldo Total Actual'])
   ) < 0.011));
+  assert.deepEqual(validatePayload(payload), { ok: true, errors: [] });
+  assert.ok(payload.propietarios.every(owner => owner.balanceEngineVersion === 'vla-balance-contract-v7'));
+  assert.ok(payload.propietarios.every(owner => owner.totalPagadero === Math.round((Math.max(0, owner.saldoUsd) + Math.max(0, owner.saldoBsRef) + Number.EPSILON) * 100) / 100));
   assert.ok(payload.gastos.some(expense => expense.fields.Concepto === 'VIGILANCIA'));
   assert.deepEqual(payload.pagos, []);
 });
