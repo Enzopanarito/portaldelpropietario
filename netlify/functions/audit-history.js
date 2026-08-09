@@ -1,9 +1,9 @@
-const { withAirtableUsage } = require('./_airtable_meter');
+const { withAirtableUsage } = require('./_shared/_airtable_meter');
 // netlify/functions/audit-history.js
 // Consulta historial auditable con separación USD / Bs BCV.
 // No crea registros técnicos API_USAGE para no consumir el límite de Airtable.
 
-const { requireAdmin } = require('./_auth');
+const { requireAdmin } = require('./_shared/_auth');
 const TABLES={propietarios:'Propietarios',historial:'Historial de Cargos',pagos:'Pagos'};
 function buildUrl(baseId,tableName,query=''){return `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}${query}`;}
 async function airtableGetAll(tableName,query,token,baseId,counter){let records=[];let offset=null;const safe=query||'';do{const sep=safe?'&':'?';const url=buildUrl(baseId,tableName,`${safe}${offset?`${sep}offset=${encodeURIComponent(offset)}`:''}`);counter.calls+=1;const response=await fetch(url,{headers:{Authorization:`Bearer ${token}`}});const data=await response.json();if(!response.ok)throw new Error(data.error?.message||data.message||`Error cargando ${tableName}`);records=records.concat(data.records||[]);offset=data.offset;}while(offset);return records;}

@@ -2,7 +2,7 @@
 
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const lifecycle=require('../netlify/functions/_expense_lifecycle');
+const lifecycle=require('../netlify/functions/_shared/_expense_lifecycle');
 
 function expense(id,fields){return{id,fields:{Concepto:'Vigilancia',Monto:100,'Tipo de Gasto':'Gasto Común','Forma de Pago':'Bs BCV',Frecuencia:'Fijo',Propietarios:['recOWNER00000001'],...fields}}}
 

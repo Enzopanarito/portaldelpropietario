@@ -1,10 +1,10 @@
 'use strict';
 
-const { withAirtableUsage } = require('./_airtable_meter');
+const { withAirtableUsage } = require('./_shared/_airtable_meter');
 
 const previous = require('./admin-data-v2');
-const { calculateAllOwners, calculatedFields } = require('./_balance_engine_v4');
-const { attachOfficialBalances, officialControlQuery } = require('./_official_balances');
+const { calculateAllOwners, calculatedFields } = require('./_shared/_balance_engine_v4');
+const { attachOfficialBalances, officialControlQuery } = require('./_shared/_official_balances');
 
 const NO_STORE_HEADERS = {
   'Content-Type': 'application/json',

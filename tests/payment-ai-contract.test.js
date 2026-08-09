@@ -1,7 +1,7 @@
 'use strict';
 
 const assert=require('assert');
-const contract=require('../netlify/functions/_payment_ai_contract');
+const contract=require('../netlify/functions/_shared/_payment_ai_contract');
 
 function valid(overrides={}){return{method:'TRANSFER_VE',bank_or_platform:'Banco de Venezuela',amount:1250.5,currency:'VES',transaction_date:'2026-07-13',transaction_time:'15:30:10',reference:'000123456',transaction_status:'COMPLETED',recipient_name:'ENZO PANARITO',recipient_phone:'04140554700',recipient_email:null,recipient_account_visible:'****1234',memo:null,confidence:0.96,critical_fields_visible:true,warnings:[],possible_visual_modification:false,...overrides}}
 function raw(value){return JSON.stringify(value)}

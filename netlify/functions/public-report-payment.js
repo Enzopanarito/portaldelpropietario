@@ -5,21 +5,21 @@
 'use strict';
 
 const crypto=require('crypto');
-const { withAirtableUsage } = require('./_airtable_meter');
-const { airtableCreateRecord, airtableGetRecord, TABLES, money } = require('./_access_control');
-const { pendingReportAccessDecision } = require('./_pending_report_access_policy');
-const { sendMail } = require('./_mailer');
-const { sanitizeReference, escapeHtml, cleanPlainText, safeDisplayText, deepEscapeStrings } = require('./_security_utils');
-const { consume } = require('./_persistent_rate_limit');
-const { loadLastGood } = require('./_bcv_store');
+const { withAirtableUsage } = require('./_shared/_airtable_meter');
+const { airtableCreateRecord, airtableGetRecord, TABLES, money } = require('./_shared/_access_control');
+const { pendingReportAccessDecision } = require('./_shared/_pending_report_access_policy');
+const { sendMail } = require('./_shared/_mailer');
+const { sanitizeReference, escapeHtml, cleanPlainText, safeDisplayText, deepEscapeStrings } = require('./_shared/_security_utils');
+const { consume } = require('./_shared/_persistent_rate_limit');
+const { loadLastGood } = require('./_shared/_bcv_store');
 const { parseAmountInput, resolveAmount } = require('../../payment-report-intelligence');
-const { decodeAttachment } = require('./_payment_report_attachment');
-const { createProofStore } = require('./_payment_proof_store');
-const { computePerceptualHash } = require('./_payment_visual_hash');
-const { findDuplicateMatches } = require('./_payment_duplicate_core');
-const { sign } = require('./_internal_job_auth');
-const { connectLambdaEvent } = require('./_blobs_compat');
-const { todayCaracasISO, resolveSubmittedDate } = require('./_payment_date_resolver');
+const { decodeAttachment } = require('./_shared/_payment_report_attachment');
+const { createProofStore } = require('./_shared/_payment_proof_store');
+const { computePerceptualHash } = require('./_shared/_payment_visual_hash');
+const { findDuplicateMatches } = require('./_shared/_payment_duplicate_core');
+const { sign } = require('./_shared/_internal_job_auth');
+const { connectLambdaEvent } = require('./_shared/_blobs_compat');
+const { todayCaracasISO, resolveSubmittedDate } = require('./_shared/_payment_date_resolver');
 
 const ALLOWED_MODES = new Set(['USD', 'Bs BCV']);
 const ALLOWED_ENTERED_CURRENCIES = new Set(['USD', 'BS']);
@@ -204,6 +204,21 @@ const handler = async function(event){
 
     const reportContext=[`Canal reportado: ${paymentChannel==='CASH'?'EFECTIVO':'DIGITAL'}`,paymentChannel==='CASH'?`Efectivo entregado a: ${cashReceiver}`:'',`Método detectado/confirmado: ${method}`,`Fecha usada por el portal: ${transactionDate}`,`Fuente de fecha: ${transactionDateSource} (${dateSourceLabel(transactionDateSource)})`,`Confianza de fecha: ${transactionDateConfidence}`,`Fecha requiere contraste: ${transactionDateNeedsReview?'SÍ':'NO'}`,`Evidencia de fecha: ${transactionDateEvidence}`,`Estado interno inicial: ${transactionStatus}`,paymentChannel==='DIGITAL'?`Prelectura completa: ${analysisSummary.prefillComplete?'SÍ':'NO'}`:'',analysisSummary.provider?`Proveedor/modelo de prelectura: ${analysisSummary.provider}`:'',analysisSummary.route?`Ruta de prelectura: ${analysisSummary.route}`:'',paymentChannel==='DIGITAL'?`Confianza de prelectura: ${Math.round(analysisSummary.confidence*100)}%`:'',analysisSummary.transactionTime?`Hora visible detectada: ${analysisSummary.transactionTime}`:'',analysisSummary.transactionStatus?`Estado visible detectado: ${analysisSummary.transactionStatus}`:'',analysisSummary.recipient?`Receptor visible detectado: ${analysisSummary.recipient}`:'',paymentChannel==='DIGITAL'?`Posible modificación visual: ${analysisSummary.possibleVisualModification?'SÍ':'NO señalada'}`:'',analysisSummary.warnings.length?`Advertencias de prelectura: ${analysisSummary.warnings.join(' · ')}`:'',analysisSummary.missingLabels.length?`Datos que requirieron apoyo: ${analysisSummary.missingLabels.join(' · ')}`:'',`ID de envío: ${submissionId}`,observations].filter(Boolean).join('\n');
     const fields={'Propietario que Reporta':[ownerId],'Monto Reportado':usdEq,Referencia:reference,Estado:'Pendiente','Fecha del Reporte':todayCaracasISO(),'Forma de Pago Reportada':mode,'Equivalente USD Reportado':usdEq,'Estado Acceso al Reportar':String(ownerFields['Estado Acceso Portón']||'Sin configurar'),'Casa al Reportar':Number(ownerFields.Casa||0),'Fecha y Hora del Reporte':reportTimestamp,'Moneda Ingresada':enteredCurrency==='BS'?'VES':'USD','Monto Ingresado':amount,'Fuente Tasa BCV Reporte':rateInfo.source,'Archivo Obligatorio':paymentChannel==='DIGITAL','Estado de Procesamiento':paymentChannel==='CASH'?'Pendiente de administrador':'Recibido','Resultado Validación':paymentChannel==='CASH'?'Revisión manual urgente':'Pendiente','Decisión Administrativa':'Pendiente','Banco Reportado':bank,'Observaciones Reportadas':reportContext};
+    if(paymentChannel==='DIGITAL'){
+      Object.assign(fields,{
+        'Normalized Analysis JSON':JSON.stringify({stage:'prefill',untrustedClientRelay:true,provider:analysisSummary.provider,route:analysisSummary.route,confidence:analysisSummary.confidence,transactionDate,transactionDateSource,transactionDateConfidence,transactionDateNeedsReview,transactionDateEvidence,transactionTime:analysisSummary.transactionTime,transactionStatus:analysisSummary.transactionStatus,recipient:analysisSummary.recipient,warnings:analysisSummary.warnings,possibleVisualModification:analysisSummary.possibleVisualModification,prefillComplete:analysisSummary.prefillComplete,missingLabels:analysisSummary.missingLabels}),
+        'AI Confidence':analysisSummary.confidence,
+        'AI Provider Principal':analysisSummary.provider?`Prelectura · ${analysisSummary.provider}`:'Prelectura sin modelo informado',
+        'Método Detectado':method,
+        'Banco o Plataforma Detectada':bank,
+        'Moneda Detectada':enteredCurrency==='BS'?'VES':'USD',
+        'Monto Detectado':amount,
+        'Fecha Operación Detectada':transactionDate,
+        'Hora Detectada':analysisSummary.transactionTime,
+        'Referencia Detectada':reference,
+        'Receptor Detectado':analysisSummary.recipient
+      });
+    }
     if(proof){Object.assign(fields,{'Comprobante Blob Key':proof.key,'Comprobante Nombre Original':attachment.filename,'Comprobante MIME':attachment.contentType,'Comprobante Bytes':attachment.size,'Hash SHA-256':identity.sha256,'Hash Perceptual':identity.visualHash});}
     if(mode==='Bs BCV'){fields['Monto Reportado Bs']=amountBs;fields['Tasa BCV Reporte']=rateInfo.rate;}
     const report=await airtableCreateRecord(TABLES.reportes,fields);

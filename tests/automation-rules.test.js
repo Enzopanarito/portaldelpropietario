@@ -2,7 +2,7 @@
 
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const rulesModule=require('../netlify/functions/_automation_rules');
+const rulesModule=require('../netlify/functions/_shared/_automation_rules');
 
 test('las reglas seguras nacen apagadas y exigen confirmación',()=>{
  const rules=rulesModule.mergeConfig({});

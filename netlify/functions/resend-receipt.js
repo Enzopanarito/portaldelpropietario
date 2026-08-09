@@ -1,11 +1,11 @@
-const { withAirtableUsage } = require('./_airtable_meter');
+const { withAirtableUsage } = require('./_shared/_airtable_meter');
 // netlify/functions/resend-receipt.js
 // Reenvía / crea recibo PDF para un pago existente. Útil para reparar casos donde el pago fue creado
 // por un flujo viejo o el correo falló antes de que se registrara el recibo.
 
-const { requireAdmin } = require('./_auth');
-const { json, airtableGetRecord, TABLES, money } = require('./_access_control');
-const { createAndSendReceipt } = require('./_receipt_service');
+const { requireAdmin } = require('./_shared/_auth');
+const { json, airtableGetRecord, TABLES, money } = require('./_shared/_access_control');
+const { createAndSendReceipt } = require('./_shared/_receipt_service');
 
 function validRecordId(id){ return /^rec[A-Za-z0-9]{14}$/.test(String(id || '')); }
 

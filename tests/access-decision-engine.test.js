@@ -2,8 +2,8 @@
 
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {mergeConfig}=require('../netlify/functions/_automation_rules');
-const {evaluateAccessDecision}=require('../netlify/functions/_access_decision_engine');
+const {mergeConfig}=require('../netlify/functions/_shared/_automation_rules');
+const {evaluateAccessDecision}=require('../netlify/functions/_shared/_access_decision_engine');
 
 function rules(){
  return mergeConfig({fields:{

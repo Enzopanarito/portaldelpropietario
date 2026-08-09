@@ -1,8 +1,8 @@
 'use strict';
 
 const assert=require('assert');
-const visual=require('../netlify/functions/_payment_visual_hash');
-const duplicate=require('../netlify/functions/_payment_duplicate_core');
+const visual=require('../netlify/functions/_shared/_payment_visual_hash');
+const duplicate=require('../netlify/functions/_shared/_payment_duplicate_core');
 
 (async()=>{
  const content=Buffer.from('fake-image');

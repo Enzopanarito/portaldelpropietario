@@ -3,9 +3,9 @@
 
 'use strict';
 
-const { withAirtableUsage } = require('./_airtable_meter');
+const { withAirtableUsage } = require('./_shared/_airtable_meter');
 
-const { loadLastGood, saveLastGood } = require('./_bcv_store');
+const { loadLastGood, saveLastGood } = require('./_shared/_bcv_store');
 
 let rateCache = null;
 const SUCCESS_CACHE_TTL_MS = 60 * 60 * 1000;

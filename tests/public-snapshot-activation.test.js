@@ -6,9 +6,9 @@ const path=require('path');
 const generator=require('../scripts/generate-netlify-runtime-config');
 
 const config=fs.readFileSync(path.join(__dirname,'..','netlify.toml'),'utf8');
-const generatedDefault=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_runtime_config_generated.js'),'utf8');
-const store=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_public_snapshot_store.js'),'utf8');
-const compat=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_blobs_compat.js'),'utf8');
+const generatedDefault=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_shared','_runtime_config_generated.js'),'utf8');
+const store=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_shared','_public_snapshot_store.js'),'utf8');
+const compat=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_shared','_blobs_compat.js'),'utf8');
 const route=fs.readFileSync(path.join(__dirname,'..','netlify','functions','public-data-v3.js'),'utf8');
 
 assert(config.includes('command = "npm run build"'),'El build productivo debe generar configuración y publicar solo archivos permitidos.');

@@ -1,12 +1,12 @@
 'use strict';
 
-const { withAirtableUsage } = require('./_airtable_meter');
+const { withAirtableUsage } = require('./_shared/_airtable_meter');
 
-const { requireAdmin } = require('./_auth');
-const { deepEscapeStrings, safeDisplayText } = require('./_security_utils');
-const { calculateAllOwners, calculatedFields } = require('./_balance_engine_v4');
-const { filterActiveExpenses, currentMonthCaracas, STATUS, statusOf, monthOf } = require('./_expense_lifecycle');
-const { mergeConfig } = require('./_automation_rules');
+const { requireAdmin } = require('./_shared/_auth');
+const { deepEscapeStrings, safeDisplayText } = require('./_shared/_security_utils');
+const { calculateAllOwners, calculatedFields } = require('./_shared/_balance_engine_v4');
+const { filterActiveExpenses, currentMonthCaracas, STATUS, statusOf, monthOf } = require('./_shared/_expense_lifecycle');
+const { mergeConfig } = require('./_shared/_automation_rules');
 
 let adminCache = null;
 const ADMIN_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -16,7 +16,7 @@ const FIELD_SETS = {
   propietarios: ['Propietario','Casa','Telefono','Email','Alicuota','Deuda Anterior','Deuda Anterior USD','Deuda Anterior Bs Ref','Deuda Restante','Total Pagado','Gasto del Mes','Cuota Base Mes','Recargo Aplicado','Monto a Pagar a Tiempo','MKJ User ID','MKJ Email','Estado Acceso Portón','Excepción Acceso','Última Sync MKJ','Motivo Limitación Acceso'],
   gastos: ['Concepto','Monto','Tipo de Gasto','Frecuencia','Propietarios','Forma de Pago','Mes de Aplicación','Estado del Gasto','Origen del Gasto','Clave de Plantilla'],
   pagos: ['Propietario que Paga','Monto Pagado','Fecha de Pago','Método de Pago','Forma de Pago','Monto Pagado Bs','Tasa BCV Aplicada','Equivalente USD Aplicado','[x] Aplicado al Cierre','Moneda Recibida','Monto Recibido','Fuente Tasa BCV','Fecha Tasa BCV','Observaciones'],
-  reportes: ['Reporte','Propietario que Reporta','Monto Reportado','Referencia','Fecha del Reporte','Estado','Forma de Pago Reportada','Monto Reportado Bs','Tasa BCV Reporte','Equivalente USD Reportado','Moneda Ingresada','Monto Ingresado','Banco Reportado','Observaciones Reportadas','Fuente Tasa BCV Reporte','Archivo Obligatorio','Comprobante Blob Key','Estado de Procesamiento','Resultado Validación','AI Confidence','Método Detectado','Moneda Detectada','Monto Detectado','Referencia Detectada','Posible Duplicado','Detalle de Inconsistencias','Validación Realizada Por'],
+  reportes: ['Reporte','Propietario que Reporta','Monto Reportado','Referencia','Fecha del Reporte','Estado','Forma de Pago Reportada','Monto Reportado Bs','Tasa BCV Reporte','Equivalente USD Reportado','Moneda Ingresada','Monto Ingresado','Banco Reportado','Observaciones Reportadas','Fuente Tasa BCV Reporte','Archivo Obligatorio','Comprobante Blob Key','Comprobante Nombre Original','Comprobante MIME','Comprobante Bytes','Estado de Procesamiento','Resultado Validación','AI Confidence','AI Provider Principal','AI Model Principal','AI Model Secundario','AI Fallback Used','AI Failure Reason','AI Analysis Started At','AI Analysis Completed At','Normalized Analysis JSON','Método Detectado','Banco o Plataforma Detectada','Moneda Detectada','Monto Detectado','Fecha Operación Detectada','Hora Detectada','Estado Transacción Detectado','Receptor Detectado','Teléfono Receptor Detectado','Correo Receptor Detectado','Cuenta Receptora Visible','Referencia Detectada','Posible Duplicado','Tipo de Coincidencia','Detalle de Coincidencia','Detalle de Inconsistencias','Validación Realizada Por'],
   config:['Día de Vencimiento','Porcentaje de Recargo']
 };
 const NO_STORE_HEADERS = {'Content-Type':'application/json','Cache-Control':'no-store, no-cache, must-revalidate, proxy-revalidate','Pragma':'no-cache','Expires':'0','Surrogate-Control':'no-store'};

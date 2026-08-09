@@ -14,8 +14,8 @@ async function loadService({receiptStatus='Error PDF',patchFails=false}={}){
   if(parent?.filename?.endsWith('_receipt_service.js')&&request==='./_receipt_pdf')return{buildReceiptPdf:async()=>{pdfCalls+=1;return Buffer.from('%PDF-1.7 test')}};
   return originalLoad.call(this,request,parent,isMain);
  };
- delete require.cache[require.resolve('../netlify/functions/_receipt_service')];
- const service=require('../netlify/functions/_receipt_service');
+ delete require.cache[require.resolve('../netlify/functions/_shared/_receipt_service')];
+ const service=require('../netlify/functions/_shared/_receipt_service');
  Module._load=originalLoad;
 
  const calls=[];

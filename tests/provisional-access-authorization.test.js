@@ -2,7 +2,7 @@
 const assert=require('assert');
 const fs=require('fs');
 const path=require('path');
-const policy=require('../netlify/functions/_provisional_access_authorization');
+const policy=require('../netlify/functions/_shared/_provisional_access_authorization');
 
 function report(overrides={}){return{id:'recReport1',fields:{'Propietario que Reporta':['recOwner1'],'Habilitación Provisional Aplicada':false,'Pago Definitivo Creado':false,...overrides}}}
 function owner(overrides={}){return{id:'recOwner1',fields:{'Reporte Habilitante Actual':[],'Tipo de Habilitación':'',...overrides}}}
@@ -30,6 +30,6 @@ function snapshot(overrides={}){return{schemaVersion:2,balanceEngineVersion:5,ca
  const definitive=policy.evaluateExpiration({authorization:{...auth,status:'EXECUTED'},owner:owner({'Reporte Habilitante Actual':['recReport1'],'Tipo de Habilitación':'Definitiva'}),report:activeReport,now:new Date('2026-07-14T18:00:00.000Z')});assert.strictEqual(definitive.reason,'DEFINITIVE_OR_MANUAL_ACCESS_PRESENT');
  const paid=policy.evaluateExpiration({authorization:{...auth,status:'EXECUTED'},owner:activeOwner,report:report({'MKJ Operation ID':auth.operationId,'Pago Definitivo Creado':true}),now:new Date('2026-07-14T18:00:00.000Z')});assert.strictEqual(paid.reason,'DEFINITIVE_PAYMENT_CREATED');
  const replaced=policy.evaluateExpiration({authorization:{...auth,status:'EXECUTED'},owner:activeOwner,report:report({'MKJ Operation ID':'PROVISIONAL|other'}),now:new Date('2026-07-14T18:00:00.000Z')});assert.strictEqual(replaced.reason,'OPERATION_REPLACED');
- const source=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_provisional_access_authorization.js'),'utf8');assert(!/mkjLogin|mkjSetMemberStatus|syncOwnerAccess|airtablePatchRecord|airtableCreateRecord/.test(source));
+ const source=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_shared','_provisional_access_authorization.js'),'utf8');assert(!/mkjLogin|mkjSetMemberStatus|syncOwnerAccess|airtablePatchRecord|airtableCreateRecord/.test(source));
  console.log('PROVISIONAL_ACCESS_AUTHORIZATION_OK');
 })();

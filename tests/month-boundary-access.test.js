@@ -2,10 +2,10 @@
 
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {calculateOwnerBalance}=require('../netlify/functions/_balance_engine_v4');
-const {buildPlan}=require('../netlify/functions/_monthly_close_core_v4');
-const {mergeConfig}=require('../netlify/functions/_automation_rules');
-const {evaluateAccessDecision}=require('../netlify/functions/_access_decision_engine');
+const {calculateOwnerBalance}=require('../netlify/functions/_shared/_balance_engine_v4');
+const {buildPlan}=require('../netlify/functions/_shared/_monthly_close_core_v4');
+const {mergeConfig}=require('../netlify/functions/_shared/_automation_rules');
+const {evaluateAccessDecision}=require('../netlify/functions/_shared/_access_decision_engine');
 
 function commonExpense(id,amount,mode,ownerId){
  return{id,fields:{Concepto:id,Monto:amount,'Tipo de Gasto':'Gasto Común','Forma de Pago':mode,Propietarios:[ownerId]}};

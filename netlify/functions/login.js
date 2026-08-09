@@ -3,11 +3,11 @@
 
 'use strict';
 
-const { withAirtableUsage } = require('./_airtable_meter');
+const { withAirtableUsage } = require('./_shared/_airtable_meter');
 
-const { issueAdminToken } = require('./_auth');
-const { loadConfigRecord, verifyPassword } = require('./_admin_auth_store');
-const { consume } = require('./_persistent_rate_limit');
+const { issueAdminToken } = require('./_shared/_auth');
+const { loadConfigRecord, verifyPassword } = require('./_shared/_admin_auth_store');
+const { consume } = require('./_shared/_persistent_rate_limit');
 
 const ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
 const BLOCK_TIME_MS = 15 * 60 * 1000;

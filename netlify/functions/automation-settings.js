@@ -1,12 +1,12 @@
 'use strict';
 
-const {withAirtableUsage}=require('./_airtable_meter');
-const {requireAdmin}=require('./_auth');
-const {getAccessMode,getAutomationRules,airtablePatchRecord}=require('./_access_control');
-const {FIELD_NAMES,mergeConfig,validateRules,cycleStatus}=require('./_automation_rules');
-const {deepEscapeStrings,safeDisplayText}=require('./_security_utils');
-const {checkPaymentAutomation}=require('./_payment_automation_preflight');
-const {checkAutomationActivation}=require('./_automation_activation_preflight');
+const {withAirtableUsage}=require('./_shared/_airtable_meter');
+const {requireAdmin}=require('./_shared/_auth');
+const {getAccessMode,getAutomationRules,airtablePatchRecord}=require('./_shared/_access_control');
+const {FIELD_NAMES,mergeConfig,validateRules,cycleStatus}=require('./_shared/_automation_rules');
+const {deepEscapeStrings,safeDisplayText}=require('./_shared/_security_utils');
+const {checkPaymentAutomation}=require('./_shared/_payment_automation_preflight');
+const {checkAutomationActivation}=require('./_shared/_automation_activation_preflight');
 
 const INPUT_MAP=Object.freeze({
  aiEnabled:'AI Enabled',
@@ -47,7 +47,7 @@ const handler=async function(event){
   const activationPreflight=checkAutomationActivation({rules:prospective});
   if(!activationPreflight.ok)return json(400,{message:'El piloto automático no está listo para activarse.',activationPreflight});
   if(prospectiveFields['AI Enabled']===true||prospective.payment.automaticApprovalEnabled){
-   const {listAll,TABLES}=require('./_payment_report_automation'),accounts=prospective.payment.automaticApprovalEnabled?await listAll(TABLES.accounts).catch(()=>[]):null;
+   const {listAll,TABLES}=require('./_shared/_payment_report_automation'),accounts=prospective.payment.automaticApprovalEnabled?await listAll(TABLES.accounts).catch(()=>[]):null;
    const paymentPreflight=checkPaymentAutomation({rules:prospective,configFields:prospectiveFields,authorizedAccounts:accounts});
    if(!paymentPreflight.ok)return json(400,{message:'El análisis inteligente de pagos no está listo.',paymentPreflight});
   }

@@ -2,8 +2,8 @@
 
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {mergeConfig}=require('../netlify/functions/_automation_rules');
-const {evaluateClosePreflight}=require('../netlify/functions/_autopilot_preflight');
+const {mergeConfig}=require('../netlify/functions/_shared/_automation_rules');
+const {evaluateClosePreflight}=require('../netlify/functions/_shared/_autopilot_preflight');
 
 function enabledRules(){return mergeConfig({fields:{'Piloto Automático Habilitado':true,'Reglas Automáticas Confirmadas':true,'Cierre Mensual Automático':true,'Avisos Automáticos':true}})}
 function dry(){return{canExecute:true,closeStatus:'ready',snapshot:{complete:true,count:150,expected:150},validation:{totalBsRef:100}}}

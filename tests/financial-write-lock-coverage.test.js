@@ -19,7 +19,7 @@ global.fetch=async (input,init={})=>{
   return new Response(JSON.stringify({message:'Unexpected business request in lock test'}),{status:500,headers:{'content-type':'application/json'}});
 };
 
-const {issueAdminToken}=require('../netlify/functions/_auth');
+const {issueAdminToken}=require('../netlify/functions/_shared/_auth');
 const manual=require('../netlify/functions/admin-manual-payment').handler;
 const report=require('../netlify/functions/process-payment-report').handler;
 const token=issueAdminToken({authVersion:0});

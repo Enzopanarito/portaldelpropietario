@@ -14,7 +14,6 @@
     "verify": "node scripts/predeploy-check.js && npm test"
   },
   "dependencies": {
-    "@netlify/aws-lambda-compat": "^1.0.0",
     "@netlify/blobs": "9.1.5",
     "nodemailer": "^9.0.3",
     "pdfkit": "^0.15.0",

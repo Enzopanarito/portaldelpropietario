@@ -2,7 +2,7 @@
 
 const path=require('path');
 const migration=require('./smart-payment-airtable-migrate');
-const {FIELDS,STATUS,ORIGIN,currentMonthCaracas}=require('../netlify/functions/_expense_lifecycle');
+const {FIELDS,STATUS,ORIGIN,currentMonthCaracas}=require('../netlify/functions/_shared/_expense_lifecycle');
 
 const DATA_ROOT='https://api.airtable.com/v0';
 const ALLOWED_MODES=new Set(['plan','verify','apply']);

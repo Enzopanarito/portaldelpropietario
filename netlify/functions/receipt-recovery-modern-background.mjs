@@ -1,7 +1,7 @@
-import {withLambda} from '@netlify/aws-lambda-compat';
 import 'nodemailer';
 import 'pdfkit';
 import legacy from './receipt-recovery-background.js';
+import {invokeLegacy} from './_shared/legacy-function-bridge.mjs';
 
-export default withLambda(legacy.handler);
+export default (request,context)=>invokeLegacy(request,context,legacy.handler);
 export const config={path:'/api/vla/receipt-recovery',method:'POST',background:true};

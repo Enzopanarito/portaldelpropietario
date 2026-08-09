@@ -1,8 +1,8 @@
 'use strict';
 
-const {withAirtableUsage}=require('./_airtable_meter');
-const {verify}=require('./_internal_job_auth');
-const {getAccessMode,getAutomationRules,autoSyncAll,ACCESS_MODE_AUTO}=require('./_access_control');
+const {withAirtableUsage}=require('./_shared/_airtable_meter');
+const {verify}=require('./_shared/_internal_job_auth');
+const {getAccessMode,getAutomationRules,autoSyncAll,ACCESS_MODE_AUTO}=require('./_shared/_access_control');
 
 function response(statusCode,body){
  return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:JSON.stringify(body)};

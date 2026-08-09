@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert');
-const { calculateAllOwners, money } = require('../netlify/functions/_balance_engine_v4');
+const { calculateAllOwners, money } = require('../netlify/functions/_shared/_balance_engine_v4');
 
 const ownerRows = [
   [1,0.08755,0],

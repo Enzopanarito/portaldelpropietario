@@ -3,7 +3,7 @@
 const assert=require('assert');
 const fs=require('fs');
 const path=require('path');
-const meter=require('../netlify/functions/_airtable_meter');
+const meter=require('../netlify/functions/_shared/_airtable_meter');
 
 const{shouldInvalidatePublicSnapshot,PUBLIC_SNAPSHOT_MUTATION_SOURCES}=meter._test;
 function result(statusCode,body){return{statusCode,body:JSON.stringify(body)}}
@@ -32,7 +32,7 @@ assert.strictEqual(shouldInvalidatePublicSnapshot('whatsapp-connector',event(),r
 const publicV2=fs.readFileSync(path.join(__dirname,'..','netlify','functions','public-data-v2.js'),'utf8');
 const publicV3=fs.readFileSync(path.join(__dirname,'..','netlify','functions','public-data-v3.js'),'utf8');
 const publicRoute=fs.readFileSync(path.join(__dirname,'..','netlify','functions','public-data.js'),'utf8');
-const meterSource=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_airtable_meter.js'),'utf8');
+const meterSource=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_shared','_airtable_meter.js'),'utf8');
 const ownerEdge=fs.readFileSync(path.join(__dirname,'..','netlify','edge-functions','owner-mobile-assets.js'),'utf8');
 const ownerHtml=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
 

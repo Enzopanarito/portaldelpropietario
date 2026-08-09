@@ -6,7 +6,7 @@ const path = require('path');
 
 const root = path.join(__dirname, '..');
 const functionsDir = path.join(root, 'netlify', 'functions');
-const meterSource = fs.readFileSync(path.join(functionsDir, '_airtable_meter.js'), 'utf8');
+const meterSource = fs.readFileSync(path.join(functionsDir, '_shared', '_airtable_meter.js'), 'utf8');
 const usageSource = fs.readFileSync(path.join(functionsDir, 'api-usage.js'), 'utf8');
 const rollupSource = fs.readFileSync(path.join(functionsDir, 'airtable-usage-rollup-scheduled.js'), 'utf8');
 const netlifyToml = fs.readFileSync(path.join(root, 'netlify.toml'), 'utf8');

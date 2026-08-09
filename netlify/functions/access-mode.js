@@ -1,9 +1,9 @@
-const { withAirtableUsage } = require('./_airtable_meter');
+const { withAirtableUsage } = require('./_shared/_airtable_meter');
 // netlify/functions/access-mode.js
 // Lee o actualiza el modo del control de acceso del portón: Automático / Manual.
 
-const { requireAdmin } = require('./_auth');
-const { json, getAccessMode, setAccessMode, ACCESS_MODE_AUTO, ACCESS_MODE_MANUAL } = require('./_access_control');
+const { requireAdmin } = require('./_shared/_auth');
+const { json, getAccessMode, setAccessMode, ACCESS_MODE_AUTO, ACCESS_MODE_MANUAL } = require('./_shared/_access_control');
 
 const handler = async function(event) {
   const auth = requireAdmin(event);

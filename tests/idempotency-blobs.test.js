@@ -3,7 +3,7 @@
 const assert=require('assert');
 const {
   createLedger,hashPayload,environmentNamespace,ledgerKey,safeResult,MAX_RESULT_BYTES
-}=require('../netlify/functions/_idempotency_blobs');
+}=require('../netlify/functions/_shared/_idempotency_blobs');
 
 class FakeStore {
   constructor(){this.entries=new Map();this.version=0;this.forceCasLoss=false;}

@@ -7,13 +7,13 @@ const {
   CANONICAL_CONTRACT,
   attachOfficialBalances,
   chooseSnapshots
-} = require('../netlify/functions/_official_balances');
+} = require('../netlify/functions/_shared/_official_balances');
 const {
   calculateAllOwners,
   calculateOwnerBalance,
   calculatedFields,
   money
-} = require('../netlify/functions/_balance_engine_v4');
+} = require('../netlify/functions/_shared/_balance_engine_v4');
 
 const expected = {
   1:[85,0,0,85], 2:[0,0,0,0], 3:[0,157.07,14.28,157.07],

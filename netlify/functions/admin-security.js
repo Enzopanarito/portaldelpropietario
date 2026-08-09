@@ -3,11 +3,11 @@
 
 'use strict';
 
-const { withAirtableUsage } = require('./_airtable_meter');
+const { withAirtableUsage } = require('./_shared/_airtable_meter');
 
 const crypto = require('crypto');
-const { requireAdmin, issueAdminToken } = require('./_auth');
-const { sendMail } = require('./_mailer');
+const { requireAdmin, issueAdminToken } = require('./_shared/_auth');
+const { sendMail } = require('./_shared/_mailer');
 const {
   loadConfigRecord,
   saveConfig,
@@ -15,8 +15,8 @@ const {
   createPasswordFields,
   validateNewPassword,
   safeEqualHex
-} = require('./_admin_auth_store');
-const { consume } = require('./_persistent_rate_limit');
+} = require('./_shared/_admin_auth_store');
+const { consume } = require('./_shared/_persistent_rate_limit');
 
 const RECOVERY_EMAIL = process.env.ADMIN_RECOVERY_EMAIL || 'enzopanarito@gmail.com';
 const FALLBACK_PUBLIC_URL = 'https://villalosapamates.netlify.app';

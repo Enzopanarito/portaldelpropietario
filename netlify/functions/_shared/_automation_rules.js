@@ -1,6 +1,6 @@
 'use strict';
 
-const defaults=require('../../config/condo-automation-rules-v1.json');
+const defaults=require('../../../config/condo-automation-rules-v1.json');
 
 const FIELD_NAMES=Object.freeze({
  masterEnabled:'Piloto Automático Habilitado',

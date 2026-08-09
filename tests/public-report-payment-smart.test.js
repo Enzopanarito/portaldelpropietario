@@ -7,27 +7,27 @@ const created=[];const mails=[];const encrypted=new Map();let reservationCount=0
 const originalLoad=Module._load;
 Module._load=function(request,parent,isMain){
   if(parent&&String(parent.filename||'').endsWith(path.join('netlify','functions','public-report-payment.js'))){
-    if(request==='./_airtable_meter')return{withAirtableUsage:(_name,handler)=>handler};
-    if(request==='./_access_control')return{
+    if(request==='./_shared/_airtable_meter')return{withAirtableUsage:(_name,handler)=>handler};
+    if(request==='./_shared/_access_control')return{
       airtableCreateRecord:async(_table,fields)=>{created.push(fields);return{id:'recREPORT00000001'}},
       airtableGetRecord:async()=>({fields:{Casa:4,Propietario:'Casa 4'}}),
       syncOwnerAccess:async()=>({estado:'Habilitado',temporary:false}),
       TABLES:{reportes:'Reportes de Pago',propietarios:'Propietarios',pagos:'Pagos'},
       money:value=>Math.round((Number(value||0)+Number.EPSILON)*100)/100
     };
-    if(request==='./_mailer')return{sendMail:async message=>{mails.push(message);return{sent:true,status:'Enviado'}}};
-    if(request==='./_security_utils')return{
+    if(request==='./_shared/_mailer')return{sendMail:async message=>{mails.push(message);return{sent:true,status:'Enviado'}}};
+    if(request==='./_shared/_security_utils')return{
       sanitizeReference:value=>String(value||'').replace(/[<>]/g,'').trim(),
       escapeHtml:value=>String(value??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])),
       cleanPlainText:(value,max)=>String(value||'').slice(0,max),
       safeDisplayText:(value,max)=>String(value||'').slice(0,max),
       deepEscapeStrings:value=>value
     };
-    if(request==='./_persistent_rate_limit')return{consume:async()=>({allowed:true,retryAfter:0})};
-    if(request==='./_bcv_store')return{loadLastGood:async()=>({rate:180,source:'bcv-test'})};
-    if(request==='./_payment_visual_hash')return{computePerceptualHash:async()=>({hash:'0123456789abcdef',algorithm:'dhash-64-v1'})};
-    if(request==='./_blobs_compat')return{connectLambdaEvent:()=>({connected:true,source:'test'})};
-    if(request==='./_payment_proof_store')return{createProofStore:()=>({
+    if(request==='./_shared/_persistent_rate_limit')return{consume:async()=>({allowed:true,retryAfter:0})};
+    if(request==='./_shared/_bcv_store')return{loadLastGood:async()=>({rate:180,source:'bcv-test'})};
+    if(request==='./_shared/_payment_visual_hash')return{computePerceptualHash:async()=>({hash:'0123456789abcdef',algorithm:'dhash-64-v1'})};
+    if(request==='./_shared/_blobs_compat')return{connectLambdaEvent:()=>({connected:true,source:'test'})};
+    if(request==='./_shared/_payment_proof_store')return{createProofStore:()=>({
       reserveIdentity:async()=>({acquired:true,created:true,key:`reservation-${++reservationCount}`,requestId:`request-${reservationCount}`}),
       completeIdentity:async()=>({completed:true}),
       put:async({content,attachmentSha})=>{const key=`test/${attachmentSha}`;encrypted.set(key,Buffer.from(content));return{key,created:true}},

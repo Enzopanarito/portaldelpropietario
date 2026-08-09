@@ -1,7 +1,7 @@
 'use strict';
 
-const {withAirtableUsage}=require('./_airtable_meter');
-const {createRuntime}=require('./_provisional_access_runtime');
+const {withAirtableUsage}=require('./_shared/_airtable_meter');
+const {createRuntime}=require('./_shared/_provisional_access_runtime');
 
 const handler=async function(){
  try{

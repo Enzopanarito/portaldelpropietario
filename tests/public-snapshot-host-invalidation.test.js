@@ -1,8 +1,8 @@
 'use strict';
 
 const assert=require('assert');
-const snapshotStore=require('../netlify/functions/_public_snapshot_store');
-const meter=require('../netlify/functions/_airtable_meter');
+const snapshotStore=require('../netlify/functions/_shared/_public_snapshot_store');
+const meter=require('../netlify/functions/_shared/_airtable_meter');
 
 // Esta prueba se ejecuta también sobre el merge sintético actual de main.
 (async()=>{

@@ -3,7 +3,7 @@
 // La ruta pública experimental fue retirada. El análisis de comprobantes se ejecuta
 // únicamente dentro del flujo financiero protegido y nunca expone ni registra la clave.
 
-const {requireAdmin}=require('./_auth');
+const {requireAdmin}=require('./_shared/_auth');
 
 exports.handler=async function(event){
  const auth=requireAdmin(event);

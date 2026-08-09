@@ -1,7 +1,7 @@
 'use strict';
 
 const assert=require('assert');
-const runtimeModule=require('../netlify/functions/_provisional_access_runtime');
+const runtimeModule=require('../netlify/functions/_shared/_provisional_access_runtime');
 
 const REPORT_ID='recBBBBBBBBBBBBBB';
 const OWNER_ID='recAAAAAAAAAAAAAA';

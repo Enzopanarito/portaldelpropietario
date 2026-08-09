@@ -1,7 +1,7 @@
 'use strict';
 
-const {withAirtableUsage}=require('./_airtable_meter');
-const {sign}=require('./_internal_job_auth');
+const {withAirtableUsage}=require('./_shared/_airtable_meter');
+const {sign}=require('./_shared/_internal_job_auth');
 
 const TABLE_RECEIPTS='Recibos de Pago';
 const RECOVERABLE_STATES=['Error PDF','Error correo','Pendiente','Proveedor no configurado','Remitente inválido'];

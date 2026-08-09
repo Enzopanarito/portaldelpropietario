@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert');
-const { calculateExpiredAccessDebt } = require('../netlify/functions/_access_control');
+const { calculateExpiredAccessDebt } = require('../netlify/functions/_shared/_access_control');
 
 function owner(id, legacy, usd, bs) {
   return { id, fields: {

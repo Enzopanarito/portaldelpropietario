@@ -1,8 +1,8 @@
-const { withAirtableUsage } = require('./_airtable_meter');
+const { withAirtableUsage } = require('./_shared/_airtable_meter');
 // netlify/functions/whatsapp-jobs.js
 // Módulo liviano e independiente para órdenes de WhatsApp. No afecta admin-data ni contabilidad.
 
-const { requireAdmin } = require('./_auth');
+const { requireAdmin } = require('./_shared/_auth');
 
 const JOBS_TABLE = 'WhatsApp Jobs';
 const SCHEDULES_TABLE = 'WhatsApp Programaciones';

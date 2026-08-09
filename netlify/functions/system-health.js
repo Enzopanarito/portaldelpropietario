@@ -1,12 +1,13 @@
-const { withAirtableUsage } = require('./_airtable_meter');
+const { withAirtableUsage } = require('./_shared/_airtable_meter');
 // netlify/functions/system-health.js
 // Panel de salud protegido para revisar componentes críticos del sistema.
 // Monitorea finanzas, Airtable, BCV, correo oficial, recibos, WhatsApp y control de acceso MKJoules.
 
-const { requireAdmin } = require('./_auth');
-const { calculateExpiredAccessDebt, getAccessMode, getAutomationRules } = require('./_access_control');
-const { OFFICIAL_EMAIL } = require('./_mailer');
-const { filterActiveExpenses, currentMonthCaracas } = require('./_expense_lifecycle');
+const { requireAdmin } = require('./_shared/_auth');
+const { calculateExpiredAccessDebt, getAccessMode, getAutomationRules } = require('./_shared/_access_control');
+const { OFFICIAL_EMAIL } = require('./_shared/_mailer');
+const { filterActiveExpenses, currentMonthCaracas } = require('./_shared/_expense_lifecycle');
+const { connectLambdaEvent, getAtomicStore } = require('./_shared/_blobs_compat');
 
 const TABLES = {
   propietarios: 'Propietarios',
@@ -111,17 +112,24 @@ const handler = async function(event) {
     const officialSender = smtpConfigured && (normalizeEmail(SMTP_USER) === OFFICIAL_EMAIL || normalizeEmail(MAIL_FROM) === OFFICIAL_EMAIL);
 
     add('Token administrativo', true, 'Sesión administrativa válida.');
-    add('ADMIN_PASSWORD', !!ADMIN_PASSWORD, ADMIN_PASSWORD ? 'Configurada.' : 'No configurada.');
+    add('Credencial administrativa', true, 'La sesión firmada fue validada. La contraseña persistente se comprueba en la revisión avanzada sin exigir una variable obsoleta.');
     add('Airtable', isConfigured(AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID), isConfigured(AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID) ? `Base conectada: ${AIRTABLE_BASE_ID}` : 'Faltan AIRTABLE_API_TOKEN o AIRTABLE_BASE_ID.');
     add('Correo SMTP', smtpConfigured, smtpConfigured ? 'Variables SMTP configuradas.' : 'Faltan variables SMTP. Las notificaciones no saldrán.', smtpConfigured ? 'ok' : 'warning');
     add('Remitente oficial', officialSender, officialSender ? `Bloqueado correctamente a ${OFFICIAL_EMAIL}.` : `El sistema solo debe enviar desde ${OFFICIAL_EMAIL}. Revise SMTP_USER o MAIL_FROM en Netlify.`, officialSender ? 'ok' : 'error');
     add('Variables MKJoules', isConfigured(MKJ_ADMIN_EMAIL, MKJ_ADMIN_PASSWORD, MKJ_ORG_ID), isConfigured(MKJ_ADMIN_EMAIL, MKJ_ADMIN_PASSWORD, MKJ_ORG_ID) ? `Configurado para org ${MKJ_ORG_ID}.` : 'Faltan variables MKJ. El portón no podrá sincronizarse.', isConfigured(MKJ_ADMIN_EMAIL, MKJ_ADMIN_PASSWORD, MKJ_ORG_ID) ? 'ok' : 'error');
     add('URL MKJoules', true, MKJ_BASE_URL || 'Usando valor por defecto: https://cloud.mkjoules.com');
     add('Analizador inteligente de pagos', !!GEMINI_API_KEY, GEMINI_API_KEY ? 'Proveedor configurado; la clave permanece oculta.' : 'Falta GEMINI_API_KEY. Los comprobantes pasarán a revisión manual.', GEMINI_API_KEY ? 'ok' : 'warning');
-    let proofEncryptionOk=false;try{require('./_payment_proof_store').resolveEncryptionKey(process.env);proofEncryptionOk=true}catch(_){proofEncryptionOk=false}
+    let proofEncryptionOk=false;try{require('./_shared/_payment_proof_store').resolveEncryptionKey(process.env);proofEncryptionOk=true}catch(_){proofEncryptionOk=false}
     add('Cifrado de comprobantes', proofEncryptionOk, proofEncryptionOk ? 'AES-256-GCM listo para comprobantes.' : 'Configure una clave de 32 bytes o un secreto interno fuerte antes de activar autopago.', proofEncryptionOk ? 'ok' : 'warning');
     const internalJobsReady=isConfigured(AUTOMATION_JOB_SECRET||ADMIN_TOKEN_SECRET||ADMIN_PASSWORD,URL);
     add('Trabajos automáticos internos',internalJobsReady,internalJobsReady?'Cola asíncrona autenticada y URL de producción disponibles.':'Falta URL o secreto para autenticar la cola asíncrona.',internalJobsReady?'ok':'warning');
+    try {
+      const connection=connectLambdaEvent(event);
+      await getAtomicStore('vla-system-health-v1',{consistency:'strong'}).getWithMetadata('runtime-readiness-probe',{type:'json'});
+      add('Almacenamiento seguro Netlify',true,`Contexto Blobs operativo mediante ${connection.source}; lectura protegida disponible.`);
+    } catch (error) {
+      add('Almacenamiento seguro Netlify',false,`El runtime no pudo abrir Blobs: ${String(error.code||error.message||'error desconocido').slice(0,240)}`,'error');
+    }
 
     if (!AIRTABLE_API_TOKEN || !AIRTABLE_BASE_ID) {
       return { statusCode: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify({ ok: false, status: 'error', checks, generatedAt: new Date().toISOString(), apiUsage: counter }) };
@@ -131,7 +139,7 @@ const handler = async function(event) {
       getAll(TABLES.propietarios, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Propietario', 'Casa', 'Email', 'Deuda Anterior', 'Deuda Anterior USD', 'Deuda Anterior Bs Ref', 'Deuda Restante', 'MKJ User ID', 'MKJ Email', 'Estado Acceso Portón', 'Excepción Acceso', 'Última Sync MKJ', 'Motivo Limitación Acceso']),
       getAll(TABLES.gastos, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Concepto', 'Monto', 'Tipo de Gasto', 'Forma de Pago', 'Propietarios','Mes de Aplicación','Estado del Gasto']),
       getAll(TABLES.pagos, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Propietario que Paga', 'Forma de Pago', 'Monto Pagado', 'Equivalente USD Aplicado', '[x] Aplicado al Cierre']),
-      getAll(TABLES.reportes, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Propietario que Reporta', 'Estado', 'Forma de Pago Reportada', 'Monto Reportado', 'Equivalente USD Reportado']),
+      getAll(TABLES.reportes, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Propietario que Reporta', 'Estado', 'Forma de Pago Reportada', 'Monto Reportado', 'Equivalente USD Reportado','Hash SHA-256','AI Confidence','AI Analysis Completed At','AI Failure Reason','Estado de Procesamiento']),
       getAll(TABLES.recibos, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Nro Recibo', 'Fecha', 'Estado Email', 'Correo', 'Log', 'Enviado En']),
       getAll(TABLES.whatsappJobs, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Job ID', 'Estado', 'Creado En', 'Finalizado En', 'Enviados', 'Simulados', 'Errores', 'Log']),
       getAll(TABLES.whatsappSchedules, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Nombre', 'Activo', 'Hora', 'Día del Mes', 'Modo', 'Última Ejecución', 'Último Job ID'])
@@ -195,6 +203,12 @@ const handler = async function(event) {
 
     const pendingReports = reportes.filter(r => selectName((r.fields || {}).Estado) === 'Pendiente').length;
     add('Reportes pendientes y portón', true, pendingReports ? `${pendingReports} reporte(s) pendiente(s). Un reporte no altera deuda ni acceso hasta quedar validado.` : 'No hay reportes pendientes.', pendingReports ? 'warning' : 'ok');
+
+    const digitalProofs=reportes.filter(r=>/^[a-f0-9]{64}$/i.test(String((r.fields||{})['Hash SHA-256']||'')));
+    const analyzedProofs=digitalProofs.filter(r=>hasValue((r.fields||{})['AI Analysis Completed At'])||Number((r.fields||{})['AI Confidence']||0)>0);
+    const failedProofs=digitalProofs.filter(r=>hasValue((r.fields||{})['AI Failure Reason']));
+    const waitingProofs=digitalProofs.filter(r=>!hasValue((r.fields||{})['AI Analysis Completed At'])&&!hasValue((r.fields||{})['AI Failure Reason']));
+    add('Auditoría inteligente de comprobantes',waitingProofs.length===0&&failedProofs.length===0,`Comprobantes cifrados: ${digitalProofs.length}; análisis con evidencia: ${analyzedProofs.length}; pendientes de análisis profundo: ${waitingProofs.length}; fallidos: ${failedProofs.length}.`,failedProofs.length?'error':waitingProofs.length?'warning':'ok',{digitalProofs:digitalProofs.length,analyzed:analyzedProofs.length,waiting:waitingProofs.length,failed:failedProofs.length});
 
     const receiptErrors = recibos.filter(r => {
       const status = selectName((r.fields || {})['Estado Email']);

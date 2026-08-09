@@ -1,18 +1,18 @@
 'use strict';
 
 const crypto=require('crypto');
-const {connectForEvent}=require('./_idempotency_blobs');
-const {issueAdminToken}=require('./_auth');
-const {begin,setState}=require('./_operation_guard');
-const {getAccessMode,getAutomationRules,loadAccessContext,calculateExpiredAccessDebt,autoSyncAll}=require('./_access_control');
-const {cycleStatus,validateRules}=require('./_automation_rules');
-const {nextMonth}=require('./_expense_lifecycle');
-const {preloadExpenses,rotateExpenses}=require('./_expense_lifecycle_store');
-const {evaluateClosePreflight}=require('./_autopilot_preflight');
-const {sendOwnerDebtReminder,sendAdminAutopilotAlert}=require('./_automation_notifications');
-const {ensureFinancialWritesAllowed}=require('./_financial_write_lock');
-const {verify}=require('./_internal_job_auth');
-const {listCloseMarkers}=require('./_monthly_close_store');
+const {connectForEvent}=require('./_shared/_idempotency_blobs');
+const {issueAdminToken}=require('./_shared/_auth');
+const {begin,setState}=require('./_shared/_operation_guard');
+const {getAccessMode,getAutomationRules,loadAccessContext,calculateExpiredAccessDebt,autoSyncAll}=require('./_shared/_access_control');
+const {cycleStatus,validateRules}=require('./_shared/_automation_rules');
+const {nextMonth}=require('./_shared/_expense_lifecycle');
+const {preloadExpenses,rotateExpenses}=require('./_shared/_expense_lifecycle_store');
+const {evaluateClosePreflight}=require('./_shared/_autopilot_preflight');
+const {sendOwnerDebtReminder,sendAdminAutopilotAlert}=require('./_shared/_automation_notifications');
+const {ensureFinancialWritesAllowed}=require('./_shared/_financial_write_lock');
+const {verify}=require('./_shared/_internal_job_auth');
+const {listCloseMarkers}=require('./_shared/_monthly_close_store');
 const auditSnapshot=require('./audit-snapshot');
 const monthlyClose=require('./monthly-close');
 const bcvRate=require('./bcv-rate');
@@ -101,10 +101,17 @@ const handler=async function(event){
  if(!verify(rawBody,event?.headers||{}))return response(401,{success:false,message:'Trabajo interno no autorizado.'});
  const counter={calls:0},token=process.env.AIRTABLE_API_TOKEN,baseId=process.env.AIRTABLE_BASE_ID;
  if(!token||!baseId)return response(500,{success:false,message:'Airtable no está configurado.'});
+ let runGuard=null,runDate=new Date().toISOString().slice(0,10);
  try{
   connectForEvent(event);
   const modeInfo=await getAccessMode(),automation=await getAutomationRules(modeInfo),rules=automation.rules,validation=validateRules(rules),cycle=cycleStatus(rules),results={generatedAt:new Date().toISOString(),cycle,configured:automation.configured,validation,actions:{}};
-  if(!automation.configured||!rules.masterEnabled||!validation.ok)return response(200,{...results,skipped:true,reason:!automation.configured?'not-configured':!rules.masterEnabled?'master-disabled':'rules-invalid'});
+  runDate=cycle.clock.date;
+  runGuard=await begin('AUTOPILOT_RUN',runDate,{event}).catch(error=>({ok:false,reason:'heartbeat-unavailable',error:error.message}));
+  if(!automation.configured||!rules.masterEnabled||!validation.ok){
+   const reason=!automation.configured?'not-configured':!rules.masterEnabled?'master-disabled':'rules-invalid';
+   if(runGuard.ok)await setState(runGuard.marker,'AUTOPILOT_RUN',runDate,'DONE',reason).catch(()=>null);
+   return response(200,{...results,skipped:true,reason});
+  }
   let context=await loadAccessContext();
   if(rules.expensePreload.automaticEnabled&&cycle.isPreloadWindow)results.actions.preload=await preloadExpenses({closingMonth:cycle.clock.monthKey,targetMonth:cycle.nextMonth,token,baseId,counter});
   const adminToken=issueAdminToken({authVersion:0});
@@ -115,7 +122,7 @@ const handler=async function(event){
    results.actions.rotationRetry=results.actions.closeGate.ok
     ?await rotateExpenses({closingMonth,targetMonth:cycle.clock.monthKey,token,baseId,counter}).catch(error=>({success:false,error:error.message,retryable:true}))
     :{success:false,skipped:true,blocked:true,reason:'monthly-close-not-complete'};
-   if(results.actions.rotationRetry?.success===true)await require('./_public_snapshot_store').invalidatePublicSnapshot('automation-rotation-retry',process.env).catch(()=>null);
+   if(results.actions.rotationRetry?.success===true)await require('./_shared/_public_snapshot_store').invalidatePublicSnapshot('automation-rotation-retry',process.env).catch(()=>null);
   }
   if((results.actions.monthlyClose&&!results.actions.monthlyClose.skipped)||results.actions.rotationRetry?.success===true)context=await loadAccessContext();
   results.actions.reminders=results.actions.closeGate.ok
@@ -124,8 +131,13 @@ const handler=async function(event){
   results.actions.access=results.actions.closeGate.ok
    ?await syncAccessCycle(rules,cycle,context).catch(async error=>{await alertOnce(cycle.clock.date,'ACCESS_SYNC',[{code:'ACCESS_SYNC',detail:error.message}]);return{success:false,error:error.message}})
    :{skipped:true,blocked:true,reason:'monthly-close-not-complete'};
-  return response(200,{success:true,...results,airtableCalls:counter.calls});
- }catch(error){await alertOnce(new Date().toISOString().slice(0,10),'UNHANDLED',[{code:'UNHANDLED',detail:error.message}]).catch(()=>null);return response(500,{success:false,message:'El piloto automático encontró una excepción y se detuvo sin forzar decisiones.',detail:String(error.message||'').slice(0,500)})}
+  if(runGuard.ok)await setState(runGuard.marker,'AUTOPILOT_RUN',runDate,'DONE',modeInfo.mode==='Manual'?'manual-safe':'completed').catch(()=>null);
+  return response(200,{success:true,...results,airtableCalls:counter.calls,heartbeat:runGuard.ok?'recorded':runGuard.reason});
+ }catch(error){
+  if(runGuard?.ok)await setState(runGuard.marker,'AUTOPILOT_RUN',runDate,'ERROR').catch(()=>null);
+  await alertOnce(runDate,'UNHANDLED',[{code:'UNHANDLED',detail:error.message}]).catch(()=>null);
+  return response(500,{success:false,message:'El piloto automático encontró una excepción y se detuvo sin forzar decisiones.',detail:String(error.message||'').slice(0,500)})
+ }
 };
 
 exports.handler=handler;

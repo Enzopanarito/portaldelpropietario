@@ -1,8 +1,8 @@
 'use strict';
 
 const previous=require('./public-data-v2');
-const snapshotStore=require('./_public_snapshot_store');
-const previewFixture=require('./_public_preview_fixture');
+const snapshotStore=require('./_shared/_public_snapshot_store');
+const previewFixture=require('./_shared/_public_preview_fixture');
 
 function response(statusCode,payload,headers={}){return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...headers},body:JSON.stringify(payload)}}
 function parseBody(result){try{return JSON.parse(result&&result.body||'{}')}catch(_){return{}}}

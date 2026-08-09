@@ -95,10 +95,12 @@ function resultFields(result){
   'Monto Requerido Habilitación Bs':Number(snapshot.requiredBsAccount||0),
   'Balance Cutoff':snapshot.cutoff||null,
   'Fuente del Snapshot':clean(snapshot.source),
-  'Versión del Snapshot':Number(snapshot.schemaVersion||0),
-  'Decisión Administrativa':result?.automaticApproval===true?'Aprobación automática':'Pendiente',
-  'Validación Realizada Por':result?.automaticApproval===true?'Motor determinístico':'Sistema inteligente'
+  'Versión del Snapshot':Number(snapshot.schemaVersion||0)
  };
+ if(result?.automaticApproval===true){
+  fields['Decisión Administrativa']='Aprobación automática';
+  fields['Validación Realizada Por']='Motor determinístico';
+ }
  return Object.fromEntries(Object.entries(fields).filter(([,value])=>value!==null&&value!==undefined&&value!==''));
 }
 async function defaultLoadBundle(reportId){
@@ -123,7 +125,7 @@ async function defaultLoadBundle(reportId){
  return{report,owner,expenses:filterActiveExpenses(expenses,currentMonthCaracas()),payments,duplicatePayments:payments,duplicateReports:reports,officialRecords,authorizedAccounts,config:configuredAi,rules,bcvRate:Number(bcv?.rate||0),bcvSource:clean(bcv?.source||'BCV persistida'),attachment:{name:proof.filename,type:proof.contentType,content:stored.content,storedKey:stored.key,visualHash}};
 }
 async function defaultExecuteApproval({reportId,result}){
- const {issueAdminToken}=require('./_auth'),handler=require('./process-payment-report').handler,token=issueAdminToken({authVersion:0});
+ const {issueAdminToken}=require('./_auth'),handler=require('../process-payment-report').handler,token=issueAdminToken({authVersion:0});
  const event={httpMethod:'POST',headers:{authorization:`Bearer ${token}`},body:JSON.stringify({reportId,decision:'approve',decisionSource:'automatic',automationEvidence:{snapshotId:result?.snapshot?.snapshotId||'',fingerprint:result?.financialFingerprint||'',confidence:result?.analysis?.normalized?.confidence||0}})};
  const response=await handler(event),body=JSON.parse(response.body||'{}');
  if(response.statusCode<200||response.statusCode>=300||body.success===false)throw new Error(body.message||'No se pudo materializar la aprobación automática.');

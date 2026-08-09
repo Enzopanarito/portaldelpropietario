@@ -2,7 +2,7 @@
 
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {verify}=require('../netlify/functions/_internal_job_auth');
+const {verify}=require('../netlify/functions/_shared/_internal_job_auth');
 
 test('el cron solo despacha y firma el trabajo pesado de forma interna',async()=>{
  const previous={URL:process.env.URL,AUTOMATION_JOB_SECRET:process.env.AUTOMATION_JOB_SECRET,fetch:global.fetch};

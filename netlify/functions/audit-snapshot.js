@@ -4,17 +4,17 @@
 
 'use strict';
 
-const { withAirtableUsage } = require('./_airtable_meter');
+const { withAirtableUsage } = require('./_shared/_airtable_meter');
 
-const { requireAdmin } = require('./_auth');
-const { begin, setState } = require('./_operation_guard');
-const { safeDisplayText } = require('./_security_utils');
-const { hashJson } = require('./_audit_cleanup');
-const { calculateOwnerBalance } = require('./_balance_engine_v4');
-const { filterClosingExpenses } = require('./_expense_lifecycle');
-const { splitPaymentsForClose } = require('./_monthly_close_core_v4');
-const { attachOfficialBalances, officialControlQuery } = require('./_official_balances');
-const { mergeConfig } = require('./_automation_rules');
+const { requireAdmin } = require('./_shared/_auth');
+const { begin, setState } = require('./_shared/_operation_guard');
+const { safeDisplayText } = require('./_shared/_security_utils');
+const { hashJson } = require('./_shared/_audit_cleanup');
+const { calculateOwnerBalance } = require('./_shared/_balance_engine_v4');
+const { filterClosingExpenses } = require('./_shared/_expense_lifecycle');
+const { splitPaymentsForClose } = require('./_shared/_monthly_close_core_v4');
+const { attachOfficialBalances, officialControlQuery } = require('./_shared/_official_balances');
+const { mergeConfig } = require('./_shared/_automation_rules');
 
 const TABLES = {
   propietarios: 'Propietarios',

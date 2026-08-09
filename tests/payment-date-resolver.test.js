@@ -2,7 +2,7 @@
 
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const resolver=require('../netlify/functions/_payment_date_resolver');
+const resolver=require('../netlify/functions/_shared/_payment_date_resolver');
 
 const now=new Date('2026-08-08T18:00:00.000Z');
 

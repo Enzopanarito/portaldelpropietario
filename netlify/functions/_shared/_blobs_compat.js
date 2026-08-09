@@ -19,6 +19,7 @@ function connectLambdaEvent(event,env=process.env,runtimeEnv=globalThis.Netlify?
  if(typeof globalContext==='string'&&globalContext)return{connected:true,source:'netlify-global'};
  if(environmentValue(runtimeEnv,'NETLIFY_BLOBS_CONTEXT'))return{connected:true,source:'netlify-runtime'};
  if(environmentValue(env,'NETLIFY_BLOBS_CONTEXT'))return{connected:true,source:'environment'};
+ if(event?.__netlifyModernRuntime===true)return{connected:true,source:'modern-runtime'};
  if(!event?.blobs)throw codedError('BLOBS_EVENT_CONTEXT_MISSING','Netlify no entregó el contexto Blobs para esta función Lambda.');
  sdk().connectLambda(event);
  return{connected:true,source:'event'};

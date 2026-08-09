@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('assert');
-const {decodeAttachment,MAX_ATTACHMENT_BYTES}=require('../netlify/functions/_payment_report_attachment');
+const {decodeAttachment,MAX_ATTACHMENT_BYTES}=require('../netlify/functions/_shared/_payment_report_attachment');
 
 const png=Buffer.concat([Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]),Buffer.from('test')]);
 const decoded=decodeAttachment({name:'comprobante casa 4.png',type:'image/png',base64:png.toString('base64')});

@@ -1,8 +1,8 @@
 'use strict';
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {mergeConfig}=require('../netlify/functions/_automation_rules');
-const {checkPaymentAutomation}=require('../netlify/functions/_payment_automation_preflight');
+const {mergeConfig}=require('../netlify/functions/_shared/_automation_rules');
+const {checkPaymentAutomation}=require('../netlify/functions/_shared/_payment_automation_preflight');
 const key=Buffer.alloc(32,7).toString('hex');
 function rules(){return mergeConfig({fields:{'Aprobación Automática de Pagos':true,'Confianza Mínima Autopago':0.97}})}
 test('bloquea autopago si faltan secretos o cuentas receptoras',()=>{

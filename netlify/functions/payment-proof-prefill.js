@@ -1,15 +1,15 @@
 'use strict';
 
-const {withAirtableUsage}=require('./_airtable_meter');
-const {decodeAttachment}=require('./_payment_report_attachment');
-const {createGeminiAnalysisRunner}=require('./_payment_ai_gemini');
-const {discoverCompatibleModel}=require('./_payment_ai_model_discovery');
-const contract=require('./_payment_ai_contract');
-const {consume}=require('./_persistent_rate_limit');
-const {safeDisplayText}=require('./_security_utils');
-const {mergeConfig}=require('./_automation_rules');
-const {listAll,TABLES,aiConfig}=require('./_payment_report_automation');
-const {resolvePrefillDate}=require('./_payment_date_resolver');
+const {withAirtableUsage}=require('./_shared/_airtable_meter');
+const {decodeAttachment}=require('./_shared/_payment_report_attachment');
+const {createGeminiAnalysisRunner}=require('./_shared/_payment_ai_gemini');
+const {discoverCompatibleModel}=require('./_shared/_payment_ai_model_discovery');
+const contract=require('./_shared/_payment_ai_contract');
+const {consume}=require('./_shared/_persistent_rate_limit');
+const {safeDisplayText}=require('./_shared/_security_utils');
+const {mergeConfig}=require('./_shared/_automation_rules');
+const {listAll,TABLES,aiConfig}=require('./_shared/_payment_report_automation');
+const {resolvePrefillDate}=require('./_shared/_payment_date_resolver');
 
 const WINDOW_MS=60*60*1000;
 const CURRENT_STABLE_MODELS=Object.freeze(['gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-2.5-flash']);

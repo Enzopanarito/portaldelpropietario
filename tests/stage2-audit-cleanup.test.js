@@ -4,7 +4,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 
-const cleanup = require(path.join(__dirname, '..', 'netlify', 'functions', '_audit_cleanup'));
+const cleanup = require(path.join(__dirname, '..', 'netlify', 'functions', '_shared', '_audit_cleanup'));
 
 const ownerA = {
   id: 'recOWNER00000001',
