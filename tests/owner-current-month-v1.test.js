@@ -29,9 +29,12 @@ test('la presentación distingue cuota original de pendiente del mes',()=>{
   assert.doesNotMatch(source,/saldoUsd\s*[+\-]\s*saldoBsRef/);
 });
 
-test('el asset visual no altera el motor financiero canónico',()=>{
+test('los assets de cuota corriente se inyectan y viajan dentro del build público',()=>{
   const edge=fs.readFileSync('netlify/edge-functions/owner-mobile-assets.js','utf8');
-  assert.match(edge,/owner-current-month-v1\.css/);
-  assert.match(edge,/owner-current-month-v1\.js/);
+  const build=fs.readFileSync('scripts/build-production.js','utf8');
+  for(const asset of ['owner-current-month-v1.css','owner-current-month-v1.js']){
+    assert.match(edge,new RegExp(asset.replaceAll('.','\\.')));
+    assert.match(build,new RegExp(`['\"]${asset.replaceAll('.','\\.')}['\"]`));
+  }
   assert.match(edge,/vla-owner-current-month-v1/);
 });
