@@ -9,7 +9,7 @@ const CI_READONLY_TOKEN_TTL_MS = 20 * 60 * 1000;
 const CLOCK_SKEW_MS = 60 * 1000;
 const ISSUER = 'villa-los-apamates';
 const AUDIENCE = 'vla-admin';
-const SESSION_KEY_DOMAIN = 'vla/admin/session-signing/v3';
+const SESSION_KEY_DOMAIN = 'vla/admin/session-signing/v2';
 const CI_READONLY_ROLE = 'admin-ci-readonly';
 const CI_SAFE_GET_PATHS = new Set([
   '/.netlify/functions/admin-data',
@@ -49,7 +49,7 @@ function getSecretInfo(env = process.env) {
       dedicated: true,
       derived: true,
       productionSafe: true,
-      keyVersion: 3
+      keyVersion: 2
     };
   }
 
@@ -62,7 +62,7 @@ function getSecretInfo(env = process.env) {
       dedicated: false,
       derived: false,
       productionSafe: false,
-      keyVersion: 3,
+      keyVersion: 2,
       errorCode: 'ADMIN_SESSION_SIGNING_KEY_REQUIRED'
     };
   }
@@ -84,7 +84,7 @@ function getSecretInfo(env = process.env) {
       dedicated: false,
       derived: derive,
       productionSafe: false,
-      keyVersion: 3
+      keyVersion: 2
     };
   }
   return {
@@ -93,7 +93,7 @@ function getSecretInfo(env = process.env) {
     dedicated: false,
     derived: false,
     productionSafe: false,
-    keyVersion: 3,
+    keyVersion: 2,
     errorCode: 'ADMIN_SIGNING_KEY_WEAK'
   };
 }
