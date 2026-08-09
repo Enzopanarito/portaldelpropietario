@@ -32,13 +32,13 @@ test('producción falla cerrada sin ADMIN_SESSION_SIGNING_KEY dedicada', () => {
   assert.equal(info.errorCode, 'ADMIN_SESSION_SIGNING_KEY_REQUIRED');
 });
 
-test('producción usa exclusivamente ADMIN_SESSION_SIGNING_KEY dedicada', () => {
+test('producción usa exclusivamente ADMIN_SESSION_SIGNING_KEY dedicada sin cambiar el formato del token', () => {
   const root = 'session-root-'.repeat(8);
   const info = auth.getSecretInfo(productionEnv({ ADMIN_SESSION_SIGNING_KEY: root }));
   assert.equal(info.source, 'ADMIN_SESSION_SIGNING_KEY');
   assert.equal(info.dedicated, true);
   assert.equal(info.productionSafe, true);
-  assert.equal(info.keyVersion, 3);
+  assert.equal(info.keyVersion, 2);
   assert.notEqual(info.secret, root);
   assert.equal(info.secret, auth.deriveSessionSecret(root));
 });
