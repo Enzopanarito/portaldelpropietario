@@ -41,8 +41,12 @@ assert(workflow.includes('owner-dark-contrast-result.json'),'El workflow no cons
 assert(workflow.includes('owner-dark-payment.png'),'El workflow no conserva captura del modal oscuro.');
 
 assert(runtime.includes("page.locator('#theme1').click()"),'La auditoría runtime no activa el tema mediante la interacción real.');
-assert(runtime.includes("localStorage.getItem('theme')==='dark'"),'La auditoría runtime no confirma persistencia del tema.');
+assert(runtime.includes('async function waitForDark'),'La auditoría runtime no tiene una espera estable para el modo oscuro.');
+assert(runtime.includes("localStorage.getItem('theme')"),'La auditoría runtime no lee la preferencia persistida.');
+assert(runtime.includes("state.theme==='dark'"),'La auditoría runtime no exige que la preferencia persistida sea dark.');
 assert(runtime.includes('page.reload'),'La auditoría runtime no comprueba persistencia después de recargar.');
+const waitForDarkCalls=(runtime.match(/await waitForDark\(page,10000\)/g)||[]).length;
+assert(waitForDarkCalls>=2,'La auditoría runtime debe validar el modo oscuro antes y después de recargar.');
 assert(runtime.includes('OWNER_DARK_RUNTIME_OK'),'Falta marcador verificable del auditor runtime.');
 
 console.log('OWNER_DARK_CONTRAST_STATIC_OK');
