@@ -1,0 +1,72 @@
+name: Verify Emergency Rollback Runtime
+
+on:
+  push:
+    branches: [agent/vla-airtable-token-recovery-probe]
+
+permissions:
+  contents: read
+  id-token: write
+  statuses: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout main verification scripts
+        uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Verify public data is Airtable-backed and canonical 15/15
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl --silent --show-error --location --output /tmp/public.json --write-out '%{http_code}' --max-time 30 'https://villalosapamates.netlify.app/.netlify/functions/public-data?rollback_runtime=1')"
+          [ "$code" = "200" ] || { echo "PUBLIC_DATA_HTTP_$code"; cat /tmp/public.json | head -c 300; exit 1; }
+          node - <<'NODE'
+          const fs=require('fs');
+          const j=JSON.parse(fs.readFileSync('/tmp/public.json','utf8'));
+          const owners=Array.isArray(j.propietarios)?j.propietarios:[];
+          if(owners.length!==15)throw new Error(`owners=${owners.length}`);
+          if(!owners.every(o=>o.balanceEngineVersion==='vla-balance-contract-v7'))throw new Error('non-canonical balance contract');
+          const casa11=owners.find(o=>Number(o.Casa)===11);
+          if(!casa11)throw new Error('Casa11 missing');
+          console.log('PUBLIC_DATA_15_15_CANONICAL');
+          NODE
+
+      - name: Request short-lived GitHub OIDC identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl --fail-with-body --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=vla-admin-production-readonly")"
+          token="$(printf '%s' "$response" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(String(JSON.parse(s).value||'')))")"
+          [ -n "$token" ] || exit 1
+          echo "::add-mask::$token"
+          echo "VLA_ADMIN_OIDC_TOKEN=$token" >> "$GITHUB_ENV"
+
+      - name: Verify protected Admin Health and MKJ without writes
+        env:
+          TARGET_URL: https://villalosapamates.netlify.app
+        run: node tests/admin-ci-readonly-production.cjs
+
+      - name: Publish rollback verification status
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        shell: bash
+        run: |
+          if [ "$JOB_STATUS" = "success" ]; then
+            state=success; description='Rollback runtime sano: Airtable 15/15, Admin/Health/MKJ verificados.'
+          else
+            state=failure; description='El rollback sigue presentando una falla de runtime.'
+          fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" -f state="$state" -f context='Rollback Runtime Verification' -f description="$description" -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
