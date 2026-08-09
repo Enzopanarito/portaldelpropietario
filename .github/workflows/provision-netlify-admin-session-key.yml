@@ -42,39 +42,45 @@ jobs:
           echo "NETLIFY_AUTH_TOKEN=$AUTH_TOKEN" >> "$GITHUB_ENV"
           echo "NETLIFY_SITE_ID=$SITE_ID" >> "$GITHUB_ENV"
 
-      - name: Generate and store dedicated production signing root
+      - name: Generate and store dedicated production signing root through Netlify API
         shell: bash
         run: |
           set -euo pipefail
-          SECRET="$(openssl rand -hex 48)"
-          [ "${#SECRET}" -eq 96 ] || { echo 'No se pudo generar una raíz fuerte.'; exit 1; }
-          echo "::add-mask::$SECRET"
-          npx --yes netlify-cli@latest env:set ADMIN_SESSION_SIGNING_KEY "$SECRET" \
-            --scope functions \
-            --context production \
-            --secret \
-            --site "$NETLIFY_SITE_ID" \
-            --auth "$NETLIFY_AUTH_TOKEN" >/tmp/netlify-secret-set.log 2>&1
-          unset SECRET
-          grep -Eq 'ADMIN_SESSION_SIGNING_KEY|Set environment variable|environment variable' /tmp/netlify-secret-set.log || {
-            echo 'Netlify no confirmó la escritura de la clave dedicada.'
-            exit 1
+          node <<'NODE'
+          const crypto=require('crypto');
+          const token=process.env.NETLIFY_AUTH_TOKEN;
+          const siteId=process.env.NETLIFY_SITE_ID;
+          const api='https://api.netlify.com/api/v1';
+          const key='ADMIN_SESSION_SIGNING_KEY';
+          const headers={Authorization:`Bearer ${token}`,'Content-Type':'application/json','User-Agent':'VLA-secret-provisioning'};
+          async function parse(response,label,allow404=false){
+            const body=await response.json().catch(()=>({}));
+            if(allow404&&response.status===404)return null;
+            if(!response.ok)throw new Error(`${label} respondió HTTP ${response.status}.`);
+            return body;
           }
-          rm -f /tmp/netlify-secret-set.log
-          echo 'ADMIN_SESSION_SIGNING_KEY dedicada almacenada en Netlify.'
-
-      - name: Verify key metadata is present without reading its value
-        shell: bash
-        run: |
-          set -euo pipefail
-          npx --yes netlify-cli@latest env:list \
-            --scope functions \
-            --context production \
-            --site "$NETLIFY_SITE_ID" \
-            --auth "$NETLIFY_AUTH_TOKEN" >/tmp/netlify-env-list.log 2>&1
-          grep -q 'ADMIN_SESSION_SIGNING_KEY' /tmp/netlify-env-list.log || {
-            echo 'La clave dedicada no aparece en el inventario Netlify.'
-            exit 1
-          }
-          rm -f /tmp/netlify-env-list.log
-          echo 'Metadatos de ADMIN_SESSION_SIGNING_KEY verificados; el valor no fue leído.'
+          (async()=>{
+            const site=await parse(await fetch(`${api}/sites/${encodeURIComponent(siteId)}`,{headers}), 'Netlify site');
+            const accountId=String(site.account_id||site.account_slug||'').trim();
+            if(!accountId)throw new Error('Netlify no devolvió account_id para el sitio.');
+            const endpoint=`${api}/accounts/${encodeURIComponent(accountId)}/env/${encodeURIComponent(key)}?site_id=${encodeURIComponent(siteId)}`;
+            const existing=await parse(await fetch(endpoint,{headers}),`Lectura ${key}`,true);
+            if(existing){
+              if(existing.is_secret!==true)throw new Error(`${key} ya existe pero no está marcada como secret; se abortó sin sobrescribirla.`);
+              const contexts=(existing.values||[]).map(item=>item.context);
+              if(!contexts.includes('production')||!(existing.scopes||[]).includes('functions'))throw new Error(`${key} existe pero no tiene contexto production + scope functions.`);
+              console.log('ADMIN_SESSION_SIGNING_KEY ya estaba aprovisionada correctamente.');
+              return;
+            }
+            const secret=crypto.randomBytes(48).toString('hex');
+            if(secret.length!==96)throw new Error('No se pudo generar una raíz fuerte.');
+            const createEndpoint=`${api}/accounts/${encodeURIComponent(accountId)}/env?site_id=${encodeURIComponent(siteId)}`;
+            const payload=[{key,scopes:['functions'],values:[{value:secret,context:'production'}],is_secret:true}];
+            await parse(await fetch(createEndpoint,{method:'POST',headers,body:JSON.stringify(payload)}),`Creación ${key}`);
+            secret.replace(/./g,'0');
+            const verified=await parse(await fetch(endpoint,{headers}),`Verificación ${key}`);
+            const contexts=(verified.values||[]).map(item=>item.context);
+            if(verified.is_secret!==true||!(verified.scopes||[]).includes('functions')||!contexts.includes('production'))throw new Error(`${key} no quedó con metadata segura.`);
+            console.log('ADMIN_SESSION_SIGNING_KEY dedicada creada y verificada sin leer su valor.');
+          })().catch(error=>{console.error(String(error.message||error));process.exit(1)});
+          NODE
