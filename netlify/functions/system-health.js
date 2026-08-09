@@ -88,6 +88,19 @@ function canonicalFinancialState(payload){
   }).map(owner=>Number(owner?.Casa)||'?');
   return{ok:owners.length===15&&JSON.stringify(houses)===JSON.stringify(expected)&&invalid.length===0,count:owners.length,invalid};
 }
+function intelligentProofAudit(records=[]){
+  const digital=records.filter(record=>/^[a-f0-9]{64}$/i.test(String((record.fields||{})['Hash SHA-256']||'')));
+  const pending=digital.filter(record=>selectName((record.fields||{}).Estado)==='Pendiente');
+  const hasAnalysis=record=>hasValue((record.fields||{})['AI Analysis Completed At'])||Number((record.fields||{})['AI Confidence']||0)>0;
+  const hasFailure=record=>hasValue((record.fields||{})['AI Failure Reason']);
+  const analyzed=pending.filter(hasAnalysis),failed=pending.filter(hasFailure),waiting=pending.filter(record=>!hasAnalysis(record)&&!hasFailure(record));
+  const historicalWithoutAnalysis=digital.filter(record=>selectName((record.fields||{}).Estado)!=='Pendiente'&&!hasAnalysis(record)&&!hasFailure(record));
+  return{digital:digital.length,pending:pending.length,analyzed:analyzed.length,waiting:waiting.length,failed:failed.length,historicalWithoutAnalysis:historicalWithoutAnalysis.length};
+}
+function accessCoherenceState(mismatches=[],mode='Manual'){
+  const automatic=mode==='Automático',requiresAction=automatic&&mismatches.length>0;
+  return{ok:!requiresAction,severity:requiresAction?'error':'ok',automatic};
+}
 
 const handler = async function(event) {
   const auth = requireAdmin(event);
@@ -165,7 +178,7 @@ const handler = async function(event) {
       accessModeInfo = await getAccessMode();
       automationInfo=await getAutomationRules(accessModeInfo);
       counter.airtable += 1;
-      add('Modo Control Portón', true, accessModeInfo.mode === 'Automático' ? 'Automático activo.' : 'Manual activo: las sincronizaciones automáticas están pausadas.', accessModeInfo.mode === 'Automático' ? 'ok' : 'warning');
+      add('Modo Control Portón', true, accessModeInfo.mode === 'Automático' ? 'Automático activo.' : 'Manual activo por decisión administrativa: las sincronizaciones automáticas permanecen pausadas.', 'ok', {mode:accessModeInfo.mode});
     } catch (error) {
       add('Modo Control Portón', false, error.message);
     }
@@ -184,7 +197,7 @@ const handler = async function(event) {
     const withExpiredDebt = expired.filter(x => x.calc.hasExpiredDebt).length;
     const pendingCovered = expired.filter(x => x.calc.hasExpiredDebt && x.calc.pendingCoversExpiredDebt).length;
     const totalExpired = money(expired.reduce((sum, x) => sum + x.calc.expiredTotal, 0));
-    add('Deuda vencida para control de acceso', true, `Propietarios con deuda vencida: ${withExpiredDebt}. Total vencido ref.: $${totalExpired.toFixed(2)}. Reportes pendientes suficientes: ${pendingCovered}.`, withExpiredDebt ? 'warning' : 'ok');
+    add('Deuda vencida para control de acceso', true, `Dato operativo: ${withExpiredDebt} propietario(s) con deuda vencida; total ref. $${totalExpired.toFixed(2)}; reportes pendientes suficientes: ${pendingCovered}. La morosidad no representa una falla técnica.`, 'ok', {owners:withExpiredDebt,totalExpired,pendingCovered});
 
     const accessMismatches = expired.filter(({owner,calc}) => {
       const fields=owner.fields||{},actual=selectName(fields['Estado Acceso Portón']);
@@ -196,19 +209,16 @@ const handler = async function(event) {
       actual:selectName((owner.fields||{})['Estado Acceso Portón']),
       esperado:(owner.fields||{})['Excepción Acceso']===true?'Excepción Manual':(calc.hasExpiredDebt?'Limitado':'Habilitado')
     }));
-    const mismatchSeverity=accessMismatches.length?(accessModeInfo?.mode==='Automático'?'error':'warning'):'ok';
-    add('Coherencia financiera del portón',accessMismatches.length===0,accessMismatches.length
-      ?`${accessMismatches.length} acceso(s) no coinciden con la deuda vencida: ${accessMismatches.map(item=>`Casa ${item.casa} (${item.actual} → ${item.esperado})`).join(', ')}.`
-      :'Todos los estados de acceso coinciden con la deuda vencida o con una excepción auditada.',mismatchSeverity,{mismatches:accessMismatches});
+    const coherence=accessCoherenceState(accessMismatches,accessModeInfo?.mode);
+    add('Coherencia financiera del portón',coherence.ok,accessMismatches.length
+      ?`${coherence.automatic?'Requiere sincronización automática':'Modo Manual: diferencia informativa, bajo control administrativo'}. ${accessMismatches.length} acceso(s): ${accessMismatches.map(item=>`Casa ${item.casa} (${item.actual} → ${item.esperado})`).join(', ')}.`
+      :'Todos los estados de acceso coinciden con la deuda vencida o con una excepción auditada.',coherence.severity,{mismatches:accessMismatches,mode:accessModeInfo?.mode});
 
     const pendingReports = reportes.filter(r => selectName((r.fields || {}).Estado) === 'Pendiente').length;
     add('Reportes pendientes y portón', true, pendingReports ? `${pendingReports} reporte(s) pendiente(s). Un reporte no altera deuda ni acceso hasta quedar validado.` : 'No hay reportes pendientes.', pendingReports ? 'warning' : 'ok');
 
-    const digitalProofs=reportes.filter(r=>/^[a-f0-9]{64}$/i.test(String((r.fields||{})['Hash SHA-256']||'')));
-    const analyzedProofs=digitalProofs.filter(r=>hasValue((r.fields||{})['AI Analysis Completed At'])||Number((r.fields||{})['AI Confidence']||0)>0);
-    const failedProofs=digitalProofs.filter(r=>hasValue((r.fields||{})['AI Failure Reason']));
-    const waitingProofs=digitalProofs.filter(r=>!hasValue((r.fields||{})['AI Analysis Completed At'])&&!hasValue((r.fields||{})['AI Failure Reason']));
-    add('Auditoría inteligente de comprobantes',waitingProofs.length===0&&failedProofs.length===0,`Comprobantes cifrados: ${digitalProofs.length}; análisis con evidencia: ${analyzedProofs.length}; pendientes de análisis profundo: ${waitingProofs.length}; fallidos: ${failedProofs.length}.`,failedProofs.length?'error':waitingProofs.length?'warning':'ok',{digitalProofs:digitalProofs.length,analyzed:analyzedProofs.length,waiting:waitingProofs.length,failed:failedProofs.length});
+    const proofAudit=intelligentProofAudit(reportes);
+    add('Auditoría inteligente de comprobantes',proofAudit.waiting===0&&proofAudit.failed===0,`Comprobantes cifrados: ${proofAudit.digital}; pendientes administrativos: ${proofAudit.pending}; análisis activos con evidencia: ${proofAudit.analyzed}; pendientes de análisis profundo activos: ${proofAudit.waiting}; fallidos activos: ${proofAudit.failed}; históricos cerrados sin análisis profundo: ${proofAudit.historicalWithoutAnalysis}.`,proofAudit.failed?'error':proofAudit.waiting?'warning':'ok',proofAudit);
 
     const receiptErrors = recibos.filter(r => {
       const status = selectName((r.fields || {})['Estado Email']);
@@ -289,4 +299,6 @@ const handler = async function(event) {
 };
 
 exports.handler = withAirtableUsage('system-health', handler);
+exports.intelligentProofAudit=intelligentProofAudit;
+exports.accessCoherenceState=accessCoherenceState;
 exports.canonicalFinancialState = canonicalFinancialState;
