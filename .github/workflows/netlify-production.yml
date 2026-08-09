@@ -129,7 +129,7 @@ jobs:
           fs.appendFileSync(out,`deploy_id=${id}\n`);
           NODE
 
-      - name: Verify production deploy metadata, Node 22 runtime and canonical release contract
+      - name: Verify production deploy metadata, exact commit, Node 22 runtime and canonical release contract
         id: verify
         env:
           DEPLOY_ID: ${{ steps.deploy.outputs.deploy_id }}
@@ -147,11 +147,16 @@ jobs:
           const d=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
           if(d.state!=='ready')throw new Error('Deploy state='+d.state);
           if(d.context!=='production')throw new Error('Deploy context='+d.context);
+          const expected=String(process.env.GITHUB_SHA||'');
+          const commitRef=String(d.commit_ref||'').trim();
+          const title=String(d.title||'');
+          const titleCommit=(/^VLA production commit=([0-9a-f]{40})$/i.exec(title)||[])[1]||'';
+          if(commitRef!==expected&&titleCommit!==expected)throw new Error(`Deploy no corresponde al commit exacto: commit_ref=${commitRef||'none'} titleCommit=${titleCommit||'none'} expected=${expected}`);
           const functions=Array.isArray(d.available_functions)?d.available_functions:[];
           if(!functions.length)throw new Error('Netlify no reportó Functions desplegadas.');
           const runtimes=[...new Set(functions.map(fn=>String(fn.r||fn.runtime||'unknown')))];
           if(runtimes.length!==1||runtimes[0]!=='nodejs22.x')throw new Error(`Runtime Functions inesperado: ${runtimes.join(', ')}`);
-          console.log(JSON.stringify({id:d.id,state:d.state,context:d.context,functions:functions.length,runtime:runtimes[0],title:d.title||null},null,2));
+          console.log(JSON.stringify({id:d.id,state:d.state,context:d.context,commit_ref:commitRef||null,verifiedCommit:expected,functions:functions.length,runtime:runtimes[0],title},null,2));
           NODE
           production_release="${RUNNER_TEMP}/vla-production-release.json"
           for attempt in $(seq 1 30); do
@@ -160,7 +165,7 @@ jobs:
               --output "$production_release" \
               && node scripts/verify-release-contract.js release.json "$production_release"; then
               echo "deploy_id=$DEPLOY_ID" >> "$GITHUB_OUTPUT"
-              echo "Canonical production release and Node 22 runtime verified for $GITHUB_SHA."
+              echo "Canonical production release, exact commit and Node 22 runtime verified for $GITHUB_SHA."
               exit 0
             fi
             sleep 5
@@ -209,7 +214,7 @@ jobs:
         run: |
           if [ "$VERIFY_OUTCOME" = "success" ] && [ "$FINANCE_OUTCOME" = "success" ]; then
             title="Producción publicada y certificada ✅"
-            detail="Artefacto construido en GitHub, Functions Node 22, release canónico verificado y BEFORE/AFTER financiero = $0.00."
+            detail="Artefacto construido en GitHub, commit exacto, Functions Node 22, release canónico verificado y BEFORE/AFTER financiero = $0.00."
           else
             title="Producción no certificada ⚠️"
             detail="El despliegue, runtime, contrato canónico o comparación financiera no concluyeron correctamente."
