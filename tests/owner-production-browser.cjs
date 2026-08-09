@@ -32,6 +32,15 @@ async function waitText(locator,predicate,description,timeout=30000){
   }
   throw new Error(`No apareció ${description}.`);
 }
+async function waitForHealthyFinancialState(page,timeout=10000){
+  const deadline=Date.now()+timeout;
+  while(Date.now()<deadline){
+    const healthy=await page.evaluate(()=>window.__vlaFinancialFailClosed!==true);
+    if(healthy)return;
+    await page.waitForTimeout(200);
+  }
+  throw new Error('El portal no salió del fail-closed financiero dentro del tiempo esperado.');
+}
 async function loadPortal(page){
   let lastError;
   for(let attempt=1;attempt<=3;attempt++){
@@ -40,7 +49,7 @@ async function loadPortal(page){
       if(!response||response.status()!==200)throw new Error(`El portal respondió ${response&&response.status()}.`);
       await page.addStyleTag({content:'[data-netlify-deploy-id],iframe[title="Netlify Drawer"]{display:none!important;pointer-events:none!important}'}).catch(()=>{});
       await waitForHouseOptions(page,15,30000);
-      await page.waitForFunction(()=>window.__vlaFinancialFailClosed!==true,null,{timeout:10000});
+      await waitForHealthyFinancialState(page,10000);
       return response;
     }catch(error){
       lastError=error;
