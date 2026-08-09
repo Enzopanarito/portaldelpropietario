@@ -9,14 +9,14 @@ function loadWithAnalysis(analysis,{runnerFactory}={}){
  const original=Module._load;
  Module._load=function(request,parent,isMain){
   if(parent&&String(parent.filename||'').endsWith(path.join('netlify','functions','payment-proof-prefill.js'))){
-   if(request==='./_airtable_meter')return{withAirtableUsage:(_name,handler)=>handler};
-   if(request==='./_payment_report_attachment')return{decodeAttachment:value=>value?{content:Buffer.from('proof'),contentType:'image/png'}:null};
-   if(request==='./_payment_ai_gemini')return{createGeminiAnalysisRunner:runnerFactory||(()=>async()=>JSON.stringify(analysis))};
-   if(request==='./_payment_ai_model_discovery')return{discoverCompatibleModel:async()=>({model:'gemini-2.5-flash-lite',cached:true})};
-   if(request==='./_persistent_rate_limit')return{consume:async()=>({allowed:true})};
-   if(request==='./_security_utils')return{safeDisplayText:value=>String(value||'')};
-   if(request==='./_automation_rules')return{mergeConfig:()=>({})};
-   if(request==='./_payment_report_automation')return{listAll:async()=>[{fields:{}}],TABLES:{config:'Configuración'},aiConfig:()=>({aiEnabled:true,primaryModel:'gemini-2.5-flash',promptVersion:'V2'})};
+   if(request==='./_shared/_airtable_meter')return{withAirtableUsage:(_name,handler)=>handler};
+   if(request==='./_shared/_payment_report_attachment')return{decodeAttachment:value=>value?{content:Buffer.from('proof'),contentType:'image/png'}:null};
+   if(request==='./_shared/_payment_ai_gemini')return{createGeminiAnalysisRunner:runnerFactory||(()=>async()=>JSON.stringify(analysis))};
+   if(request==='./_shared/_payment_ai_model_discovery')return{discoverCompatibleModel:async()=>({model:'gemini-2.5-flash-lite',cached:true})};
+   if(request==='./_shared/_persistent_rate_limit')return{consume:async()=>({allowed:true})};
+   if(request==='./_shared/_security_utils')return{safeDisplayText:value=>String(value||'')};
+   if(request==='./_shared/_automation_rules')return{mergeConfig:()=>({})};
+   if(request==='./_shared/_payment_report_automation')return{listAll:async()=>[{fields:{}}],TABLES:{config:'Configuración'},aiConfig:()=>({aiEnabled:true,primaryModel:'gemini-2.5-flash',promptVersion:'V2'})};
   }
   return original.apply(this,arguments);
  };

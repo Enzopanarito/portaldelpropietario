@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const auth = require('../netlify/functions/_auth');
+const auth = require('../netlify/functions/_shared/_auth');
 
 const ENV_KEYS = [
   'ADMIN_SESSION_SIGNING_KEY',

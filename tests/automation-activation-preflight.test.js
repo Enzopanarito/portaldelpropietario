@@ -2,8 +2,8 @@
 
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {mergeConfig}=require('../netlify/functions/_automation_rules');
-const {checkAutomationActivation}=require('../netlify/functions/_automation_activation_preflight');
+const {mergeConfig}=require('../netlify/functions/_shared/_automation_rules');
+const {checkAutomationActivation}=require('../netlify/functions/_shared/_automation_activation_preflight');
 
 function enabled(){return mergeConfig({fields:{'Piloto Automático Habilitado':true,'Reglas Automáticas Confirmadas':true,'Control Automático Inteligente':true,'Cierre Mensual Automático':true,'Avisos Automáticos':true}})}
 

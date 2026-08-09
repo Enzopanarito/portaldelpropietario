@@ -1,17 +1,17 @@
-const { withAirtableUsage } = require('./_airtable_meter');
+const { withAirtableUsage } = require('./_shared/_airtable_meter');
 // netlify/functions/process-payment-report.js
 // Aprueba o rechaza reportes de pago y sincroniza automáticamente el acceso del portón.
 // Al aprobar, crea el pago y genera/envía el recibo PDF desde backend.
 // Protección: bloqueo persistente por reporte para impedir pagos duplicados por concurrencia o reintentos.
 // Protección adicional: ninguna escritura financiera se permite durante un cierre mensual activo.
 
-const { requireAdmin } = require('./_auth');
-const { json, money, airtableGetRecord, airtableCreateRecord, airtablePatchRecord, syncOwnerAccess, TABLES } = require('./_access_control');
-const { createAndSendReceipt } = require('./_receipt_service');
-const { begin, setState } = require('./_operation_guard');
-const { hashPayload } = require('./_idempotency_blobs');
-const { ensureFinancialWritesAllowed } = require('./_financial_write_lock');
-const { safeDisplayText, deepEscapeStrings } = require('./_security_utils');
+const { requireAdmin } = require('./_shared/_auth');
+const { json, money, airtableGetRecord, airtableCreateRecord, airtablePatchRecord, syncOwnerAccess, TABLES } = require('./_shared/_access_control');
+const { createAndSendReceipt } = require('./_shared/_receipt_service');
+const { begin, setState } = require('./_shared/_operation_guard');
+const { hashPayload } = require('./_shared/_idempotency_blobs');
+const { ensureFinancialWritesAllowed } = require('./_shared/_financial_write_lock');
+const { safeDisplayText, deepEscapeStrings } = require('./_shared/_security_utils');
 
 function todayCaracasISO(){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Caracas',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
 function validRecordId(id){return /^rec[A-Za-z0-9]{14}$/.test(String(id||''));}

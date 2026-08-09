@@ -3,8 +3,8 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const prefill=require('../netlify/functions/payment-proof-prefill');
-const gemini=require('../netlify/functions/_payment_ai_gemini');
-const discovery=require('../netlify/functions/_payment_ai_model_discovery');
+const gemini=require('../netlify/functions/_shared/_payment_ai_gemini');
+const discovery=require('../netlify/functions/_shared/_payment_ai_model_discovery');
 
 const VALID_RAW=JSON.stringify({
  method:'MOBILE_PAYMENT_VE',

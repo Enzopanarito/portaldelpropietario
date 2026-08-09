@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('assert');
-const {buildPlan}=require('../netlify/functions/_monthly_close_core_v4');
+const {buildPlan}=require('../netlify/functions/_shared/_monthly_close_core_v4');
 const owner={id:'recOwner000000001',fields:{Casa:1,Propietario:'Prueba',Alicuota:1,'Deuda Anterior':0,'Deuda Anterior USD':0,'Deuda Anterior Bs Ref':0,'Deuda Restante':0}};
 const base={id:'recPayment0000001',fields:{'Propietario que Paga':[owner.id],'Monto Pagado':10,'Equivalente USD Aplicado':10,'Fecha de Pago':'2026-07-01'}};
 const plan=payment=>buildPlan({owners:[owner],expenses:[],payments:[payment],month:'2026-07'});

@@ -3,10 +3,10 @@
 const assert=require('assert');
 const fs=require('fs');
 const path=require('path');
-const mailerPath=require.resolve('../netlify/functions/_mailer');
+const mailerPath=require.resolve('../netlify/functions/_shared/_mailer');
 require.cache[mailerPath]={id:mailerPath,filename:mailerPath,loaded:true,exports:{sendMail:async()=>({sent:false,status:'Doble de prueba'})}};
-const access=require('../netlify/functions/_access_control');
-const{pendingReportAccessDecision}=require('../netlify/functions/_pending_report_access_policy');
+const access=require('../netlify/functions/_shared/_access_control');
+const{pendingReportAccessDecision}=require('../netlify/functions/_shared/_pending_report_access_policy');
 
 function owner(){return{id:'recOwner00000001',fields:{Casa:4,Propietario:'Propietario de prueba',Alicuota:0,'Deuda Anterior':185,'Deuda Anterior USD':85,'Deuda Anterior Bs Ref':100,'Estado Acceso Portón':'Limitado','MKJ User ID':'mkj-test-owner'}}}
 function pending({id,mode,amount}){return{id,fields:{Estado:'Pendiente','Propietario que Reporta':['recOwner00000001'],'Forma de Pago Reportada':mode,'Monto Reportado':amount,'Equivalente USD Reportado':amount}}}
@@ -70,8 +70,8 @@ function pending({id,mode,amount}){return{id,fields:{Estado:'Pendiente','Propiet
 
  const endpointSource=fs.readFileSync(path.join(__dirname,'..','netlify','functions','public-report-payment.js'),'utf8');
  assert(!/\bsyncOwnerAccess\b/.test(endpointSource),'El endpoint público no puede importar ni llamar syncOwnerAccess.');
- assert(endpointSource.includes("require('./_pending_report_access_policy')"));
- const accessSource=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_access_control.js'),'utf8');
+ assert(endpointSource.includes("require('./_shared/_pending_report_access_policy')"));
+ const accessSource=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_shared','_access_control.js'),'utf8');
  assert(!accessSource.includes('Habilitación temporal automática por reporte de pago pendiente'));
  assert(!accessSource.includes('podrá habilitar <b>automáticamente</b>'));
  console.log('PENDING_REPORT_ACCESS_SAFETY_OK');

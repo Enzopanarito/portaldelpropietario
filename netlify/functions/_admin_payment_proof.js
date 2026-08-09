@@ -1,9 +1,9 @@
 'use strict';
 
-const {requireAdmin}=require('./_auth');
-const {airtableGetRecord,TABLES}=require('./_access_control');
-const {createProofStore}=require('./_payment_proof_store');
-const {connectLambdaEvent}=require('./_blobs_compat');
+const {requireAdmin}=require('./_shared/_auth');
+const {airtableGetRecord,TABLES}=require('./_shared/_access_control');
+const {createProofStore}=require('./_shared/_payment_proof_store');
+const {connectLambdaEvent}=require('./_shared/_blobs_compat');
 
 function json(statusCode,body){return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'},body:JSON.stringify(body)}}
 function validRecordId(value){return /^rec[A-Za-z0-9]{14}$/.test(String(value||'').trim())}

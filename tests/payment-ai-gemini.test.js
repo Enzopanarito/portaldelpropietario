@@ -2,7 +2,7 @@
 const assert=require('assert');
 const fs=require('fs');
 const path=require('path');
-const gemini=require('../netlify/functions/_payment_ai_gemini');
+const gemini=require('../netlify/functions/_shared/_payment_ai_gemini');
 
 (async()=>{
  assert.strictEqual(gemini.safeModel('gemini-2.5-flash'),'gemini-2.5-flash');

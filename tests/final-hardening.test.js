@@ -4,10 +4,10 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const authStore = require('../netlify/functions/_admin_auth_store');
-const integrity = require('../netlify/functions/_integrity');
-const rate = require('../netlify/functions/_persistent_rate_limit');
-const auth = require('../netlify/functions/_auth');
+const authStore = require('../netlify/functions/_shared/_admin_auth_store');
+const integrity = require('../netlify/functions/_shared/_integrity');
+const rate = require('../netlify/functions/_shared/_persistent_rate_limit');
+const auth = require('../netlify/functions/_shared/_auth');
 
 function source(file) { return fs.readFileSync(path.join(__dirname, '..', file), 'utf8'); }
 
@@ -60,7 +60,7 @@ assert(expense.includes("begin('EXPENSE_CREATE'"));
 assert(expense.includes('ensureFinancialWritesAllowed'));
 assert(expense.includes('existingOwnerIds'));
 assert(expense.includes('idempotent:true'));
-const guard = source('netlify/functions/_operation_guard_v2.js');
+const guard = source('netlify/functions/_shared/_operation_guard_v2.js');
 assert(guard.includes("'EXPENSE_CREATE'"));
 
 const backup = source('netlify/functions/airtable-backup.js');

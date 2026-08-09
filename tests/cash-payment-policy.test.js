@@ -2,7 +2,7 @@
 const assert=require('assert');
 const fs=require('fs');
 const path=require('path');
-const cash=require('../netlify/functions/_cash_payment_policy');
+const cash=require('../netlify/functions/_shared/_cash_payment_policy');
 
 (()=>{
  const receivedAt=new Date('2026-07-13T18:00:00.000Z');
@@ -26,6 +26,6 @@ const cash=require('../netlify/functions/_cash_payment_policy');
  assert.throws(()=>cash.contingencyAccess({ownerId:'recOwner1',adminId:'admin',reason:'Motivo suficientemente largo',expiresAt:'2026-07-15T18:00:00.000Z',now:receivedAt}),error=>error.code==='CONTINGENCY_DURATION_INVALID');
  assert.strictEqual(cash.classifyCashRequest('security_pending',{ownerId:'recOwner1',receivedBy:'guard',amount:1,currency:'USD',evidenceReference:'e'}).type,'SECURITY_PENDING');
  assert.throws(()=>cash.classifyCashRequest('unknown',{}),error=>error.code==='CASH_TYPE_INVALID');
- const source=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_cash_payment_policy.js'),'utf8');assert(!/airtableCreateRecord|airtablePatchRecord|syncOwnerAccess|mkjSetMemberStatus|sendMail/.test(source));
+ const source=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_shared','_cash_payment_policy.js'),'utf8');assert(!/airtableCreateRecord|airtablePatchRecord|syncOwnerAccess|mkjSetMemberStatus|sendMail/.test(source));
  console.log('CASH_PAYMENT_POLICY_OK');
 })();

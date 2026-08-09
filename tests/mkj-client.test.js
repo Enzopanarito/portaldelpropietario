@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const client = require('../netlify/functions/_mkj_client');
+const client = require('../netlify/functions/_shared/_mkj_client');
 
 process.env.MKJ_BASE_URL = 'https://mkj.test';
 process.env.MKJ_ORG_ID = '1053';

@@ -20,9 +20,9 @@ process.env.AIRTABLE_BASE_ID = 'app12345678901234';
 
 delete global.__VLA_AIRTABLE_METER_INSTALLED;
 delete global.__VLA_AIRTABLE_RAW_FETCH;
-delete require.cache[require.resolve('../netlify/functions/_airtable_meter')];
+delete require.cache[require.resolve('../netlify/functions/_shared/_airtable_meter')];
 delete require.cache[require.resolve('../netlify/functions/api-usage')];
-const meter = require('../netlify/functions/_airtable_meter');
+const meter = require('../netlify/functions/_shared/_airtable_meter');
 const usage = require('../netlify/functions/api-usage');
 
 function validateEntrypointCoverage() {

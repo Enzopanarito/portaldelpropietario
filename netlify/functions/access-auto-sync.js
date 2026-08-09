@@ -1,9 +1,9 @@
-const { withAirtableUsage } = require('./_airtable_meter');
+const { withAirtableUsage } = require('./_shared/_airtable_meter');
 // netlify/functions/access-auto-sync.js
 // Sincronización automática/inteligente del acceso cómodo del portón.
 
-const { requireAdmin } = require('./_auth');
-const { json, syncOwnerAccess, autoSyncAll } = require('./_access_control');
+const { requireAdmin } = require('./_shared/_auth');
+const { json, syncOwnerAccess, autoSyncAll } = require('./_shared/_access_control');
 
 const handler = async function(event) {
   const auth = requireAdmin(event);

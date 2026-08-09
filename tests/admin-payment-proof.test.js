@@ -9,10 +9,10 @@ function load(fields,{proof=Buffer.from('proof'),authorized=true}={}){
  const original=Module._load;
  Module._load=function(request,parent,isMain){
   if(parent&&String(parent.filename||'').endsWith(path.join('netlify','functions','_admin_payment_proof.js'))){
-   if(request==='./_auth')return{requireAdmin:()=>authorized?{ok:true}:{ok:false,response:{statusCode:401,body:'{}'}}};
-   if(request==='./_access_control')return{airtableGetRecord:async()=>({fields}),TABLES:{reportes:'Reportes'}};
-   if(request==='./_payment_proof_store')return{createProofStore:()=>({getByKey:async()=>proof?{content:proof}:null,get:async()=>proof?{content:proof}:null})};
-   if(request==='./_blobs_compat')return{connectLambdaEvent:()=>({connected:true,source:'test'})};
+   if(request==='./_shared/_auth')return{requireAdmin:()=>authorized?{ok:true}:{ok:false,response:{statusCode:401,body:'{}'}}};
+   if(request==='./_shared/_access_control')return{airtableGetRecord:async()=>({fields}),TABLES:{reportes:'Reportes'}};
+   if(request==='./_shared/_payment_proof_store')return{createProofStore:()=>({getByKey:async()=>proof?{content:proof}:null,get:async()=>proof?{content:proof}:null})};
+   if(request==='./_shared/_blobs_compat')return{connectLambdaEvent:()=>({connected:true,source:'test'})};
   }
   return original.apply(this,arguments);
  };

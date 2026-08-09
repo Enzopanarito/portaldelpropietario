@@ -3,8 +3,8 @@
 const assert=require('assert');
 const fs=require('fs');
 const path=require('path');
-const machine=require('../netlify/functions/_payment_decision_state_machine');
-const cash=require('../netlify/functions/_cash_payment_policy');
+const machine=require('../netlify/functions/_shared/_payment_decision_state_machine');
+const cash=require('../netlify/functions/_shared/_cash_payment_policy');
 
 function report(overrides={}){return{id:'recReport1',fields:{'Propietario que Reporta':['recOwner1'],Estado:'Pendiente','Pago Definitivo Creado':false,'Forma de Pago Reportada':'USD','Equivalente USD Reportado':85,'Monto Reportado':85,Referencia:'REF-001','Habilitación Provisional Aplicada':false,'MKJ Operation ID':'',...overrides}}}
 function owner(overrides={}){return{id:'recOwner1',fields:{'Reporte Habilitante Actual':[],'Tipo de Habilitación':'',...overrides}}}
@@ -53,6 +53,6 @@ function assertNoExecution(value){assert.strictEqual(value.executed,false);asser
  assert.throws(()=>machine.authorizeRejection({report:report({'Pago Definitivo Creado':true}),owner:owner(),adminId:'admin',reason:'Motivo suficientemente largo'}),error=>error.code==='REJECTION_PAYMENT_EXISTS');
  assert.throws(()=>machine.authorizeRejection({report:report(),owner:owner(),adminId:'admin',reason:'corto'}),error=>error.code==='REJECTION_REASON_REQUIRED');
 
- const source=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_payment_decision_state_machine.js'),'utf8');assert(!/airtableCreateRecord|airtablePatchRecord|syncOwnerAccess|mkjSetMemberStatus|sendMail|createAndSendReceipt/.test(source));
+ const source=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_shared','_payment_decision_state_machine.js'),'utf8');assert(!/airtableCreateRecord|airtablePatchRecord|syncOwnerAccess|mkjSetMemberStatus|sendMail|createAndSendReceipt/.test(source));
  console.log('PAYMENT_DECISION_STATE_MACHINE_OK');
 })();

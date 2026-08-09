@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const fixture = require('../netlify/functions/_public_preview_fixture');
+const fixture = require('../netlify/functions/_shared/_public_preview_fixture');
 const { createHandler } = require('../netlify/functions/public-data-v3');
 
 const FIXED_NOW = new Date('2026-08-04T13:30:00.000Z');

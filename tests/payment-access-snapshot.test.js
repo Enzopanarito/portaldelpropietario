@@ -1,7 +1,7 @@
 'use strict';
 
 const assert=require('assert');
-const snapshot=require('../netlify/functions/_payment_access_snapshot');
+const snapshot=require('../netlify/functions/_shared/_payment_access_snapshot');
 
 function current({house=4,usd=85,bs=100,surcharge=0,cutoff='2026-07-11T19:10:08.000Z',version=20260711,id='recCurrent'}={}){return{id,fields:{Key:`CURRENT_BALANCE|2026-07|HOUSE=${house}|USD_CENTS=${Math.round(usd*100)}|BS_CENTS=${Math.round(bs*100)}|SURCHARGE_CENTS=${Math.round(surcharge*100)}|CUTOFF=${cutoff}`,Version:version}}}
 function owner({id='recOwner4',house=4,usd=85,bs=100,aliquot=0}={}){return{id,fields:{Casa:house,Alicuota:aliquot,'Deuda Anterior':usd+bs,'Deuda Anterior USD':usd,'Deuda Anterior Bs Ref':bs}}}

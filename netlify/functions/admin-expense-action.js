@@ -1,13 +1,13 @@
 'use strict';
 
 const crypto=require('crypto');
-const {withAirtableUsage}=require('./_airtable_meter');
-const {requireAdmin}=require('./_auth');
-const {ensureFinancialWritesAllowed}=require('./_financial_write_lock');
-const {begin,setState}=require('./_operation_guard');
-const {getAll,patchBatches,TABLES}=require('./_monthly_close_store');
-const {FIELDS,STATUS,statusOf,monthOf,currentMonthCaracas,nextMonth,compactTemplate,templateKey}=require('./_expense_lifecycle');
-const {cleanPlainText,safeDisplayText}=require('./_security_utils');
+const {withAirtableUsage}=require('./_shared/_airtable_meter');
+const {requireAdmin}=require('./_shared/_auth');
+const {ensureFinancialWritesAllowed}=require('./_shared/_financial_write_lock');
+const {begin,setState}=require('./_shared/_operation_guard');
+const {getAll,patchBatches,TABLES}=require('./_shared/_monthly_close_store');
+const {FIELDS,STATUS,statusOf,monthOf,currentMonthCaracas,nextMonth,compactTemplate,templateKey}=require('./_shared/_expense_lifecycle');
+const {cleanPlainText,safeDisplayText}=require('./_shared/_security_utils');
 
 function json(statusCode,body){return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'},body:JSON.stringify(body)}}
 function validId(value){return/^rec[A-Za-z0-9]{14}$/.test(String(value||''))}

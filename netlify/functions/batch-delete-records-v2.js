@@ -1,8 +1,8 @@
 'use strict';
 
-const { requireAdmin } = require('./_auth');
-const { ensureFinancialWritesAllowed } = require('./_financial_write_lock');
-const { withAirtableUsage } = require('./_airtable_meter');
+const { requireAdmin } = require('./_shared/_auth');
+const { ensureFinancialWritesAllowed } = require('./_shared/_financial_write_lock');
+const { withAirtableUsage } = require('./_shared/_airtable_meter');
 
 const ALLOWED_TABLES = new Set(['Gastos del Mes']);
 const MAX_RECORDS_PER_REQUEST = 100;

@@ -1,7 +1,7 @@
 'use strict';
 
 const assert=require('assert');
-const duplicate=require('../netlify/functions/_payment_duplicate_core');
+const duplicate=require('../netlify/functions/_shared/_payment_duplicate_core');
 
 (()=>{
  assert.strictEqual(duplicate.normalizeText('Enzo José, Panarito.'),'ENZO JOSE PANARITO');

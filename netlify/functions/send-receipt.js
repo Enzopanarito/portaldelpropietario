@@ -1,10 +1,10 @@
-const { withAirtableUsage } = require('./_airtable_meter');
+const { withAirtableUsage } = require('./_shared/_airtable_meter');
 // netlify/functions/send-receipt.js
 // Crea comprobantes de pago y, si hay proveedor configurado, los envía por correo con PDF adjunto.
 // Esta función queda como endpoint manual; el servicio real está centralizado en _receipt_service.
 
-const { requireAdmin } = require('./_auth');
-const { createAndSendReceipt } = require('./_receipt_service');
+const { requireAdmin } = require('./_shared/_auth');
+const { createAndSendReceipt } = require('./_shared/_receipt_service');
 
 function json(statusCode, body){return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:JSON.stringify(body)}}
 

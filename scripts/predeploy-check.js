@@ -20,7 +20,7 @@ const required=[
  'netlify/functions/payment-report-recovery-modern-scheduled.mjs',
  'netlify/functions/receipt-recovery-modern-scheduled.mjs',
  'netlify/functions/receipt-recovery-modern-background.mjs',
- 'netlify/functions/_automation_activation_preflight.js',
+ 'netlify/functions/_shared/_automation_activation_preflight.js',
  'scripts/expense-lifecycle-backfill.js'
 ];
 const errors=[];
@@ -51,7 +51,7 @@ check(receiptRecoverySchedule.includes("schedule:'*/15 * * * *'"),'Falta la recu
 const edge=read('netlify/edge-functions/admin-premium-assets.js');
 check(edge.includes('admin-autopilot.js')&&edge.includes('admin-autopilot.css'),'El panel administrativo no inyecta el piloto.');
 const background=read('netlify/functions/condo-autopilot-background.js');
-check(background.includes("require('./_internal_job_auth')")&&background.includes('verify(rawBody'),'El trabajo pesado no está autenticado.');
+check(background.includes("require('./_shared/_internal_job_auth')")&&background.includes('verify(rawBody'),'El trabajo pesado no está autenticado.');
 const recovery=read('netlify/functions/payment-report-recovery-scheduled.js');
 new vm.Script(recovery,{filename:'payment-report-recovery-scheduled.js'});
 const receiptRecovery=read('netlify/functions/receipt-recovery-scheduled.js');

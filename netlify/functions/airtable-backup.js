@@ -3,11 +3,11 @@
 
 'use strict';
 
-const { withAirtableUsage } = require('./_airtable_meter');
+const { withAirtableUsage } = require('./_shared/_airtable_meter');
 
 const crypto = require('crypto');
-const { requireAdmin } = require('./_auth');
-const { sha256, sortRecords } = require('./_integrity');
+const { requireAdmin } = require('./_shared/_auth');
+const { sha256, sortRecords } = require('./_shared/_integrity');
 
 const TABLES = [
   'Propietarios','Gastos del Mes','Configuración','Pagos','Historial de Cargos','Reportes de Pago',

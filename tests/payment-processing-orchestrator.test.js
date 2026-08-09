@@ -2,9 +2,9 @@
 const assert=require('assert');
 const fs=require('fs');
 const path=require('path');
-const processingModule=require('../netlify/functions/_payment_processing_store');
-const arbiter=require('../netlify/functions/_payment_deterministic_arbiter');
-const orchestratorModule=require('../netlify/functions/_payment_processing_orchestrator');
+const processingModule=require('../netlify/functions/_shared/_payment_processing_store');
+const arbiter=require('../netlify/functions/_shared/_payment_deterministic_arbiter');
+const orchestratorModule=require('../netlify/functions/_shared/_payment_processing_orchestrator');
 
 function modules(){
  const proofCore={decodeProofInput(input){const sha=(input&&input.sha)||'a'.repeat(64);return{filename:'proof.png',content:Buffer.from(input?.content||'proof'),contentType:'image/png',size:5,sha256:sha,quality:{acceptable:true}}},buildIdempotencyKey(reportId,sha,prompt){return`${reportId}|${sha}|${prompt}`}};
@@ -30,6 +30,6 @@ function assertNoAction(r){assert.strictEqual(r.paymentAction,'NONE');assert.str
  calls=0;const retry=setup(async({attempt})=>{calls+=1;if(attempt===1)throw Object.assign(new Error('timeout'),{code:'TIMEOUT'});return JSON.stringify(analysis())});const retryResult=await retry.orchestrator.run(input('recRetry',{config:{aiEnabled:true,primaryModel:'primary',maximumPrimaryRetries:1,minimumConfidence:0.85,promptVersion:'PROMPT_V2'}}),env());assert.strictEqual(calls,2);assert.strictEqual(retryResult.processingState,'Coincide preliminarmente');assert.strictEqual(retryResult.analysis.audit.length,2);assertNoAction(retryResult);
  calls=0;const secondary=setup(async({role})=>{calls+=1;return role==='primary'?'{bad':JSON.stringify(analysis())});const secondaryResult=await secondary.orchestrator.run(input('recSecondary',{config:{aiEnabled:true,primaryModel:'primary',secondaryEnabled:true,secondaryModel:'secondary',minimumConfidence:0.85,promptVersion:'PROMPT_V2'}}),env());assert.strictEqual(calls,2);assert.strictEqual(secondaryResult.processingState,'Coincide preliminarmente');assert.strictEqual(secondaryResult.analysis.rawPrimary,'{bad');assert(secondaryResult.analysis.rawSecondary.includes('COMPLETED'));assertNoAction(secondaryResult);
  const conflict=setup(async()=>JSON.stringify(analysis()));await conflict.orchestrator.run(input('recConflict'),env());const changed=await conflict.orchestrator.run(input('recConflict',{attachment:{sha:'b'.repeat(64),content:'other'}}),env());assert.strictEqual(changed.ok,false);assert.strictEqual(changed.reason,'PROCESSING_IDEMPOTENCY_CONFLICT');assertNoAction(changed);
- const source=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_payment_processing_orchestrator.js'),'utf8');assert(!/airtableCreateRecord|airtablePatchRecord|syncOwnerAccess|mkjSetMemberStatus/.test(source));
+ const source=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_shared','_payment_processing_orchestrator.js'),'utf8');assert(!/airtableCreateRecord|airtablePatchRecord|syncOwnerAccess|mkjSetMemberStatus/.test(source));
  console.log('PAYMENT_PROCESSING_ORCHESTRATOR_OK');
 })().catch(error=>{console.error(error);process.exit(1)});

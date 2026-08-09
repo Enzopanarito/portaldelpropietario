@@ -1,10 +1,10 @@
 'use strict';
 const assert=require('assert');
 const fs=require('fs');
-const storeModule=require('../netlify/functions/_payment_processing_store');
+const storeModule=require('../netlify/functions/_shared/_payment_processing_store');
 
 (async()=>{
- const source=fs.readFileSync('netlify/functions/_payment_processing_store.js','utf8');
+ const source=fs.readFileSync('netlify/functions/_shared/_payment_processing_store.js','utf8');
  assert(source.includes("require('./_blobs_compat')")&&source.includes('getAtomicStore(STORE_NAME)'));
  assert(!source.includes("consistency:'strong'"));
  let clock=Date.parse('2026-07-13T16:30:00.000Z');let random=0;

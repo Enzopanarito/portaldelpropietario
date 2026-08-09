@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('assert');
-const arbiter=require('../netlify/functions/_payment_deterministic_arbiter');
+const arbiter=require('../netlify/functions/_shared/_payment_deterministic_arbiter');
 
 const now=new Date('2026-07-13T16:30:00.000Z');
 function account(overrides={}){return{id:'recAccount1',fields:{Activo:true,Método:'Zelle',Moneda:'USD','Titular Autorizado':'ENZO PANARITO','Correo Normalizado':'enzopanarito@gmail.com','Versión de Configuración':1,...overrides}}}

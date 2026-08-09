@@ -1,7 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
-const { withAirtableUsage, currentDateCaracas } = require('./_airtable_meter');
+const { withAirtableUsage, currentDateCaracas } = require('./_shared/_airtable_meter');
 
 const TABLE = 'ControlVersiones';
 const DAILY_PREFIX = 'API_USAGE_DAILY|';

@@ -1,18 +1,18 @@
 'use strict';
 
-const { withAirtableUsage } = require('./_airtable_meter');
+const { withAirtableUsage } = require('./_shared/_airtable_meter');
 
-const { requireAdmin } = require('./_auth');
-const { buildPlan } = require('./_monthly_close_core');
-const { ACTIVE_LOCK_TTL_MS, loadContext, listCloseMarkers, acquireCloseLock, setCloseMarker } = require('./_monthly_close_store');
-const { repairOperation } = require('./_monthly_close_repair');
-const { executeClose } = require('./_monthly_close_execute');
+const { requireAdmin } = require('./_shared/_auth');
+const { buildPlan } = require('./_shared/_monthly_close_core');
+const { ACTIVE_LOCK_TTL_MS, loadContext, listCloseMarkers, acquireCloseLock, setCloseMarker } = require('./_shared/_monthly_close_store');
+const { repairOperation } = require('./_shared/_monthly_close_repair');
+const { executeClose } = require('./_shared/_monthly_close_execute');
 const {
   beginMonthlyClose,
   finalizeMonthlyClose,
   releaseMonthlyClose,
   blockMonthlyClose
-} = require('./_monthly_close_idempotency');
+} = require('./_shared/_monthly_close_idempotency');
 
 function json(statusCode, body, counter = null) {
   const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store, no-cache, must-revalidate' };

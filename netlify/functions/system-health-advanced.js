@@ -1,11 +1,11 @@
 'use strict';
 
-const { withAirtableUsage } = require('./_airtable_meter');
+const { withAirtableUsage } = require('./_shared/_airtable_meter');
 
-const { requireAdmin } = require('./_auth');
-const { loadConfigRecord } = require('./_admin_auth_store');
-const { loadLastGood } = require('./_bcv_store');
-const { deepEscapeStrings, safeDisplayText } = require('./_security_utils');
+const { requireAdmin } = require('./_shared/_auth');
+const { loadConfigRecord } = require('./_shared/_admin_auth_store');
+const { loadLastGood } = require('./_shared/_bcv_store');
+const { deepEscapeStrings, safeDisplayText } = require('./_shared/_security_utils');
 
 const CONTROL_TABLE = 'ControlVersiones';
 const EXPECTED_BACKUP_TABLES = 11;
@@ -92,6 +92,8 @@ const handler = async function(event) {
       const pendingCount = partial.length + runningFinancialOps.length;
       add('Operaciones financieras pendientes', pendingCount === 0, pendingCount ? `${partial.length} marcador(es) de cierre y ${runningFinancialOps.length} operación(es) financieras requieren revisión.` : 'No hay cierres parciales, bloqueos activos ni operaciones financieras en curso detectadas.', pendingCount ? 'error' : 'ok', { closeMarkers: partial.length, financialOperations: runningFinancialOps.length });
       add('Último marcador de cierre mensual', Boolean(lastClose), lastClose ? `${String(lastClose.fields?.Key || '').slice(0, 160)} · ${lastClose.createdTime || ''}` : 'No existe todavía un marcador de cierre mensual.', lastClose ? 'ok' : 'warning');
+      const lastAutopilot=latest(control,'FIN_OP|AUTOPILOT_RUN|'),lastAutopilotKey=String(lastAutopilot?.fields?.Key||''),lastAutopilotAt=Date.parse(lastAutopilot?.createdTime||''),autopilotAgeHours=Number.isFinite(lastAutopilotAt)?Math.round((Date.now()-lastAutopilotAt)/360000)/10:null,autopilotDone=lastAutopilotKey.includes('|DONE|'),autopilotFresh=autopilotDone&&autopilotAgeHours!==null&&autopilotAgeHours<=36;
+      add('Piloto automático diario',autopilotFresh,lastAutopilot?`Último ciclo: ${lastAutopilot?.createdTime||'sin fecha'} · estado ${autopilotDone?'DONE':'incompleto'} · antigüedad ${autopilotAgeHours} h.`:'Todavía no existe un latido verificable del piloto automático. Se registrará en el próximo ciclo.',autopilotFresh?'ok':'warning',{lastRun:lastAutopilot?.createdTime||null,ageHours:autopilotAgeHours,state:autopilotDone?'DONE':'MISSING'});
     } catch (error) {
       add('Operaciones financieras pendientes', false, safeDisplayText(error.message, 300), 'warning');
     }

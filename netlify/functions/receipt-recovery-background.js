@@ -1,10 +1,10 @@
 'use strict';
 
-const {withAirtableUsage}=require('./_airtable_meter');
-const {verify}=require('./_internal_job_auth');
-const {hashPayload,connectForEvent,claim,complete,failSafe}=require('./_idempotency_blobs');
-const {retryExistingReceipt,finalizeExistingReceiptDelivery}=require('./_receipt_service');
-const {safeDisplayText}=require('./_security_utils');
+const {withAirtableUsage}=require('./_shared/_airtable_meter');
+const {verify}=require('./_shared/_internal_job_auth');
+const {hashPayload,connectForEvent,claim,complete,failSafe}=require('./_shared/_idempotency_blobs');
+const {retryExistingReceipt,finalizeExistingReceiptDelivery}=require('./_shared/_receipt_service');
+const {safeDisplayText}=require('./_shared/_security_utils');
 
 function response(statusCode,body){
  return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:JSON.stringify(body)};

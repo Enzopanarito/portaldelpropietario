@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('assert');
-const automation=require('../netlify/functions/_payment_report_automation');
+const automation=require('../netlify/functions/_shared/_payment_report_automation');
 
 (async()=>{
  const reportId='rec12345678901234',patched=[];
@@ -14,7 +14,10 @@ const automation=require('../netlify/functions/_payment_report_automation');
  });
  const result=await processor.process(reportId,{});
  assert.strictEqual(result.automatic,true);assert.strictEqual(executions,1);assert.strictEqual(patched[0].fields['Decisión Administrativa'],'Aprobación automática');assert.strictEqual(patched[0].fields['Validación Realizada Por'],'Motor determinístico');
- const manual=automation.createPaymentReportAutomation({loadBundle:async()=>({report:{id:reportId}}),orchestrator:{run:async()=>({...baseResult,automaticApproval:false,canCreatePayment:false,processingState:'Pendiente de administrador'})},patchReport:async()=>{},executeApproval:async()=>{throw new Error('No debe ejecutarse.')}});
+ const manualPatches=[];
+ const manual=automation.createPaymentReportAutomation({loadBundle:async()=>({report:{id:reportId}}),orchestrator:{run:async()=>({...baseResult,automaticApproval:false,canCreatePayment:false,processingState:'Pendiente de administrador'})},patchReport:async(id,fields)=>manualPatches.push({id,fields}),executeApproval:async()=>{throw new Error('No debe ejecutarse.')}});
  const manualResult=await manual.process(reportId,{});assert.strictEqual(manualResult.automatic,false);
+ assert.strictEqual(Object.prototype.hasOwnProperty.call(manualPatches[0].fields,'Decisión Administrativa'),false,'El análisis manual no puede sobrescribir una decisión administrativa existente.');
+ assert.strictEqual(Object.prototype.hasOwnProperty.call(manualPatches[0].fields,'Validación Realizada Por'),false,'El análisis manual no puede atribuirse una aprobación.');
  console.log('PAYMENT_REPORT_AUTOMATION_OK');
 })().catch(error=>{console.error(error);process.exit(1)});

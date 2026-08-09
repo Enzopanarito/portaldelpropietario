@@ -1,10 +1,10 @@
 'use strict';
 
-const { withAirtableUsage } = require('./_airtable_meter');
+const { withAirtableUsage } = require('./_shared/_airtable_meter');
 
-const { requireAdmin } = require('./_auth');
-const { ensureFinancialWritesAllowed } = require('./_financial_write_lock');
-const { deepEscapeStrings, safeDisplayText } = require('./_security_utils');
+const { requireAdmin } = require('./_shared/_auth');
+const { ensureFinancialWritesAllowed } = require('./_shared/_financial_write_lock');
+const { deepEscapeStrings, safeDisplayText } = require('./_shared/_security_utils');
 
 const cache = new Map();
 const CACHE_TTL_MS = { default:5*60*1000, propietarios:15*60*1000, gastos:15*60*1000, pagos:5*60*1000, reportes:30*1000 };

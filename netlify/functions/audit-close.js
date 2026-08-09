@@ -4,12 +4,12 @@
 
 'use strict';
 
-const { withAirtableUsage } = require('./_airtable_meter');
+const { withAirtableUsage } = require('./_shared/_airtable_meter');
 
 const crypto = require('crypto');
-const { requireAdmin } = require('./_auth');
-const { begin, setState } = require('./_operation_guard');
-const { safeDisplayText, deepEscapeStrings } = require('./_security_utils');
+const { requireAdmin } = require('./_shared/_auth');
+const { begin, setState } = require('./_shared/_operation_guard');
+const { safeDisplayText, deepEscapeStrings } = require('./_shared/_security_utils');
 const {
   CONSOLIDATED_FLAG_FIELD,
   AUDIT_OPERATION_FIELD,
@@ -21,7 +21,7 @@ const {
   buildPlan,
   aggregateFields,
   originalWritableFields
-} = require('./_audit_cleanup');
+} = require('./_shared/_audit_cleanup');
 
 const TABLES = {
   propietarios: 'Propietarios',

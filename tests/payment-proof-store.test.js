@@ -3,11 +3,11 @@
 const assert=require('assert');
 const crypto=require('crypto');
 const fs=require('fs');
-const core=require('../netlify/functions/_payment_proof_core');
-const storeModule=require('../netlify/functions/_payment_proof_store');
+const core=require('../netlify/functions/_shared/_payment_proof_core');
+const storeModule=require('../netlify/functions/_shared/_payment_proof_store');
 
 (async()=>{
- const source=fs.readFileSync('netlify/functions/_payment_proof_store.js','utf8');
+ const source=fs.readFileSync('netlify/functions/_shared/_payment_proof_store.js','utf8');
  assert(source.includes("require('./_blobs_compat')")&&source.includes('getAtomicStore(STORE_NAME'),'Producción debe usar el adaptador compatible con Blobs 9.1.5.');
  assert(!source.includes("import('@netlify/blobs')"),'La importación dinámica impide que Netlify inyecte el contexto Blobs.');
  assert(!source.includes("consistency:'strong'"),'Lambda v1 no entrega uncachedEdgeURL; las escrituras CAS deben funcionar sin exigir esa URL.');

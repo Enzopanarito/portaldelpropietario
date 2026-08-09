@@ -2,7 +2,7 @@
 
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {evaluateManualAccessRequest}=require('../netlify/functions/_manual_access_policy');
+const {evaluateManualAccessRequest}=require('../netlify/functions/_shared/_manual_access_policy');
 
 test('permite la acción que coincide con la deuda en modo automático',()=>{
  assert.equal(evaluateManualAccessRequest({action:'disable',mode:'Automático',hasExpiredDebt:true}).allowed,true);

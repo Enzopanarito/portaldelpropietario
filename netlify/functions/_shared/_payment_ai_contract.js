@@ -3,7 +3,7 @@
 const fs=require('fs');
 const path=require('path');
 
-const SCHEMA_PATH=path.join(__dirname,'..','..','config','payment-proof-analysis-v2.schema.json');
+const SCHEMA_PATH=path.join(__dirname,'..','..','..','config','payment-proof-analysis-v2.schema.json');
 const DEFAULT_PROMPT_VERSION='VLA_PAYMENT_PROOF_V2_2026-07-13';
 const DEFAULT_MAX_RAW_CHARS=100000;
 const METHODS=new Set(['TRANSFER_VE','MOBILE_PAYMENT_VE','ZELLE','TRANSFER_US','BINANCE_PAY','CRYPTO_TRANSFER','OTHER','UNKNOWN']);

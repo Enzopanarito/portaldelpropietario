@@ -3,7 +3,7 @@
 const assert = require('assert');
 const path = require('path');
 
-const utils = require(path.join(__dirname, '..', 'netlify', 'functions', '_security_utils'));
+const utils = require(path.join(__dirname, '..', 'netlify', 'functions', '_shared', '_security_utils'));
 
 assert.strictEqual(utils.escapeHtml(`<img src=x onerror="alert('x')">`), '&lt;img src=x onerror=&quot;alert(&#39;x&#39;)&quot;&gt;');
 assert.strictEqual(utils.sanitizeReference('  TRANSF <script> 123  '), 'TRANSF script 123');
@@ -57,7 +57,7 @@ process.env.AIRTABLE_BASE_ID = 'appTEST';
 process.env.VLA_IDEMPOTENCY_TEST_MEMORY = '1';
 process.env.CONTEXT = 'test';
 
-const guard = require(path.join(__dirname, '..', 'netlify', 'functions', '_operation_guard'));
+const guard = require(path.join(__dirname, '..', 'netlify', 'functions', '_shared', '_operation_guard'));
 
 (async () => {
   const [a, b] = await Promise.all([

@@ -4,8 +4,8 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
-const lifecycle=require('../netlify/functions/_expense_lifecycle');
-const closeCore=require('../netlify/functions/_monthly_close_core_v4');
+const lifecycle=require('../netlify/functions/_shared/_expense_lifecycle');
+const closeCore=require('../netlify/functions/_shared/_monthly_close_core_v4');
 const autopilot=require('../netlify/functions/condo-autopilot-background');
 
 function expense(id,month,status){
@@ -74,7 +74,7 @@ test('el piloto no continúa después de un cierre bloqueado o saltado',()=>{
 test('auditoría y cierre usan el alcance histórico recuperable',()=>{
  const root=path.join(__dirname,'..','netlify','functions');
  const audit=fs.readFileSync(path.join(root,'audit-snapshot.js'),'utf8');
- const store=fs.readFileSync(path.join(root,'_monthly_close_store_v5.js'),'utf8');
+ const store=fs.readFileSync(path.join(root,'_shared','_monthly_close_store_v5.js'),'utf8');
  const pilot=fs.readFileSync(path.join(root,'condo-autopilot-background.js'),'utf8');
  assert.match(audit,/filterClosingExpenses/);
  assert.match(audit,/splitPaymentsForClose/);
@@ -93,7 +93,7 @@ test('la reconciliación del portón cambia de clave cuando cambian los saldos',
 });
 
 test('el cierre confirma la contabilidad antes de sincronizar el proveedor externo',()=>{
- const source=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_monthly_close_execute.js'),'utf8');
+ const source=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_shared','_monthly_close_execute.js'),'utf8');
  const doneIndex=source.indexOf("setCloseMarker(closeLock, month, 'DONE'");
  const accessIndex=source.indexOf('autoSyncAll({ forceMkj: true');
  assert(doneIndex>0);

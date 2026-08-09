@@ -1,13 +1,13 @@
 'use strict';
 
-const { withAirtableUsage } = require('./_airtable_meter');
+const { withAirtableUsage } = require('./_shared/_airtable_meter');
 
 const crypto = require('crypto');
-const { requireAdmin } = require('./_auth');
-const { ensureFinancialWritesAllowed } = require('./_financial_write_lock');
-const { begin, setState } = require('./_operation_guard');
-const { cleanPlainText, deepEscapeStrings, safeDisplayText } = require('./_security_utils');
-const { currentMonthCaracas, nextMonth, newExpenseLifecycleFields, compactTemplate, templateKey, FIELDS, ORIGIN } = require('./_expense_lifecycle');
+const { requireAdmin } = require('./_shared/_auth');
+const { ensureFinancialWritesAllowed } = require('./_shared/_financial_write_lock');
+const { begin, setState } = require('./_shared/_operation_guard');
+const { cleanPlainText, deepEscapeStrings, safeDisplayText } = require('./_shared/_security_utils');
+const { currentMonthCaracas, nextMonth, newExpenseLifecycleFields, compactTemplate, templateKey, FIELDS, ORIGIN } = require('./_shared/_expense_lifecycle');
 
 const TABLE_GASTOS = 'Gastos del Mes';
 const TABLE_OWNERS = 'Propietarios';

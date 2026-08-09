@@ -1,15 +1,15 @@
-const { withAirtableUsage } = require('./_airtable_meter');
+const { withAirtableUsage } = require('./_shared/_airtable_meter');
 // netlify/functions/mkj-access.js
 // Integración MKJoules: login automático + enable/disable de usuarios por ID.
 // Las credenciales se leen únicamente desde variables privadas de Netlify.
 
-const { requireAdmin } = require('./_auth');
-const { mkjLogin, mkjSetMemberStatus } = require('./_mkj_client');
+const { requireAdmin } = require('./_shared/_auth');
+const { mkjLogin, mkjSetMemberStatus } = require('./_shared/_mkj_client');
 const {
   getAccessMode, getAutomationRules, loadAccessContext, calculateExpiredAccessDebt,
   syncOwnerAccess, ACCESS_MODE_AUTO
-} = require('./_access_control');
-const { evaluateManualAccessRequest } = require('./_manual_access_policy');
+} = require('./_shared/_access_control');
+const { evaluateManualAccessRequest } = require('./_shared/_manual_access_policy');
 
 const TABLE_PROPIETARIOS = 'Propietarios';
 const ALLOWED_ACTIONS = new Set(['enable', 'disable', 'clear-exception', 'test-login']);

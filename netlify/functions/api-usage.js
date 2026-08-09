@@ -1,12 +1,12 @@
 'use strict';
 
-const { requireAdmin } = require('./_auth');
+const { requireAdmin } = require('./_shared/_auth');
 const {
   withAirtableUsage,
   flushCurrentUsage,
   configuredMonthlyLimit,
   currentMonthCaracas
-} = require('./_airtable_meter');
+} = require('./_shared/_airtable_meter');
 
 const TABLE = 'ControlVersiones';
 const HEADERS = {

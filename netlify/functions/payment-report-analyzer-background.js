@@ -1,11 +1,11 @@
 'use strict';
 
-const {withAirtableUsage}=require('./_airtable_meter');
-const {verify}=require('./_internal_job_auth');
-const {createPaymentReportAutomation}=require('./_payment_report_automation');
-const {createRuntime}=require('./_provisional_access_runtime');
-const {safeDisplayText}=require('./_security_utils');
-const {connectLambdaEvent}=require('./_blobs_compat');
+const {withAirtableUsage}=require('./_shared/_airtable_meter');
+const {verify}=require('./_shared/_internal_job_auth');
+const {createPaymentReportAutomation}=require('./_shared/_payment_report_automation');
+const {createRuntime}=require('./_shared/_provisional_access_runtime');
+const {safeDisplayText}=require('./_shared/_security_utils');
+const {connectLambdaEvent}=require('./_shared/_blobs_compat');
 
 const handler=async function(event){
  if(event.httpMethod!=='POST')return{statusCode:405,body:JSON.stringify({message:'Method Not Allowed'})};

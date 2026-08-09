@@ -3,7 +3,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const core = require(path.join(__dirname, '..', 'netlify', 'functions', '_monthly_close_core'));
+const core = require(path.join(__dirname, '..', 'netlify', 'functions', '_shared', '_monthly_close_core'));
 
 const ownerA = { id:'recOWNER00000001', fields:{Casa:1,Propietario:'A',Alicuota:.5,'Deuda Anterior':10,'Deuda Anterior USD':0,'Deuda Anterior Bs Ref':0,'Deuda Restante':45} };
 const ownerB = { id:'recOWNER00000002', fields:{Casa:2,Propietario:'B',Alicuota:.5,'Deuda Anterior':0,'Deuda Anterior USD':0,'Deuda Anterior Bs Ref':0,'Deuda Restante':50} };
@@ -28,10 +28,10 @@ assert.strictEqual(core.compareDebtValues({deudaAnteriorUsd:1,deudaAnteriorBsRef
 
 const source=file=>fs.readFileSync(path.join(__dirname,'..',file),'utf8');
 const endpoint=source('netlify/functions/monthly-close-v2.js');
-const executor=source('netlify/functions/_monthly_close_execute.js');
-const verifier=source('netlify/functions/_monthly_close_verify.js');
-const repair=source('netlify/functions/_monthly_close_repair.js');
-const guard=source('netlify/functions/_operation_guard_v2.js');
+const executor=source('netlify/functions/_shared/_monthly_close_execute.js');
+const verifier=source('netlify/functions/_shared/_monthly_close_verify.js');
+const repair=source('netlify/functions/_shared/_monthly_close_repair.js');
+const guard=source('netlify/functions/_shared/_operation_guard_v2.js');
 const proxy=source('netlify/functions/airtable-v2.js');
 const batchDelete=source('netlify/functions/batch-delete-records-v2.js');
 const adminEdge=source('netlify/edge-functions/admin-monthly-close.js');

@@ -1,4 +1,4 @@
-const { withAirtableUsage } = require('./_airtable_meter');
+const { withAirtableUsage } = require('./_shared/_airtable_meter');
 // netlify/functions/admin-manual-payment.js
 // Registra pagos manuales desde el panel admin con validación fuerte y errores claros.
 // Regla contable VLA: el monto ingresado siempre es USD referencial. Si se paga en Bs BCV,
@@ -7,14 +7,14 @@ const { withAirtableUsage } = require('./_airtable_meter');
 // Protección: una operación igual no puede crear dos pagos por doble clic o reintento de red.
 // Protección adicional: ninguna escritura financiera se permite durante un cierre mensual activo.
 
-const { requireAdmin } = require('./_auth');
-const { airtableCreateRecord, syncOwnerAccess, TABLES, money } = require('./_access_control');
-const { createAndSendReceipt } = require('./_receipt_service');
-const { begin, setState } = require('./_operation_guard');
-const { hashPayload } = require('./_idempotency_blobs');
-const { ensureFinancialWritesAllowed } = require('./_financial_write_lock');
-const { sanitizeReference, cleanPlainText, safeDisplayText, deepEscapeStrings } = require('./_security_utils');
-const { loadLastGood } = require('./_bcv_store');
+const { requireAdmin } = require('./_shared/_auth');
+const { airtableCreateRecord, syncOwnerAccess, TABLES, money } = require('./_shared/_access_control');
+const { createAndSendReceipt } = require('./_shared/_receipt_service');
+const { begin, setState } = require('./_shared/_operation_guard');
+const { hashPayload } = require('./_shared/_idempotency_blobs');
+const { ensureFinancialWritesAllowed } = require('./_shared/_financial_write_lock');
+const { sanitizeReference, cleanPlainText, safeDisplayText, deepEscapeStrings } = require('./_shared/_security_utils');
+const { loadLastGood } = require('./_shared/_bcv_store');
 
 const ALLOWED_MODES = new Set(['USD', 'Bs BCV']);
 const ALLOWED_ENTERED_CURRENCIES = new Set(['USD', 'BS', 'USD_REF']);

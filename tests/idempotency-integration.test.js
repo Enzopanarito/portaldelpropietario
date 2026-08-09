@@ -6,13 +6,13 @@ const path=require('path');
 
 const root=path.join(__dirname,'..');
 const source=file=>fs.readFileSync(path.join(root,file),'utf8');
-const wrapper=source('netlify/functions/_operation_guard.js');
-const guard=source('netlify/functions/_operation_guard_v3.js');
-const ledger=source('netlify/functions/_idempotency_blobs.js');
+const wrapper=source('netlify/functions/_shared/_operation_guard.js');
+const guard=source('netlify/functions/_shared/_operation_guard_v3.js');
+const ledger=source('netlify/functions/_shared/_idempotency_blobs.js');
 const manual=source('netlify/functions/admin-manual-payment.js');
 const report=source('netlify/functions/process-payment-report.js');
 const close=source('netlify/functions/monthly-close-v2.js');
-const closeAtomic=source('netlify/functions/_monthly_close_idempotency.js');
+const closeAtomic=source('netlify/functions/_shared/_monthly_close_idempotency.js');
 const pkg=JSON.parse(source('package.json'));
 const lock=JSON.parse(source('package-lock.json'));
 
@@ -37,13 +37,13 @@ assert(ledger.includes("process.env.CONTEXT==='production'"));
 assert(ledger.indexOf("process.env.CONTEXT==='production'")<ledger.indexOf('return testMemoryStore'));
 assert(!ledger.includes('Registro de Idempotencia'),'Airtable no debe convertirse en el candado primario nuevo.');
 
-assert(manual.includes("const { hashPayload } = require('./_idempotency_blobs')"));
+assert(manual.includes("const { hashPayload } = require('./_shared/_idempotency_blobs')"));
 assert(manual.includes("begin('MANUAL_PAYMENT', operationBusinessKey, { payloadHash, event })"));
 assert(manual.includes('operationPayload(ownerId, mode, amountUsdRef, rate, reference, paymentDate, enteredCurrency)'));
 assert(manual.includes('idempotencyConflict:true'));
 assert(manual.indexOf("begin('MANUAL_PAYMENT'")<manual.indexOf('airtableCreateRecord(TABLES.pagos'),'Debe adquirir el candado antes de crear el pago.');
 
-assert(report.includes("const { hashPayload } = require('./_idempotency_blobs')"));
+assert(report.includes("const { hashPayload } = require('./_shared/_idempotency_blobs')"));
 assert(report.includes("begin('PAYMENT_REPORT', reportId, { payloadHash, event })"));
 assert(report.includes('idempotencyConflict:true'));
 assert(report.indexOf("begin('PAYMENT_REPORT'")<report.indexOf('airtableCreateRecord(TABLES.pagos'),'Debe adquirir el candado antes de aprobar el reporte.');

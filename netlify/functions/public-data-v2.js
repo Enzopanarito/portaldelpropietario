@@ -1,12 +1,12 @@
 'use strict';
 
-const { withAirtableUsage } = require('./_airtable_meter');
+const { withAirtableUsage } = require('./_shared/_airtable_meter');
 
-const { deepEscapeStrings } = require('./_security_utils');
-const { calculateAllOwners, calculatedFields, money } = require('./_balance_engine_v4');
-const { attachOfficialBalances, officialControlQuery } = require('./_official_balances');
-const { filterActiveExpenses, currentMonthCaracas, FIELDS:EXPENSE_FIELDS } = require('./_expense_lifecycle');
-const { mergeConfig, publicRules } = require('./_automation_rules');
+const { deepEscapeStrings } = require('./_shared/_security_utils');
+const { calculateAllOwners, calculatedFields, money } = require('./_shared/_balance_engine_v4');
+const { attachOfficialBalances, officialControlQuery } = require('./_shared/_official_balances');
+const { filterActiveExpenses, currentMonthCaracas, FIELDS:EXPENSE_FIELDS } = require('./_shared/_expense_lifecycle');
+const { mergeConfig, publicRules } = require('./_shared/_automation_rules');
 
 let publicCache = null;
 const PUBLIC_CACHE_TTL_MS = 2 * 60 * 1000;
