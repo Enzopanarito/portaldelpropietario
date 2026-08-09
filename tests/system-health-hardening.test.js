@@ -32,6 +32,7 @@ test('el portón se reconcilia cada hora y la salud detecta contradicciones',()=
  const scheduled=read('netlify/functions/access-reconciliation-modern-scheduled.mjs');
  const background=read('netlify/functions/access-reconciliation-background.js');
  const health=read('netlify/functions/system-health.js');
+ assert(!health.includes("getAtomicStore('vla-system-health-v1',{consistency:'strong'})"),'La sonda Lambda de salud debe usar la lectura compatible con su contexto Blobs.');
  assert.match(scheduled,/schedule:'5 \* \* \* \*'/);
  assert.match(background,/verify\(rawBody/);
  assert.match(background,/autoSyncAll\(\{forceMkj:false/);

@@ -33,12 +33,12 @@
 [functions."provisional-access-expiration-scheduled"]
   schedule = "*/15 * * * *"
 
-# Las rutas públicas se reescriben directamente a Functions Lambda v1.
-# Netlify conserva método, cabeceras, cuerpo y query string, y además adjunta
-# `event.blobs`, necesario para las escrituras cifradas y atómicas.
+# Las rutas públicas usan el runtime que corresponde a su operación. La lectura
+# pública entra por Functions v2 para disponer de Blobs con consistencia fuerte;
+# las escrituras cifradas siguen en Lambda v1, donde Netlify adjunta `event.blobs`.
 [[redirects]]
 from = "/api/vla/public-data"
-to = "/.netlify/functions/public-data-v3"
+to = "/.netlify/functions/public-data-modern"
 status = 200
 force = true
 

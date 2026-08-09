@@ -125,7 +125,7 @@ const handler = async function(event) {
     add('Trabajos automáticos internos',internalJobsReady,internalJobsReady?'Cola asíncrona autenticada y URL de producción disponibles.':'Falta URL o secreto para autenticar la cola asíncrona.',internalJobsReady?'ok':'warning');
     try {
       const connection=connectLambdaEvent(event);
-      await getAtomicStore('vla-system-health-v1',{consistency:'strong'}).getWithMetadata('runtime-readiness-probe',{type:'json'});
+      await getAtomicStore('vla-system-health-v1').getWithMetadata('runtime-readiness-probe',{type:'json'});
       add('Almacenamiento seguro Netlify',true,`Contexto Blobs operativo mediante ${connection.source}; lectura protegida disponible.`);
     } catch (error) {
       add('Almacenamiento seguro Netlify',false,`El runtime no pudo abrir Blobs: ${String(error.code||error.message||'error desconocido').slice(0,240)}`,'error');
