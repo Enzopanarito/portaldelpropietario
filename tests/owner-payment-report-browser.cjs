@@ -9,11 +9,39 @@ function assert(ok,message){if(!ok)throw new Error(message)}
 async function paymentResolution(page,expectedUsd){return page.evaluate(({expectedUsd})=>{const amount=window.VLAPaymentIntelligence.parseAmountInput(document.getElementById('payAmount').value);return window.VLAPaymentIntelligence.analyzePayment({amount,rate:Number(window.rate()),expectedUsd,forcedCurrency:document.getElementById('payCurrency').value})},{expectedUsd})}
 async function chooseChannel(page,label,id){await page.getByText(label,{exact:true}).click();assert(await page.locator(id).isChecked(),`No se activó ${label}.`)}
 
+async function loadStableLivePortal(page,target,errors){
+  let lastError=null;
+  for(let attempt=1;attempt<=3;attempt++){
+    try{
+      errors.length=0;
+      const response=await page.goto(`${target}/?payment-report=${Date.now()}-${attempt}`,{waitUntil:'domcontentloaded',timeout:60000});
+      assert(response&&response.status()===200,`Portal respondió ${response&&response.status()}.`);
+      const deadline=Date.now()+30000;
+      let houses=0;
+      while(Date.now()<deadline){
+        const labels=await page.locator('#welcomeSelector option').allTextContents().catch(()=>[]);
+        houses=labels.filter(label=>/^Casa\s+\d+\s+-/.test(String(label||'').trim())).length;
+        if(houses===15)break;
+        await page.waitForTimeout(250);
+      }
+      if(houses!==15)throw new Error(`Se cargaron ${houses} de 15 casas.`);
+      if(await page.evaluate(()=>window.__vlaFinancialFailClosed===true))throw new Error('El portal quedó en fail-closed.');
+      // Desde aquí los errores corresponden únicamente a la página canónica y
+      // no a una navegación anterior del Deploy Preview que ya fue recuperada.
+      errors.length=0;
+      return response;
+    }catch(error){
+      lastError=error;
+      if(attempt<3)await page.waitForTimeout(attempt*700);
+    }
+  }
+  throw new Error(`No se estabilizó el portal de pagos después de 3 intentos: ${lastError&&lastError.message}`);
+}
+
 async function live(browser,target){
   if(!target)return null;
   const page=await browser.newPage({viewport:{width:390,height:844}}),errors=watch(page);
-  const response=await page.goto(`${target}/?payment-report=${Date.now()}`,{waitUntil:'networkidle',timeout:60000});
-  assert(response&&response.status()===200,`Portal respondió ${response&&response.status()}.`);
+  const response=await loadStableLivePortal(page,target,errors);
   assert(response.headers()['x-vla-owner-payment-report']==='progressive-v8','Falta marcador progressive-v8.');
   await page.addStyleTag({content:'[data-netlify-deploy-id],iframe[title="Netlify Drawer"]{display:none!important;pointer-events:none!important}'})
     .catch(error=>{if(!ignored.test(String(error)))throw error});
