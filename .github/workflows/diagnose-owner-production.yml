@@ -1,8 +1,9 @@
 name: Diagnose Owner Production
 
 on:
-  push:
-    branches: [main]
+  workflow_run:
+    workflows: ["Deploy Netlify Production"]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -11,15 +12,38 @@ permissions:
 
 jobs:
   diagnose-owner-production:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout exact production commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Use Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
+          package-manager-cache: false
+
+      - name: Wait for exact production release
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_release="${RUNNER_TEMP}/owner-diagnostic-release.json"
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error --location --max-time 30 \
+              "https://villalosapamates.netlify.app/release.json?diagnose=${GITHUB_RUN_ID}-${attempt}" \
+              --output "$remote_release" \
+              && node scripts/verify-release-contract.js release.json "$remote_release"; then
+              echo "Exact production release detected."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Exact production release was not detected."
+          exit 1
 
       - name: Install Chromium
         run: |
@@ -27,101 +51,19 @@ jobs:
           npx playwright install --with-deps chromium
 
       - name: Diagnose live owner portal
-        shell: bash
-        run: |
-          cat > diagnose-owner.cjs <<'NODE'
-          const { chromium } = require('playwright');
-          const fs = require('fs');
-
-          async function waitForCasaOne(page, timeout = 60000) {
-            const deadline = Date.now() + timeout;
-            while (Date.now() < deadline) {
-              const options = page.locator('#welcomeSelector option');
-              const count = await options.count().catch(() => 0);
-              for (let index = 0; index < count; index += 1) {
-                const option = options.nth(index);
-                const label = String(await option.innerText().catch(() => '')).trim();
-                if (/^Casa\s+1\s+-/.test(label)) return option.getAttribute('value');
-              }
-              await page.waitForTimeout(250);
-            }
-            throw new Error('No apareció Casa 1 dentro del tiempo esperado.');
-          }
-
-          (async () => {
-            const target = 'https://villalosapamates.netlify.app';
-            const browser = await chromium.launch({ headless: true });
-            const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
-            const pageErrors = [];
-            const consoleMessages = [];
-            page.on('pageerror', error => pageErrors.push(String(error.stack || error.message || error)));
-            page.on('console', message => consoleMessages.push({ type: message.type(), text: message.text() }));
-            const sourceResponse = await page.request.get(`${target}/.netlify/functions/public-data?diagnose=${Date.now()}`, { timeout: 60000 });
-            const source = await sourceResponse.json();
-            const owners = source.propietarios || [];
-            const response = await page.goto(`${target}/?diagnose=${Date.now()}`, { waitUntil: 'load', timeout: 60000 });
-            const welcome = page.locator('#welcomeSelector');
-            const firstValue = await waitForCasaOne(page, 60000);
-            if (!firstValue) throw new Error('No se encontró una Casa 1 válida después de cargar los propietarios.');
-            await welcome.selectOption(firstValue);
-            await page.screenshot({ path: 'owner-before-enter.png', fullPage: true });
-            await page.locator('#enterBtn').click();
-            await page.locator('#main').waitFor({ state: 'visible', timeout: 15000 });
-            await page.waitForTimeout(3000);
-            const state = await page.evaluate(() => {
-              const host = document.querySelector('[data-vla-breakdown-host="owner-breakdown-v7"]');
-              const breakdown = document.getElementById('breakdown');
-              const lexical = {
-                currentOwnerType: typeof window.currentOwner,
-                currentOwnerId: window.currentOwner?.id || null
-              };
-              return {
-                url: location.href,
-                readyState: document.readyState,
-                mainClass: document.getElementById('main')?.className,
-                mainDisplay: getComputedStyle(document.getElementById('main')).display,
-                welcomeValue: document.getElementById('welcomeSelector')?.value,
-                userValue: document.getElementById('userSelector')?.value,
-                visualScript: Boolean(window.VLABreakdown && window.VLABreakdown.VERSION==='owner-breakdown-v7'),
-                visualFlag: window.VLABreakdown?.VERSION || null,
-                drawType: typeof window.VLABreakdown?.render,
-                hostExists: Boolean(host),
-                hostOwner: host?.getAttribute('data-vla-breakdown-owner') || null,
-                breakdownAttribute: breakdown?.getAttribute('data-vla-breakdown-host') || null,
-                breakdownText: breakdown?.innerText?.slice(0, 1200) || '',
-                lexical
-              };
-            });
-            state.httpStatus = response && response.status();
-            state.sourceOwners = owners.length;
-            state.pageErrors = pageErrors;
-            state.consoleMessages = consoleMessages;
-            await page.screenshot({ path: 'owner-after-enter.png', fullPage: true });
-            fs.writeFileSync('owner-diagnostic.json', JSON.stringify(state, null, 2));
-            console.log(JSON.stringify(state, null, 2));
-            if (owners.length !== 15) throw new Error(`La fuente devolvió ${owners.length} casas.`);
-            if (pageErrors.length) throw new Error(`Errores JavaScript: ${pageErrors.join(' | ')}`);
-            if (!state.visualScript || state.drawType !== 'function') throw new Error('El script visual del desglose no quedó activo.');
-            if (!state.hostExists) throw new Error('El desglose automático no creó su host después de entrar.');
-            await browser.close();
-          })().catch(error => {
-            fs.writeFileSync('owner-diagnostic-error.txt', String(error.stack || error));
-            console.error(error.stack || error);
-            process.exit(1);
-          });
-          NODE
-          node diagnose-owner.cjs
+        env:
+          TARGET_URL: https://villalosapamates.netlify.app
+        run: node tests/owner-production-browser.cjs
 
       - name: Upload diagnosis
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: owner-production-diagnostic
           path: |
-            owner-diagnostic.json
-            owner-diagnostic-error.txt
-            owner-before-enter.png
-            owner-after-enter.png
+            owner-production-result.json
+            owner-production-error.txt
+            owner-production.png
           if-no-files-found: ignore
           retention-days: 7
 
@@ -130,11 +72,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RESULT: ${{ job.status }}
+          TARGET_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
         run: |
           state=failure
-          description='El diagnóstico del desglose en producción falló.'
-          if [ "$RESULT" = "success" ]; then state=success; description='El desglose automático está activo en producción.'; fi
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+          description='El diagnóstico exacto del portal propietario falló.'
+          if [ "$RESULT" = "success" ]; then state=success; description='Portal, desglose y 15/15 saldos verificados en producción.'; fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
             -f state="$state" \
             -f context='Owner Portal Production Diagnostic' \
             -f description="$description" \
