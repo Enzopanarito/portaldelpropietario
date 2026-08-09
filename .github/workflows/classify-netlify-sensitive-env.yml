@@ -52,6 +52,13 @@ jobs:
           const api='https://api.netlify.com/api/v1';
           const keys=['AIRTABLE_API_TOKEN','SMTP_SECRET','MKJ_ADMIN_PASSWORD','ADMIN_TOKEN_SECRET'];
           const headers={Authorization:`Bearer ${token}`,'Content-Type':'application/json','User-Agent':'VLA-secret-hardening'};
+          const normalizeScope=value=>String(value||'').replaceAll('_','-');
+          const writableValue=value=>({
+            value:String(value?.value??''),
+            context:String(value?.context||'all'),
+            ...(value?.context_parameter?{context_parameter:String(value.context_parameter)}:{})
+          });
+          const valueSignature=values=>(values||[]).map(value=>({context:value.context||'all',context_parameter:value.context_parameter||'',value:String(value.value??'')}));
           async function json(response,label){
             const body=await response.json().catch(()=>({}));
             if(!response.ok)throw new Error(`${label} respondió HTTP ${response.status}.`);
@@ -67,16 +74,25 @@ jobs:
               const endpoint=`${api}/accounts/${encodeURIComponent(accountId)}/env/${encodeURIComponent(key)}?site_id=${encodeURIComponent(siteId)}`;
               const variable=await json(await fetch(endpoint,{headers}), `Lectura ${key}`);
               if(variable.is_secret===true){already.push(key);continue;}
-              const values=Array.isArray(variable.values)?variable.values:null;
-              const scopes=Array.isArray(variable.scopes)?variable.scopes:null;
-              if(!values||!values.length)throw new Error(`${key} no tiene valores que preservar.`);
-              if(!scopes||!scopes.length)throw new Error(`${key} no tiene scopes que preservar.`);
+              const originalValues=Array.isArray(variable.values)?variable.values:null;
+              const originalScopes=Array.isArray(variable.scopes)?variable.scopes:null;
+              if(!originalValues||!originalValues.length)throw new Error(`${key} no tiene valores que preservar.`);
+              if(!originalScopes||!originalScopes.length)throw new Error(`${key} no tiene scopes que preservar.`);
+              const values=originalValues.map(writableValue);
+              const scopes=originalScopes.map(normalizeScope);
+              const before=valueSignature(values);
               const payload={key:variable.key||key,scopes,values,is_secret:true};
               await json(await fetch(endpoint,{method:'PUT',headers,body:JSON.stringify(payload)}), `Actualización ${key}`);
               const verified=await json(await fetch(endpoint,{headers}), `Verificación ${key}`);
               if(verified.is_secret!==true)throw new Error(`${key} no quedó marcado como secret.`);
-              if(JSON.stringify(verified.scopes||[])!==JSON.stringify(scopes))throw new Error(`${key} cambió sus scopes durante la clasificación.`);
-              if((verified.values||[]).length!==values.length)throw new Error(`${key} cambió su número de valores/contextos durante la clasificación.`);
+              const verifiedScopes=(verified.scopes||[]).map(normalizeScope);
+              if(JSON.stringify(verifiedScopes)!==JSON.stringify(scopes))throw new Error(`${key} cambió sus scopes durante la clasificación.`);
+              // Netlify oculta el valor al convertirlo en secret, por lo que se verifica
+              // identidad de contextos y cantidad. La preservación byte-a-byte queda
+              // garantizada por el payload construido directamente desde la lectura previa.
+              const afterContexts=(verified.values||[]).map(value=>({context:value.context||'all',context_parameter:value.context_parameter||''}));
+              const beforeContexts=before.map(value=>({context:value.context,context_parameter:value.context_parameter}));
+              if(JSON.stringify(afterContexts)!==JSON.stringify(beforeContexts))throw new Error(`${key} cambió sus contextos durante la clasificación.`);
               changed.push(key);
             }
             console.log(`NETLIFY_SECRET_CLASSIFICATION_OK changed=${changed.length} already=${already.length} total=${keys.length}`);
