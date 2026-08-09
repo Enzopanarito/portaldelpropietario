@@ -4,6 +4,12 @@ const assert=require('node:assert/strict');
 const Module=require('module');
 const path=require('path');
 
+// Este archivo prueba únicamente el orquestador local. Nunca debe permitir
+// salida de red hacia Gemini ni hacia un proxy aunque un mock deje de aplicar.
+const originalFetch=global.fetch;
+global.fetch=async()=>({ok:false,status:503,json:async()=>({}),text:async()=>''});
+test.after(()=>{global.fetch=originalFetch});
+
 function loadWithAnalysis(analysis,{runnerFactory}={}){
  process.env.GEMINI_API_KEY='test-key';
  process.env.PAYMENT_PROOF_ENCRYPTION_KEY=Buffer.alloc(32,9).toString('hex');

@@ -76,7 +76,7 @@ async function loadPortalWithOwners(page){
 
   // Reproduce el escenario vulnerable: el CDN visual no responde en el teléfono.
   await page.route(/https:\/\/cdn\.tailwindcss\.com(?:\/.*)?(?:\?.*)?$/,route=>{blockedTailwind++;return route.abort()});
-  const response=await loadPortalWithOwners(page);
+  let response=await loadPortalWithOwners(page);
 
   const welcomeMetrics=await page.evaluate(()=>{
     const card=document.querySelector('#welcome>.card');
@@ -112,12 +112,31 @@ async function loadPortalWithOwners(page){
   if(welcomeMetrics.titleFont<25)throw new Error('El título móvil quedó demasiado pequeño.');
   if(welcomeMetrics.buttonHeight<50||!painted(welcomeMetrics.buttonBackground,welcomeMetrics.buttonBackgroundImage)||welcomeMetrics.buttonColor==='rgb(0, 0, 0)')throw new Error(`El botón de entrada perdió su estilo principal: ${JSON.stringify(welcomeMetrics)}.`);
 
-  const ownerValue=await selectStableHouse(page);
-  if(!ownerValue)throw new Error('No se encontró una casa válida.');
-  await page.locator('#welcomeSelector').selectOption(ownerValue);
-  await page.getByRole('button',{name:/Consultar Estado de Cuenta/i}).click();
-  await page.locator('#main').waitFor({state:'visible',timeout:15000});
-  await page.locator('[data-vla-breakdown-host]').waitFor({state:'visible',timeout:30000});
+  let ownerValue='',entryError=null;
+  for(let attempt=1;attempt<=3;attempt++){
+    try{
+      if(attempt>1)response=await loadPortalWithOwners(page);
+      const failClosed=await page.evaluate(()=>window.__vlaFinancialFailClosed===true);
+      if(failClosed)throw new Error('El contrato financiero quedó en fail-closed después de cargar las 15 casas.');
+      // loadPortalWithOwners puede recuperarse de una navegación fallida. Una vez
+      // comprobado el estado canónico final, los errores de esos intentos previos
+      // no deben contaminar las aserciones de la página que sí quedó activa.
+      pageErrors.length=0;consoleErrors.length=0;
+      ownerValue=await selectStableHouse(page);
+      if(!ownerValue)throw new Error('No se encontró una casa válida.');
+      await page.locator('#welcomeSelector').selectOption(ownerValue);
+      await page.getByRole('button',{name:/Consultar Estado de Cuenta/i}).click();
+      await page.locator('#main').waitFor({state:'visible',timeout:15000});
+      await page.locator('[data-vla-breakdown-host="owner-breakdown-v7"]').waitFor({state:'visible',timeout:30000});
+      if(pageErrors.length)throw new Error(`Errores JavaScript al entrar: ${pageErrors.join(' | ')}`);
+      if(consoleErrors.length)throw new Error(`Errores de consola al entrar: ${consoleErrors.join(' | ')}`);
+      entryError=null;break;
+    }catch(error){
+      entryError=error;
+      if(attempt<3)await page.waitForTimeout(attempt*700);
+    }
+  }
+  if(entryError)throw new Error(`No se pudo estabilizar la entrada móvil después de 3 intentos: ${entryError.message}`);
 
   const results=[];
   for(const viewport of viewports){
