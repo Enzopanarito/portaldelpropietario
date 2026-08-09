@@ -40,14 +40,14 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Check syntax
         run: |
-          node --check netlify/functions/_payment_proof_core.js
-          node --check netlify/functions/_payment_proof_store.js
-          node --check netlify/functions/_payment_access_snapshot.js
-          node --check netlify/functions/_payment_duplicate_core.js
+          node --check netlify/functions/_shared/_payment_proof_core.js
+          node --check netlify/functions/_shared/_payment_proof_store.js
+          node --check netlify/functions/_shared/_payment_access_snapshot.js
+          node --check netlify/functions/_shared/_payment_duplicate_core.js
           node --check tests/payment-proof-core.test.js
           node --check tests/payment-proof-store.test.js
           node --check tests/payment-access-snapshot.test.js

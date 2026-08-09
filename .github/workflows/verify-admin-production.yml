@@ -18,6 +18,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
       - name: Wait for production admin quality 10 release
         shell: bash
@@ -60,7 +67,7 @@ jobs:
 
       - name: Install Chromium
         run: |
-          npm install --no-save --ignore-scripts playwright@1.53.0
+          npm ci --ignore-scripts --no-audit --no-fund
           npx playwright install --with-deps chromium
 
       - name: Verify production login readability and quality assets
@@ -143,6 +150,12 @@ jobs:
           NODE
           node verify-admin-production.cjs
 
+      - name: Verify authenticated Admin in read-only mode
+        env:
+          TARGET_URL: https://villalosapamates.netlify.app
+          VLA_ADMIN_PASSWORD: ${{ secrets.VLA_ADMIN_PASSWORD || secrets.ADMIN_PASSWORD }}
+        run: node tests/admin-authenticated-readonly-browser.cjs
+
       - name: Upload production evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -152,6 +165,10 @@ jobs:
             admin-production-result.json
             admin-production-error.txt
             admin-production-login.png
+            admin-authenticated-readonly-result.json
+            admin-authenticated-readonly-error.txt
+            admin-authenticated-readonly-desktop.png
+            admin-authenticated-readonly-mobile.png
           if-no-files-found: ignore
           retention-days: 14
 

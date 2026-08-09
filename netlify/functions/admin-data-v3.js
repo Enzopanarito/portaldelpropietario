@@ -37,6 +37,28 @@ function asOwnerRecord(owner) {
   return { id: owner.id, fields };
 }
 
+function canonicalFields(balance,record){
+  const calculated=calculatedFields(balance,record);
+  const saldoUsd=calculated['Saldo USD Actual'];
+  const saldoBsRef=calculated['Saldo Bs Ref Actual'];
+  const money=value=>Math.round((Number(value||0)+Number.EPSILON)*100)/100;
+  return{
+    saldoUsd:money(saldoUsd),
+    saldoBsRef:money(saldoBsRef),
+    totalPagadero:money(Math.max(0,saldoUsd)+Math.max(0,saldoBsRef)),
+    saldoNetoReferencial:money(saldoUsd+saldoBsRef),
+    saldoFavorUsd:money(Math.max(0,-saldoUsd)),
+    saldoFavorBs:money(Math.max(0,-saldoBsRef)),
+    deudaVencidaUsd:money(Math.max(0,balance.expiredUsd)),
+    deudaVencidaBs:money(Math.max(0,balance.expiredBsRef)),
+    mesCorrienteUsd:money(balance.currentUsd),
+    mesCorrienteBs:money(balance.currentBsRef),
+    estadoMorosidad:money(Math.max(0,saldoUsd)+Math.max(0,saldoBsRef))>0.009?'PENDIENTE':'SOLVENTE',
+    accesoEsperado:(record.fields||{})['Estado Acceso Portón']||'Sin configurar',
+    balanceEngineVersion:'vla-balance-contract-v7'
+  };
+}
+
 function synchronizePayload(payload, controlRecords) {
   const rawOwners = (payload.propietarios || []).map(asOwnerRecord);
   const officialOwners = attachOfficialBalances(rawOwners, controlRecords);
@@ -45,7 +67,8 @@ function synchronizePayload(payload, controlRecords) {
     .map(record => Object.assign(
       { id: record.id },
       record.fields || {},
-      calculatedFields(balances.get(record.id), record)
+      calculatedFields(balances.get(record.id), record),
+      canonicalFields(balances.get(record.id),record)
     ))
     .sort((left, right) => Number(left.Casa || 0) - Number(right.Casa || 0));
   return Object.assign({}, payload, {
@@ -79,5 +102,6 @@ const handler = async function handler(event) {
 };
 
 module.exports.synchronizePayload = synchronizePayload;
+module.exports.canonicalFields = canonicalFields;
 
 exports.handler = withAirtableUsage('admin-data-v3', handler);

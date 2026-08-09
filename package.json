@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=22 <25"
   },
   "scripts": {
     "build": "npm run test:release && npm run build:public",
@@ -22,5 +22,8 @@
   },
   "overrides": {
     "nanoid": "3.3.17"
+  },
+  "devDependencies": {
+    "playwright": "1.55.1"
   }
 }

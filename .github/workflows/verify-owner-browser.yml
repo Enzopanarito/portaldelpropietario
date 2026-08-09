@@ -19,6 +19,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
       - name: Resolve target URL
         id: target
@@ -51,7 +58,7 @@ jobs:
 
       - name: Install Playwright Chromium
         run: |
-          npm install --no-save --ignore-scripts playwright@1.53.0
+          npm ci --ignore-scripts --no-audit --no-fund
           npx playwright install --with-deps chromium
 
       - name: Verify table and all 15 visible balances

@@ -19,7 +19,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install production dependencies
         run: npm install --ignore-scripts --no-audit --no-fund
@@ -57,7 +57,7 @@ jobs:
 
       - name: Install Chromium
         run: |
-          npm install --no-save --ignore-scripts playwright@1.53.0
+          npm ci --ignore-scripts --no-audit --no-fund
           npx playwright install --with-deps chromium
 
       - name: Run isolated premium browser test

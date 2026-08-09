@@ -41,6 +41,7 @@ global.fetch=async()=>({ok:true,status:200,json:async()=>({records:[]})});
 process.env.AIRTABLE_API_TOKEN='test-token';
 process.env.AIRTABLE_BASE_ID='appTEST';
 process.env.SMTP_USER='villalosapamates@gmail.com';
+process.env.PAYMENT_PROOF_ENCRYPTION_KEY=Buffer.alloc(32,5).toString('hex');
 
 const handler=require('../netlify/functions/public-report-payment').handler;
 Module._load=originalLoad;
@@ -48,9 +49,11 @@ Module._load=originalLoad;
 function event(body){return{httpMethod:'POST',headers:{'x-forwarded-for':'192.0.2.10'},body:JSON.stringify(body)}}
 function parse(response){return JSON.parse(response.body)}
 const png=Buffer.concat([Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]),Buffer.from('proof')]);
+const proofSha=require('crypto').createHash('sha256').update(png).digest('hex');
+const dateAttestation=require('../netlify/functions/_shared/_payment_date_attestation').signDateAttestation({ownerId:'recABCDEFGHIJKLMN',attachmentSha:proofSha,method:'MOBILE_PAYMENT_VE',transactionDate:'2026-07-31'});
 
 (async()=>{
-  let response=await handler(event({ownerId:'recABCDEFGHIJKLMN',submissionId:'submission-smart-001',mode:'USD',amount:'15.300,00',enteredCurrency:'BS',reference:'ABC-123',rate:100,bank:'Pago móvil',method:'MOBILE_PAYMENT_VE',transactionDate:'2026-07-31',transactionDateSource:'PROOF_EXTRACTED',analysisSummary:{provider:'gemini-test',route:'direct',confidence:.98,transactionTime:'10:30:00',transactionStatus:'COMPLETED',recipient:'Enzo Panarito',warnings:['Lectura clara'],possibleVisualModification:false,prefillComplete:true,missingLabels:[]},observations:'Prueba',attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}}));
+  let response=await handler(event({ownerId:'recABCDEFGHIJKLMN',submissionId:'submission-smart-001',mode:'USD',amount:'15.300,00',enteredCurrency:'BS',reference:'ABC-123',rate:100,bank:'Pago móvil',method:'MOBILE_PAYMENT_VE',transactionDate:'2026-07-31',transactionDateSource:'PROOF_EXTRACTED',dateAttestation,analysisSummary:{provider:'gemini-test',route:'direct',confidence:.98,transactionTime:'10:30:00',transactionStatus:'COMPLETED',recipient:'Enzo Panarito',warnings:['Lectura clara'],possibleVisualModification:false,prefillComplete:true,missingLabels:[]},observations:'Prueba',attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}}));
   assert.equal(response.statusCode,200,JSON.stringify(parse(response)));
   let body=parse(response);
   assert.equal(body.amountUsdRef,85);

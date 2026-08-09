@@ -38,18 +38,27 @@ function attachmentLastModifiedDate(attachment,{now=new Date()}={}){
   const value=datePartsInCaracas(parsed);
   return validTransactionDate(value,{now:current})?value:'';
 }
+function requiresServerReceptionDate(method,bank=''){
+  const normalized=String(method||'').trim().toUpperCase();
+  if(['ZELLE','BINANCE_PAY','CRYPTO_TRANSFER'].includes(normalized))return true;
+  const hint=`${normalized} ${String(bank||'')}`.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();
+  return /\b(?:ZELLE|BINANCE|CRIPTO|CRYPTO|USDT|USDC|WALLET|COINBASE|PAYPAL|VENMO|CASH APP)\b/.test(hint);
+}
 function result(date,source,confidence,needsReview,evidence){return{transactionDate:date,transactionDateSource:source,transactionDateConfidence:confidence,transactionDateNeedsReview:needsReview,transactionDateEvidence:evidence}}
-function resolvePrefillDate({proofDate,attachment,now=new Date()}={}){
+function receptionTimestampResult(now){return result(todayCaracasISO(now),DATE_SOURCES.REPORT_TIMESTAMP_FALLBACK,'HIGH',false,'Fecha oficial de recepción del reporte en el servidor, zona horaria America/Caracas; el comprobante no mostró una fecha visible confiable.')}
+function resolvePrefillDate({proofDate,attachment,method,bank,now=new Date()}={}){
   if(validTransactionDate(proofDate,{now}))return result(String(proofDate).trim(),DATE_SOURCES.PROOF_EXTRACTED,'HIGH',false,'Fecha visible extraída del comprobante por el lector inteligente.');
+  if(requiresServerReceptionDate(method,bank))return receptionTimestampResult(now);
   const fileDate=attachmentLastModifiedDate(attachment,{now});
   if(fileDate)return result(fileDate,DATE_SOURCES.FILE_LAST_MODIFIED,'MEDIUM',true,'Fecha de última modificación informada por el archivo; debe contrastarse con el comprobante.');
   return result(todayCaracasISO(now),DATE_SOURCES.REPORT_TIMESTAMP_FALLBACK,'LOW',true,'Fecha oficial de Venezuela al momento de recibir el reporte; debe contrastarse con el comprobante.');
 }
-function resolveSubmittedDate({clientDate,clientSource,attachment,paymentChannel='DIGITAL',now=new Date()}={}){
+function resolveSubmittedDate({clientDate,clientSource,attachment,paymentChannel='DIGITAL',method,bank,trustedProofDate=null,now=new Date()}={}){
   if(String(paymentChannel).toUpperCase()==='CASH')return result(todayCaracasISO(now),DATE_SOURCES.REPORT_TIMESTAMP_FALLBACK,'LOW',true,'Fecha oficial de Venezuela al momento de reportar el efectivo.');
+  if(trustedProofDate&&trustedProofDate.transactionDateSource===DATE_SOURCES.PROOF_EXTRACTED&&validTransactionDate(trustedProofDate.transactionDate,{now}))return result(trustedProofDate.transactionDate,DATE_SOURCES.PROOF_EXTRACTED,'HIGH',false,trustedProofDate.transactionDateEvidence||'Fecha visible extraída del comprobante durante la prelectura autenticada del servidor.');
+  if(requiresServerReceptionDate(method,bank))return receptionTimestampResult(now);
   const source=ALLOWED_DATE_SOURCES.has(String(clientSource||'').trim().toUpperCase())?String(clientSource).trim().toUpperCase():'';
   const date=String(clientDate||'').trim();
-  if(source===DATE_SOURCES.PROOF_EXTRACTED&&validTransactionDate(date,{now}))return result(date,source,'HIGH',false,'Fecha extraída del comprobante durante la prelectura; la validación independiente volverá a comprobarla.');
   if(source===DATE_SOURCES.FILE_LAST_MODIFIED){
     const fileDate=attachmentLastModifiedDate(attachment,{now});
     if(fileDate&&fileDate===date)return result(date,source,'MEDIUM',true,'Fecha de última modificación del archivo, verificada contra los metadatos recibidos.');
@@ -59,4 +68,4 @@ function resolveSubmittedDate({clientDate,clientSource,attachment,paymentChannel
   return result(todayCaracasISO(now),DATE_SOURCES.REPORT_TIMESTAMP_FALLBACK,'LOW',true,'Fecha oficial de Venezuela al momento de recibir el reporte; debe contrastarse con el comprobante.');
 }
 
-module.exports={DAY_MS,MAX_AGE_YEARS,DATE_SOURCES,ALLOWED_DATE_SOURCES,datePartsInCaracas,todayCaracasISO,validTransactionDate,attachmentLastModifiedDate,resolvePrefillDate,resolveSubmittedDate};
+module.exports={DAY_MS,MAX_AGE_YEARS,DATE_SOURCES,ALLOWED_DATE_SOURCES,datePartsInCaracas,todayCaracasISO,validTransactionDate,attachmentLastModifiedDate,requiresServerReceptionDate,receptionTimestampResult,resolvePrefillDate,resolveSubmittedDate};

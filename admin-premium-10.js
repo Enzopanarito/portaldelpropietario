@@ -14,8 +14,7 @@
     try{
       if(typeof calc==='function')return calc(owner);
     }catch(_){}
-    const total=Number((owner&&owner['Saldo Total Actual'])??(owner&&owner['Deuda Restante'])??0);
-    return{total,debtUsd:Number(owner&&owner['Saldo USD Actual']||0),debtBs:Number(owner&&owner['Saldo Bs Ref Actual']||0)};
+    return null;
   }
   function stateFor(total){return total>EPS?'debt':total<-EPS?'credit':'solvent'}
   function stateAmount(balance){const payable=Number(balance?.total||0);if(payable>EPS)return payable;const net=Number(balance?.netTotal??payable);return net<-EPS?net:0}

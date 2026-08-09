@@ -7,6 +7,7 @@ coverage/
 artifacts/
 playwright-report/
 test-results/
+/dist/
 *.log
 /*-result.json
 /*-state.json

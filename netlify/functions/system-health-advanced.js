@@ -6,6 +6,7 @@ const { requireAdmin } = require('./_shared/_auth');
 const { loadConfigRecord } = require('./_shared/_admin_auth_store');
 const { loadLastGood } = require('./_shared/_bcv_store');
 const { deepEscapeStrings, safeDisplayText } = require('./_shared/_security_utils');
+const { expected:expectedRelease,compareReleaseContracts,deploymentMetadata } = require('./_shared/_release_contract');
 
 const CONTROL_TABLE = 'ControlVersiones';
 const EXPECTED_BACKUP_TABLES = 11;
@@ -73,6 +74,16 @@ const handler = async function(event) {
     const base = await response.json().catch(() => ({ ok: false, status: 'error', checks: [] }));
     const checks = Array.isArray(base.checks) ? base.checks : [];
     const add = (name, ok, detail, severity = ok ? 'ok' : 'error', meta = undefined) => checks.push({ name, ok, detail, severity, ...(meta ? { meta } : {}) });
+
+    try{
+      const releaseResponse=await fetch(`${trustedOrigin(event)}/release.json?health=${Date.now()}`,{headers:{Accept:'application/json','Cache-Control':'no-cache'}}),actualRelease=await releaseResponse.json(),comparison=compareReleaseContracts(actualRelease),deployment=deploymentMetadata(process.env),ok=releaseResponse.ok&&comparison.ok;
+      add('Deployment y release',ok,ok?`Release ${expectedRelease.release} coincide clave por clave con el artefacto servido. Commit: ${deployment.commit||'no expuesto por runtime'}; Deploy: ${deployment.deployId||'no expuesto por runtime'}.`:`El release servido no coincide con el contrato del bundle: ${comparison.differences.map(item=>item.key).join(', ')||`HTTP ${releaseResponse.status}`}.`,ok?'ok':'error',{...deployment,differences:comparison.differences});
+    }catch(error){add('Deployment y release',false,`No se pudo contrastar release.json con el bundle: ${safeDisplayText(error.message,300)}`,'error',deploymentMetadata(process.env))}
+
+    try{
+      const reconciliationResponse=await fetch(`${trustedOrigin(event)}/.netlify/functions/access-reconciliation-readonly`,{headers:{Authorization:bearer(event),Accept:'application/json'}}),reconciliation=await reconciliationResponse.json().catch(()=>({})),automatic=reconciliation.mode==='Automático',complete=reconciliationResponse.ok&&reconciliation.total===15&&reconciliation.reconciled===15,discrepancies=Number(reconciliation.discrepancyCount||0),ok=complete&&discrepancies===0,severity=!complete?'error':discrepancies&&automatic?'error':discrepancies?'warning':'ok';
+      add('Portón MKJ 15/15 read-only',ok,complete?(discrepancies?`${reconciliation.reconciled}/15 reconciliadas; ${discrepancies} discrepancia(s) en modo ${reconciliation.mode}. No se aplicó ningún cambio.`:`15/15 reconciliadas y coherentes en modo ${reconciliation.mode}. No se aplicó ningún cambio.`):`Reconciliadas ${Number(reconciliation.reconciled||0)}/15; la consulta remota no quedó completa.`,severity,{mode:reconciliation.mode||null,reconciled:Number(reconciliation.reconciled||0),coherent:Number(reconciliation.coherent||0),discrepancies:reconciliation.discrepancies||[],readOnly:true});
+    }catch(error){add('Portón MKJ 15/15 read-only',false,`No se pudo completar la reconciliación remota: ${safeDisplayText(error.message,300)}`,'error',{readOnly:true})}
 
     const secretIndependent = Boolean(process.env.ADMIN_TOKEN_SECRET) && process.env.ADMIN_TOKEN_SECRET !== process.env.ADMIN_PASSWORD;
     add('Secreto independiente de sesión', secretIndependent, secretIndependent ? 'ADMIN_TOKEN_SECRET está configurado y separado de la contraseña.' : 'Configure ADMIN_TOKEN_SECRET en Netlify con un valor aleatorio distinto de ADMIN_PASSWORD.', secretIndependent ? 'ok' : 'warning');
