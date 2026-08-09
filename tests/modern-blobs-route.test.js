@@ -11,7 +11,7 @@ function rewrite(from,to){
   return new RegExp(`\\[\\[redirects\\]\\][\\s\\S]*?from\\s*=\\s*"${escapedFrom}"[\\s\\S]*?to\\s*=\\s*"${escapedTo}"[\\s\\S]*?status\\s*=\\s*200[\\s\\S]*?force\\s*=\\s*true`);
 }
 
-test('los datos públicos usan el runtime moderno con contexto fuerte de Blobs',()=>{
+test('los datos públicos usan el runtime moderno con contexto automático de Blobs',()=>{
   assert.match(config,rewrite('/api/vla/public-data','/.netlify/functions/public-data-modern'));
   const source=fs.readFileSync('netlify/functions/public-data-modern.mjs','utf8');
   assert.match(source,/legacy-function-bridge\.mjs/);

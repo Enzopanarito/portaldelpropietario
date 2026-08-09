@@ -34,7 +34,7 @@
   schedule = "*/15 * * * *"
 
 # Las rutas públicas usan el runtime que corresponde a su operación. La lectura
-# pública entra por Functions v2 para disponer de Blobs con consistencia fuerte;
+# pública entra por Functions v2 para disponer del contexto Blobs automático;
 # las escrituras cifradas siguen en Lambda v1, donde Netlify adjunta `event.blobs`.
 [[redirects]]
 from = "/api/vla/public-data"
