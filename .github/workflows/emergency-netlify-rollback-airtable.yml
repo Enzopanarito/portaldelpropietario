@@ -1,0 +1,112 @@
+name: Emergency Netlify Rollback Airtable
+
+on:
+  push:
+    branches: [agent/vla-airtable-token-recovery-probe]
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      NETLIFY_AUTH_TOKEN_PRIMARY: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_AUTH_TOKEN_FALLBACK: ${{ secrets.NETLIFY_TOKEN }}
+      NETLIFY_SITE_ID_PRIMARY: ${{ secrets.NETLIFY_SITE_ID }}
+      NETLIFY_SITE_ID_FALLBACK: ${{ secrets.NETLIFY_SITE_ID_VILLALOSAPAMATES }}
+      RESTORE_DEPLOY_ID: 6a78ee33e6d60fc8dc772bae
+      TARGET_URL: https://villalosapamates.netlify.app
+    steps:
+      - name: Resolve Netlify credentials safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          AUTH_TOKEN="${NETLIFY_AUTH_TOKEN_PRIMARY:-${NETLIFY_AUTH_TOKEN_FALLBACK:-}}"
+          SITE_ID="${NETLIFY_SITE_ID_PRIMARY:-${NETLIFY_SITE_ID_FALLBACK:-}}"
+          [ -n "$AUTH_TOKEN" ] || { echo 'NETLIFY_AUTH_SECRET_MISSING'; exit 1; }
+          [ -n "$SITE_ID" ] || { echo 'NETLIFY_SITE_ID_MISSING'; exit 1; }
+          echo "::add-mask::$AUTH_TOKEN"
+          echo "::add-mask::$SITE_ID"
+          echo "NETLIFY_AUTH_TOKEN=$AUTH_TOKEN" >> "$GITHUB_ENV"
+          echo "NETLIFY_SITE_ID=$SITE_ID" >> "$GITHUB_ENV"
+
+      - name: Restore preserved production deploy atomically
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl --silent --show-error --output /tmp/restore.json --write-out '%{http_code}' --max-time 30 \
+            -X POST \
+            -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            -H 'Content-Type: application/json' \
+            "https://api.netlify.com/api/v1/sites/${NETLIFY_SITE_ID}/deploys/${RESTORE_DEPLOY_ID}/restore")"
+          [ "$code" = "201" ] || { echo "NETLIFY_RESTORE_HTTP_$code"; exit 2; }
+          node -e "const fs=require('fs');const j=JSON.parse(fs.readFileSync('/tmp/restore.json','utf8'));if(String(j.id||'')!==process.env.RESTORE_DEPLOY_ID)process.exit(1);console.log('NETLIFY_ROLLBACK_ACCEPTED')"
+
+      - name: Wait until restored deploy is live
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            site="$(curl --fail --silent --show-error --max-time 20 -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" "https://api.netlify.com/api/v1/sites/${NETLIFY_SITE_ID}")"
+            current="$(printf '%s' "$site" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(String(JSON.parse(s).published_deploy?.id||'')))")"
+            if [ "$current" = "$RESTORE_DEPLOY_ID" ]; then
+              echo 'ROLLBACK_DEPLOY_IS_CURRENT'
+              exit 0
+            fi
+            sleep 2
+          done
+          echo 'ROLLBACK_NOT_CURRENT'
+          exit 3
+
+      - name: Verify Airtable-backed public runtime after rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            code="$(curl --silent --show-error --location --output /tmp/public-data.json --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/.netlify/functions/public-data?rollback_verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            if [ "$code" = "200" ]; then
+              node - <<'NODE' && exit 0 || true
+          const fs=require('fs');
+          const j=JSON.parse(fs.readFileSync('/tmp/public-data.json','utf8'));
+          const owners=Array.isArray(j.propietarios)?j.propietarios:[];
+          if(owners.length!==15)process.exit(1);
+          if(!owners.every(o=>o.balanceEngineVersion==='vla-balance-contract-v7'))process.exit(1);
+          console.log('PUBLIC_DATA_15_15_CANONICAL');
+          NODE
+            fi
+            sleep 2
+          done
+          echo 'PUBLIC_DATA_ROLLBACK_VERIFICATION_FAILED'
+          cat /tmp/public-data.json 2>/dev/null | head -c 300 || true
+          exit 4
+
+      - name: Verify protected Admin remains closed without auth
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl --silent --show-error --location --output /tmp/admin-protected.json --write-out '%{http_code}' --max-time 20 "${TARGET_URL}/.netlify/functions/admin-data" 2>/dev/null || true)"
+          [ "$code" = "401" ] || { echo "ADMIN_PROTECTION_UNEXPECTED_HTTP_$code"; exit 5; }
+          echo 'ADMIN_PROTECTION_OK'
+
+      - name: Publish rollback status
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        shell: bash
+        run: |
+          if [ "$JOB_STATUS" = "success" ]; then
+            state=success
+            description='Rollback seguro activo; Airtable runtime 15/15 restaurado.'
+          else
+            state=failure
+            description='Rollback de emergencia no quedó certificado.'
+          fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state="$state" \
+            -f context='Emergency Production Rollback' \
+            -f description="$description" \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
