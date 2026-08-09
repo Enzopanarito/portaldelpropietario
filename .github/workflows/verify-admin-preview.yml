@@ -25,7 +25,7 @@ jobs:
 
       - name: Resolve CLI preview URL
         id: target
-        run: echo "url=https://vla-pr-${{ github.event.pull_request.number }}--villalosapamates.netlify.app" >> "$GITHUB_OUTPUT"
+        run: echo "url=https://deploy-preview-${{ github.event.pull_request.number }}--villalosapamates.netlify.app" >> "$GITHUB_OUTPUT"
 
       - name: Wait for exact CLI preview assets
         env:
