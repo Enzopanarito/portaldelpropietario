@@ -8,6 +8,26 @@ function watch(page){const errors=[];page.on('pageerror',e=>errors.push(String(e
 function assert(ok,message){if(!ok)throw new Error(message)}
 async function paymentResolution(page,expectedUsd){return page.evaluate(({expectedUsd})=>{const amount=window.VLAPaymentIntelligence.parseAmountInput(document.getElementById('payAmount').value);return window.VLAPaymentIntelligence.analyzePayment({amount,rate:Number(window.rate()),expectedUsd,forcedCurrency:document.getElementById('payCurrency').value})},{expectedUsd})}
 async function chooseChannel(page,label,id){await page.getByText(label,{exact:true}).click();assert(await page.locator(id).isChecked(),`No se activó ${label}.`)}
+async function houseOptionValue(page,selector,house,timeout=10000){
+  const deadline=Date.now()+timeout;
+  let lastError=null;
+  const pattern=new RegExp(`^Casa\\s+${house}\\s+-`);
+  while(Date.now()<deadline){
+    try{
+      const option=page.locator(`${selector} option`).filter({hasText:pattern}).first();
+      if(await option.count()){
+        const value=await option.getAttribute('value');
+        if(value)return value;
+      }
+    }catch(error){
+      lastError=error;
+      if(!/Execution context was destroyed|Target page, context or browser has been closed|Navigation/i.test(String(error?.message||error)))throw error;
+    }
+    await page.waitForTimeout(150);
+  }
+  if(lastError)console.warn(`houseOptionValue ${selector} Casa ${house}: ${lastError.message}`);
+  return'';
+}
 
 async function loadStableLivePortal(page,target,errors){
   let lastError=null;
@@ -26,8 +46,6 @@ async function loadStableLivePortal(page,target,errors){
       }
       if(houses!==15)throw new Error(`Se cargaron ${houses} de 15 casas.`);
       if(await page.evaluate(()=>window.__vlaFinancialFailClosed===true))throw new Error('El portal quedó en fail-closed.');
-      // Desde aquí los errores corresponden únicamente a la página canónica y
-      // no a una navegación anterior del Deploy Preview que ya fue recuperada.
       errors.length=0;
       return response;
     }catch(error){
@@ -46,17 +64,21 @@ async function live(browser,target){
   await page.addStyleTag({content:'[data-netlify-deploy-id],iframe[title="Netlify Drawer"]{display:none!important;pointer-events:none!important}'})
     .catch(error=>{if(!ignored.test(String(error)))throw error});
   await page.locator('#welcomeSelector').waitFor({state:'visible'});
-  const value=await page.locator('#welcomeSelector option').evaluateAll(list=>list.find(o=>/^Casa 4\s+-/.test(o.textContent||''))?.value||'');
+  const value=await houseOptionValue(page,'#welcomeSelector',4,15000);
   assert(value,'No se encontró Casa 4.');
-  await page.selectOption('#welcomeSelector',value);await page.click('#enterBtn');await page.click('#reportBtn');await page.locator('#vla-pay-title').waitFor({state:'visible'});
+  await page.selectOption('#welcomeSelector',value);
+  await page.click('#enterBtn');
+  await page.locator('#main').waitFor({state:'visible',timeout:15000});
+  await page.click('#reportBtn');
+  await page.locator('#vla-pay-title').waitFor({state:'visible',timeout:10000});
   await chooseChannel(page,'Efectivo','#payChannelCash');await page.locator('#vla-pay-details').waitFor({state:'visible',timeout:10000});
   const metrics=await page.evaluate(()=>{const a=submitReport.getBoundingClientRect(),b=cancelModal.getBoundingClientRect();return{text:modal.innerText,gap:b.top-a.bottom,width:document.documentElement.scrollWidth,viewport:innerWidth,rate:Number(window.rate()),assets:['vla-owner-payment-report-v3-css','vla-payment-intelligence','vla-owner-payment-report-v3'].every(id=>!!document.getElementById(id))}});
   assert(!/recargo/i.test(metrics.text),'El modal público muestra recargo.');assert(metrics.gap>=12,`Botones juntos: ${metrics.gap}px.`);assert(metrics.width<=metrics.viewport+2,'Hay desbordamiento horizontal.');assert(metrics.assets,'Faltan assets.');assert(metrics.rate>0,'No hay tasa BCV.');
   await page.selectOption('#payCurrency','BS');const cashMode=await page.locator('#payMode').inputValue();assert(cashMode==='Bs BCV',`El efectivo en Bs no se asignó a la cuenta Bs: ${cashMode}.`);await page.fill('#payAmount',String(Math.round(85*metrics.rate*100)/100));await page.locator('#payAmount').blur();
   const detection=await paymentResolution(page,85);assert(detection.enteredCurrency==='BS'&&Math.abs(detection.amountUsdRef-85)<.01,`Conversión incorrecta: ${JSON.stringify(detection)}`);
   await page.screenshot({path:'owner-payment-report-live-casa4.png'});await page.click('#cancelModal');
-  const casa2=await page.locator('#userSelector option').evaluateAll(list=>list.find(o=>/^Casa 2\s+-/.test(o.textContent||''))?.value||'');
-  if(casa2){await page.selectOption('#userSelector',casa2);await page.click('#reportBtn');await chooseChannel(page,'Efectivo','#payChannelCash');await page.locator('#vla-pay-details').waitFor({state:'visible',timeout:10000});const modes=await page.locator('#payMode option').evaluateAll(options=>options.map(option=>option.value));assert(modes.includes('USD')&&modes.includes('Bs BCV'),'Casa 2 no muestra ambas cuentas de aplicación.');await page.click('#cancelModal')}
+  const casa2=await houseOptionValue(page,'#userSelector',2,10000);
+  if(casa2){await page.selectOption('#userSelector',casa2);await page.click('#reportBtn');await chooseChannel(page,'Efectivo','#payChannelCash');await page.locator('#vla-pay-details').waitFor({state:'visible',timeout:10000});const modes=await page.locator('#payMode option').allTextContents();assert(modes.includes('USD')&&modes.includes('Bs BCV'),'Casa 2 no muestra ambas cuentas de aplicación.');await page.click('#cancelModal')}
   assert(!errors.length,`Errores live: ${errors.join(' | ')}`);await page.close();return{metrics,detection,cashMode,casa2AccountsVerified:Boolean(casa2),errors}
 }
 
