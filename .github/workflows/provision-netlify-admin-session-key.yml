@@ -1,0 +1,80 @@
+name: Provision Netlify Admin Session Key
+
+on:
+  pull_request:
+    branches: [main]
+    types: [edited]
+
+permissions:
+  contents: read
+
+jobs:
+  provision:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/vla-10of10-hardening-20260809' &&
+      contains(github.event.pull_request.title, '[skip netlify]') &&
+      contains(github.event.pull_request.title, '[provision secret]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NETLIFY_AUTH_TOKEN_PRIMARY: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_AUTH_TOKEN_FALLBACK: ${{ secrets.NETLIFY_TOKEN }}
+      NETLIFY_SITE_ID_PRIMARY: ${{ secrets.NETLIFY_SITE_ID }}
+      NETLIFY_SITE_ID_FALLBACK: ${{ secrets.NETLIFY_SITE_ID_VILLALOSAPAMATES }}
+    steps:
+      - name: Use Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Resolve Netlify credentials without exposing them
+        shell: bash
+        run: |
+          set -euo pipefail
+          AUTH_TOKEN="${NETLIFY_AUTH_TOKEN_PRIMARY:-${NETLIFY_AUTH_TOKEN_FALLBACK:-}}"
+          SITE_ID="${NETLIFY_SITE_ID_PRIMARY:-${NETLIFY_SITE_ID_FALLBACK:-}}"
+          [ -n "$AUTH_TOKEN" ] || { echo 'Falta token Netlify.'; exit 1; }
+          [ -n "$SITE_ID" ] || { echo 'Falta Site ID Netlify.'; exit 1; }
+          echo "::add-mask::$AUTH_TOKEN"
+          echo "::add-mask::$SITE_ID"
+          echo "NETLIFY_AUTH_TOKEN=$AUTH_TOKEN" >> "$GITHUB_ENV"
+          echo "NETLIFY_SITE_ID=$SITE_ID" >> "$GITHUB_ENV"
+
+      - name: Generate and store dedicated production signing root
+        shell: bash
+        run: |
+          set -euo pipefail
+          SECRET="$(openssl rand -hex 48)"
+          [ "${#SECRET}" -eq 96 ] || { echo 'No se pudo generar una raíz fuerte.'; exit 1; }
+          echo "::add-mask::$SECRET"
+          npx --yes netlify-cli@latest env:set ADMIN_SESSION_SIGNING_KEY "$SECRET" \
+            --scope functions \
+            --context production \
+            --secret \
+            --site "$NETLIFY_SITE_ID" \
+            --auth "$NETLIFY_AUTH_TOKEN" >/tmp/netlify-secret-set.log 2>&1
+          unset SECRET
+          if grep -Eq 'ADMIN_SESSION_SIGNING_KEY|Set environment variable|environment variable' /tmp/netlify-secret-set.log; then
+            echo 'ADMIN_SESSION_SIGNING_KEY dedicada almacenada en Netlify.'
+          else
+            echo 'Netlify finalizó sin una confirmación reconocible.'
+            cat /tmp/netlify-secret-set.log
+            exit 1
+          fi
+
+      - name: Verify key metadata is present without reading its value
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes netlify-cli@latest env:list \
+            --scope functions \
+            --context production \
+            --site "$NETLIFY_SITE_ID" \
+            --auth "$NETLIFY_AUTH_TOKEN" >/tmp/netlify-env-list.log 2>&1
+          grep -q 'ADMIN_SESSION_SIGNING_KEY' /tmp/netlify-env-list.log || {
+            echo 'La clave dedicada no aparece en el inventario Netlify.'
+            exit 1
+          }
+          echo 'Metadatos de ADMIN_SESSION_SIGNING_KEY verificados; el valor no fue leído.'
