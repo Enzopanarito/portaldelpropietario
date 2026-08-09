@@ -6,11 +6,11 @@ const { requireAdmin, getSecretInfo } = require('./_shared/_auth');
 const { loadConfigRecord } = require('./_shared/_admin_auth_store');
 const { loadLastGood } = require('./_shared/_bcv_store');
 const { resolveEncryptionKey } = require('./_shared/_payment_proof_store');
+const { TABLES: BACKUP_TABLES } = require('./_shared/_backup_inventory');
 const { deepEscapeStrings, safeDisplayText } = require('./_shared/_security_utils');
 const { expected:expectedRelease,compareReleaseContracts,deploymentMetadata } = require('./_shared/_release_contract');
 
 const CONTROL_TABLE = 'ControlVersiones';
-const EXPECTED_BACKUP_TABLES = 12;
 
 function json(statusCode, body) {
   return { statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }, body: JSON.stringify(body) };
@@ -60,7 +60,7 @@ function adminSessionKeyHealth(env=process.env){
   const info=getSecretInfo(env),ok=Boolean(info.secret&&info.dedicated&&info.productionSafe&&info.source==='ADMIN_SESSION_SIGNING_KEY');
   return ok
     ?{ok:true,severity:'ok',detail:'Firma administrativa aislada con una clave dedicada de producción.',meta:{source:info.source,dedicated:true,keyVersion:info.keyVersion}}
-    :{ok:false,severity:'error',detail:'Producción debe usar ADMIN_SESSION_SIGNING_KEY dedicada. No se aceptan claves de cifrado, Airtable, tokens legacy ni contraseñas como raíz de firma.',meta:{source:info.source||'missing',dedicated:false,keyVersion:info.keyVersion||3}};
+    :{ok:false,severity:'error',detail:'Producción debe usar ADMIN_SESSION_SIGNING_KEY dedicada. No se aceptan claves de cifrado, Airtable, tokens legacy ni contraseñas como raíz de firma.',meta:{source:info.source||'missing',dedicated:false,keyVersion:info.keyVersion||2}};
 }
 function paymentProofKeyHealth(env=process.env){
   try{
@@ -135,7 +135,7 @@ const handler = async function(event) {
       add('Operaciones financieras pendientes', false, safeDisplayText(error.message, 300), 'warning');
     }
 
-    add('Cobertura de respaldo', true, `El respaldo operativo incluye ${EXPECTED_BACKUP_TABLES} tablas, manifiesto SHA-256 y verificador local.`, 'ok', { expectedTables: EXPECTED_BACKUP_TABLES });
+    add('Cobertura de respaldo', true, `El respaldo operativo incluye ${BACKUP_TABLES.length} tablas, manifiesto SHA-256 y verificador local.`, 'ok', { expectedTables: BACKUP_TABLES.length });
     add('Transparencia pública', true, 'El portal continúa mostrando la información financiera de todas las casas según la política definida por la administración.');
     add('Autenticación de dos pasos', false, 'No habilitada por decisión operativa de la administración. Se registra como riesgo aceptado y no se disfraza como un control activo.', 'info', { acceptedRisk:true, enabled:false });
 
