@@ -9,7 +9,20 @@ const PORT=4174;
 const TOKEN='responsive-browser-token';
 const file=name=>fs.readFileSync(path.join(ROOT,name));
 const reply=(res,status,body,type='application/json')=>{res.writeHead(status,{'content-type':type,'cache-control':'no-store'});res.end(type==='application/json'?JSON.stringify(body):body)};
-const owners=Array.from({length:15},(_,i)=>({id:`recOwner${String(i+1).padStart(8,'0')}`,Casa:i+1,Propietario:`Propietario de prueba ${i+1}`,Alicuota:1/15,'Saldo Total Actual':i%4===0?285.35:i%4===1?0:i%4===2?-50:109.99,'Saldo USD Actual':i%4===0?85:i%4===2?-50:0,'Saldo Bs Ref Actual':i%4===0?200.35:i%4===3?109.99:0,'Deuda Restante':i%4===0?285.35:i%4===1?0:i%4===2?-50:109.99}));
+const owners=Array.from({length:15},(_,i)=>{
+  const saldoUsd=i%4===0?85:i%4===2?-50:0;
+  const saldoBsRef=i%4===0?200.35:i%4===3?109.99:0;
+  const saldoNetoReferencial=saldoUsd+saldoBsRef;
+  return {
+    id:`recOwner${String(i+1).padStart(8,'0')}`,Casa:i+1,Propietario:`Propietario de prueba ${i+1}`,Alicuota:1/15,
+    'Saldo Total Actual':saldoNetoReferencial,'Saldo USD Actual':saldoUsd,'Saldo Bs Ref Actual':saldoBsRef,'Deuda Restante':saldoNetoReferencial,
+    saldoUsd,saldoBsRef,totalPagadero:Math.max(0,saldoUsd)+Math.max(0,saldoBsRef),saldoNetoReferencial,
+    saldoFavorUsd:Math.max(0,-saldoUsd),saldoFavorBs:Math.max(0,-saldoBsRef),
+    deudaVencidaUsd:Math.max(0,saldoUsd),deudaVencidaBs:Math.max(0,saldoBsRef),mesCorrienteUsd:0,mesCorrienteBs:0,
+    estadoMorosidad:saldoNetoReferencial>0?'PENDIENTE':'SOLVENTE',accesoEsperado:saldoNetoReferencial>0?'Limitado':'Habilitado',
+    balanceEngineVersion:'vla-balance-contract-v7'
+  };
+});
 
 const critical=`<style id="vla-admin-boot-style">
 .hidden{display:none!important}.flex{display:flex!important}#login.hidden{display:none!important}
