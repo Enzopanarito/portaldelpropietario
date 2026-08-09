@@ -1,0 +1,8 @@
+.vla-current-month-card{box-shadow:0 20px 48px rgba(138,79,0,.22)}
+.vla-current-month-meta{display:flex;flex-direction:column;gap:.5rem}
+.vla-current-month-caption{font-weight:700;line-height:1.35}
+.vla-current-month-pending{display:inline-flex;align-items:center;justify-content:space-between;gap:.75rem;width:100%;padding:.5rem .7rem;border-radius:12px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.18)}
+.vla-current-month-pending strong{font-weight:900;color:#fff;white-space:nowrap}
+.vla-current-month-hint{font-size:.7rem;line-height:1.35;color:rgba(255,255,255,.72)}
+@media(max-width:420px){.vla-current-month-pending{align-items:flex-start;flex-direction:column;gap:.15rem}}
+html.dark .vla-current-month-card{box-shadow:0 20px 48px rgba(0,0,0,.32)}
