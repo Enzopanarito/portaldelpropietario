@@ -5,16 +5,16 @@ on:
     branches: [main]
     paths:
       - 'netlify/functions/payment-proof-prefill.js'
-      - 'netlify/functions/_payment_ai_gemini.js'
-      - 'netlify/functions/_payment_ai_model_discovery.js'
+      - 'netlify/functions/_shared/_payment_ai_gemini.js'
+      - 'netlify/functions/_shared/_payment_ai_model_discovery.js'
       - 'tests/payment-proof-prefill-resilience.test.js'
       - '.github/workflows/verify-payment-prefill-resilience.yml'
   push:
     branches: [main]
     paths:
       - 'netlify/functions/payment-proof-prefill.js'
-      - 'netlify/functions/_payment_ai_gemini.js'
-      - 'netlify/functions/_payment_ai_model_discovery.js'
+      - 'netlify/functions/_shared/_payment_ai_gemini.js'
+      - 'netlify/functions/_shared/_payment_ai_model_discovery.js'
       - 'tests/payment-proof-prefill-resilience.test.js'
       - '.github/workflows/verify-payment-prefill-resilience.yml'
 

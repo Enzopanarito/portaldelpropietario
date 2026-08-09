@@ -3,14 +3,14 @@ name: Verify Public Data Preview
 on:
   pull_request:
     paths:
-      - 'netlify/functions/_public_preview_fixture.js'
+      - 'netlify/functions/_shared/_public_preview_fixture.js'
       - 'netlify/functions/public-data-v3.js'
       - 'tests/public-data-preview-fixture.test.js'
       - '.github/workflows/verify-public-data-preview.yml'
   push:
     branches: [main]
     paths:
-      - 'netlify/functions/_public_preview_fixture.js'
+      - 'netlify/functions/_shared/_public_preview_fixture.js'
       - 'netlify/functions/public-data-v3.js'
       - 'tests/public-data-preview-fixture.test.js'
       - '.github/workflows/verify-public-data-preview.yml'

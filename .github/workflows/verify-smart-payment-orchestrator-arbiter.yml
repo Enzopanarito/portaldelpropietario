@@ -4,9 +4,9 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'netlify/functions/_payment_processing_store.js'
-      - 'netlify/functions/_payment_processing_orchestrator.js'
-      - 'netlify/functions/_payment_deterministic_arbiter.js'
+      - 'netlify/functions/_shared/_payment_processing_store.js'
+      - 'netlify/functions/_shared/_payment_processing_orchestrator.js'
+      - 'netlify/functions/_shared/_payment_deterministic_arbiter.js'
       - 'tests/payment-processing-store.test.js'
       - 'tests/payment-processing-orchestrator.test.js'
       - 'tests/payment-deterministic-arbiter.test.js'
@@ -14,9 +14,9 @@ on:
   push:
     branches: [main]
     paths:
-      - 'netlify/functions/_payment_processing_store.js'
-      - 'netlify/functions/_payment_processing_orchestrator.js'
-      - 'netlify/functions/_payment_deterministic_arbiter.js'
+      - 'netlify/functions/_shared/_payment_processing_store.js'
+      - 'netlify/functions/_shared/_payment_processing_orchestrator.js'
+      - 'netlify/functions/_shared/_payment_deterministic_arbiter.js'
       - 'tests/payment-processing-store.test.js'
       - 'tests/payment-processing-orchestrator.test.js'
       - 'tests/payment-deterministic-arbiter.test.js'
@@ -43,9 +43,9 @@ jobs:
 
       - name: Check syntax
         run: |
-          node --check netlify/functions/_payment_processing_store.js
-          node --check netlify/functions/_payment_processing_orchestrator.js
-          node --check netlify/functions/_payment_deterministic_arbiter.js
+          node --check netlify/functions/_shared/_payment_processing_store.js
+          node --check netlify/functions/_shared/_payment_processing_orchestrator.js
+          node --check netlify/functions/_shared/_payment_deterministic_arbiter.js
           node --check tests/payment-processing-store.test.js
           node --check tests/payment-processing-orchestrator.test.js
           node --check tests/payment-deterministic-arbiter.test.js
