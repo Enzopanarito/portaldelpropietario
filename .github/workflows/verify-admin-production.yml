@@ -22,10 +22,10 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
-      - name: Use Node.js 22
+      - name: Use Node.js 24
         uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version: '24'
           package-manager-cache: false
 
       - name: Wait for Admin quality assets and protection
@@ -78,7 +78,7 @@ jobs:
           echo "::add-mask::$token"
           echo "VLA_ADMIN_OIDC_TOKEN=$token" >> "$GITHUB_ENV"
 
-      - name: Certify protected Admin, Health, close dry-run and MKJ 15/15
+      - name: Certify protected Admin, Health, close dry-run and MKJ identities 15/15
         env:
           TARGET_URL: https://villalosapamates.netlify.app
         run: node tests/admin-ci-readonly-production.cjs
@@ -104,7 +104,7 @@ jobs:
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
             -f state=success \
             -f context='Admin Production Verification' \
-            -f description='Admin protegido, Health y MKJ 15/15 certificados con OIDC read-only.' \
+            -f description='Admin/Health OK; MKJ 15/15 identidades sanas, divergencias manuales documentadas.' \
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
       - name: Publish failed production status
@@ -116,5 +116,5 @@ jobs:
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
             -f state=failure \
             -f context='Admin Production Verification' \
-            -f description='La certificación Admin/Health/MKJ read-only falló.' \
+            -f description='La certificación Admin/Health/MKJ read-only detectó un problema real.' \
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
