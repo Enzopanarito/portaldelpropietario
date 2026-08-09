@@ -73,7 +73,6 @@ jobs:
             --no-build \
             --dir=dist \
             --functions=netlify/functions \
-            --context=deploy-preview \
             --alias="$PREVIEW_ALIAS" \
             --site="$NETLIFY_SITE_ID" \
             --auth="$NETLIFY_AUTH_TOKEN" \
