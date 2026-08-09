@@ -71,15 +71,16 @@ async function live(browser,target){
   await page.locator('#main').waitFor({state:'visible',timeout:15000});
   await page.click('#reportBtn');
   await page.locator('#vla-pay-title').waitFor({state:'visible',timeout:10000});
-  await chooseChannel(page,'Efectivo','#payChannelCash');await page.locator('#vla-pay-details').waitFor({state:'visible',timeout:10000});
+  await chooseChannel(page,'Efectivo','#payChannelCash');
+  await page.locator('#vla-pay-details').waitFor({state:'visible',timeout:10000});
+  const accountModes=await page.locator('#payMode option').evaluateAll(options=>options.map(option=>option.value));
+  assert(accountModes.includes('USD')&&accountModes.includes('Bs BCV'),'Casa 4, que tiene deuda en ambas monedas, no ofrece ambas cuentas de aplicación.');
   const metrics=await page.evaluate(()=>{const a=submitReport.getBoundingClientRect(),b=cancelModal.getBoundingClientRect();return{text:modal.innerText,gap:b.top-a.bottom,width:document.documentElement.scrollWidth,viewport:innerWidth,rate:Number(window.rate()),assets:['vla-owner-payment-report-v3-css','vla-payment-intelligence','vla-owner-payment-report-v3'].every(id=>!!document.getElementById(id))}});
   assert(!/recargo/i.test(metrics.text),'El modal público muestra recargo.');assert(metrics.gap>=12,`Botones juntos: ${metrics.gap}px.`);assert(metrics.width<=metrics.viewport+2,'Hay desbordamiento horizontal.');assert(metrics.assets,'Faltan assets.');assert(metrics.rate>0,'No hay tasa BCV.');
   await page.selectOption('#payCurrency','BS');const cashMode=await page.locator('#payMode').inputValue();assert(cashMode==='Bs BCV',`El efectivo en Bs no se asignó a la cuenta Bs: ${cashMode}.`);await page.fill('#payAmount',String(Math.round(85*metrics.rate*100)/100));await page.locator('#payAmount').blur();
   const detection=await paymentResolution(page,85);assert(detection.enteredCurrency==='BS'&&Math.abs(detection.amountUsdRef-85)<.01,`Conversión incorrecta: ${JSON.stringify(detection)}`);
   await page.screenshot({path:'owner-payment-report-live-casa4.png'});await page.click('#cancelModal');
-  const casa2=await houseOptionValue(page,'#userSelector',2,10000);
-  if(casa2){await page.selectOption('#userSelector',casa2);await page.click('#reportBtn');await chooseChannel(page,'Efectivo','#payChannelCash');await page.locator('#vla-pay-details').waitFor({state:'visible',timeout:10000});const modes=await page.locator('#payMode option').allTextContents();assert(modes.includes('USD')&&modes.includes('Bs BCV'),'Casa 2 no muestra ambas cuentas de aplicación.');await page.click('#cancelModal')}
-  assert(!errors.length,`Errores live: ${errors.join(' | ')}`);await page.close();return{metrics,detection,cashMode,casa2AccountsVerified:Boolean(casa2),errors}
+  assert(!errors.length,`Errores live: ${errors.join(' | ')}`);await page.close();return{metrics,detection,cashMode,bothAccountsVerified:true,accountModes,errors}
 }
 
 async function fixture(browser){
