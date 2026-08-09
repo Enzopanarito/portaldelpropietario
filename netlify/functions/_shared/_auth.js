@@ -9,7 +9,7 @@ const CI_READONLY_TOKEN_TTL_MS = 20 * 60 * 1000;
 const CLOCK_SKEW_MS = 60 * 1000;
 const ISSUER = 'villa-los-apamates';
 const AUDIENCE = 'vla-admin';
-const SESSION_KEY_DOMAIN = 'vla/admin/session-signing/v2';
+const SESSION_KEY_DOMAIN = 'vla/admin/session-signing/v3';
 const CI_READONLY_ROLE = 'admin-ci-readonly';
 const CI_SAFE_GET_PATHS = new Set([
   '/.netlify/functions/admin-data',
@@ -32,23 +32,72 @@ function fromBase64url(input) {
 }
 function clean(value) { return String(value || '').trim(); }
 function strong(value) { return Buffer.byteLength(clean(value), 'utf8') >= 32; }
+function isProductionEnvironment(env = process.env) {
+  const explicit = clean(env.VLA_DATA_ENVIRONMENT).toLowerCase();
+  const context = clean(env.CONTEXT).toLowerCase();
+  return explicit === 'production' || context === 'production';
+}
 function deriveSessionSecret(root) {
   return crypto.createHmac('sha256', Buffer.from(clean(root), 'utf8')).update(SESSION_KEY_DOMAIN, 'utf8').digest('hex');
 }
-function getSecret() {
-  const dedicated = clean(process.env.ADMIN_SESSION_SIGNING_KEY);
-  if (strong(dedicated)) return deriveSessionSecret(dedicated);
-  const proofKey = clean(process.env.PAYMENT_PROOF_ENCRYPTION_KEY);
-  if (strong(proofKey)) return deriveSessionSecret(proofKey);
-  const legacy = clean(process.env.ADMIN_TOKEN_SECRET);
-  if (strong(legacy)) return legacy;
-  // Recuperación segura: el token de Airtable solo existe del lado del servidor.
-  // Se deriva una clave distinta para sesiones; el token nunca se incluye en el JWT ni llega al navegador.
-  const airtableToken = clean(process.env.AIRTABLE_API_TOKEN);
-  if (strong(airtableToken)) return deriveSessionSecret(airtableToken);
-  const password = clean(process.env.ADMIN_PASSWORD);
-  return strong(password) ? deriveSessionSecret(password) : '';
+function getSecretInfo(env = process.env) {
+  const dedicated = clean(env.ADMIN_SESSION_SIGNING_KEY);
+  if (strong(dedicated)) {
+    return {
+      secret: deriveSessionSecret(dedicated),
+      source: 'ADMIN_SESSION_SIGNING_KEY',
+      dedicated: true,
+      derived: true,
+      productionSafe: true,
+      keyVersion: 3
+    };
+  }
+
+  // Producción falla de forma cerrada. Nunca reutiliza claves de cifrado, Airtable,
+  // contraseña u otros secretos como raíz de firma administrativa.
+  if (isProductionEnvironment(env)) {
+    return {
+      secret: '',
+      source: 'missing',
+      dedicated: false,
+      derived: false,
+      productionSafe: false,
+      keyVersion: 3,
+      errorCode: 'ADMIN_SESSION_SIGNING_KEY_REQUIRED'
+    };
+  }
+
+  // Compatibilidad exclusiva para desarrollo, staging y tests. Permite ejecutar
+  // la batería local sin copiar credenciales de producción.
+  const candidates = [
+    ['PAYMENT_PROOF_ENCRYPTION_KEY', env.PAYMENT_PROOF_ENCRYPTION_KEY, true],
+    ['ADMIN_TOKEN_SECRET', env.ADMIN_TOKEN_SECRET, false],
+    ['AIRTABLE_API_TOKEN', env.AIRTABLE_API_TOKEN, true],
+    ['ADMIN_PASSWORD', env.ADMIN_PASSWORD, true]
+  ];
+  for (const [source, value, derive] of candidates) {
+    const normalized = clean(value);
+    if (!strong(normalized)) continue;
+    return {
+      secret: derive ? deriveSessionSecret(normalized) : normalized,
+      source,
+      dedicated: false,
+      derived: derive,
+      productionSafe: false,
+      keyVersion: 3
+    };
+  }
+  return {
+    secret: '',
+    source: 'missing',
+    dedicated: false,
+    derived: false,
+    productionSafe: false,
+    keyVersion: 3,
+    errorCode: 'ADMIN_SIGNING_KEY_WEAK'
+  };
 }
+function getSecret() { return getSecretInfo(process.env).secret; }
 function sign(payload, secret) {
   return crypto.createHmac('sha256', secret).update(payload).digest('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
 }
@@ -58,8 +107,16 @@ function safeEqual(left, right) {
   return a.length === b.length && a.length > 0 && crypto.timingSafeEqual(a, b);
 }
 function issueAdminToken(extra = {}) {
-  const secret = getSecret();
-  if (!secret) throw Object.assign(new Error('No existe una clave administrativa fuerte para firmar sesiones.'), { code: 'ADMIN_SIGNING_KEY_WEAK' });
+  const secretInfo = getSecretInfo(process.env);
+  const secret = secretInfo.secret;
+  if (!secret) {
+    throw Object.assign(
+      new Error(secretInfo.errorCode === 'ADMIN_SESSION_SIGNING_KEY_REQUIRED'
+        ? 'Producción requiere ADMIN_SESSION_SIGNING_KEY dedicada para firmar sesiones.'
+        : 'No existe una clave administrativa fuerte para firmar sesiones.'),
+      { code: secretInfo.errorCode || 'ADMIN_SIGNING_KEY_WEAK' }
+    );
+  }
   const role = extra.role === CI_READONLY_ROLE ? CI_READONLY_ROLE : 'admin';
   const now = Date.now();
   const claims = {
@@ -71,7 +128,7 @@ function issueAdminToken(extra = {}) {
     nbf: now - CLOCK_SKEW_MS,
     exp: now + (role === CI_READONLY_ROLE ? CI_READONLY_TOKEN_TTL_MS : TOKEN_TTL_MS),
     authVersion: Math.max(0, Number(extra.authVersion || 0)),
-    keyVersion: 2
+    keyVersion: secretInfo.keyVersion
   };
   if (role === CI_READONLY_ROLE && /^\d+$/.test(String(extra.ciRunId || ''))) claims.ciRunId = String(extra.ciRunId);
   const payload = base64url(JSON.stringify(claims));
@@ -147,7 +204,9 @@ module.exports = {
   CI_READONLY_ROLE,
   CI_SAFE_GET_PATHS,
   strong,
+  isProductionEnvironment,
   deriveSessionSecret,
+  getSecretInfo,
   getSecret,
   issueAdminToken,
   verifyAdminToken,
