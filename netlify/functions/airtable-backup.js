@@ -8,12 +8,8 @@ const { withAirtableUsage } = require('./_shared/_airtable_meter');
 const crypto = require('crypto');
 const { requireAdmin } = require('./_shared/_auth');
 const { sha256, sortRecords } = require('./_shared/_integrity');
+const { TABLES } = require('./_shared/_backup_inventory');
 
-const TABLES = [
-  'Propietarios','Gastos del Mes','Configuración','Pagos','Historial de Cargos','Reportes de Pago',
-  'Recibos de Pago','Cierres de Auditoría','ControlVersiones','WhatsApp Jobs','WhatsApp Programaciones',
-  'Cuentas de Cobro Autorizadas'
-];
 const FETCH_TIMEOUT_MS = 12000;
 
 function todayCaracasISO() {
