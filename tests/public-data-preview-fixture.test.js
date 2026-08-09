@@ -17,6 +17,7 @@ test('la fotografía de preview contiene 15 casas ficticias, saldos consistentes
   assert.deepEqual(payload.propietarios.map(owner => owner.Casa), Array.from({ length: 15 }, (_, index) => index + 1));
   assert.ok(payload.propietarios.every(owner => /^Propietario de prueba Casa \d+$/.test(owner.Propietario)));
   assert.ok(payload.propietarios.every(owner => owner['Saldo Oficial Activo'] === true));
+  assert.ok(payload.propietarios.every(owner => owner.balanceEngineVersion === 'vla-balance-contract-v7'));
   assert.ok(payload.propietarios.every(owner => Math.abs(
     Number(owner['Saldo USD Actual']) + Number(owner['Saldo Bs Ref Actual']) - Number(owner['Saldo Total Actual'])
   ) < 0.011));

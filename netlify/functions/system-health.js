@@ -257,7 +257,7 @@ const handler = async function(event) {
 
     add('Botón Portón en admin', true, 'Disponible en el panel Admin como 🚪 Portón; abre el selector Automático/Manual, Auto Sync y botones Habilitar/Limitar.');
     add('Botón Auto Sync', true, 'Disponible dentro del módulo Portón. En modo Manual queda bloqueado para evitar ejecuciones accidentales.');
-    add('Prueba login MKJ', true, 'Disponible como botón manual. Salud no ejecuta login MKJ para evitar llamadas externas innecesarias.', 'ok');
+    add('Reconciliación MKJ de solo lectura', true, 'La revisión avanzada contrasta las 15 casas con la organización MKJ sin habilitar, limitar ni escribir en Airtable.', 'ok');
 
     try {
       counter.external += 1;

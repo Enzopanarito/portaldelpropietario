@@ -42,6 +42,7 @@ function ownerId(house) {
 
 function buildOwner(item, now) {
   const total = money(item.usd + item.bsRef);
+  const totalPagadero=money(Math.max(0,item.usd)+Math.max(0,item.bsRef));
   const clock = caracasParts(now);
   const cutoff = now.toISOString();
   return {
@@ -84,7 +85,20 @@ function buildOwner(item, now) {
     'Pronto Pago Cumplido': item.bsRef <= 0,
     'Mes Calculo': clock.monthKey,
     'Dia Calculo': clock.day,
-    'Saldo Oficial Activo': true
+    'Saldo Oficial Activo': true,
+    saldoUsd: money(item.usd),
+    saldoBsRef: money(item.bsRef),
+    totalPagadero,
+    saldoNetoReferencial: total,
+    saldoFavorUsd: money(Math.max(0,-item.usd)),
+    saldoFavorBs: money(Math.max(0,-item.bsRef)),
+    deudaVencidaUsd: 0,
+    deudaVencidaBs: 0,
+    mesCorrienteUsd: money(item.usd),
+    mesCorrienteBs: money(item.bsRef),
+    estadoMorosidad: totalPagadero>0.009?'PENDIENTE':'SOLVENTE',
+    accesoEsperado: 'Habilitado',
+    balanceEngineVersion: 'vla-balance-contract-v7'
   };
 }
 

@@ -27,10 +27,10 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install dependencies safely
-        run: npm install --ignore-scripts --no-audit --no-fund
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Check Netlify function syntax
         run: find netlify/functions -maxdepth 1 -type f -name '*.js' -print0 | xargs -0 -n1 node --check
@@ -137,3 +137,6 @@ jobs:
 
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
+
+      - name: Audit build and browser tooling dependencies
+        run: npm audit --audit-level=high

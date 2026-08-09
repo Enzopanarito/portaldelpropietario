@@ -1,5 +1,5 @@
 {
-  "release": "2026-08-08-v8",
+  "release": "2026-08-09-v9",
   "canonicalMonth": "2026-07",
   "expectedHouses": 15,
   "balanceEngine": 7,
@@ -8,6 +8,10 @@
   "balanceSource": "canonical-july-2026",
   "breakdownPresentation": "owner-breakdown-v7",
   "paymentReport": "progressive-v8",
-  "cutoff": "2026-08-08T00:00:00.000Z",
+  "financialFailClosed": "canonical-v7-required",
+  "paymentDatePolicy": "server-caracas-v1",
+  "healthControlCenter": "release-mkj-readonly-v1",
+  "adminE2E": "authenticated-readonly-v1",
+  "cutoff": "2026-08-09T00:00:00.000Z",
   "productionPublishDirectory": "dist"
 }

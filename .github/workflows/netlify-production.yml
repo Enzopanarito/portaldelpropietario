@@ -7,8 +7,6 @@ on:
 
 permissions:
   contents: read
-  issues: write
-  pull-requests: write
 
 jobs:
   deploy:
@@ -26,7 +24,7 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install dependencies safely
         run: npm ci --ignore-scripts --no-audit --no-fund
@@ -39,7 +37,6 @@ jobs:
 
       - name: Install Chromium for critical browser gates
         run: |
-          npm install --no-save --ignore-scripts playwright@1.53.0
           npx playwright install --with-deps chromium
 
       - name: Run critical payment and admin browser gates
@@ -93,22 +90,15 @@ jobs:
           echo "build_id=$build_id" >> "$GITHUB_OUTPUT"
           echo "Server-side production build triggered: $build_id"
 
-      - name: Verify production release and breakdown marker
+      - name: Verify exact production deploy and canonical release contract
         id: verify
         if: steps.trigger.outcome == 'success'
         env:
           BUILD_ID: ${{ steps.trigger.outputs.build_id }}
         shell: bash
         run: |
+          production_release="${RUNNER_TEMP}/vla-production-release.json"
           for attempt in $(seq 1 90); do
-            if body="$(curl --fail --silent --show-error --location --max-time 30 \
-              "https://villalosapamates.netlify.app/release.json?run=$GITHUB_RUN_ID&attempt=$attempt" 2>/dev/null)"; then
-              if printf '%s' "$body" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);if(j.release!=='2026-08-08-v7'||j.expectedHouses!==15||j.breakdownPresentation!=='owner-breakdown-v7'||j.paymentReport!=='progressive-v6')process.exit(1)})"; then
-                echo "Production verified: release 2026-08-08-v7, 15 houses, owner-breakdown-v7 and progressive-v6."
-                exit 0
-              fi
-            fi
-
             build_json="$(curl --fail --silent --show-error \
               -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
               -H "User-Agent: VLA-GitHub-Actions" \
@@ -122,14 +112,33 @@ jobs:
                 exit 1
               fi
             fi
+
+            deploy_json="$(curl --fail --silent --show-error \
+              -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+              -H "User-Agent: VLA-GitHub-Actions" \
+              "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/deploys?per_page=20" 2>/dev/null || true)"
+            deploy_id="$(printf '%s' "$deploy_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const a=JSON.parse(s||'[]');const d=a.find(x=>x.context==='production'&&x.commit_ref===process.env.GITHUB_SHA);process.stdout.write(String(d?.id||''))})" 2>/dev/null || true)"
+            deploy_state="$(printf '%s' "$deploy_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const a=JSON.parse(s||'[]');const d=a.find(x=>x.context==='production'&&x.commit_ref===process.env.GITHUB_SHA);process.stdout.write(String(d?.state||''))})" 2>/dev/null || true)"
+            if [ -n "$deploy_id" ]; then
+              echo "Attempt $attempt: exact commit deploy $deploy_id is $deploy_state"
+            fi
+            if [ "$deploy_state" = "ready" ] && curl --fail --silent --show-error --location --max-time 30 \
+              "https://villalosapamates.netlify.app/release.json?commit=$GITHUB_SHA&attempt=$attempt" \
+              --output "$production_release"; then
+              if node scripts/verify-release-contract.js release.json "$production_release"; then
+                echo "deploy_id=$deploy_id" >> "$GITHUB_OUTPUT"
+                echo "Production verified for exact commit $GITHUB_SHA with canonical release.json."
+                exit 0
+              fi
+            fi
             sleep 10
           done
-          echo "Production did not expose the expected visual breakdown marker before timeout."
+          echo "Production did not expose the exact commit and canonical release contract before timeout."
           exit 1
 
-      - name: Report deployment result on PR 26
+      - name: Report deployment result
         if: always()
-        uses: actions/github-script@v7
+        shell: bash
         env:
           CREDENTIALS_READY: ${{ steps.credentials.outputs.ready }}
           SITE_OUTCOME: ${{ steps.site.outcome }}
@@ -137,24 +146,22 @@ jobs:
           VERIFY_OUTCOME: ${{ steps.verify.outcome }}
           PRODUCTION_BRANCH: ${{ steps.site.outputs.production_branch }}
           BUILD_ID: ${{ steps.trigger.outputs.build_id }}
-        with:
-          script: |
-            const ready = process.env.CREDENTIALS_READY === 'true';
-            const triggered = process.env.TRIGGER_OUTCOME === 'success';
-            const verified = process.env.VERIFY_OUTCOME === 'success';
-            const branch = process.env.PRODUCTION_BRANCH || 'unknown';
-            const buildId = process.env.BUILD_ID || 'not returned';
-            let body;
-            if (!ready) {
-              body = `### Producción Netlify bloqueada\n\nLos secretos de Netlify no están disponibles para el flujo. No se modificó producción.\n\nCommit: \`${context.sha}\` · [Ejecución](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
-            } else if (triggered && verified) {
-              body = `### Contrato financiero v7 publicado y verificado ✅\n\nNetlify confirmó \`2026-08-08-v7\`, las 15 casas, \`owner-breakdown-v7\` y \`progressive-v6\`. Los gates unitarios y de navegador se ejecutaron antes de disparar el build.\n\nRama de producción: \`${branch}\` · Build: \`${buildId}\` · Commit del flujo: \`${context.sha}\` · [Ejecución](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
-            } else {
-              body = `### Desglose visual de producción no verificado ⚠️\n\nRama de producción: \`${branch}\`. Build: \`${buildId}\`. Disparo: \`${process.env.TRIGGER_OUTCOME || 'no ejecutado'}\`. Verificación: \`${process.env.VERIFY_OUTCOME || 'no ejecutada'}\`.\n\nCommit: \`${context.sha}\` · [Ejecución](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
-            }
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: 26,
-              body
-            });
+          DEPLOY_ID: ${{ steps.verify.outputs.deploy_id }}
+        run: |
+          if [ "$CREDENTIALS_READY" != "true" ]; then
+            title="Producción Netlify bloqueada"
+            detail="Los secretos de Netlify no estuvieron disponibles. No se modificó producción."
+          elif [ "$TRIGGER_OUTCOME" = "success" ] && [ "$VERIFY_OUTCOME" = "success" ]; then
+            title="Contrato canónico publicado y verificado ✅"
+            detail="Netlify confirmó el commit exacto y release.json coincide clave por clave con el artefacto servido."
+          else
+            title="Producción no verificada ⚠️"
+            detail="El despliegue o la verificación canónica no concluyeron correctamente."
+          fi
+          {
+            echo "### $title"
+            echo
+            echo "$detail"
+            echo
+            echo "Rama: \`${PRODUCTION_BRANCH:-unknown}\` · Build: \`${BUILD_ID:-not-returned}\` · Deploy: \`${DEPLOY_ID:-not-returned}\` · Commit: \`$GITHUB_SHA\`"
+          } >> "$GITHUB_STEP_SUMMARY"

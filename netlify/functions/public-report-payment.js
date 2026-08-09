@@ -20,6 +20,7 @@ const { findDuplicateMatches } = require('./_shared/_payment_duplicate_core');
 const { sign } = require('./_shared/_internal_job_auth');
 const { connectLambdaEvent } = require('./_shared/_blobs_compat');
 const { todayCaracasISO, resolveSubmittedDate } = require('./_shared/_payment_date_resolver');
+const { verifyDateAttestation } = require('./_shared/_payment_date_attestation');
 
 const ALLOWED_MODES = new Set(['USD', 'Bs BCV']);
 const ALLOWED_ENTERED_CURRENCIES = new Set(['USD', 'BS']);
@@ -38,7 +39,7 @@ function normalizeReference(value){return String(value||'').normalize('NFD').rep
 function optionalText(value,max){return cleanPlainText(String(value||''),max).trim();}
 function normalizePaymentMethod(method,bank=''){
   const explicit=String(method||'').trim().toUpperCase();
-  if(['TRANSFER_VE','MOBILE_PAYMENT_VE','ZELLE','TRANSFER_US','BINANCE_PAY','CRYPTO_TRANSFER','OTHER'].includes(explicit))return explicit;
+  if(['TRANSFER_VE','MOBILE_PAYMENT_VE','ZELLE','TRANSFER_US','BINANCE_PAY','CRYPTO_TRANSFER'].includes(explicit))return explicit;
   const hint=String(bank||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();
   if(hint.includes('ZELLE'))return'ZELLE';
   if(hint.includes('BINANCE PAY'))return'BINANCE_PAY';
@@ -161,7 +162,6 @@ const handler = async function(event){
     const ownerId=String(body.ownerId||'').trim(),mode=String(body.mode||'').trim(),enteredCurrency=String(body.enteredCurrency||'').trim().toUpperCase(),paymentChannel=String(body.paymentChannel||'DIGITAL').trim().toUpperCase(),rawReference=sanitizeReference(body.reference),amount=parseAmountInput(body.amount),ip=clientIp(event);
     const cashReceiver=optionalText(body.cashReceiver,120),reportedBank=optionalText(body.bank,100),bank=paymentChannel==='CASH'?'Efectivo':reportedBank,method=paymentChannel==='CASH'?'CASH':normalizePaymentMethod(body.method,reportedBank),clientTransactionDate=String(body.transactionDate||'').trim(),transactionStatus=paymentChannel==='CASH'?'PENDING_ADMIN_CONFIRMATION':'PENDING_REVIEW',observations=optionalText(body.observations,300),analysisSummary=normalizeAnalysisSummary(body.analysisSummary),reportTimestamp=new Date().toISOString();
     const submissionId=/^[A-Za-z0-9_-]{8,100}$/.test(String(body.submissionId||''))?String(body.submissionId):crypto.randomUUID();
-    const dateResolution=resolveSubmittedDate({clientDate:clientTransactionDate,clientSource:body.transactionDateSource,attachment:body.attachment,paymentChannel}),{transactionDate,transactionDateSource,transactionDateConfidence,transactionDateNeedsReview,transactionDateEvidence}=dateResolution;
     auditContext={event:'VLA_PAYMENT_REPORT_FAILED',ownerId,paymentChannel,method,submissionId};
     if(!validRecordId(ownerId))return json(400,{message:'Propietario inválido.'});
     if(!PAYMENT_CHANNELS.has(paymentChannel))return json(400,{message:'Seleccione si el pago fue digital o en efectivo.'});
@@ -174,6 +174,9 @@ const handler = async function(event){
     const attachment=paymentChannel==='DIGITAL'?decodeAttachment(body.attachment):null;
     if(paymentChannel==='DIGITAL'&&!attachment)return json(400,{message:'Debe adjuntar el comprobante antes de enviar el reporte.'});
     if(paymentChannel==='DIGITAL')connectLambdaEvent(event);
+    const attachmentSha=attachment?crypto.createHash('sha256').update(attachment.content).digest('hex'):'';
+    const trustedProofDate=attachment?verifyDateAttestation(body.dateAttestation,{ownerId,attachmentSha,method},{now:Date.parse(reportTimestamp)}):null;
+    const dateResolution=resolveSubmittedDate({clientDate:clientTransactionDate,clientSource:body.transactionDateSource,attachment:body.attachment,paymentChannel,method,bank,trustedProofDate,now:new Date(reportTimestamp)}),{transactionDate,transactionDateSource,transactionDateConfidence,transactionDateNeedsReview,transactionDateEvidence}=dateResolution;
     const reference=rawReference||(paymentChannel==='CASH'?`EFECTIVO · ${cashReceiver} · ${transactionDate}`:'');
 
     const [ipLimit,ownerLimit]=await Promise.all([rateLimit('PUBLIC_REPORT_IP',ip,MAX_REPORTS_PER_IP),rateLimit('PUBLIC_REPORT_OWNER',ownerId,MAX_REPORTS_PER_OWNER)]);
@@ -228,7 +231,7 @@ const handler = async function(event){
     const notificationTask=notifyAdminPaymentReport({ownerId,owner,mode,enteredCurrency,amountEntered:amount,usdEq,amountBs,reference,rateInfo,reportId:report?.id,access,bank,transactionDate,transactionDateSource,transactionDateConfidence,transactionDateNeedsReview,transactionDateEvidence,transactionStatus,observations,analysisSummary,attachment,paymentChannel,cashReceiver,submissionId}).catch(error=>({sent:false,status:'Error enviando notificación admin',detail:safeDisplayText(error.message,500)}));
     const [automation,adminNotification]=await Promise.all([within(automationTask,POST_CREATE_TIMEOUT_MS,{queued:false,status:'BACKGROUND_TRIGGER_TIMEOUT'}),within(notificationTask,POST_CREATE_TIMEOUT_MS,{sent:false,status:'Notificación diferida para proteger la respuesta del portal'})]);
     const message=paymentChannel==='CASH'?'Efectivo reportado. Quedó pendiente de confirmación administrativa; no se modificará el saldo ni el acceso hasta que la entrega sea verificada.':automation.queued?'Pago recibido. El motor inteligente está validando el comprobante, el receptor y posibles duplicados.':'Pago recibido y protegido. La validación se reintentará automáticamente.';
-    console.info(JSON.stringify({event:'VLA_PAYMENT_REPORT_CREATED',reportId:report?.id||null,ownerId,paymentChannel,method,submissionId,transactionDateSource,targetMode:mode,proofStored:Boolean(proof?.verified),analysisQueued:Boolean(automation.queued)}));
+    console.info(JSON.stringify({event:'VLA_PAYMENT_REPORT_CREATED',reportId:report?.id||null,ownerId,paymentChannel,method,submissionId,reportTimestamp,transactionDate,transactionDateSource,transactionDateConfidence,dateAttestationVerified:Boolean(trustedProofDate),targetMode:mode,proofStored:Boolean(proof?.verified),analysisQueued:Boolean(automation.queued)}));
     return json(200,deepEscapeStrings({success:true,message,reportId:report?.id,paymentChannel,targetMode:mode,enteredCurrency,amountEntered:amount,amountUsdRef:usdEq,amountBs,rateApplied:rateInfo.rate||null,method,transactionDate,transactionDateSource,transactionDateConfidence,transactionDateNeedsReview,transactionDateEvidence,reportTimestamp,attachmentIncluded:Boolean(attachment),proofStored:Boolean(proof?.verified),visualHashStored:Boolean(identity?.visualHash),automation,access,adminNotification}));
   }catch(error){
     console.error(JSON.stringify({...auditContext,errorCode:safeDisplayText(error.code||error.name||'UNKNOWN',120)}));

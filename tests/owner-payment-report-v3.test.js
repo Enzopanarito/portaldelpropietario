@@ -13,6 +13,7 @@ assert(/id="vla-pay-details"[^>]*hidden/.test(ui),'El formulario no puede aparec
 assert(/id="payTransactionStatus" type="hidden"/.test(ui),'El estado técnico debe ser invisible para el propietario.');
 assert(!ui.includes('Estado visible'),'El propietario no debe elegir estados técnicos.');
 assert(!ui.includes('FALLBACK_DATE_METHODS')&&ui.includes('automaticDateFromFile')&&ui.includes('transactionDateSource'),'La fecha debe resolverse automáticamente para todos los métodos.');
+assert(ui.includes('dateAttestation'),'La fecha visible autenticada debe viajar con atestación de servidor.');
 assert(!/function digitalMissing\(\)\{[^}]*missing\.push\('date'\)/.test(ui),'La fecha nunca debe bloquear el envío digital.');
 assert(ui.includes('analysisSummary')&&ui.includes('possibleVisualModification'),'El administrador debe recibir la mayor información de la prelectura.');
 assert(ui.includes("cash?(currency==='BS'?'Bs BCV':currency==='USD'?'USD':'')"),'El efectivo debe asignar la cuenta desde su moneda sin pedir un campo oculto.');

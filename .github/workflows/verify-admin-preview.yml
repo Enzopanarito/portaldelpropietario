@@ -15,6 +15,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Resolve preview URL
         id: target
         run: echo "url=https://deploy-preview-${{ github.event.pull_request.number }}--villalosapamates.netlify.app" >> "$GITHUB_OUTPUT"
@@ -57,7 +62,7 @@ jobs:
 
       - name: Install Chromium
         run: |
-          npm install --no-save --ignore-scripts playwright@1.53.0
+          npm ci --ignore-scripts --no-audit --no-fund
           npx playwright install --with-deps chromium
 
       - name: Verify public login rendering and accessibility
