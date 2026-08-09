@@ -41,10 +41,10 @@ function deriveSessionSecret(root) {
   return crypto.createHmac('sha256', Buffer.from(clean(root), 'utf8')).update(SESSION_KEY_DOMAIN, 'utf8').digest('hex');
 }
 function getSecretInfo(env = process.env) {
-  const dedicated = clean(env.ADMIN_SESSION_SIGNING_KEY);
-  if (strong(dedicated)) {
+  const futureDedicated = clean(env.ADMIN_SESSION_SIGNING_KEY);
+  if (strong(futureDedicated)) {
     return {
-      secret: deriveSessionSecret(dedicated),
+      secret: deriveSessionSecret(futureDedicated),
       source: 'ADMIN_SESSION_SIGNING_KEY',
       dedicated: true,
       derived: true,
@@ -53,8 +53,22 @@ function getSecretInfo(env = process.env) {
     };
   }
 
-  // Producción falla de forma cerrada. Nunca reutiliza claves de cifrado, Airtable,
-  // contraseña u otros secretos como raíz de firma administrativa.
+  // ADMIN_TOKEN_SECRET ya existe y está destinado al plano administrativo. Se
+  // usa como material raíz y se deriva una subclave exclusiva para sesiones,
+  // separada por dominio HMAC. En producción no se aceptan Airtable, contraseña
+  // ni la clave de cifrado de comprobantes como fuente primaria nueva.
+  const adminRoot = clean(env.ADMIN_TOKEN_SECRET);
+  if (strong(adminRoot)) {
+    return {
+      secret: deriveSessionSecret(adminRoot),
+      source: 'ADMIN_TOKEN_SECRET',
+      dedicated: true,
+      derived: true,
+      productionSafe: true,
+      keyVersion: 2
+    };
+  }
+
   if (isProductionEnvironment(env)) {
     return {
       secret: '',
@@ -63,26 +77,25 @@ function getSecretInfo(env = process.env) {
       derived: false,
       productionSafe: false,
       keyVersion: 2,
-      errorCode: 'ADMIN_SESSION_SIGNING_KEY_REQUIRED'
+      errorCode: 'ADMIN_TOKEN_SECRET_REQUIRED'
     };
   }
 
   // Compatibilidad exclusiva para desarrollo, staging y tests. Permite ejecutar
-  // la batería local sin copiar credenciales de producción.
+  // la batería local sin copiar el secreto administrativo de producción.
   const candidates = [
-    ['PAYMENT_PROOF_ENCRYPTION_KEY', env.PAYMENT_PROOF_ENCRYPTION_KEY, true],
-    ['ADMIN_TOKEN_SECRET', env.ADMIN_TOKEN_SECRET, false],
-    ['AIRTABLE_API_TOKEN', env.AIRTABLE_API_TOKEN, true],
-    ['ADMIN_PASSWORD', env.ADMIN_PASSWORD, true]
+    ['PAYMENT_PROOF_ENCRYPTION_KEY', env.PAYMENT_PROOF_ENCRYPTION_KEY],
+    ['AIRTABLE_API_TOKEN', env.AIRTABLE_API_TOKEN],
+    ['ADMIN_PASSWORD', env.ADMIN_PASSWORD]
   ];
-  for (const [source, value, derive] of candidates) {
+  for (const [source, value] of candidates) {
     const normalized = clean(value);
     if (!strong(normalized)) continue;
     return {
-      secret: derive ? deriveSessionSecret(normalized) : normalized,
+      secret: deriveSessionSecret(normalized),
       source,
       dedicated: false,
-      derived: derive,
+      derived: true,
       productionSafe: false,
       keyVersion: 2
     };
@@ -96,6 +109,29 @@ function getSecretInfo(env = process.env) {
     keyVersion: 2,
     errorCode: 'ADMIN_SIGNING_KEY_WEAK'
   };
+}
+function verificationSecrets(env = process.env) {
+  const result = [];
+  const add = (secret, source) => {
+    const normalized = clean(secret);
+    if (!strong(normalized) || result.some(item => item.secret === normalized)) return;
+    result.push({ secret: normalized, source });
+  };
+  const primary = getSecretInfo(env);
+  add(primary.secret, primary.source);
+
+  // Transición sin cortes: las sesiones emitidas por la versión productiva
+  // anterior se firmaron con una subclave derivada de la clave de comprobantes.
+  // Se aceptan únicamente para verificación hasta su expiración natural; jamás se
+  // emiten tokens nuevos con estas raíces de compatibilidad.
+  const proofRoot = clean(env.PAYMENT_PROOF_ENCRYPTION_KEY);
+  if (strong(proofRoot)) add(deriveSessionSecret(proofRoot), 'PAYMENT_PROOF_ENCRYPTION_KEY-legacy-v2');
+
+  // Compatibilidad adicional con despliegues históricos que pudieron usar el
+  // ADMIN_TOKEN_SECRET directamente antes de aplicar la derivación por dominio.
+  const adminRoot = clean(env.ADMIN_TOKEN_SECRET);
+  if (strong(adminRoot)) add(adminRoot, 'ADMIN_TOKEN_SECRET-legacy-raw');
+  return result;
 }
 function getSecret() { return getSecretInfo(process.env).secret; }
 function sign(payload, secret) {
@@ -111,8 +147,8 @@ function issueAdminToken(extra = {}) {
   const secret = secretInfo.secret;
   if (!secret) {
     throw Object.assign(
-      new Error(secretInfo.errorCode === 'ADMIN_SESSION_SIGNING_KEY_REQUIRED'
-        ? 'Producción requiere ADMIN_SESSION_SIGNING_KEY dedicada para firmar sesiones.'
+      new Error(secretInfo.errorCode === 'ADMIN_TOKEN_SECRET_REQUIRED'
+        ? 'Producción requiere ADMIN_TOKEN_SECRET fuerte para firmar sesiones.'
         : 'No existe una clave administrativa fuerte para firmar sesiones.'),
       { code: secretInfo.errorCode || 'ADMIN_SIGNING_KEY_WEAK' }
     );
@@ -135,12 +171,12 @@ function issueAdminToken(extra = {}) {
   return `${payload}.${sign(payload, secret)}`;
 }
 function decodeAndVerifyAdminToken(token) {
-  const secret = getSecret();
-  if (!secret || !token || !String(token).includes('.')) return null;
+  if (!token || !String(token).includes('.')) return null;
   const parts = String(token).split('.');
   if (parts.length !== 2) return null;
   const [payload, signature] = parts;
-  if (!safeEqual(signature, sign(payload, secret))) return null;
+  const accepted = verificationSecrets(process.env).some(item => safeEqual(signature, sign(payload, item.secret)));
+  if (!accepted) return null;
   try {
     const data = JSON.parse(fromBase64url(payload));
     const now = Date.now();
@@ -207,6 +243,7 @@ module.exports = {
   isProductionEnvironment,
   deriveSessionSecret,
   getSecretInfo,
+  verificationSecrets,
   getSecret,
   issueAdminToken,
   verifyAdminToken,
