@@ -24,88 +24,90 @@ function productionEnv(extra = {}) {
   };
 }
 
-test('producción falla cerrada sin ADMIN_SESSION_SIGNING_KEY dedicada', () => {
+test('producción usa ADMIN_TOKEN_SECRET como raíz administrativa derivada', () => {
   const info = auth.getSecretInfo(productionEnv());
+  assert.equal(info.source, 'ADMIN_TOKEN_SECRET');
+  assert.equal(info.dedicated, true);
+  assert.equal(info.derived, true);
+  assert.equal(info.productionSafe, true);
+  assert.equal(info.keyVersion, 2);
+  assert.equal(info.secret, auth.deriveSessionSecret(STRONG_A));
+  assert.notEqual(info.secret, STRONG_A);
+});
+
+test('producción falla cerrada si falta la raíz administrativa', () => {
+  const info = auth.getSecretInfo(productionEnv({ ADMIN_TOKEN_SECRET: '', ADMIN_SESSION_SIGNING_KEY: '' }));
   assert.equal(info.secret, '');
   assert.equal(info.source, 'missing');
   assert.equal(info.dedicated, false);
   assert.equal(info.productionSafe, false);
-  assert.equal(info.errorCode, 'ADMIN_SESSION_SIGNING_KEY_REQUIRED');
+  assert.equal(info.errorCode, 'ADMIN_TOKEN_SECRET_REQUIRED');
 });
 
-test('producción usa exclusivamente ADMIN_SESSION_SIGNING_KEY dedicada sin cambiar el formato del token', () => {
+test('ADMIN_SESSION_SIGNING_KEY futura tiene prioridad sin cambiar formato del token', () => {
   const root = 'session-root-'.repeat(8);
   const info = auth.getSecretInfo(productionEnv({ ADMIN_SESSION_SIGNING_KEY: root }));
   assert.equal(info.source, 'ADMIN_SESSION_SIGNING_KEY');
   assert.equal(info.dedicated, true);
   assert.equal(info.productionSafe, true);
   assert.equal(info.keyVersion, 2);
-  assert.notEqual(info.secret, root);
   assert.equal(info.secret, auth.deriveSessionSecret(root));
 });
 
-test('cambiar secretos ajenos no cambia la firma cuando existe raíz dedicada', () => {
-  const root = 'isolated-session-key-'.repeat(4);
+test('cambiar Airtable, comprobantes o contraseña no cambia la firma administrativa', () => {
   const first = auth.getSecretInfo(productionEnv({
-    ADMIN_SESSION_SIGNING_KEY: root,
     AIRTABLE_API_TOKEN: 'x'.repeat(64),
-    PAYMENT_PROOF_ENCRYPTION_KEY: 'y'.repeat(64)
+    PAYMENT_PROOF_ENCRYPTION_KEY: 'y'.repeat(64),
+    ADMIN_PASSWORD: 'z'.repeat(64)
   }));
   const second = auth.getSecretInfo(productionEnv({
-    ADMIN_SESSION_SIGNING_KEY: root,
     AIRTABLE_API_TOKEN: 'm'.repeat(64),
-    PAYMENT_PROOF_ENCRYPTION_KEY: 'n'.repeat(64)
+    PAYMENT_PROOF_ENCRYPTION_KEY: 'n'.repeat(64),
+    ADMIN_PASSWORD: 'p'.repeat(64)
   }));
   assert.equal(first.secret, second.secret);
+  assert.equal(first.source, 'ADMIN_TOKEN_SECRET');
 });
 
-test('previews y tests conservan fallback solo fuera de producción', () => {
+test('verificación conserva temporalmente la firma productiva anterior sin emitir con ella', () => {
+  const env = productionEnv();
+  const secrets = auth.verificationSecrets(env);
+  assert.equal(secrets[0].source, 'ADMIN_TOKEN_SECRET');
+  assert.equal(secrets.some(item => item.source === 'PAYMENT_PROOF_ENCRYPTION_KEY-legacy-v2'), true);
+  assert.equal(secrets.some(item => item.source === 'ADMIN_TOKEN_SECRET-legacy-raw'), true);
+});
+
+test('previews y tests pueden usar fallback solo fuera de producción cuando falta ADMIN_TOKEN_SECRET', () => {
   const info = auth.getSecretInfo({
     CONTEXT: 'deploy-preview',
     VLA_DATA_ENVIRONMENT: 'staging',
-    ADMIN_TOKEN_SECRET: STRONG_A
+    ADMIN_TOKEN_SECRET: '',
+    PAYMENT_PROOF_ENCRYPTION_KEY: 'c'.repeat(64)
   });
-  assert.equal(info.source, 'ADMIN_TOKEN_SECRET');
-  assert.equal(info.secret, STRONG_A);
+  assert.equal(info.source, 'PAYMENT_PROOF_ENCRYPTION_KEY');
   assert.equal(info.dedicated, false);
   assert.equal(info.productionSafe, false);
 });
 
 test('la sesión CI de solo lectura sigue bloqueando escrituras', () => {
-  assert.equal(auth.ciReadOnlyAllowed({
-    httpMethod: 'GET',
-    path: '/.netlify/functions/system-health'
-  }), true);
-  assert.equal(auth.ciReadOnlyAllowed({
-    httpMethod: 'POST',
-    path: '/.netlify/functions/monthly-close',
-    body: JSON.stringify({ dryRun: true })
-  }), true);
-  assert.equal(auth.ciReadOnlyAllowed({
-    httpMethod: 'POST',
-    path: '/.netlify/functions/monthly-close',
-    body: JSON.stringify({ dryRun: false, confirmed: true })
-  }), false);
-  assert.equal(auth.ciReadOnlyAllowed({
-    httpMethod: 'POST',
-    path: '/.netlify/functions/admin-manual-payment',
-    body: '{}'
-  }), false);
+  assert.equal(auth.ciReadOnlyAllowed({ httpMethod: 'GET', path: '/.netlify/functions/system-health' }), true);
+  assert.equal(auth.ciReadOnlyAllowed({ httpMethod: 'POST', path: '/.netlify/functions/monthly-close', body: JSON.stringify({ dryRun: true }) }), true);
+  assert.equal(auth.ciReadOnlyAllowed({ httpMethod: 'POST', path: '/.netlify/functions/monthly-close', body: JSON.stringify({ dryRun: false, confirmed: true }) }), false);
+  assert.equal(auth.ciReadOnlyAllowed({ httpMethod: 'POST', path: '/.netlify/functions/admin-manual-payment', body: '{}' }), false);
 });
 
 test('Health informa la fuente real de la firma sin exponer la clave', () => {
-  const root = 'health-session-root-'.repeat(4);
-  const result = health.adminSessionKeyHealth(productionEnv({ ADMIN_SESSION_SIGNING_KEY: root }));
+  const result = health.adminSessionKeyHealth(productionEnv());
   assert.equal(result.ok, true);
   assert.equal(result.severity, 'ok');
-  assert.equal(result.meta.source, 'ADMIN_SESSION_SIGNING_KEY');
+  assert.equal(result.meta.source, 'ADMIN_TOKEN_SECRET');
   assert.equal(result.meta.dedicated, true);
   assert.equal(Object.hasOwn(result.meta, 'secret'), false);
-  assert.equal(JSON.stringify(result).includes(root), false);
+  assert.equal(JSON.stringify(result).includes(STRONG_A), false);
 });
 
-test('Health marca como error la firma administrativa sin raíz dedicada', () => {
-  const result = health.adminSessionKeyHealth(productionEnv());
+test('Health marca como error la firma administrativa sin raíz fuerte', () => {
+  const result = health.adminSessionKeyHealth(productionEnv({ ADMIN_TOKEN_SECRET: '', ADMIN_SESSION_SIGNING_KEY: '' }));
   assert.equal(result.ok, false);
   assert.equal(result.severity, 'error');
   assert.equal(result.meta.source, 'missing');
