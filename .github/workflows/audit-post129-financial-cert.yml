@@ -29,27 +29,42 @@ jobs:
           AFTER_URL: https://villalosapamates.netlify.app/api/vla/public-data
         run: |
           node <<'NODE'
-          const fields = [
+          const https=require('https');
+          const fields=[
             'saldoUsd','saldoBsRef','totalPagadero','saldoNetoReferencial',
             'saldoFavorUsd','saldoFavorBs','deudaVencidaUsd','deudaVencidaBs',
             'mesCorrienteUsd','mesCorrienteBs'
           ];
-          const money = value => Math.round((Number(value) || 0) * 100);
+          const money=value=>Math.round((Number(value)||0)*100);
+          function requestJson(url){
+            return new Promise((resolve,reject)=>{
+              const request=https.get(url,{headers:{'Cache-Control':'no-cache','User-Agent':'VLA-Financial-Certification'}},response=>{
+                let raw='';
+                response.setEncoding('utf8');
+                response.on('data',chunk=>raw+=chunk);
+                response.on('end',()=>{
+                  if(response.statusCode<200||response.statusCode>=300)return reject(new Error(`HTTP ${response.statusCode}`));
+                  try{resolve(JSON.parse(raw))}catch(error){reject(new Error(`JSON inválido: ${error.message}`))}
+                });
+              });
+              request.setTimeout(30000,()=>request.destroy(new Error('timeout')));
+              request.on('error',reject);
+            });
+          }
           async function get(url,label){
             let last;
             for(let attempt=1;attempt<=8;attempt++){
               try{
-                const response=await fetch(`${url}?force=1&financial-cert=${Date.now()}-${attempt}`,{headers:{'Cache-Control':'no-cache'}});
-                if(!response.ok()) throw new Error(`HTTP ${response.status}`);
-                const data=await response.json();
+                const separator=url.includes('?')?'&':'?';
+                const data=await requestJson(`${url}${separator}force=1&financial-cert=${Date.now()}-${attempt}`);
                 const owners=Array.isArray(data.propietarios)?data.propietarios:[];
-                if(owners.length!==15) throw new Error(`${owners.length}/15 casas`);
+                if(owners.length!==15)throw new Error(`${owners.length}/15 casas`);
                 return owners;
-              }catch(error){last=error;await new Promise(r=>setTimeout(r,1500));}
+              }catch(error){last=error;await new Promise(resolve=>setTimeout(resolve,1500))}
             }
             throw new Error(`${label}: ${last?.message||last}`);
           }
-          function byHouse(owners){return new Map(owners.map(owner=>[Number(owner.Casa),owner]))}
+          const byHouse=owners=>new Map(owners.map(owner=>[Number(owner.Casa),owner]));
           (async()=>{
             const before=byHouse(await get(process.env.BEFORE_URL,'BEFORE'));
             const after=byHouse(await get(process.env.AFTER_URL,'AFTER'));
@@ -57,11 +72,11 @@ jobs:
             let absoluteCents=0;
             for(let casa=1;casa<=15;casa++){
               const a=before.get(casa),b=after.get(casa);
-              if(!a||!b) throw new Error(`Casa ${casa} ausente en BEFORE o AFTER.`);
+              if(!a||!b)throw new Error(`Casa ${casa} ausente en BEFORE o AFTER.`);
               for(const field of fields){
                 const av=money(a[field]),bv=money(b[field]),diff=bv-av;
                 absoluteCents+=Math.abs(diff);
-                if(diff!==0) differences.push({casa,field,before:av/100,after:bv/100,diff:diff/100});
+                if(diff!==0)differences.push({casa,field,before:av/100,after:bv/100,diff:diff/100});
               }
             }
             console.log(`FINANCIAL_FIELDS_CHECKED=${15*fields.length}`);
