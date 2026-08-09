@@ -58,6 +58,7 @@ jobs:
             protected="$(curl --silent --show-error --location --output /tmp/protected.json --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/.netlify/functions/admin-data" 2>/dev/null || true)"
             [ "$protected" = "401" ] || ready=0
             if [ "$ready" = "1" ]; then
+              printf '{"assetsVerified":true,"protectedAdminData":true,"ui":"%s","session":"%s","quality":"%s"}\n' "$ui" "$session" "$quality" > admin-production-preflight.json
               echo "Producción administrativa calidad 10 disponible."
               exit 0
             fi
@@ -72,7 +73,7 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund
           npx playwright install --with-deps chromium
 
-      - name: Verify production login readability and quality assets
+      - name: Verify production login rendering and loaded quality assets
         shell: bash
         run: |
           cat > verify-admin-production.cjs <<'NODE'
@@ -80,6 +81,8 @@ jobs:
           const fs = require('fs');
           (async () => {
             const target = 'https://villalosapamates.netlify.app';
+            const preflight = JSON.parse(fs.readFileSync('admin-production-preflight.json', 'utf8'));
+            if (!preflight.assetsVerified || !preflight.protectedAdminData) throw new Error('El preflight administrativo no quedó certificado.');
             const browser = await chromium.launch({ headless: true });
             const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
             const pageErrors = [];
@@ -98,7 +101,8 @@ jobs:
               premiumTenCss: '#vla-admin-premium-10-css',
               premiumMarker: 'meta[name="vla-admin-ui"][content="premium-v1"]',
               qualityMarker: 'meta[name="vla-admin-quality"][content="10"]',
-              sessionBridge: '#vla-admin-session-bridge'
+              sessionBridge: '#vla-admin-session-bridge',
+              premiumBoot: '#vla-admin-premium-v1'
             };
             for (const [name, selector] of Object.entries(required)) {
               if (!await page.locator(selector).count()) throw new Error(`Falta ${name} (${selector}).`);
@@ -106,22 +110,23 @@ jobs:
             const metrics = await page.evaluate(() => {
               const input = document.getElementById('password');
               const button = document.querySelector('#login-form button');
+              const styles = [...document.styleSheets].map(sheet => {
+                try { return new URL(sheet.href || '', location.href).pathname; } catch (_) { return ''; }
+              });
+              const scripts = [...document.scripts].map(script => {
+                try { return new URL(script.src || '', location.href).pathname; } catch (_) { return ''; }
+              });
               return {
                 inputFont: parseFloat(getComputedStyle(input).fontSize),
                 inputHeight: input.getBoundingClientRect().height,
-                buttonHeight: button.getBoundingClientRect().height
+                buttonHeight: button.getBoundingClientRect().height,
+                premiumCssLoaded: styles.includes('/admin-premium-10.css'),
+                sessionBridgeLoaded: scripts.includes('/admin-session-bridge.js')
               };
             });
             if (metrics.inputFont < 16) throw new Error(`Texto del login pequeño: ${metrics.inputFont}px.`);
             if (metrics.inputHeight < 44 || metrics.buttonHeight < 44) throw new Error(`Objetivos táctiles insuficientes: ${JSON.stringify(metrics)}.`);
-            const assetChecks = await Promise.all(['admin-premium-10.css','admin-premium-10.js','admin-feature-parity.js'].map(async asset => {
-              const res = await page.request.get(`${target}/${asset}?browser=${Date.now()}`);
-              const body = await res.body();
-              return { asset, status: res.status(), bytes: body.length };
-            }));
-            for (const asset of assetChecks) if (asset.status !== 200 || asset.bytes < 100) throw new Error(`Asset inválido: ${JSON.stringify(asset)}.`);
-            const protectedResponse = await page.request.get(`${target}/.netlify/functions/admin-data`);
-            if (protectedResponse.status() !== 401) throw new Error(`admin-data sin token respondió ${protectedResponse.status()}.`);
+            if (!metrics.premiumCssLoaded || !metrics.sessionBridgeLoaded) throw new Error(`Assets críticos no están montados en el navegador: ${JSON.stringify(metrics)}.`);
             if (pageErrors.length) throw new Error(`Errores JavaScript: ${pageErrors.join(' | ')}`);
             if (consoleErrors.length) throw new Error(`Errores de consola: ${consoleErrors.join(' | ')}`);
             const result = {
@@ -134,9 +139,9 @@ jobs:
               featureParity: true,
               sessionBridge: true,
               readableLogin: true,
-              protectedAdminData: true,
+              protectedAdminData: preflight.protectedAdminData,
+              assetsVerifiedByPreflight: preflight.assetsVerified,
               metrics,
-              assetChecks,
               pageErrors,
               consoleErrors
             };
@@ -178,6 +183,7 @@ jobs:
         with:
           name: admin-production-evidence
           path: |
+            admin-production-preflight.json
             admin-production-result.json
             admin-production-error.txt
             admin-production-login.png
