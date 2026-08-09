@@ -5,8 +5,11 @@ const assert=require('assert');
 const ENDPOINT=process.env.PUBLIC_DATA_ENDPOINT||'https://villalosapamates.netlify.app/.netlify/functions/public-data';
 const MAX_ATTEMPTS=Number(process.env.PUBLIC_SNAPSHOT_MAX_ATTEMPTS||48);
 const DELAY_MS=Number(process.env.PUBLIC_SNAPSHOT_DELAY_MS||7500);
+const MAX_HIT_ATTEMPTS=Number(process.env.PUBLIC_SNAPSHOT_HIT_ATTEMPTS||15);
+const HIT_DELAY_MS=Number(process.env.PUBLIC_SNAPSHOT_HIT_DELAY_MS||5000);
 
 function sleep(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
+function balanceSnapshot(payload){return payload.propietarios.map(owner=>({Casa:owner.Casa,usd:owner['Saldo USD Actual'],bs:owner['Saldo Bs Ref Actual'],total:owner['Saldo Total Actual']}))}
 function validatePayload(payload){
  assert.strictEqual(Number(payload&&payload.balanceEngineVersion),5,'El endpoint debe usar el motor financiero v5.');
  assert.strictEqual(String(payload&&payload.officialBalanceSource||''),'ControlVersiones','El endpoint debe declarar ControlVersiones.');
@@ -57,13 +60,19 @@ async function request(label){
   if(attempt<MAX_ATTEMPTS)await sleep(DELAY_MS);
  }
  assert(first,`El despliegue nunca expuso una fotografía productiva válida: ${lastReason}; último diagnóstico=${JSON.stringify(lastDiagnostic)}`);
- await sleep(1500);
- const second=await request('second');
- console.log(`PUBLIC_SNAPSHOT_SECOND ${JSON.stringify(summarize(second))}`);
- assert.strictEqual(second.response.status,200);
- validatePayload(second.payload);
- assert.strictEqual(second.state,'HIT',`La segunda lectura debe ser HIT y fue ${second.state||'sin cabecera'}.`);
+ let second=null;
+ for(let attempt=1;attempt<=MAX_HIT_ATTEMPTS;attempt+=1){
+  await sleep(attempt===1?1500:HIT_DELAY_MS);
+  const candidate=await request(`second-${attempt}`);
+  console.log(`PUBLIC_SNAPSHOT_PROPAGATION ${attempt}/${MAX_HIT_ATTEMPTS} ${JSON.stringify(summarize(candidate))}`);
+  assert.strictEqual(candidate.response.status,200);
+  validatePayload(candidate.payload);
+  assert.deepStrictEqual(balanceSnapshot(candidate.payload),balanceSnapshot(first.payload),'Los saldos cambiaron mientras se propagaba la fotografía pública.');
+  if(candidate.state==='HIT'){second=candidate;break}
+  assert(['STALE','REFRESH','WAIT_HIT'].includes(candidate.state),`Estado inesperado durante la propagación: ${candidate.state||'sin cabecera'}.`);
+ }
+ assert(second,`La fotografía de Netlify no llegó a HIT después de ${MAX_HIT_ATTEMPTS} intentos de propagación.`);
  assert.strictEqual(second.airtableCalls,'0',`Un HIT no puede consultar Airtable; reportó ${second.airtableCalls||'sin cabecera'}.`);
- assert.deepStrictEqual(second.payload.propietarios.map(owner=>({Casa:owner.Casa,usd:owner['Saldo USD Actual'],bs:owner['Saldo Bs Ref Actual'],total:owner['Saldo Total Actual']})),first.payload.propietarios.map(owner=>({Casa:owner.Casa,usd:owner['Saldo USD Actual'],bs:owner['Saldo Bs Ref Actual'],total:owner['Saldo Total Actual']})),'La fotografía cambió entre REFRESH/HIT sin una mutación administrativa.');
+ assert.deepStrictEqual(balanceSnapshot(second.payload),balanceSnapshot(first.payload),'La fotografía cambió entre REFRESH/HIT sin una mutación administrativa.');
  console.log(JSON.stringify({ok:true,firstState:first.state,secondState:second.state,secondAirtableCalls:second.airtableCalls,owners:second.payload.propietarios.length,engine:second.payload.balanceEngineVersion,source:second.payload.officialBalanceSource}));
 })().catch(error=>{console.error(error&&error.stack||error);process.exit(1)});

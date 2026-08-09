@@ -48,7 +48,7 @@ function refreshKey(env=process.env,config=runtimeConfig){return`${namespace(env
 function clone(value){return value===undefined?undefined:JSON.parse(JSON.stringify(value))}
 function createMemoryStore(){const entries=new Map();let version=0;return{async getWithMetadata(key){const entry=entries.get(key);return entry?{data:clone(entry.data),etag:entry.etag,metadata:clone(entry.metadata)}:null},async setJSON(key,data,options={}){const current=entries.get(key);if(options.onlyIfNew&&current)return{modified:false,etag:current.etag};if(options.onlyIfMatch&&(!current||current.etag!==options.onlyIfMatch))return{modified:false,etag:current?.etag||''};const etag=`memory-${++version}`;entries.set(key,{data:clone(data),etag,metadata:clone(options.metadata||{})});return{modified:true,etag}}}}
 let memoryStore=null;
-async function defaultStore(){if(process.env.VLA_PUBLIC_SNAPSHOT_TEST_MEMORY==='1'){if(runtimeConfig.deployContext==='production'||process.env.CONTEXT==='production')throw new Error('El almacén público de prueba está prohibido en producción.');if(!memoryStore)memoryStore=createMemoryStore();return memoryStore}return blobsCompat.getAtomicStore(STORE_NAME,{consistency:'strong'})}
+async function defaultStore(){if(process.env.VLA_PUBLIC_SNAPSHOT_TEST_MEMORY==='1'){if(runtimeConfig.deployContext==='production'||process.env.CONTEXT==='production')throw new Error('El almacén público de prueba está prohibido en producción.');if(!memoryStore)memoryStore=createMemoryStore();return memoryStore}return blobsCompat.getAtomicStore(STORE_NAME)}
 async function connectForEvent(event){
  if(process.env.VLA_PUBLIC_SNAPSHOT_TEST_MEMORY==='1')return false;
  return blobsCompat.connectLambdaEvent(event);
