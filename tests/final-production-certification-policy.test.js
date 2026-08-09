@@ -5,6 +5,7 @@ const assert=require('node:assert/strict');
 const fs=require('fs');
 
 const admin=fs.readFileSync('tests/admin-ci-readonly-production.cjs','utf8');
+const adminWorkflow=fs.readFileSync('.github/workflows/verify-admin-production.yml','utf8');
 const adminSession=fs.readFileSync('netlify/functions/admin-ci-readonly-session.js','utf8');
 const owner=fs.readFileSync('tests/owner-production-browser.cjs','utf8');
 const paymentBrowser=fs.readFileSync('tests/owner-payment-report-browser.cjs','utf8');
@@ -18,6 +19,14 @@ test('Admin CI usa fetch nativo correctamente y conserva límites read-only',()=
   assert(!admin.includes('response.ok()'));
   for(const marker of ['admin-ci-readonly-session','system-health-advanced','access-reconciliation-readonly','dryRun:true','owners.length!==15'])assert(admin.includes(marker),`Falta ${marker}`);
   for(const forbidden of ['admin-manual-payment','process-payment-report','admin-expense','mkj-access'])assert(!admin.includes(forbidden),`La certificación Admin contiene una escritura: ${forbidden}`);
+});
+
+test('Admin distingue problemas de identidad MKJ de divergencias manuales de estado',()=>{
+  for(const marker of ['MKJ_MEMBER_NOT_FOUND','MKJ_STATE_UNKNOWN','STALE_MEMBER_ID','EMAIL_MISMATCH','identityIssueRows','manualStateDivergences'])assert(admin.includes(marker),`Falta clasificación MKJ: ${marker}`);
+  assert(admin.includes("if(mkjClassification.identityRows.length)"));
+  assert(admin.includes("if(mode.mode==='Automático'&&mkjClassification.stateRows.length)"));
+  assert(adminWorkflow.includes("node-version: '24'"));
+  assert(adminWorkflow.includes('MKJ 15/15 identidades sanas'));
 });
 
 test('la sesión OIDC read-only queda ligada a la versión vigente de la contraseña',()=>{
