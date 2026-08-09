@@ -2,7 +2,11 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const auth = require('../netlify/functions/_shared/_auth');
+const health = require('../netlify/functions/system-health-advanced');
+const backup = require('../netlify/functions/airtable-backup');
 
 const STRONG_A = 'a'.repeat(64);
 const STRONG_B = 'b'.repeat(64);
@@ -86,4 +90,43 @@ test('la sesión CI de solo lectura sigue bloqueando escrituras', () => {
     path: '/.netlify/functions/admin-manual-payment',
     body: '{}'
   }), false);
+});
+
+test('Health informa la fuente real de la firma sin exponer la clave', () => {
+  const root = 'health-session-root-'.repeat(4);
+  const result = health.adminSessionKeyHealth(productionEnv({ ADMIN_SESSION_SIGNING_KEY: root }));
+  assert.equal(result.ok, true);
+  assert.equal(result.severity, 'ok');
+  assert.equal(result.meta.source, 'ADMIN_SESSION_SIGNING_KEY');
+  assert.equal(result.meta.dedicated, true);
+  assert.equal(Object.hasOwn(result.meta, 'secret'), false);
+  assert.equal(JSON.stringify(result).includes(root), false);
+});
+
+test('Health marca como error la firma administrativa sin raíz dedicada', () => {
+  const result = health.adminSessionKeyHealth(productionEnv());
+  assert.equal(result.ok, false);
+  assert.equal(result.severity, 'error');
+  assert.equal(result.meta.source, 'missing');
+});
+
+test('Health exige PAYMENT_PROOF_ENCRYPTION_KEY dedicada', () => {
+  const result = health.paymentProofKeyHealth(productionEnv());
+  assert.equal(result.ok, true);
+  assert.equal(result.severity, 'ok');
+  assert.equal(result.meta.source, 'PAYMENT_PROOF_ENCRYPTION_KEY');
+  assert.equal(result.meta.dedicated, true);
+  assert.equal(Object.hasOwn(result.meta, 'key'), false);
+});
+
+test('el respaldo operativo cubre todas las tablas productivas controladas', () => {
+  assert.equal(backup.TABLES.length, 12);
+  assert.equal(new Set(backup.TABLES).size, 12);
+  assert.equal(backup.TABLES.includes('Cuentas de Cobro Autorizadas'), true);
+});
+
+test('2FA deshabilitado se registra como riesgo aceptado, no como falso verde', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'netlify', 'functions', 'system-health-advanced.js'), 'utf8');
+  assert.match(source, /Autenticación de dos pasos'[\s\S]*'info'[\s\S]*acceptedRisk:true/);
+  assert.doesNotMatch(source, /Autenticación de dos pasos',\s*true/);
 });
