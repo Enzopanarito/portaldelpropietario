@@ -19,19 +19,29 @@ jobs:
           package-manager-cache: false
 
       - name: Capture current production canonical financial fields
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           node <<'NODE'
           const https=require('https');
-          const url='https://villalosapamates.netlify.app/api/vla/public-data?force=1&final-baseline='+Date.now();
+          const target='https://villalosapamates.netlify.app';
           const fields=['saldoUsd','saldoBsRef','totalPagadero','saldoNetoReferencial','saldoFavorUsd','saldoFavorBs','deudaVencidaUsd','deudaVencidaBs','mesCorrienteUsd','mesCorrienteBs'];
-          function requestJson(target){return new Promise((resolve,reject)=>{const req=https.get(target,{headers:{'Cache-Control':'no-cache','User-Agent':'VLA-Final-Baseline'}},res=>{let raw='';res.setEncoding('utf8');res.on('data',chunk=>raw+=chunk);res.on('end',()=>{if(res.statusCode<200||res.statusCode>=300)return reject(new Error('HTTP '+res.statusCode));try{resolve(JSON.parse(raw))}catch(error){reject(error)}})});req.setTimeout(30000,()=>req.destroy(new Error('timeout')));req.on('error',reject)});}
+          function requestJson(url){return new Promise((resolve,reject)=>{const req=https.get(url,{headers:{'Cache-Control':'no-cache','User-Agent':'VLA-Final-Baseline'}},res=>{let raw='';res.setEncoding('utf8');res.on('data',chunk=>raw+=chunk);res.on('end',()=>{if(res.statusCode<200||res.statusCode>=300)return reject(new Error('HTTP '+res.statusCode+' '+url));try{resolve(JSON.parse(raw))}catch(error){reject(error)}})});req.setTimeout(30000,()=>req.destroy(new Error('timeout '+url)));req.on('error',reject)});}
           (async()=>{
-            const data=await requestJson(url);
+            const [data,release]=await Promise.all([
+              requestJson(target+'/api/vla/public-data?force=1&final-baseline='+Date.now()),
+              requestJson(target+'/release.json?final-baseline='+Date.now())
+            ]);
             const owners=Array.isArray(data.propietarios)?data.propietarios:[];
             if(owners.length!==15)throw new Error(`Producción devolvió ${owners.length}/15 casas.`);
-            const baseline={sourceCommit:'3c4f7842f5147aa9c4d61938c19181755a34facf',capturedAt:new Date().toISOString(),houses:owners.map(owner=>{const row={Casa:Number(owner.Casa)};for(const field of fields)row[field]=Number(owner[field]||0);return row}).sort((a,b)=>a.Casa-b.Casa)};
+            if(!release||typeof release.release!=='string'||!release.release)throw new Error('Producción no devolvió un release canónico válido.');
+            const sourceCommit=String(process.env.PR_BASE_SHA||'').trim();
+            if(!/^[a-f0-9]{40}$/.test(sourceCommit))throw new Error('PR_BASE_SHA no es un commit válido.');
+            const baseline={sourceCommit,sourceRelease:release.release,capturedAt:new Date().toISOString(),houses:owners.map(owner=>{const row={Casa:Number(owner.Casa)};for(const field of fields)row[field]=Number(owner[field]||0);return row}).sort((a,b)=>a.Casa-b.Casa)};
             if(baseline.houses.some((row,index)=>row.Casa!==index+1))throw new Error('Secuencia de casas inválida.');
             console.log('VLA_FINAL_BASELINE_JSON='+JSON.stringify(baseline));
+            console.log(`VLA_FINAL_BASELINE_RELEASE=${baseline.sourceRelease}`);
+            console.log(`VLA_FINAL_BASELINE_COMMIT=${baseline.sourceCommit}`);
             console.log(`VLA_FINAL_BASELINE_HOUSES=${baseline.houses.length}`);
             console.log(`VLA_FINAL_BASELINE_FIELDS=${baseline.houses.length*fields.length}`);
           })().catch(error=>{console.error(error.stack||error);process.exit(1)});
