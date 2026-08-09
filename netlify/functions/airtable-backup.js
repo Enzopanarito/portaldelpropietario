@@ -54,7 +54,7 @@ const handler = async function(event) {
     const generatedAt = new Date().toISOString();
     const backup = {
       backupType: 'airtable-full-operational-backup',
-      schemaVersion: 4,
+      schemaVersion: 3,
       generatedAt,
       generatedAtCaracas: todayCaracasISO(),
       baseId: AIRTABLE_BASE_ID,
