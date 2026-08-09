@@ -1,0 +1,41 @@
+name: Guard Production While Airtable PAT Missing
+
+on:
+  push:
+    branches: [agent/vla-airtable-token-recovery-probe]
+
+permissions:
+  contents: read
+  actions: write
+  statuses: write
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TARGET_SHA: cbf2223061cae9313cc988939c0a4bfc85fe8c68
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Cancel only active production deploys for the unsafe target commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          data="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${TARGET_SHA}&per_page=50")"
+          mapfile -t ids < <(printf '%s' "$data" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);for(const r of j.workflow_runs||[])if(r.name==='Deploy Netlify Production'&&['queued','in_progress','waiting','pending','requested'].includes(r.status))console.log(r.id)})")
+          for id in "${ids[@]:-}"; do
+            [ -n "$id" ] || continue
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/cancel" >/dev/null
+            echo "CANCELLED_PRODUCTION_RUN=$id"
+          done
+          echo "ACTIVE_PRODUCTION_RUNS_CANCELLED=${#ids[@]}"
+
+      - name: Publish safety status
+        if: always()
+        shell: bash
+        run: |
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state=success \
+            -f context='Production Deploy Safety Guard' \
+            -f description='Deploys activos del commit con PAT Airtable ausente fueron bloqueados o no existían.' \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
