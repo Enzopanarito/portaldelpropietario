@@ -21,7 +21,7 @@ jobs:
       NETLIFY_AUTH_TOKEN_FALLBACK: ${{ secrets.NETLIFY_TOKEN }}
       NETLIFY_SITE_ID_PRIMARY: ${{ secrets.NETLIFY_SITE_ID }}
       NETLIFY_SITE_ID_FALLBACK: ${{ secrets.NETLIFY_SITE_ID_VILLALOSAPAMATES }}
-      PREVIEW_ALIAS: vla-pr-${{ github.event.pull_request.number }}
+      PREVIEW_ALIAS: deploy-preview-${{ github.event.pull_request.number }}
     steps:
       - name: Checkout exact PR head
         uses: actions/checkout@v6
@@ -49,7 +49,6 @@ jobs:
         run: npm run build:public
 
       - name: Resolve Netlify credentials safely
-        id: credentials
         shell: bash
         run: |
           set -euo pipefail
@@ -79,7 +78,7 @@ jobs:
             --site="$NETLIFY_SITE_ID" \
             --auth="$NETLIFY_AUTH_TOKEN" \
             --skip-functions-cache \
-            --message="VLA PR #${{ github.event.pull_request.number }} ${GITHUB_SHA}" \
+            --message="VLA PR #${{ github.event.pull_request.number }} head=${{ github.event.pull_request.head.sha }}" \
             --json > "$output"
           cat "$output"
           node - "$output" "$GITHUB_OUTPUT" <<'NODE'
@@ -94,8 +93,6 @@ jobs:
           NODE
 
       - name: Verify predictable preview and critical serverless routes
-        env:
-          DEPLOY_ID: ${{ steps.deploy.outputs.deploy_id }}
         shell: bash
         run: |
           set -euo pipefail
@@ -108,7 +105,6 @@ jobs:
               && grep -q 'owner-payment-report-v3.js' /tmp/owner.html \
               && grep -q 'admin-premium-10.css' /tmp/admin.html; then
               echo "CLI preview ready: $TARGET_URL"
-              echo "preview_url=$TARGET_URL" >> "$GITHUB_OUTPUT"
               exit 0
             fi
             echo "Attempt ${attempt}: owner=${owner_code:-missing} admin=${admin_code:-missing} public-data=${data_code:-missing}"
