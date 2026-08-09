@@ -1,0 +1,78 @@
+name: Audit Post-129 Financial Integrity
+
+on:
+  push:
+    branches: [audit/vla-post129-financial-cert-20260809]
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact audit commit
+        uses: actions/checkout@v6
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
+      - name: Compare previous and current production financial DTOs
+        env:
+          BEFORE_URL: https://6a783f405f47cf1454a75a16--villalosapamates.netlify.app/api/vla/public-data
+          AFTER_URL: https://villalosapamates.netlify.app/api/vla/public-data
+        run: |
+          node <<'NODE'
+          const fields = [
+            'saldoUsd','saldoBsRef','totalPagadero','saldoNetoReferencial',
+            'saldoFavorUsd','saldoFavorBs','deudaVencidaUsd','deudaVencidaBs',
+            'mesCorrienteUsd','mesCorrienteBs'
+          ];
+          const money = value => Math.round((Number(value) || 0) * 100);
+          async function get(url,label){
+            let last;
+            for(let attempt=1;attempt<=8;attempt++){
+              try{
+                const response=await fetch(`${url}?force=1&financial-cert=${Date.now()}-${attempt}`,{headers:{'Cache-Control':'no-cache'}});
+                if(!response.ok()) throw new Error(`HTTP ${response.status}`);
+                const data=await response.json();
+                const owners=Array.isArray(data.propietarios)?data.propietarios:[];
+                if(owners.length!==15) throw new Error(`${owners.length}/15 casas`);
+                return owners;
+              }catch(error){last=error;await new Promise(r=>setTimeout(r,1500));}
+            }
+            throw new Error(`${label}: ${last?.message||last}`);
+          }
+          function byHouse(owners){
+            return new Map(owners.map(owner=>[Number(owner.Casa),owner]));
+          }
+          (async()=>{
+            const before=byHouse(await get(process.env.BEFORE_URL,'BEFORE'));
+            const after=byHouse(await get(process.env.AFTER_URL,'AFTER'));
+            const differences=[];
+            let absoluteCents=0;
+            for(let casa=1;casa<=15;casa++){
+              const a=before.get(casa),b=after.get(casa);
+              if(!a||!b) throw new Error(`Casa ${casa} ausente en BEFORE o AFTER.`);
+              const row={casa};
+              for(const field of fields){
+                const av=money(a[field]),bv=money(b[field]),diff=bv-av;
+                row[field]={before:av/100,after:bv/100,diff:diff/100};
+                absoluteCents+=Math.abs(diff);
+                if(diff!==0) differences.push({casa,field,before:av/100,after:bv/100,diff:diff/100});
+              }
+              console.log(JSON.stringify(row));
+            }
+            console.log(`FINANCIAL_FIELDS_CHECKED=${15*fields.length}`);
+            console.log(`ABSOLUTE_DIFFERENCE_USD=${(absoluteCents/100).toFixed(2)}`);
+            if(differences.length){
+              console.error(JSON.stringify({differences},null,2));
+              process.exit(1);
+            }
+            console.log('RESULT=15/15 houses, 150/150 fields identical, BEFORE/AFTER $0.00');
+          })().catch(error=>{console.error(error.stack||error);process.exit(1)});
+          NODE
