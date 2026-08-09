@@ -11,6 +11,7 @@ const paymentBrowser=fs.readFileSync('tests/owner-payment-report-browser.cjs','u
 const ownerWorkflow=fs.readFileSync('.github/workflows/verify-owner-browser.yml','utf8');
 const diagnostic=fs.readFileSync('.github/workflows/diagnose-owner-production.yml','utf8');
 const production=fs.readFileSync('.github/workflows/netlify-production.yml','utf8');
+const validate=fs.readFileSync('.github/workflows/validate.yml','utf8');
 
 test('Admin CI usa fetch nativo correctamente y conserva límites read-only',()=>{
   assert(admin.includes('if(response.ok)return response;'));
@@ -56,9 +57,14 @@ test('verificación y diagnóstico esperan el release canónico exacto',()=>{
   assert(!diagnostic.includes('push:\n    branches: [main]'));
 });
 
-test('producción exige commit exacto, Functions Node 22, release y diff financiero',()=>{
-  assert(production.includes('AWS_LAMBDA_JS_RUNTIME: nodejs22.x'));
-  assert(production.includes("runtimes[0]!=='nodejs22.x'"));
+test('premerge y producción certifican el runtime Node 24 que ejecuta Netlify',()=>{
+  assert(validate.includes("node-version: '24'"));
+  assert(production.includes('AWS_LAMBDA_JS_RUNTIME: nodejs24.x'));
+  assert(production.includes("node-version: '24'"));
+  assert(production.includes("runtimes[0]!=='nodejs24.x'"));
+});
+
+test('producción exige commit exacto, release y diff financiero',()=>{
   assert(production.includes('commit_ref'));
   assert(production.includes('titleCommit!==expected'));
   assert(production.includes('FINANCIAL_BEFORE_AFTER_OK 15/15 houses · 150/150 fields · $0.00'));
