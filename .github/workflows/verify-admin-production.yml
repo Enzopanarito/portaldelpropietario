@@ -17,7 +17,15 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Wait for production admin quality 10 release
         shell: bash
@@ -59,9 +67,7 @@ jobs:
           exit 1
 
       - name: Install Chromium
-        run: |
-          npm install --no-save --ignore-scripts playwright@1.53.0
-          npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium
 
       - name: Verify production login readability and quality assets
         shell: bash
@@ -143,6 +149,12 @@ jobs:
           NODE
           node verify-admin-production.cjs
 
+      - name: Verify authenticated admin end to end
+        env:
+          TARGET_URL: https://villalosapamates.netlify.app
+          ADMIN_E2E_PASSWORD: ${{ secrets.ADMIN_E2E_PASSWORD || secrets.ADMIN_PASSWORD }}
+        run: node tests/admin-production-authenticated.cjs
+
       - name: Upload production evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -152,6 +164,9 @@ jobs:
             admin-production-result.json
             admin-production-error.txt
             admin-production-login.png
+            admin-production-authenticated-result.json
+            admin-production-authenticated-error.txt
+            admin-production-session-expired.png
           if-no-files-found: ignore
           retention-days: 14
 

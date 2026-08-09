@@ -62,7 +62,7 @@ async function loadPortalWithOwners(page){
 }
 
 (async()=>{
-  const browser=await chromium.launch({headless:true});
+  const browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.CHROMIUM_EXECUTABLE_PATH}:{})});
   const page=await browser.newPage({viewport:{width:390,height:844}});
   const pageErrors=[];
   const consoleErrors=[];

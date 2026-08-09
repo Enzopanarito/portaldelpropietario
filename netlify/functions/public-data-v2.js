@@ -49,6 +49,11 @@ async function airtableGetAll(tableName, query, token, baseId, counter) {
   return records;
 }
 function compactOwner(record, balance) {
+  if(!balance||![balance.usd,balance.bsRef,balance.totalRef,balance.expiredUsd,balance.expiredBsRef,balance.currentUsd,balance.currentBsRef].every(Number.isFinite)){
+    const error=new Error(`El contrato financiero canónico no pudo construirse para la Casa ${(record.fields||{}).Casa||'?'}.`);
+    error.code='FINANCIAL_CONTRACT_INCOMPLETE';
+    throw error;
+  }
   const f = record.fields || {};
   const saldoUsd=money(balance.usd),saldoBsRef=money(balance.bsRef);
   const totalPagadero=money(Math.max(0,saldoUsd)+Math.max(0,saldoBsRef));

@@ -19,19 +19,18 @@
   function credit(value){return money(Math.max(0,-(Number(value)||0)))}
 
   function hasCanonicalBalance(owner){
-    return Boolean(owner)&&finite(owner.saldoUsd??owner['Saldo USD Actual'])&&finite(owner.saldoBsRef??owner['Saldo Bs Ref Actual']);
+    if(!owner||owner.balanceEngineVersion!==VERSION)return false;
+    if(![owner.saldoUsd,owner.saldoBsRef,owner.totalPagadero,owner.saldoNetoReferencial].every(finite))return false;
+    const saldoUsd=money(owner.saldoUsd),saldoBsRef=money(owner.saldoBsRef);
+    return Math.abs(money(saldoUsd+saldoBsRef)-money(owner.saldoNetoReferencial))<=TOLERANCE&&Math.abs(money(positive(saldoUsd)+positive(saldoBsRef))-money(owner.totalPagadero))<=TOLERANCE;
   }
 
   function ownerModel(owner={},rate=0){
     if(!hasCanonicalBalance(owner))return null;
-    const saldoUsd=money(owner.saldoUsd??owner['Saldo USD Actual']);
-    const saldoBsRef=money(owner.saldoBsRef??owner['Saldo Bs Ref Actual']);
-    const saldoNetoReferencial=finite(owner.saldoNetoReferencial)
-      ?money(owner.saldoNetoReferencial)
-      :finite(owner['Saldo Total Actual'])?money(owner['Saldo Total Actual']):money(saldoUsd+saldoBsRef);
-    const totalPagadero=finite(owner.totalPagadero)
-      ?money(owner.totalPagadero)
-      :money(positive(saldoUsd)+positive(saldoBsRef));
+    const saldoUsd=money(owner.saldoUsd);
+    const saldoBsRef=money(owner.saldoBsRef);
+    const saldoNetoReferencial=money(owner.saldoNetoReferencial);
+    const totalPagadero=money(owner.totalPagadero);
     const deudaVencidaUsd=positive(owner.deudaVencidaUsd??owner['Deuda Vencida USD']);
     const deudaVencidaBs=positive(owner.deudaVencidaBs??owner.deudaVencidaBsRef??owner['Deuda Vencida Bs Ref']);
     const mesCorrienteUsd=money(owner.mesCorrienteUsd??owner['Mes Corriente USD']);
@@ -54,7 +53,7 @@
       estadoMorosidad:owner.estadoMorosidad||(totalPagadero>TOLERANCE?'PENDIENTE':'SOLVENTE'),
       accesoEsperado:owner.accesoEsperado||owner['Estado Acceso Portón']||'Sin configurar',
       tasaBcv,
-      balanceEngineVersion:owner.balanceEngineVersion||VERSION,
+      balanceEngineVersion:VERSION,
       // Alias temporales para consumidores históricos. Todos derivan del mismo modelo.
       debtUsd:saldoUsd,
       debtBs:saldoBsRef,
@@ -70,7 +69,7 @@
     });
   }
 
-  function payable(owner){const model=ownerModel(owner,0);return model?model.totalPagadero:0}
+  function payable(owner){const model=ownerModel(owner,0);return model?model.totalPagadero:null}
 
   return Object.freeze({VERSION,TOLERANCE,money,finite,positive,credit,hasCanonicalBalance,ownerModel,payable});
 });

@@ -69,7 +69,7 @@ async function pageState(page,label){
 }
 (async()=>{
   await new Promise(resolve=>server.listen(PORT,'127.0.0.1',resolve));
-  const browser=await chromium.launch({headless:true});
+  const browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.CHROMIUM_EXECUTABLE_PATH}:{})});
   const page=await browser.newPage({viewport:{width:1536,height:960}});
   const errors=[];page.on('pageerror',e=>errors.push(String(e.stack||e)));page.on('console',m=>{if(m.type()==='error'){const url=String(m.location().url||'');if(/cdn\.tailwindcss|fonts\.googleapis|fonts\.gstatic/i.test(url))return;errors.push(m.text())}});
   await page.goto(`http://127.0.0.1:${PORT}/admin.html`,{waitUntil:'domcontentloaded'});

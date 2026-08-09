@@ -50,7 +50,12 @@ test('Deploy Preview responde 200 sin llamar Airtable ni el handler heredado', a
 
 test('producción nunca usa la fotografía de preview', async () => {
   let previousCalls = 0;
-  const expected = { statusCode: 200, headers: { 'X-Production': 'true' }, body: JSON.stringify({ production: true }) };
+  const { previewFixtureVersion: _ignored, ...previewShape } = fixture.createPayload(FIXED_NOW);
+  const productionPayload = { ...previewShape, dataEnvironment: 'production', propietarios: previewShape.propietarios.map(owner => {
+    const saldoUsd=Number(owner['Saldo USD Actual']),saldoBsRef=Number(owner['Saldo Bs Ref Actual']),saldoNetoReferencial=Number(owner['Saldo Total Actual']);
+    return{...owner,saldoUsd,saldoBsRef,totalPagadero:Math.max(0,saldoUsd)+Math.max(0,saldoBsRef),saldoNetoReferencial,balanceEngineVersion:'vla-balance-contract-v7'};
+  }) };
+  const expected = { statusCode: 200, headers: { 'X-Production': 'true' }, body: JSON.stringify(productionPayload) };
   const handler = createHandler({
     previousHandler: async () => {
       previousCalls += 1;
@@ -66,4 +71,5 @@ test('producción nunca usa la fotografía de preview', async () => {
 
   assert.equal(previousCalls, 1);
   assert.deepEqual(result, expected);
+  assert.notEqual(JSON.parse(result.body).dataEnvironment, 'preview-fixture');
 });

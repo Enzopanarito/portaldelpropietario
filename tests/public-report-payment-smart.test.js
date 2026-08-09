@@ -41,6 +41,7 @@ global.fetch=async()=>({ok:true,status:200,json:async()=>({records:[]})});
 process.env.AIRTABLE_API_TOKEN='test-token';
 process.env.AIRTABLE_BASE_ID='appTEST';
 process.env.SMTP_USER='villalosapamates@gmail.com';
+process.env.PAYMENT_DATE_ATTESTATION_SECRET='test-secret-at-least-32-characters-long';
 
 const handler=require('../netlify/functions/public-report-payment').handler;
 Module._load=originalLoad;
@@ -48,9 +49,11 @@ Module._load=originalLoad;
 function event(body){return{httpMethod:'POST',headers:{'x-forwarded-for':'192.0.2.10'},body:JSON.stringify(body)}}
 function parse(response){return JSON.parse(response.body)}
 const png=Buffer.concat([Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]),Buffer.from('proof')]);
+const {createDateAttestation}=require('../netlify/functions/_shared/_payment_date_attestation');
 
 (async()=>{
-  let response=await handler(event({ownerId:'recABCDEFGHIJKLMN',submissionId:'submission-smart-001',mode:'USD',amount:'15.300,00',enteredCurrency:'BS',reference:'ABC-123',rate:100,bank:'Pago móvil',method:'MOBILE_PAYMENT_VE',transactionDate:'2026-07-31',transactionDateSource:'PROOF_EXTRACTED',analysisSummary:{provider:'gemini-test',route:'direct',confidence:.98,transactionTime:'10:30:00',transactionStatus:'COMPLETED',recipient:'Enzo Panarito',warnings:['Lectura clara'],possibleVisualModification:false,prefillComplete:true,missingLabels:[]},observations:'Prueba',attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}}));
+  const visibleDateAttestation=createDateAttestation({ownerId:'recABCDEFGHIJKLMN',method:'MOBILE_PAYMENT_VE',transactionDate:'2026-07-31',transactionDateSource:'PROOF_EXTRACTED',attachmentContent:png});
+  let response=await handler(event({ownerId:'recABCDEFGHIJKLMN',submissionId:'submission-smart-001',mode:'USD',amount:'15.300,00',enteredCurrency:'BS',reference:'ABC-123',rate:100,bank:'Pago móvil',method:'MOBILE_PAYMENT_VE',transactionDate:'2026-07-31',transactionDateSource:'PROOF_EXTRACTED',transactionDateAttestation:visibleDateAttestation,analysisSummary:{provider:'gemini-test',route:'direct',confidence:.98,transactionTime:'10:30:00',transactionStatus:'COMPLETED',recipient:'Enzo Panarito',warnings:['Lectura clara'],possibleVisualModification:false,prefillComplete:true,missingLabels:[]},observations:'Prueba',attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}}));
   assert.equal(response.statusCode,200,JSON.stringify(parse(response)));
   let body=parse(response);
   assert.equal(body.amountUsdRef,85);
@@ -64,6 +67,7 @@ const png=Buffer.concat([Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]),
   assert(created[0]['Observaciones Reportadas'].includes('Proveedor/modelo de prelectura: gemini-test'));
   assert(created[0]['Observaciones Reportadas'].includes('Receptor visible detectado: Enzo Panarito'));
   assert.equal(body.transactionDateConfidence,'HIGH');assert.equal(body.transactionDateNeedsReview,false);
+  assert.equal(body.proofExtractedVerified,true);assert.match(body.reportTimestampCaracas,/-04:00$/);
   assert(!Object.hasOwn(created[0],'Monto Reportado Bs'),'Una cuenta USD no debe convertirse en cuenta Bs.');
   assert.equal(mails[0].attachments.length,1);
   assert.equal(mails[0].attachments[0].filename,'casa4.png');
@@ -87,12 +91,18 @@ const png=Buffer.concat([Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]),
   assert.equal(response.statusCode,200,JSON.stringify(parse(response)));body=parse(response);
   assert.equal(body.method,'BINANCE_PAY');assert.equal(body.transactionDateSource,'REPORT_TIMESTAMP_FALLBACK');
 
+  response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:'25,00',enteredCurrency:'USD',reference:'FORGED-DATE',bank:'Zelle',method:'ZELLE',transactionDate:'2026-07-31',transactionDateSource:'PROOF_EXTRACTED',transactionDateAttestation:'forged.signature',attachment:{name:'zelle.png',type:'image/png',base64:png.toString('base64'),lastModified:Date.now()-86400000}}));
+  assert.equal(response.statusCode,200,JSON.stringify(parse(response)));body=parse(response);
+  assert.equal(body.transactionDateSource,'REPORT_TIMESTAMP_FALLBACK');assert.notEqual(body.transactionDate,'2026-07-31');assert.equal(body.proofExtractedVerified,false);
+  assert(created.at(-1)['Observaciones Reportadas'].includes('Fuente visible autenticada por servidor: NO'));
+  assert.equal(JSON.parse(created.at(-1)['Normalized Analysis JSON']).method,'ZELLE');
+
   response=await handler(event({ownerId:'recABCDEFGHIJKLMN',paymentChannel:'CASH',mode:'USD',amount:'50,00',enteredCurrency:'USD',cashReceiver:'Administración'}));
   assert.equal(response.statusCode,200,JSON.stringify(parse(response)));body=parse(response);
   assert.equal(body.paymentChannel,'CASH');assert.equal(body.attachmentIncluded,false);assert.equal(body.automation.status,'CASH_ADMIN_CONFIRMATION_REQUIRED');
   assert.equal(body.transactionDateSource,'REPORT_TIMESTAMP_FALLBACK');
-  assert.equal(created[3]['Archivo Obligatorio'],false);assert.equal(created[3]['Estado de Procesamiento'],'Pendiente de administrador');assert.match(created[3].Referencia,/EFECTIVO/);
-  assert.equal(mails[3].attachments.length,0);
+  assert.equal(created[4]['Archivo Obligatorio'],false);assert.equal(created[4]['Estado de Procesamiento'],'Pendiente de administrador');assert.match(created[4].Referencia,/EFECTIVO/);
+  assert.equal(mails[4].attachments.length,0);
 
   const before=created.length;
   response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:85,enteredCurrency:'USD',reference:'BAD-PROOF',bank:'Banco',method:'TRANSFER_VE',transactionDate:'2026-07-31',attachment:{name:'falso.png',type:'image/png',base64:Buffer.from('not-png').toString('base64')}}));

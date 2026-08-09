@@ -54,7 +54,7 @@ async function bootDiagnostic(page){
 
 (async()=>{
   await new Promise(resolve=>server.listen(PORT,'127.0.0.1',resolve));
-  const browser=await chromium.launch({headless:true});
+  const browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.CHROMIUM_EXECUTABLE_PATH}:{})});
   const page=await browser.newPage({viewport:{width:1366,height:768}});
   const errors=[];
   page.on('pageerror',error=>errors.push(String(error.stack||error)));

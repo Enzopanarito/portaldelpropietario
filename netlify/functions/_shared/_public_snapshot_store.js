@@ -56,11 +56,9 @@ async function connectForEvent(event){
 function validOwner(owner){
  const house=Number(owner&&owner.Casa),usd=Number(owner&&owner['Saldo USD Actual']),bs=Number(owner&&owner['Saldo Bs Ref Actual']),total=Number(owner&&(owner['Saldo Total Actual']??owner['Deuda Restante']));
  if(!(Number.isInteger(house)&&house>=1&&house<=EXPECTED_HOUSES&&[usd,bs,total].every(Number.isFinite)&&Math.abs((usd+bs)-total)<=0.011))return false;
- if(owner&&owner.balanceEngineVersion==='vla-balance-contract-v7'){
-  const canonicalUsd=Number(owner.saldoUsd),canonicalBs=Number(owner.saldoBsRef),net=Number(owner.saldoNetoReferencial),payable=Number(owner.totalPagadero),expectedPayable=Math.round((Math.max(0,usd)+Math.max(0,bs)+Number.EPSILON)*100)/100;
-  return[canonicalUsd,canonicalBs,net,payable].every(Number.isFinite)&&Math.abs(canonicalUsd-usd)<=0.011&&Math.abs(canonicalBs-bs)<=0.011&&Math.abs(net-total)<=0.011&&Math.abs(payable-expectedPayable)<=0.011;
- }
- return true;
+ if(owner?.balanceEngineVersion!=='vla-balance-contract-v7')return false;
+ const canonicalUsd=Number(owner.saldoUsd),canonicalBs=Number(owner.saldoBsRef),net=Number(owner.saldoNetoReferencial),payable=Number(owner.totalPagadero),expectedPayable=Math.round((Math.max(0,usd)+Math.max(0,bs)+Number.EPSILON)*100)/100;
+ return[canonicalUsd,canonicalBs,net,payable].every(Number.isFinite)&&Math.abs(canonicalUsd-usd)<=0.011&&Math.abs(canonicalBs-bs)<=0.011&&Math.abs(net-total)<=0.011&&Math.abs(payable-expectedPayable)<=0.011;
 }
 function validatePayload(payload){const errors=[];if(Number(payload&&payload.balanceEngineVersion)!==5)errors.push('La fotografía no usa el motor financiero v5.');if(String(payload&&payload.officialBalanceSource||'')!=='ControlVersiones')errors.push('La fotografía no usa ControlVersiones.');const owners=Array.isArray(payload&&payload.propietarios)?payload.propietarios:[];if(owners.length!==EXPECTED_HOUSES)errors.push(`La fotografía debe contener ${EXPECTED_HOUSES} casas.`);const houses=owners.map(owner=>Number(owner&&owner.Casa));if(new Set(houses).size!==EXPECTED_HOUSES||houses.some((house,index)=>house!==index+1))errors.push('Las casas deben ser únicas y estar ordenadas del 1 al 15.');owners.forEach(owner=>{if(!validOwner(owner))errors.push(`La Casa ${owner&&owner.Casa||'?'} tiene saldos inconsistentes.`)});return{ok:errors.length===0,errors}}
 function buildSnapshot(payload,{now=Date.now(),env=process.env,config=runtimeConfig}={}){const validation=validatePayload(payload);if(!validation.ok){const error=new Error(validation.errors.join(' | '));error.code='INVALID_PUBLIC_SNAPSHOT';throw error}return{schemaVersion:SCHEMA_VERSION,cachedAt:new Date(now).toISOString(),expiresAt:now+maxAgeMs(env,config),payloadHash:sha256(JSON.stringify(payload)),payload:clone(payload),invalidated:false,reason:''}}

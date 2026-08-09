@@ -34,7 +34,9 @@ assert(compat.includes("require('@netlify/blobs')"),'El empaquetador debe detect
 assert(compat.includes("headers['if-none-match']='*'")&&compat.includes("headers['if-match']"),'El adaptador seguro debe conservar las escrituras condicionales de la versión fijada.');
 assert(store.includes('blobsCompat.connectLambdaEvent(event)'),'El modo Lambda compatible debe inicializar Blobs con el evento de Netlify.');
 assert(route.includes('await connectSnapshot(event)'),'La ruta pública debe conectar Blobs antes de leer la fotografía.');
-assert(route.includes('if(!isEnabled(snapshotEnv,snapshotStore.runtimeConfig,host))return previousHandler(event)'),'El rollback debe restaurar exactamente la ruta anterior al apagar la bandera.');
+assert(route.includes('if(!isEnabled(snapshotEnv,snapshotStore.runtimeConfig,host)){'),'El rollback debe omitir Blobs al apagar la bandera.');
+assert(route.includes('const direct=await previousHandler(event),payload=parseBody(direct)'),'La ruta directa debe conservar el handler canónico.');
+assert(route.includes('const validation=validatePayload(payload)'),'Incluso sin caché, el contrato financiero debe fallar cerrado.');
 assert(route.includes("'X-Airtable-Calls':'0'"));
 assert(route.includes("'X-Public-Snapshot':state"));
 
