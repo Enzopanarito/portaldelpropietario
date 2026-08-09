@@ -1,0 +1,160 @@
+name: Capture Encrypted Airtable Backup
+
+on:
+  pull_request:
+    branches: [main]
+    types: [edited]
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/vla-10of10-hardening-20260809' &&
+      contains(github.event.pull_request.title, '[skip netlify]') &&
+      contains(github.event.pull_request.title, '[backup airtable]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NETLIFY_AUTH_TOKEN_PRIMARY: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_AUTH_TOKEN_FALLBACK: ${{ secrets.NETLIFY_TOKEN }}
+      NETLIFY_SITE_ID_PRIMARY: ${{ secrets.NETLIFY_SITE_ID }}
+      NETLIFY_SITE_ID_FALLBACK: ${{ secrets.NETLIFY_SITE_ID_VILLALOSAPAMATES }}
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Resolve Netlify credentials without exposing them
+        shell: bash
+        run: |
+          set -euo pipefail
+          AUTH_TOKEN="${NETLIFY_AUTH_TOKEN_PRIMARY:-${NETLIFY_AUTH_TOKEN_FALLBACK:-}}"
+          SITE_ID="${NETLIFY_SITE_ID_PRIMARY:-${NETLIFY_SITE_ID_FALLBACK:-}}"
+          [ -n "$AUTH_TOKEN" ] || { echo 'Falta token Netlify.'; exit 1; }
+          [ -n "$SITE_ID" ] || { echo 'Falta Site ID Netlify.'; exit 1; }
+          echo "::add-mask::$AUTH_TOKEN"
+          echo "::add-mask::$SITE_ID"
+          echo "NETLIFY_AUTH_TOKEN=$AUTH_TOKEN" >> "$GITHUB_ENV"
+          echo "NETLIFY_SITE_ID=$SITE_ID" >> "$GITHUB_ENV"
+
+      - name: Read production Airtable and create encrypted backup
+        shell: bash
+        env:
+          SOURCE_PRODUCTION_COMMIT: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('fs');
+          const crypto=require('crypto');
+          const {TABLES}=require('./netlify/functions/_shared/_backup_inventory');
+          const netlifyToken=process.env.NETLIFY_AUTH_TOKEN;
+          const siteId=process.env.NETLIFY_SITE_ID;
+          const sourceCommit=String(process.env.SOURCE_PRODUCTION_COMMIT||'').trim();
+          const netlifyApi='https://api.netlify.com/api/v1';
+          const netlifyHeaders={Authorization:`Bearer ${netlifyToken}`,'User-Agent':'VLA-encrypted-backup'};
+          const sha=value=>crypto.createHash('sha256').update(typeof value==='string'?value:JSON.stringify(value)).digest('hex');
+          const canonical=value=>JSON.stringify(value,(key,val)=>val&&typeof val==='object'&&!Array.isArray(val)?Object.fromEntries(Object.entries(val).sort(([a],[b])=>a.localeCompare(b))):val);
+          async function json(response,label){const body=await response.json().catch(()=>({}));if(!response.ok)throw new Error(`${label} respondió HTTP ${response.status}.`);return body}
+          function envValue(variable){
+            const values=Array.isArray(variable?.values)?variable.values:[];
+            const chosen=values.find(item=>item.context==='production')||values.find(item=>item.context==='all');
+            const value=String(chosen?.value||'');
+            if(!value||value.includes('****************'))throw new Error(`${variable?.key||'Variable'} ya es secreta/no legible y este backup debe ejecutarse antes de la clasificación.`);
+            return value;
+          }
+          async function netlifyEnv(accountId,key){return json(await fetch(`${netlifyApi}/accounts/${encodeURIComponent(accountId)}/env/${encodeURIComponent(key)}?site_id=${encodeURIComponent(siteId)}`,{headers:netlifyHeaders}),`Netlify ${key}`)}
+          async function airtableAll(baseId,table,token){
+            const records=[];let offset='';
+            do{
+              const url=new URL(`https://api.airtable.com/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`);
+              url.searchParams.set('pageSize','100');if(offset)url.searchParams.set('offset',offset);
+              const data=await json(await fetch(url,{headers:{Authorization:`Bearer ${token}`}}),`Airtable ${table}`);
+              records.push(...(data.records||[]));offset=String(data.offset||'');
+            }while(offset);
+            return records.sort((a,b)=>String(a.id||'').localeCompare(String(b.id||'')));
+          }
+          (async()=>{
+            const site=await json(await fetch(`${netlifyApi}/sites/${encodeURIComponent(siteId)}`,{headers:netlifyHeaders}),'Netlify site');
+            const accountId=String(site.account_id||site.account_slug||'').trim();
+            if(!accountId)throw new Error('Netlify no devolvió account_id.');
+            const [tokenVar,baseVar,restoreRootVar]=await Promise.all([
+              netlifyEnv(accountId,'AIRTABLE_API_TOKEN'),
+              netlifyEnv(accountId,'AIRTABLE_BASE_ID'),
+              netlifyEnv(accountId,'ADMIN_TOKEN_SECRET')
+            ]);
+            const airtableToken=envValue(tokenVar),baseId=envValue(baseVar),restoreRoot=envValue(restoreRootVar);
+            console.log(`::add-mask::${airtableToken}`);console.log(`::add-mask::${restoreRoot}`);
+            const tables={};
+            for(const table of TABLES){
+              const records=await airtableAll(baseId,table,airtableToken);
+              const payload=canonical(records);
+              tables[table]={recordCount:records.length,sha256:sha(payload),records};
+            }
+            let schema=null,schemaStatus='unavailable';
+            try{
+              const response=await fetch(`https://api.airtable.com/v0/meta/bases/${encodeURIComponent(baseId)}/tables`,{headers:{Authorization:`Bearer ${airtableToken}`}});
+              if(response.ok){schema=await response.json();schemaStatus='captured'}
+            }catch(_){}
+            const plaintext={
+              backupType:'vla-airtable-encrypted-offplatform-v1',
+              capturedAt:new Date().toISOString(),
+              sourceProductionCommit:sourceCommit,
+              baseId,
+              tableCount:TABLES.length,
+              schemaStatus,
+              schema,
+              tables
+            };
+            const plaintextJson=canonical(plaintext),plaintextSha=sha(plaintextJson);
+            const manifest={
+              backupType:plaintext.backupType,
+              capturedAt:plaintext.capturedAt,
+              sourceProductionCommit:sourceCommit,
+              baseId,
+              tableCount:TABLES.length,
+              totalRecords:Object.values(tables).reduce((sum,item)=>sum+item.recordCount,0),
+              schemaStatus,
+              tableHashes:Object.fromEntries(Object.entries(tables).map(([name,item])=>[name,{recordCount:item.recordCount,sha256:item.sha256}])),
+              plaintextSha256:plaintextSha,
+              encryption:'AES-256-GCM',
+              restoreRootSource:'ADMIN_TOKEN_SECRET',
+              keyDerivation:'HMAC-SHA256(vla/airtable-backup-offplatform/v1)'
+            };
+            const key=crypto.createHmac('sha256',Buffer.from(restoreRoot,'utf8')).update('vla/airtable-backup-offplatform/v1','utf8').digest();
+            const iv=crypto.randomBytes(12),aad=Buffer.from(canonical(manifest),'utf8'),cipher=crypto.createCipheriv('aes-256-gcm',key,iv);cipher.setAAD(aad);
+            const ciphertext=Buffer.concat([cipher.update(Buffer.from(plaintextJson,'utf8')),cipher.final()]),tag=cipher.getAuthTag();
+            const envelope={schema:'vla-airtable-backup-envelope-v1',manifest,iv:iv.toString('base64'),tag:tag.toString('base64'),ciphertext:ciphertext.toString('base64')};
+            fs.writeFileSync('vla-airtable-pre10of10.encrypted.json',JSON.stringify(envelope));
+            fs.writeFileSync('vla-airtable-pre10of10.manifest.json',JSON.stringify(manifest,null,2));
+            // Autoverificación inmediata antes de conservar el artefacto.
+            const decipher=crypto.createDecipheriv('aes-256-gcm',key,iv);decipher.setAAD(aad);decipher.setAuthTag(tag);const restored=Buffer.concat([decipher.update(ciphertext),decipher.final()]).toString('utf8');
+            if(sha(restored)!==plaintextSha)throw new Error('La autoverificación criptográfica del backup falló.');
+            console.log(`VLA_AIRTABLE_BACKUP_OK tables=${manifest.tableCount} records=${manifest.totalRecords} schema=${schemaStatus} sha256=${plaintextSha}`);
+          })().catch(error=>{console.error(String(error.message||error));process.exit(1)});
+          NODE
+
+      - name: Upload encrypted backup and manifest
+        uses: actions/upload-artifact@v7
+        with:
+          name: vla-airtable-pre10of10-${{ github.event.pull_request.base.sha }}
+          path: |
+            vla-airtable-pre10of10.encrypted.json
+            vla-airtable-pre10of10.manifest.json
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 6
+
+      - name: Publish backup evidence summary
+        shell: bash
+        run: |
+          node -e "const m=require('./vla-airtable-pre10of10.manifest.json'); console.log('### VLA Airtable backup cifrado ✅\n\n- Tablas: '+m.tableCount+'\n- Registros: '+m.totalRecords+'\n- Esquema: '+m.schemaStatus+'\n- SHA-256 plaintext: `'+m.plaintextSha256+'`\n- Commit producción: `'+m.sourceProductionCommit+'`')" >> "$GITHUB_STEP_SUMMARY"
