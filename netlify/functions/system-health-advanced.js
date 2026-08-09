@@ -2,14 +2,15 @@
 
 const { withAirtableUsage } = require('./_shared/_airtable_meter');
 
-const { requireAdmin } = require('./_shared/_auth');
+const { requireAdmin, getSecretInfo } = require('./_shared/_auth');
 const { loadConfigRecord } = require('./_shared/_admin_auth_store');
 const { loadLastGood } = require('./_shared/_bcv_store');
+const { resolveEncryptionKey } = require('./_shared/_payment_proof_store');
 const { deepEscapeStrings, safeDisplayText } = require('./_shared/_security_utils');
 const { expected:expectedRelease,compareReleaseContracts,deploymentMetadata } = require('./_shared/_release_contract');
 
 const CONTROL_TABLE = 'ControlVersiones';
-const EXPECTED_BACKUP_TABLES = 11;
+const EXPECTED_BACKUP_TABLES = 12;
 
 function json(statusCode, body) {
   return { statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }, body: JSON.stringify(body) };
@@ -55,6 +56,20 @@ function keyState(record) {
   return '';
 }
 function configured(value){return String(value||'').trim().length>0}
+function adminSessionKeyHealth(env=process.env){
+  const info=getSecretInfo(env),ok=Boolean(info.secret&&info.dedicated&&info.productionSafe&&info.source==='ADMIN_SESSION_SIGNING_KEY');
+  return ok
+    ?{ok:true,severity:'ok',detail:'Firma administrativa aislada con una clave dedicada de producción.',meta:{source:info.source,dedicated:true,keyVersion:info.keyVersion}}
+    :{ok:false,severity:'error',detail:'Producción debe usar ADMIN_SESSION_SIGNING_KEY dedicada. No se aceptan claves de cifrado, Airtable, tokens legacy ni contraseñas como raíz de firma.',meta:{source:info.source||'missing',dedicated:false,keyVersion:info.keyVersion||3}};
+}
+function paymentProofKeyHealth(env=process.env){
+  try{
+    const info=resolveEncryptionKey(env),ok=info.source==='PAYMENT_PROOF_ENCRYPTION_KEY'&&info.derived===false;
+    return ok
+      ?{ok:true,severity:'ok',detail:'Cifrado de comprobantes usa PAYMENT_PROOF_ENCRYPTION_KEY dedicada.',meta:{source:info.source,dedicated:true,version:info.version}}
+      :{ok:false,severity:'error',detail:'El cifrado de comprobantes está usando una raíz de compatibilidad. Producción debe usar PAYMENT_PROOF_ENCRYPTION_KEY dedicada.',meta:{source:info.source||'fallback',dedicated:false,version:info.version||null}};
+  }catch(error){return{ok:false,severity:'error',detail:`No existe una clave válida para cifrar comprobantes: ${safeDisplayText(error.message,240)}`,meta:{source:'missing',dedicated:false}}}
+}
 function autopilotHealthState(record,env=process.env,now=Date.now()){
   const key=String(record?.fields?.Key||''),lastRun=record?.createdTime||null,lastAt=Date.parse(lastRun||''),ageHours=Number.isFinite(lastAt)?Math.round((now-lastAt)/360000)/10:null,done=key.includes('|DONE|');
   if(record){const fresh=done&&ageHours!==null&&ageHours<=36;return{ok:fresh,severity:fresh?'ok':'warning',detail:`Último ciclo: ${lastRun||'sin fecha'} · estado ${done?'DONE':'incompleto'} · antigüedad ${ageHours} h.`,meta:{lastRun,ageHours,state:done?'DONE':'INCOMPLETE'}}}
@@ -85,8 +100,10 @@ const handler = async function(event) {
       add('Portón MKJ 15/15 read-only',ok,complete?(discrepancies?`${reconciliation.reconciled}/15 reconciliadas; ${discrepancies} discrepancia(s) en modo ${reconciliation.mode}. No se aplicó ningún cambio.`:`15/15 reconciliadas y coherentes en modo ${reconciliation.mode}. No se aplicó ningún cambio.`):`Reconciliadas ${Number(reconciliation.reconciled||0)}/15; la consulta remota no quedó completa.`,severity,{mode:reconciliation.mode||null,reconciled:Number(reconciliation.reconciled||0),coherent:Number(reconciliation.coherent||0),discrepancies:reconciliation.discrepancies||[],readOnly:true});
     }catch(error){add('Portón MKJ 15/15 read-only',false,`No se pudo completar la reconciliación remota: ${safeDisplayText(error.message,300)}`,'error',{readOnly:true})}
 
-    const secretIndependent = Boolean(process.env.ADMIN_TOKEN_SECRET) && process.env.ADMIN_TOKEN_SECRET !== process.env.ADMIN_PASSWORD;
-    add('Secreto independiente de sesión', secretIndependent, secretIndependent ? 'ADMIN_TOKEN_SECRET está configurado y separado de la contraseña.' : 'Configure ADMIN_TOKEN_SECRET en Netlify con un valor aleatorio distinto de ADMIN_PASSWORD.', secretIndependent ? 'ok' : 'warning');
+    const sessionKey=adminSessionKeyHealth(process.env);
+    add('Firma dedicada de sesiones',sessionKey.ok,sessionKey.detail,sessionKey.severity,sessionKey.meta);
+    const proofKey=paymentProofKeyHealth(process.env);
+    add('Clave dedicada de comprobantes',proofKey.ok,proofKey.detail,proofKey.severity,proofKey.meta);
 
     try {
       const { config } = await loadConfigRecord({ force: true });
@@ -120,7 +137,7 @@ const handler = async function(event) {
 
     add('Cobertura de respaldo', true, `El respaldo operativo incluye ${EXPECTED_BACKUP_TABLES} tablas, manifiesto SHA-256 y verificador local.`, 'ok', { expectedTables: EXPECTED_BACKUP_TABLES });
     add('Transparencia pública', true, 'El portal continúa mostrando la información financiera de todas las casas según la política definida por la administración.');
-    add('Autenticación de dos pasos', true, 'No habilitada por decisión operativa de la administración. La protección se refuerza mediante contraseña scrypt, límites persistentes y sesiones firmadas.', 'ok');
+    add('Autenticación de dos pasos', false, 'No habilitada por decisión operativa de la administración. Se registra como riesgo aceptado y no se disfraza como un control activo.', 'info', { acceptedRisk:true, enabled:false });
 
     const hasError = checks.some(check => check.severity === 'error');
     const hasWarning = checks.some(check => check.severity === 'warning');
@@ -133,3 +150,5 @@ const handler = async function(event) {
 
 exports.handler = withAirtableUsage('system-health-advanced', handler);
 exports.autopilotHealthState=autopilotHealthState;
+exports.adminSessionKeyHealth=adminSessionKeyHealth;
+exports.paymentProofKeyHealth=paymentProofKeyHealth;
