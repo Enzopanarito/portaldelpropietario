@@ -2,6 +2,7 @@
 
 const { issueAdminToken } = require('./_shared/_auth');
 const { verifyGitHubOidcToken } = require('./_shared/_github_oidc');
+const { loadConfigRecord } = require('./_shared/_admin_auth_store');
 
 function json(statusCode, body) {
   return {
@@ -24,13 +25,16 @@ exports.handler = async function(event) {
   if (!oidcToken || oidcToken.length > 20000) return json(401, { message: 'Identidad CI no válida.' });
   try {
     const claims = await verifyGitHubOidcToken(oidcToken);
-    const token = issueAdminToken({ role: 'admin-ci-readonly', ciRunId: claims.run_id });
+    const { config } = await loadConfigRecord({ force: true });
+    const authVersion = Math.max(0, Number(config?.version || 0));
+    const token = issueAdminToken({ role: 'admin-ci-readonly', ciRunId: claims.run_id, authVersion });
     return json(200, {
       success: true,
       token,
       role: 'admin-ci-readonly',
       expiresInMinutes: 20,
-      source: 'github-oidc'
+      source: 'github-oidc',
+      passwordConfigVersion: authVersion
     });
   } catch (error) {
     console.warn(JSON.stringify({ event: 'VLA_ADMIN_CI_OIDC_REJECTED', code: String(error.message || 'OIDC_REJECTED').slice(0, 80) }));
