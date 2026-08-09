@@ -5,16 +5,16 @@ on:
     branches: [main]
     paths:
       - 'netlify/functions/public-report-payment.js'
-      - 'netlify/functions/_access_control.js'
-      - 'netlify/functions/_pending_report_access_policy.js'
+      - 'netlify/functions/_shared/_access_control.js'
+      - 'netlify/functions/_shared/_pending_report_access_policy.js'
       - 'tests/pending-reports-never-enable-access.test.js'
       - '.github/workflows/verify-pending-report-access-safety.yml'
   push:
     branches: [main]
     paths:
       - 'netlify/functions/public-report-payment.js'
-      - 'netlify/functions/_access_control.js'
-      - 'netlify/functions/_pending_report_access_policy.js'
+      - 'netlify/functions/_shared/_access_control.js'
+      - 'netlify/functions/_shared/_pending_report_access_policy.js'
       - 'tests/pending-reports-never-enable-access.test.js'
       - '.github/workflows/verify-pending-report-access-safety.yml'
 
@@ -27,18 +27,18 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Use Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Check syntax
         run: |
           node --check netlify/functions/public-report-payment.js
-          node --check netlify/functions/_access_control.js
-          node --check netlify/functions/_pending_report_access_policy.js
+          node --check netlify/functions/_shared/_access_control.js
+          node --check netlify/functions/_shared/_pending_report_access_policy.js
           node --check tests/pending-reports-never-enable-access.test.js
 
       - name: Prove pending reports never enable access

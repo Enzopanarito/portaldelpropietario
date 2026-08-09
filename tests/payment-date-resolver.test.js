@@ -34,3 +34,39 @@ test('el servidor contrasta la fecha del archivo y rechaza una etiqueta manipula
   assert.equal(mismatched.transactionDate,'2026-08-08');
   assert.equal(mismatched.transactionDateSource,'REPORT_TIMESTAMP_FALLBACK');
 });
+
+for(const [label,method] of [['Zelle','ZELLE'],['Binance','BINANCE_PAY']]){
+  test(`${label} con fecha visible usa la fecha del comprobante`,()=>{
+    const result=resolver.resolvePrefillDate({proofDate:'2026-08-07',method,attachment:{lastModified:Date.parse('2026-08-06T12:00:00Z')},now});
+    assert.equal(result.transactionDate,'2026-08-07');
+    assert.equal(result.transactionDateSource,'PROOF_EXTRACTED');
+  });
+  test(`${label} sin fecha usa el timestamp oficial de recepción en Caracas`,()=>{
+    const result=resolver.resolvePrefillDate({proofDate:null,method,attachment:{lastModified:Date.parse('2026-08-06T12:00:00Z')},now});
+    assert.equal(result.transactionDate,'2026-08-08');
+    assert.equal(result.transactionDateSource,'REPORT_TIMESTAMP_FALLBACK');
+    assert.equal(result.transactionDateNeedsReview,false);
+    assert.match(result.transactionDateEvidence,/America\/Caracas/);
+  });
+}
+
+test('crypto sin fecha usa el timestamp del servidor',()=>{
+  const result=resolver.resolvePrefillDate({proofDate:null,method:'CRYPTO_TRANSFER',now});
+  assert.equal(result.transactionDate,'2026-08-08');
+  assert.equal(result.transactionDateSource,'REPORT_TIMESTAMP_FALLBACK');
+});
+
+test('un archivo descargado ayer y reportado hoy no cambia la fecha financiera de Zelle',()=>{
+  const result=resolver.resolvePrefillDate({proofDate:null,method:'ZELLE',attachment:{lastModified:Date.parse('2026-08-07T12:00:00Z')},now});
+  assert.equal(result.transactionDate,'2026-08-08');
+  assert.notEqual(result.transactionDateSource,'FILE_LAST_MODIFIED');
+});
+
+test('el cliente no puede declarar PROOF_EXTRACTED sin verificación del servidor',()=>{
+  const forged=resolver.resolveSubmittedDate({clientDate:'2026-08-01',clientSource:'PROOF_EXTRACTED',paymentChannel:'DIGITAL',method:'ZELLE',proofExtractedVerified:false,now});
+  assert.equal(forged.transactionDate,'2026-08-08');
+  assert.equal(forged.transactionDateSource,'REPORT_TIMESTAMP_FALLBACK');
+  const verified=resolver.resolveSubmittedDate({clientDate:'2026-08-01',clientSource:'PROOF_EXTRACTED',paymentChannel:'DIGITAL',method:'ZELLE',proofExtractedVerified:true,now});
+  assert.equal(verified.transactionDate,'2026-08-01');
+  assert.equal(verified.transactionDateSource,'PROOF_EXTRACTED');
+});

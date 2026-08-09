@@ -8,6 +8,9 @@ const { calculateExpiredAccessDebt, getAccessMode, getAutomationRules } = requir
 const { OFFICIAL_EMAIL } = require('./_shared/_mailer');
 const { filterActiveExpenses, currentMonthCaracas } = require('./_shared/_expense_lifecycle');
 const { connectLambdaEvent, getAtomicStore } = require('./_shared/_blobs_compat');
+const { readOnlyAccessReconciliation } = require('./_shared/_access_reconciliation_readonly');
+const crypto = require('crypto');
+const EXPECTED_RELEASE = require('../../release.json');
 
 const TABLES = {
   propietarios: 'Propietarios',
@@ -100,6 +103,19 @@ function intelligentProofAudit(records=[]){
 function accessCoherenceState(mismatches=[],mode='Manual'){
   const automatic=mode==='Automático',requiresAction=automatic&&mismatches.length>0;
   return{ok:!requiresAction,severity:requiresAction?'error':'ok',automatic};
+}
+function stable(value){
+  if(Array.isArray(value))return value.map(stable);
+  if(!value||typeof value!=='object')return value;
+  return Object.fromEntries(Object.keys(value).sort().map(key=>[key,stable(value[key])]));
+}
+function releaseDigest(contract){return crypto.createHash('sha256').update(JSON.stringify(stable(contract))).digest('hex')}
+function releaseContractState(expected,actual,deployment={}){
+  const expectedKeys=Object.keys(expected||{}).sort(),actualKeys=Object.keys(actual||{}).sort(),fields=Array.from(new Set([...expectedKeys,...actualKeys])).sort();
+  const differences=fields.filter(field=>!(field in (expected||{}))||!(field in (actual||{}))||JSON.stringify(stable(expected[field]))!==JSON.stringify(stable(actual[field])));
+  const expectedDigest=releaseDigest(expected),actualDigest=releaseDigest(actual),manifestDigest=String(deployment?.releaseContractDigest||''),commit=String(deployment?.commit||'');
+  const manifestOk=deployment?.schemaVersion==='vla-deployment-manifest-v1'&&deployment?.release===expected?.release&&manifestDigest===expectedDigest&&/^[a-f0-9]{40}$/i.test(commit);
+  return{ok:differences.length===0&&manifestOk,differences,expectedDigest,actualDigest,manifestOk,commit,release:String(actual?.release||'')};
 }
 
 const handler = async function(event) {
@@ -214,6 +230,14 @@ const handler = async function(event) {
       ?`${coherence.automatic?'Requiere sincronización automática':'Modo Manual: diferencia informativa, bajo control administrativo'}. ${accessMismatches.length} acceso(s): ${accessMismatches.map(item=>`Casa ${item.casa} (${item.actual} → ${item.esperado})`).join(', ')}.`
       :'Todos los estados de acceso coinciden con la deuda vencida o con una excepción auditada.',coherence.severity,{mismatches:accessMismatches,mode:accessModeInfo?.mode});
 
+    try {
+      counter.external += 3;
+      const expiredByOwnerId=new Map(expired.map(item=>[item.owner.id,item.calc.hasExpiredDebt])),reconciliation=await readOnlyAccessReconciliation(propietarios,expiredByOwnerId,{mode:accessModeInfo?.mode||'Manual'}),reconciliationOk=reconciliation.total===15&&reconciliation.coherent===15;
+      add('Conciliación MKJ 15/15 (solo lectura)',reconciliationOk,`Comparadas ${reconciliation.total}/15 casas; coherentes ${reconciliation.coherent}/15; diferencias ${reconciliation.mismatches.length}. No se ejecutó ninguna escritura en Airtable ni cambio de acceso en MKJ.`,reconciliationOk?'ok':accessModeInfo?.mode==='Automático'?'error':'warning',{readOnly:true,total:reconciliation.total,coherent:reconciliation.coherent,mismatches:reconciliation.mismatches});
+    } catch (error) {
+      add('Conciliación MKJ 15/15 (solo lectura)',false,`La lectura comparativa no pudo completarse: ${String(error.message||error).slice(0,300)}. No se intentó ninguna escritura.`,accessModeInfo?.mode==='Automático'?'error':'warning',{readOnly:true});
+    }
+
     const pendingReports = reportes.filter(r => selectName((r.fields || {}).Estado) === 'Pendiente').length;
     add('Reportes pendientes y portón', true, pendingReports ? `${pendingReports} reporte(s) pendiente(s). Un reporte no altera deuda ni acceso hasta quedar validado.` : 'No hay reportes pendientes.', pendingReports ? 'warning' : 'ok');
 
@@ -257,7 +281,7 @@ const handler = async function(event) {
 
     add('Botón Portón en admin', true, 'Disponible en el panel Admin como 🚪 Portón; abre el selector Automático/Manual, Auto Sync y botones Habilitar/Limitar.');
     add('Botón Auto Sync', true, 'Disponible dentro del módulo Portón. En modo Manual queda bloqueado para evitar ejecuciones accidentales.');
-    add('Prueba login MKJ', true, 'Disponible como botón manual. Salud no ejecuta login MKJ para evitar llamadas externas innecesarias.', 'ok');
+    add('Prueba login MKJ', true, 'La conciliación protegida verifica sesión y membresías únicamente mediante GET; no habilita ni limita usuarios.', 'ok');
 
     try {
       counter.external += 1;
@@ -280,10 +304,23 @@ const handler = async function(event) {
       add('Snapshot público',false,'No fue posible leer el estado del snapshot.','warning');
     }
 
+    try {
+      counter.external += 2;
+      const origin=`${event.headers['x-forwarded-proto'] || 'https'}://${event.headers.host}`;
+      const [releaseResponse,deploymentResponse]=await Promise.all([fetch(`${origin}/release.json?health=${Date.now()}`,{headers:{'Cache-Control':'no-cache'}}),fetch(`${origin}/deployment.json?health=${Date.now()}`,{headers:{'Cache-Control':'no-cache'}})]);
+      if(!releaseResponse.ok||!deploymentResponse.ok)throw new Error(`HTTP release ${releaseResponse.status}; deployment ${deploymentResponse.status}`);
+      const [liveRelease,deployment]=await Promise.all([releaseResponse.json(),deploymentResponse.json()]),state=releaseContractState(EXPECTED_RELEASE,liveRelease,deployment);
+      add('Deployment y release',state.ok,state.ok
+        ?`Release ${state.release}; contrato ${state.expectedDigest.slice(0,12)}; commit ${state.commit.slice(0,12)} verificados contra el código desplegado.`
+        :`Release/commit no coinciden con el contrato del código. Campos distintos: ${state.differences.join(', ')||'manifiesto de deployment'}.`,state.ok?'ok':'error',{release:state.release,commit:state.commit,contractDigest:state.expectedDigest,differences:state.differences,manifestOk:state.manifestOk});
+    } catch (error) {
+      add('Deployment y release',false,`No fue posible verificar release y commit desplegados: ${error.message}`,'error');
+    }
+
     const closeRules=automationInfo?.rules?.monthlyClose;
     add('Cierre mensual',Boolean(closeRules),closeRules?`Configurado para el día ${closeRules.day} a las ${String(closeRules.hour).padStart(2,'0')}:00, con recuperación los días ${(closeRules.retryDays||[]).join(', ')}. Modo automático: ${closeRules.automaticEnabled?'activo':'pausado'}.`:'No fue posible cargar las reglas de cierre.',closeRules?'ok':'error');
 
-    add('Uso de API en Salud', true, `Lectura ampliada: ${counter.airtable} llamada(s) a Airtable y ${counter.external} llamada(s) externa(s). No se prueba login MKJ automáticamente.`);
+    add('Uso de API en Salud', true, `Lectura ampliada: ${counter.airtable} llamada(s) a Airtable y ${counter.external} llamada(s) externa(s). La verificación MKJ es estrictamente de solo lectura.`);
 
     const hasError = checks.some(c => c.severity === 'error');
     const hasWarning = checks.some(c => c.severity === 'warning');
@@ -302,3 +339,4 @@ exports.handler = withAirtableUsage('system-health', handler);
 exports.intelligentProofAudit=intelligentProofAudit;
 exports.accessCoherenceState=accessCoherenceState;
 exports.canonicalFinancialState = canonicalFinancialState;
+exports.releaseContractState = releaseContractState;

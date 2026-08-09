@@ -4,13 +4,13 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'netlify/functions/_provisional_access_authorization.js'
+      - 'netlify/functions/_shared/_provisional_access_authorization.js'
       - 'tests/provisional-access-authorization.test.js'
       - '.github/workflows/verify-exact-report-provisional-access.yml'
   push:
     branches: [main]
     paths:
-      - 'netlify/functions/_provisional_access_authorization.js'
+      - 'netlify/functions/_shared/_provisional_access_authorization.js'
       - 'tests/provisional-access-authorization.test.js'
       - '.github/workflows/verify-exact-report-provisional-access.yml'
 
@@ -23,14 +23,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Use Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
       - name: Check syntax
         run: |
-          node --check netlify/functions/_provisional_access_authorization.js
+          node --check netlify/functions/_shared/_provisional_access_authorization.js
           node --check tests/provisional-access-authorization.test.js
       - name: Verify exact report authorization and stale-job protection
         run: node tests/provisional-access-authorization.test.js

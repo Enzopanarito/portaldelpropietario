@@ -5,14 +5,14 @@ on:
     branches: [main]
     paths:
       - 'config/payment-proof-analysis-v2.schema.json'
-      - 'netlify/functions/_payment_ai_contract.js'
+      - 'netlify/functions/_shared/_payment_ai_contract.js'
       - 'tests/payment-ai-contract.test.js'
       - '.github/workflows/verify-smart-payment-ai-contract.yml'
   push:
     branches: [main]
     paths:
       - 'config/payment-proof-analysis-v2.schema.json'
-      - 'netlify/functions/_payment_ai_contract.js'
+      - 'netlify/functions/_shared/_payment_ai_contract.js'
       - 'tests/payment-ai-contract.test.js'
       - '.github/workflows/verify-smart-payment-ai-contract.yml'
 
@@ -25,16 +25,16 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Use Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Check syntax and schema JSON
         run: |
-          node --check netlify/functions/_payment_ai_contract.js
+          node --check netlify/functions/_shared/_payment_ai_contract.js
           node --check tests/payment-ai-contract.test.js
           node -e "JSON.parse(require('fs').readFileSync('config/payment-proof-analysis-v2.schema.json','utf8'))"
 

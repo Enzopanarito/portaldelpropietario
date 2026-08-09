@@ -10,8 +10,8 @@ const read=file=>fs.readFileSync(path.join(ROOT,file));
 const json=(res,status,data)=>{res.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(data))};
 const balances=[85,0,-20,201.25,0,73,0,85,0,248.17,-378.89,109.99,298.17,-50,186.9];
 const owners=Array.from({length:15},(_,i)=>{
-  const total=balances[i];
-  return {id:`recOwner${String(i+1).padStart(8,'0')}`,Casa:i+1,Propietario:`Propietario ${i+1}`,Alicuota:1/15,'Deuda Anterior USD':total>0&&i%2===0?total:0,'Deuda Anterior Bs Ref':total>0&&i%2===1?total:0,'Deuda Anterior':total,'Deuda Restante':total,'Saldo Oficial Activo':true,'Saldo USD Actual':total>0&&i%2===0?total:total<0?total:0,'Saldo Bs Ref Actual':total>0&&i%2===1?total:0,'Saldo Total Actual':total,'Estado Acceso Portón':total>0?'Limitado':'Habilitado','Última Sync MKJ':'2026-07-12T04:00:00.000Z','MKJ User ID':String(7000+i),'MKJ Email':`casa${i+1}@example.com`,Email:`casa${i+1}@example.com`};
+  const total=balances[i],usd=total>0&&i%2===0?total:total<0?total:0,bs=total>0&&i%2===1?total:0,totalPagadero=Math.max(0,usd)+Math.max(0,bs);
+  return {id:`recOwner${String(i+1).padStart(8,'0')}`,Casa:i+1,Propietario:`Propietario ${i+1}`,Alicuota:1/15,'Deuda Anterior USD':total>0&&i%2===0?total:0,'Deuda Anterior Bs Ref':total>0&&i%2===1?total:0,'Deuda Anterior':total,'Deuda Restante':total,'Saldo Oficial Activo':true,'Saldo USD Actual':usd,'Saldo Bs Ref Actual':bs,'Saldo Total Actual':total,saldoUsd:usd,saldoBsRef:bs,totalPagadero,saldoNetoReferencial:total,saldoFavorUsd:Math.max(0,-usd),saldoFavorBs:Math.max(0,-bs),deudaVencidaUsd:0,deudaVencidaBs:0,mesCorrienteUsd:usd,mesCorrienteBs:bs,balanceEngineVersion:'vla-balance-contract-v7','Estado Acceso Portón':total>0?'Limitado':'Habilitado','Última Sync MKJ':'2026-07-12T04:00:00.000Z','MKJ User ID':String(7000+i),'MKJ Email':`casa${i+1}@example.com`,Email:`casa${i+1}@example.com`};
 });
 const gastos=[];
 const gastosProgramados=[{id:'recExpense0000001',fields:{Concepto:'Vigilancia','Monto':150,'Tipo de Gasto':'Gasto Común','Forma de Pago':'Bs BCV',Frecuencia:'Fijo',Propietarios:owners.map(owner=>owner.id),'Mes de Aplicación':'2026-08','Estado del Gasto':'Programado'}}];
@@ -69,7 +69,7 @@ async function pageState(page,label){
 }
 (async()=>{
   await new Promise(resolve=>server.listen(PORT,'127.0.0.1',resolve));
-  const browser=await chromium.launch({headless:true});
+  const browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.CHROMIUM_EXECUTABLE_PATH}:{})});
   const page=await browser.newPage({viewport:{width:1536,height:960}});
   const errors=[];page.on('pageerror',e=>errors.push(String(e.stack||e)));page.on('console',m=>{if(m.type()==='error'){const url=String(m.location().url||'');if(/cdn\.tailwindcss|fonts\.googleapis|fonts\.gstatic/i.test(url))return;errors.push(m.text())}});
   await page.goto(`http://127.0.0.1:${PORT}/admin.html`,{waitUntil:'domcontentloaded'});

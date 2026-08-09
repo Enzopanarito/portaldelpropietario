@@ -42,6 +42,7 @@ function ownerId(house) {
 
 function buildOwner(item, now) {
   const total = money(item.usd + item.bsRef);
+  const totalPayable = money(Math.max(0, item.usd) + Math.max(0, item.bsRef));
   const clock = caracasParts(now);
   const cutoff = now.toISOString();
   return {
@@ -71,6 +72,19 @@ function buildOwner(item, now) {
     'Saldo USD Actual': item.usd,
     'Saldo Bs Ref Actual': item.bsRef,
     'Saldo Total Actual': total,
+    saldoUsd: item.usd,
+    saldoBsRef: item.bsRef,
+    totalPagadero: totalPayable,
+    saldoNetoReferencial: total,
+    saldoFavorUsd: money(Math.max(0, -item.usd)),
+    saldoFavorBs: money(Math.max(0, -item.bsRef)),
+    deudaVencidaUsd: 0,
+    deudaVencidaBs: 0,
+    mesCorrienteUsd: item.usd,
+    mesCorrienteBs: item.bsRef,
+    estadoMorosidad: totalPayable > 0.009 ? 'PENDIENTE' : 'SOLVENTE',
+    accesoEsperado: 'Habilitado',
+    balanceEngineVersion: 'vla-balance-contract-v7',
     'Deuda Vencida USD': 0,
     'Deuda Vencida Bs Ref': 0,
     'Deuda Vencida Total': 0,

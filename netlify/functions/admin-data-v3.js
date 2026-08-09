@@ -3,7 +3,7 @@
 const { withAirtableUsage } = require('./_shared/_airtable_meter');
 
 const previous = require('./admin-data-v2');
-const { calculateAllOwners, calculatedFields } = require('./_shared/_balance_engine_v4');
+const { calculateAllOwners, calculatedFields, money } = require('./_shared/_balance_engine_v4');
 const { attachOfficialBalances, officialControlQuery } = require('./_shared/_official_balances');
 
 const NO_STORE_HEADERS = {
@@ -37,6 +37,28 @@ function asOwnerRecord(owner) {
   return { id: owner.id, fields };
 }
 
+function canonicalOwnerFields(balance) {
+  if (!balance || ![balance.usd, balance.bsRef, balance.totalRef, balance.expiredUsd, balance.expiredBsRef, balance.currentUsd, balance.currentBsRef].every(Number.isFinite)) {
+    const error = new Error('El contrato financiero canónico del administrador está incompleto.');
+    error.code = 'FINANCIAL_CONTRACT_INCOMPLETE';
+    throw error;
+  }
+  const saldoUsd=money(balance.usd),saldoBsRef=money(balance.bsRef);
+  return {
+    saldoUsd,
+    saldoBsRef,
+    totalPagadero:money(Math.max(0,saldoUsd)+Math.max(0,saldoBsRef)),
+    saldoNetoReferencial:money(balance.totalRef),
+    saldoFavorUsd:money(Math.max(0,-saldoUsd)),
+    saldoFavorBs:money(Math.max(0,-saldoBsRef)),
+    deudaVencidaUsd:money(Math.max(0,balance.expiredUsd)),
+    deudaVencidaBs:money(Math.max(0,balance.expiredBsRef)),
+    mesCorrienteUsd:money(balance.currentUsd),
+    mesCorrienteBs:money(balance.currentBsRef),
+    balanceEngineVersion:'vla-balance-contract-v7'
+  };
+}
+
 function synchronizePayload(payload, controlRecords) {
   const rawOwners = (payload.propietarios || []).map(asOwnerRecord);
   const officialOwners = attachOfficialBalances(rawOwners, controlRecords);
@@ -45,7 +67,8 @@ function synchronizePayload(payload, controlRecords) {
     .map(record => Object.assign(
       { id: record.id },
       record.fields || {},
-      calculatedFields(balances.get(record.id), record)
+      calculatedFields(balances.get(record.id), record),
+      canonicalOwnerFields(balances.get(record.id))
     ))
     .sort((left, right) => Number(left.Casa || 0) - Number(right.Casa || 0));
   return Object.assign({}, payload, {
@@ -79,5 +102,6 @@ const handler = async function handler(event) {
 };
 
 module.exports.synchronizePayload = synchronizePayload;
+module.exports.canonicalOwnerFields = canonicalOwnerFields;
 
 exports.handler = withAirtableUsage('admin-data-v3', handler);

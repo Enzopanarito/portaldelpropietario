@@ -3,6 +3,7 @@
 const fs=require('fs');
 const path=require('path');
 const {execFileSync}=require('child_process');
+const {contractDigest}=require('./verify-release-contract');
 
 const ROOT=path.join(__dirname,'..');
 const DIST=path.join(ROOT,'dist');
@@ -38,6 +39,20 @@ fs.rmSync(DIST,{recursive:true,force:true});
 fs.mkdirSync(DIST,{recursive:true});
 for(const name of PUBLIC_FILES)copyPublicFile(name);
 
+const release=JSON.parse(fs.readFileSync(path.join(ROOT,'release.json'),'utf8'));
+let commit=String(process.env.COMMIT_REF||process.env.GITHUB_SHA||'').trim();
+if(!/^[a-f0-9]{40}$/i.test(commit)){
+  try{commit=execFileSync('git',['rev-parse','HEAD'],{cwd:ROOT,encoding:'utf8'}).trim()}catch(_){commit='unknown'}
+}
+const deploymentManifest={
+  schemaVersion:'vla-deployment-manifest-v1',
+  release:release.release,
+  releaseContractDigest:contractDigest(release),
+  commit,
+  builtAt:new Date().toISOString()
+};
+fs.writeFileSync(path.join(DIST,'deployment.json'),`${JSON.stringify(deploymentManifest,null,2)}\n`,'utf8');
+
 const tailwindBin=path.join(ROOT,'node_modules','.bin',process.platform==='win32'?'tailwindcss.cmd':'tailwindcss');
 execFileSync(tailwindBin,[
   '-i',path.join(ROOT,'scripts','tailwind-input.css'),
@@ -50,4 +65,4 @@ execFileSync(tailwindBin,[
 ],{cwd:ROOT,stdio:'inherit'});
 
 require('./generate-netlify-runtime-config');
-console.log(`BUILD_PUBLIC_ALLOWLIST_OK ${PUBLIC_FILES.length+1} archivos`);
+console.log(`BUILD_PUBLIC_ALLOWLIST_OK ${PUBLIC_FILES.length+2} archivos · release ${release.release} · commit ${commit}`);

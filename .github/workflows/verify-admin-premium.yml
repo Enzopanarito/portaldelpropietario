@@ -14,15 +14,15 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install production dependencies
-        run: npm install --ignore-scripts --no-audit --no-fund
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Validate admin premium structure
         run: node tests/admin-premium.test.js
@@ -56,9 +56,7 @@ jobs:
           node --check admin-owner-access-v1.js
 
       - name: Install Chromium
-        run: |
-          npm install --no-save --ignore-scripts playwright@1.53.0
-          npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium
 
       - name: Run isolated premium browser test
         run: node tests/admin-premium-browser.cjs

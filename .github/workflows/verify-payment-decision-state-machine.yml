@@ -4,13 +4,13 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'netlify/functions/_payment_decision_state_machine.js'
+      - 'netlify/functions/_shared/_payment_decision_state_machine.js'
       - 'tests/payment-decision-state-machine.test.js'
       - '.github/workflows/verify-payment-decision-state-machine.yml'
   push:
     branches: [main]
     paths:
-      - 'netlify/functions/_payment_decision_state_machine.js'
+      - 'netlify/functions/_shared/_payment_decision_state_machine.js'
       - 'tests/payment-decision-state-machine.test.js'
       - '.github/workflows/verify-payment-decision-state-machine.yml'
 
@@ -23,14 +23,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Use Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
       - name: Check syntax
         run: |
-          node --check netlify/functions/_payment_decision_state_machine.js
+          node --check netlify/functions/_shared/_payment_decision_state_machine.js
           node --check tests/payment-decision-state-machine.test.js
       - name: Verify approval, rejection, receipt recovery and exact reversal
         run: node tests/payment-decision-state-machine.test.js
