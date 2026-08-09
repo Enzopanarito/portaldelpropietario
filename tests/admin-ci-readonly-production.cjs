@@ -5,25 +5,41 @@ const target=String(process.env.TARGET_URL||'https://villalosapamates.netlify.ap
 const oidcToken=String(process.env.VLA_ADMIN_OIDC_TOKEN||'');
 if(!oidcToken)throw new Error('Falta VLA_ADMIN_OIDC_TOKEN.');
 
-async function json(response,label){
-  const body=await response.json().catch(()=>({}));
-  if(!response.ok())throw new Error(`${label} respondió HTTP ${response.status}: ${String(body.message||body.detail||'respuesta inválida').slice(0,300)}`);
-  return body;
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function request(url,options={},label='request'){
+  let lastError;
+  for(let attempt=1;attempt<=3;attempt++){
+    try{
+      const response=await fetch(url,options);
+      if(response.ok)return response;
+      const body=await response.text().catch(()=>'');
+      throw new Error(`${label} respondió HTTP ${response.status}: ${body.slice(0,300)}`);
+    }catch(error){
+      lastError=error;
+      if(attempt<3)await sleep(attempt*500);
+    }
+  }
+  throw lastError;
+}
+async function jsonResponse(response,label){
+  try{return await response.json()}
+  catch(error){throw new Error(`${label} devolvió JSON inválido: ${error.message}`)}
 }
 async function adminFetch(token,path,options={}){
-  return json(await fetch(`${target}${path}`,{
+  const response=await request(`${target}${path}`,{
     ...options,
     headers:{'Content-Type':'application/json','Cache-Control':'no-cache',...(options.headers||{}),Authorization:`Bearer ${token}`}
-  }),path);
+  },path);
+  return jsonResponse(response,path);
 }
 
 (async()=>{
-  const exchange=await fetch(`${target}/.netlify/functions/admin-ci-readonly-session`,{
+  const exchange=await request(`${target}/.netlify/functions/admin-ci-readonly-session`,{
     method:'POST',
     headers:{'Content-Type':'application/json','Cache-Control':'no-cache'},
     body:JSON.stringify({oidcToken})
-  });
-  const session=await json(exchange,'admin-ci-readonly-session');
+  },'admin-ci-readonly-session');
+  const session=await jsonResponse(exchange,'admin-ci-readonly-session');
   if(session.success!==true||session.role!=='admin-ci-readonly'||session.source!=='github-oidc'||!session.token)throw new Error('Producción no emitió la sesión OIDC read-only esperada.');
   const token=session.token;
 
