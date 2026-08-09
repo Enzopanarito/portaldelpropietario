@@ -38,11 +38,19 @@ function classifyMkj(mkj){
   const rows=Array.isArray(mkj.discrepancies)?mkj.discrepancies:[];
   const details=rows.map(row=>{
     const reasons=Array.isArray(row.discrepancias)?row.discrepancias.map(String):[];
+    const identityIssues=reasons.filter(reason=>IDENTITY_REASONS.has(reason));
+    const stateIssues=reasons.filter(reason=>STATE_REASONS.has(reason));
+    const otherIssues=reasons.filter(reason=>!IDENTITY_REASONS.has(reason)&&!STATE_REASONS.has(reason));
+    const identityProblem=identityIssues.length>0||otherIssues.length>0;
     return{
       casa:Number(row.casa),
-      identityIssues:reasons.filter(reason=>IDENTITY_REASONS.has(reason)),
-      stateIssues:reasons.filter(reason=>STATE_REASONS.has(reason)),
-      otherIssues:reasons.filter(reason=>!IDENTITY_REASONS.has(reason)&&!STATE_REASONS.has(reason)),
+      identityIssues,
+      stateIssues,
+      otherIssues,
+      ...(identityProblem?{
+        storedMkjUserId:String(row.mkjUserIdAirtable||''),
+        resolvedMkjUserId:String(row.mkjResolvedUserId||'')
+      }:{}),
       exception:Boolean(row.excepcionAdministrativa),
       expected:String(row.estadoFisicoEsperado||''),
       airtable:String(row.estadoAirtable||''),
@@ -112,7 +120,7 @@ function classifyMkj(mkj){
   console.log(JSON.stringify(evidence,null,2));
 
   if(mkjClassification.identityRows.length){
-    throw new Error(`MKJ tiene ${mkjClassification.identityRows.length} casa(s) con problemas de identidad/lectura: ${mkjClassification.identityRows.map(row=>`Casa ${row.casa} [${[...row.identityIssues,...row.otherIssues].join(',')}]`).join('; ')}`);
+    throw new Error(`MKJ tiene ${mkjClassification.identityRows.length} casa(s) con problemas de identidad/lectura: ${mkjClassification.identityRows.map(row=>`Casa ${row.casa} [${[...row.identityIssues,...row.otherIssues].join(',')}] stored=${row.storedMkjUserId||'none'} resolved=${row.resolvedMkjUserId||'none'}`).join('; ')}`);
   }
   if(mode.mode==='Automático'&&mkjClassification.stateRows.length){
     throw new Error(`MKJ automático tiene ${mkjClassification.stateRows.length} discrepancia(s) de estado.`);
