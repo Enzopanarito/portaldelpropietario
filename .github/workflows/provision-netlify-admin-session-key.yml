@@ -56,13 +56,12 @@ jobs:
             --site "$NETLIFY_SITE_ID" \
             --auth "$NETLIFY_AUTH_TOKEN" >/tmp/netlify-secret-set.log 2>&1
           unset SECRET
-          if grep -Eq 'ADMIN_SESSION_SIGNING_KEY|Set environment variable|environment variable' /tmp/netlify-secret-set.log; then
-            echo 'ADMIN_SESSION_SIGNING_KEY dedicada almacenada en Netlify.'
-          else
-            echo 'Netlify finalizó sin una confirmación reconocible.'
-            cat /tmp/netlify-secret-set.log
+          grep -Eq 'ADMIN_SESSION_SIGNING_KEY|Set environment variable|environment variable' /tmp/netlify-secret-set.log || {
+            echo 'Netlify no confirmó la escritura de la clave dedicada.'
             exit 1
-          fi
+          }
+          rm -f /tmp/netlify-secret-set.log
+          echo 'ADMIN_SESSION_SIGNING_KEY dedicada almacenada en Netlify.'
 
       - name: Verify key metadata is present without reading its value
         shell: bash
@@ -77,4 +76,5 @@ jobs:
             echo 'La clave dedicada no aparece en el inventario Netlify.'
             exit 1
           }
+          rm -f /tmp/netlify-env-list.log
           echo 'Metadatos de ADMIN_SESSION_SIGNING_KEY verificados; el valor no fue leído.'
