@@ -53,6 +53,15 @@ function keyState(record) {
   if (key.startsWith('MONTHLY_CLOSE|')) return key.split('|')[2] || '';
   return '';
 }
+function configured(value){return String(value||'').trim().length>0}
+function autopilotHealthState(record,env=process.env,now=Date.now()){
+  const key=String(record?.fields?.Key||''),lastRun=record?.createdTime||null,lastAt=Date.parse(lastRun||''),ageHours=Number.isFinite(lastAt)?Math.round((now-lastAt)/360000)/10:null,done=key.includes('|DONE|');
+  if(record){const fresh=done&&ageHours!==null&&ageHours<=36;return{ok:fresh,severity:fresh?'ok':'warning',detail:`Último ciclo: ${lastRun||'sin fecha'} · estado ${done?'DONE':'incompleto'} · antigüedad ${ageHours} h.`,meta:{lastRun,ageHours,state:done?'DONE':'INCOMPLETE'}}}
+  const dispatcherReady=configured(env.AUTOMATION_JOB_SECRET||env.ADMIN_TOKEN_SECRET||env.ADMIN_PASSWORD)&&configured(env.URL||env.PUBLIC_SITE_URL);
+  return dispatcherReady
+    ?{ok:true,severity:'ok',detail:'Despacho diario autenticado y programado para las 00:00 de Venezuela. Aún no ha ocurrido el primer ciclo posterior a esta configuración; quedará verificado automáticamente.',meta:{lastRun:null,ageHours:null,state:'SCHEDULED'}}
+    :{ok:false,severity:'warning',detail:'El piloto todavía no tiene latido y falta URL o secreto para autenticar su primer ciclo.',meta:{lastRun:null,ageHours:null,state:'NOT_READY'}};
+}
 
 const handler = async function(event) {
   const auth = requireAdmin(event);
@@ -92,8 +101,8 @@ const handler = async function(event) {
       const pendingCount = partial.length + runningFinancialOps.length;
       add('Operaciones financieras pendientes', pendingCount === 0, pendingCount ? `${partial.length} marcador(es) de cierre y ${runningFinancialOps.length} operación(es) financieras requieren revisión.` : 'No hay cierres parciales, bloqueos activos ni operaciones financieras en curso detectadas.', pendingCount ? 'error' : 'ok', { closeMarkers: partial.length, financialOperations: runningFinancialOps.length });
       add('Último marcador de cierre mensual', Boolean(lastClose), lastClose ? `${String(lastClose.fields?.Key || '').slice(0, 160)} · ${lastClose.createdTime || ''}` : 'No existe todavía un marcador de cierre mensual.', lastClose ? 'ok' : 'warning');
-      const lastAutopilot=latest(control,'FIN_OP|AUTOPILOT_RUN|'),lastAutopilotKey=String(lastAutopilot?.fields?.Key||''),lastAutopilotAt=Date.parse(lastAutopilot?.createdTime||''),autopilotAgeHours=Number.isFinite(lastAutopilotAt)?Math.round((Date.now()-lastAutopilotAt)/360000)/10:null,autopilotDone=lastAutopilotKey.includes('|DONE|'),autopilotFresh=autopilotDone&&autopilotAgeHours!==null&&autopilotAgeHours<=36;
-      add('Piloto automático diario',autopilotFresh,lastAutopilot?`Último ciclo: ${lastAutopilot?.createdTime||'sin fecha'} · estado ${autopilotDone?'DONE':'incompleto'} · antigüedad ${autopilotAgeHours} h.`:'Todavía no existe un latido verificable del piloto automático. Se registrará en el próximo ciclo.',autopilotFresh?'ok':'warning',{lastRun:lastAutopilot?.createdTime||null,ageHours:autopilotAgeHours,state:autopilotDone?'DONE':'MISSING'});
+      const lastAutopilot=latest(control,'FIN_OP|AUTOPILOT_RUN|'),autopilot=autopilotHealthState(lastAutopilot,process.env);
+      add('Piloto automático diario',autopilot.ok,autopilot.detail,autopilot.severity,autopilot.meta);
     } catch (error) {
       add('Operaciones financieras pendientes', false, safeDisplayText(error.message, 300), 'warning');
     }
@@ -112,3 +121,4 @@ const handler = async function(event) {
 };
 
 exports.handler = withAirtableUsage('system-health-advanced', handler);
+exports.autopilotHealthState=autopilotHealthState;
