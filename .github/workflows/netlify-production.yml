@@ -17,6 +17,7 @@ jobs:
       NETLIFY_AUTH_TOKEN_FALLBACK: ${{ secrets.NETLIFY_TOKEN }}
       NETLIFY_SITE_ID_PRIMARY: ${{ secrets.NETLIFY_SITE_ID }}
       NETLIFY_SITE_ID_FALLBACK: ${{ secrets.NETLIFY_SITE_ID_VILLALOSAPAMATES }}
+      AWS_LAMBDA_JS_RUNTIME: nodejs22.x
     steps:
       - name: Checkout exact production commit
         uses: actions/checkout@v6
@@ -128,18 +129,30 @@ jobs:
           fs.appendFileSync(out,`deploy_id=${id}\n`);
           NODE
 
-      - name: Verify production deploy metadata and canonical release contract
+      - name: Verify production deploy metadata, Node 22 runtime and canonical release contract
         id: verify
         env:
           DEPLOY_ID: ${{ steps.deploy.outputs.deploy_id }}
         shell: bash
         run: |
           set -euo pipefail
-          deploy_json="$(curl --fail-with-body --silent --show-error \
+          deploy_file="${RUNNER_TEMP}/vla-production-deploy.json"
+          curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
             -H "User-Agent: VLA-GitHub-Actions" \
-            "https://api.netlify.com/api/v1/deploys/$DEPLOY_ID")"
-          printf '%s' "$deploy_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const d=JSON.parse(s);if(d.state!=='ready')throw new Error('Deploy state='+d.state);if(d.context!=='production')throw new Error('Deploy context='+d.context);console.log(JSON.stringify({id:d.id,state:d.state,context:d.context,commit_ref:d.commit_ref,created_via:d.created_via},null,2))})"
+            "https://api.netlify.com/api/v1/deploys/$DEPLOY_ID" \
+            --output "$deploy_file"
+          node - "$deploy_file" <<'NODE'
+          const fs=require('fs');
+          const d=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+          if(d.state!=='ready')throw new Error('Deploy state='+d.state);
+          if(d.context!=='production')throw new Error('Deploy context='+d.context);
+          const functions=Array.isArray(d.available_functions)?d.available_functions:[];
+          if(!functions.length)throw new Error('Netlify no reportó Functions desplegadas.');
+          const runtimes=[...new Set(functions.map(fn=>String(fn.r||fn.runtime||'unknown')))];
+          if(runtimes.length!==1||runtimes[0]!=='nodejs22.x')throw new Error(`Runtime Functions inesperado: ${runtimes.join(', ')}`);
+          console.log(JSON.stringify({id:d.id,state:d.state,context:d.context,functions:functions.length,runtime:runtimes[0],title:d.title||null},null,2));
+          NODE
           production_release="${RUNNER_TEMP}/vla-production-release.json"
           for attempt in $(seq 1 30); do
             if curl --fail --silent --show-error --location --max-time 30 \
@@ -147,7 +160,7 @@ jobs:
               --output "$production_release" \
               && node scripts/verify-release-contract.js release.json "$production_release"; then
               echo "deploy_id=$DEPLOY_ID" >> "$GITHUB_OUTPUT"
-              echo "Canonical production release verified for $GITHUB_SHA."
+              echo "Canonical production release and Node 22 runtime verified for $GITHUB_SHA."
               exit 0
             fi
             sleep 5
@@ -196,10 +209,10 @@ jobs:
         run: |
           if [ "$VERIFY_OUTCOME" = "success" ] && [ "$FINANCE_OUTCOME" = "success" ]; then
             title="Producción publicada y certificada ✅"
-            detail="Artefacto construido en GitHub, release canónico verificado y BEFORE/AFTER financiero = $0.00."
+            detail="Artefacto construido en GitHub, Functions Node 22, release canónico verificado y BEFORE/AFTER financiero = $0.00."
           else
             title="Producción no certificada ⚠️"
-            detail="El despliegue, el contrato canónico o la comparación financiera no concluyeron correctamente."
+            detail="El despliegue, runtime, contrato canónico o comparación financiera no concluyeron correctamente."
           fi
           {
             echo "### $title"
