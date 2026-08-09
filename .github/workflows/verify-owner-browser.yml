@@ -17,15 +17,16 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout exact target commit
+        uses: actions/checkout@v6
         with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.event.pull_request.head.sha }}
 
       - name: Use Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
+          package-manager-cache: false
 
       - name: Resolve target URL
         id: target
@@ -37,23 +38,26 @@ jobs:
             echo "url=https://villalosapamates.netlify.app" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Wait for the exact browser release
+      - name: Wait for exact canonical release and breakdown marker
         env:
           TARGET_URL: ${{ steps.target.outputs.url }}
         shell: bash
         run: |
           set -euo pipefail
+          production_release="${RUNNER_TEMP}/owner-browser-release.json"
           for attempt in $(seq 1 90); do
             headers="$(curl --silent --show-error --location --dump-header - --output /dev/null --max-time 30 "${TARGET_URL}/?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
             marker="$(printf '%s' "$headers" | awk -F': ' 'tolower($1)=="x-vla-breakdown-presentation"{gsub("\r","");print $2}' | tail -1)"
-            if [ "$marker" = "owner-breakdown-v7" ]; then
-              echo "Browser release available at $TARGET_URL"
+            if [ "$marker" = "owner-breakdown-v7" ] \
+              && curl --fail --silent --show-error --location --max-time 30 "${TARGET_URL}/release.json?verify=${GITHUB_RUN_ID}-${attempt}" --output "$production_release" \
+              && node scripts/verify-release-contract.js release.json "$production_release"; then
+              echo "Exact browser release available at $TARGET_URL"
               exit 0
             fi
             echo "Attempt $attempt: marker=${marker:-missing}"
-            sleep 10
+            sleep 5
           done
-          echo "Expected browser release was not available."
+          echo "Exact owner release was not available."
           exit 1
 
       - name: Install Playwright Chromium
@@ -61,203 +65,20 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund
           npx playwright install --with-deps chromium
 
-      - name: Verify table and all 15 visible balances
+      - name: Verify breakdown and all 15 visible balances
         env:
           TARGET_URL: ${{ steps.target.outputs.url }}
-        shell: bash
-        run: |
-          cat > verify-owner-browser.cjs <<'NODE'
-          const { chromium } = require('playwright');
-          const fs = require('fs');
-          const { ownerVisibleBalance } = require('./scripts/owner-visible-balance');
-
-          function parseMoney(text) {
-            const raw = String(text || '').trim();
-            const negative = raw.startsWith('-') || /saldo a favor/i.test(raw);
-            const value = Number(raw.replace(/[^0-9.]/g, '')) || 0;
-            return negative ? -value : value;
-          }
-
-          async function waitForHouseOptions(page, expected = 15, timeout = 30000) {
-            const deadline = Date.now() + timeout;
-            let found = 0;
-            while (Date.now() < deadline) {
-              const labels = await page.locator('#welcomeSelector option').allTextContents().catch(() => []);
-              found = labels.filter(label => /^Casa\s+\d+\s+-/.test(String(label || '').trim())).length;
-              if (found === expected) return;
-              await page.waitForTimeout(250);
-            }
-            throw new Error(`Se cargaron ${found} de ${expected} casas.`);
-          }
-
-          async function waitForLocatorText(page, locator, predicate, description, timeout = 30000) {
-            const deadline = Date.now() + timeout;
-            while (Date.now() < deadline) {
-              const value = await locator.innerText().catch(() => '');
-              if (predicate(value)) return value;
-              await page.waitForTimeout(200);
-            }
-            throw new Error(`No apareció ${description}.`);
-          }
-
-          async function loadPortalWithOwners(page) {
-            let lastError = null;
-            for (let attempt = 1; attempt <= 3; attempt += 1) {
-              try {
-                const response = await page.goto(`${process.env.TARGET_URL}/?browser=${Date.now()}-${attempt}`, {
-                  waitUntil: 'domcontentloaded',
-                  timeout: 60000
-                });
-                if (!response || response.status() !== 200) {
-                  throw new Error(`El portal respondió ${response && response.status()}.`);
-                }
-                await page.addStyleTag({
-                  content: '[data-netlify-deploy-id],iframe[title="Netlify Drawer"]{display:none!important;pointer-events:none!important}'
-                }).catch(() => {});
-                await waitForHouseOptions(page, 15, 30000);
-                await page.waitForTimeout(400);
-                return response;
-              } catch (error) {
-                lastError = error;
-                if (attempt < 3) await page.waitForTimeout(attempt * 1000);
-              }
-            }
-            throw new Error(`No se pudieron cargar las 15 casas después de 3 intentos: ${lastError && lastError.message}`);
-          }
-
-          (async () => {
-            const browser = await chromium.launch({ headless: true });
-            const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
-            const pageErrors = [];
-            const consoleErrors = [];
-
-            page.on('pageerror', error => pageErrors.push(String(error.stack || error.message || error)));
-            page.on('console', msg => {
-              if (msg.type() === 'error' && !/app\.netlify\.com|favicon|permissions policy/i.test(msg.text())) {
-                consoleErrors.push(msg.text());
-              }
-            });
-
-            const sourceResponse = await page.request.get(
-              `${process.env.TARGET_URL}/.netlify/functions/public-data?browser-source=${Date.now()}`,
-              { timeout: 60000 }
-            );
-            if (!sourceResponse.ok()) throw new Error(`La fuente pública respondió ${sourceResponse.status()}.`);
-
-            const source = await sourceResponse.json();
-            const expected = {};
-            for (const owner of source.propietarios || []) {
-              const house = Number(owner.Casa);
-              if (Number.isFinite(house)) expected[house] = ownerVisibleBalance(owner);
-            }
-            if (Object.keys(expected).length !== 15) {
-              throw new Error(`La fuente oficial devolvió ${Object.keys(expected).length} casas; se esperaban 15.`);
-            }
-
-            const response = await loadPortalWithOwners(page);
-            const welcome = page.locator('#welcomeSelector');
-            const firstValue = await welcome.locator('option').evaluateAll(options => {
-              const item = options.find(option => /^Casa\s+1\s+-/.test(String(option.textContent || '').trim()));
-              return item ? item.value : '';
-            });
-            if (!firstValue) throw new Error('No se encontró una Casa 1 válida después de cargar los propietarios.');
-
-            await welcome.selectOption(firstValue);
-            await page.getByRole('button', { name: /Consultar Estado de Cuenta/i }).click();
-            await page.locator('#main').waitFor({ state: 'visible', timeout: 15000 });
-
-            const breakdown = page.locator('[data-vla-breakdown-host="owner-breakdown-v7"]');
-            await breakdown.waitFor({ state: 'visible', timeout: 30000 });
-            await waitForLocatorText(
-              page,
-              breakdown,
-              text => /Costo\s*Total/i.test(text) && /Su\s*Parte/i.test(text),
-              'el desglose completo',
-              30000
-            );
-
-            const breakdownText = await breakdown.innerText();
-            if (!/VIGILANCIA/i.test(breakdownText)) {
-              throw new Error('El desglose visible no contiene VIGILANCIA.');
-            }
-            if (/Recargo 10% por pérdida del pronto pago/i.test(breakdownText)) {
-              throw new Error('El recargo prohibido aparece como renglón.');
-            }
-
-            const balances = {};
-            const selector = page.locator('#userSelector');
-            for (const house of Object.keys(expected).map(Number).sort((a, b) => a - b)) {
-              const value = await selector.locator('option').evaluateAll((options, houseNumber) => {
-                const item = options.find(option => {
-                  const match = /^Casa\s+(\d+)\s+-/.exec(String(option.textContent || '').trim());
-                  return Number(match && match[1]) === Number(houseNumber);
-                });
-                return item ? item.value : '';
-              }, house);
-              if (!value) throw new Error(`No se encontró la Casa ${house}.`);
-
-              await selector.selectOption(value);
-              await waitForLocatorText(
-                page,
-                page.locator('#welcome-msg'),
-                text => String(text || '').trim().startsWith(`Casa ${house} ·`),
-                `el encabezado de Casa ${house}`,
-                5000
-              );
-
-              const shown = parseMoney(await page.locator('#m-total').innerText());
-              balances[house] = shown;
-              if (Math.abs(shown - expected[house].visible) > 0.009) {
-                throw new Error(
-                  `Casa ${house}: saldo visible ${shown}, saldo esperado ${expected[house].visible}; ` +
-                  `pagadero ${expected[house].payable}, USD ${expected[house].usd}, ` +
-                  `Bs ref. ${expected[house].bsRef}, neto ${expected[house].net}.`
-                );
-              }
-            }
-
-            if (pageErrors.length) throw new Error(`Errores JavaScript: ${pageErrors.join(' | ')}`);
-            if (consoleErrors.length) throw new Error(`Errores de consola: ${consoleErrors.join(' | ')}`);
-
-            const result = {
-              target: process.env.TARGET_URL,
-              status: response.status(),
-              sourceGeneratedAt: source.generatedAt || null,
-              sourceBalanceEngineVersion: source.balanceEngineVersion || null,
-              sourceEnvironment: source.dataEnvironment || null,
-              balanceContract: 'independent-currencies-visible-v2',
-              breakdownVisible: true,
-              hasCostoTotal: /Costo\s*Total/i.test(breakdownText),
-              hasSuParte: /Su\s*Parte/i.test(breakdownText),
-              hasVigilancia: /VIGILANCIA/i.test(breakdownText),
-              forbiddenRecargoVisible: /Recargo 10% por pérdida del pronto pago/i.test(breakdownText),
-              expected,
-              balances,
-              pageErrors,
-              consoleErrors
-            };
-
-            fs.writeFileSync('owner-browser-result.json', JSON.stringify(result, null, 2));
-            await page.screenshot({ path: 'owner-browser.png', fullPage: true });
-            console.log(JSON.stringify(result, null, 2));
-            await browser.close();
-          })().catch(error => {
-            fs.writeFileSync('owner-browser-error.txt', String(error.stack || error));
-            console.error(error.stack || error);
-            process.exit(1);
-          });
-          NODE
-          node verify-owner-browser.cjs
+        run: node tests/owner-production-browser.cjs
 
       - name: Upload browser evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: owner-portal-browser-evidence
           path: |
-            owner-browser-result.json
-            owner-browser-error.txt
-            owner-browser.png
+            owner-production-result.json
+            owner-production-error.txt
+            owner-production.png
           if-no-files-found: ignore
           retention-days: 7
 
@@ -270,7 +91,7 @@ jobs:
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
             -f state=success \
             -f context='Owner Portal Production Verification' \
-            -f description='Desglose y saldos visibles de las 15 casas verificados en producción.' \
+            -f description='Release exacto, desglose y 15/15 saldos visibles verificados.' \
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
       - name: Publish failed production status
@@ -282,5 +103,5 @@ jobs:
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
             -f state=failure \
             -f context='Owner Portal Production Verification' \
-            -f description='La verificación del portal propietario en producción falló.' \
+            -f description='La certificación exacta del portal propietario falló.' \
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
