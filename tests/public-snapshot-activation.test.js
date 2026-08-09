@@ -26,8 +26,8 @@ for(const context of ['deploy-preview','branch-deploy']){
 }
 assert(generatedDefault.includes('publicBlobCacheEnabled:false'),'La configuración versionada debe fallar cerrada en CI/local.');
 assert(store.includes("require('./_runtime_config_generated')"),'El runtime debe consumir el módulo materializado durante el build.');
+assert(store.includes("getAtomicStore(STORE_NAME,{consistency:'strong'})"),'La fotografía pública debe releer inmediatamente la versión recién escrita.');
 assert(store.includes('config.publicBlobCacheEnabled===true'),'La activación debe usar el valor generado cuando no existe una variable runtime explícita.');
-assert(!store.includes("consistency:'strong'"),'La caché pública debe usar el endpoint de lectura disponible en Netlify Functions.');
 assert(store.includes('onlyIfNew:true')&&store.includes('onlyIfMatch:'),'La concurrencia debe seguir protegida con escrituras condicionales por ETag.');
 assert(compat.includes("require('@netlify/blobs')"),'El empaquetador debe detectar estáticamente la integración Blobs.');
 assert(compat.includes("headers['if-none-match']='*'")&&compat.includes("headers['if-match']"),'El adaptador seguro debe conservar las escrituras condicionales de la versión fijada.');
