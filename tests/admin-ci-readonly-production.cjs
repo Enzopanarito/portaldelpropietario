@@ -5,6 +5,8 @@ const target=String(process.env.TARGET_URL||'https://villalosapamates.netlify.ap
 const oidcToken=String(process.env.VLA_ADMIN_OIDC_TOKEN||'');
 if(!oidcToken)throw new Error('Falta VLA_ADMIN_OIDC_TOKEN.');
 
+const IDENTITY_REASONS=new Set(['MKJ_MEMBER_NOT_FOUND','MKJ_STATE_UNKNOWN','STALE_MEMBER_ID','EMAIL_MISMATCH']);
+const STATE_REASONS=new Set(['MKJ_EXPECTATION_MISMATCH','AIRTABLE_EXPECTATION_MISMATCH']);
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function request(url,options={},label='request'){
   let lastError;
@@ -32,6 +34,25 @@ async function adminFetch(token,path,options={}){
   },path);
   return jsonResponse(response,path);
 }
+function classifyMkj(mkj){
+  const rows=Array.isArray(mkj.discrepancies)?mkj.discrepancies:[];
+  const details=rows.map(row=>{
+    const reasons=Array.isArray(row.discrepancias)?row.discrepancias.map(String):[];
+    return{
+      casa:Number(row.casa),
+      identityIssues:reasons.filter(reason=>IDENTITY_REASONS.has(reason)),
+      stateIssues:reasons.filter(reason=>STATE_REASONS.has(reason)),
+      otherIssues:reasons.filter(reason=>!IDENTITY_REASONS.has(reason)&&!STATE_REASONS.has(reason)),
+      exception:Boolean(row.excepcionAdministrativa),
+      expected:String(row.estadoFisicoEsperado||''),
+      airtable:String(row.estadoAirtable||''),
+      mkj:String(row.estadoMkj||'')
+    };
+  });
+  const identityRows=details.filter(row=>row.identityIssues.length||row.otherIssues.length);
+  const stateRows=details.filter(row=>row.stateIssues.length);
+  return{details,identityRows,stateRows};
+}
 
 (async()=>{
   const exchange=await request(`${target}/.netlify/functions/admin-ci-readonly-session`,{
@@ -58,6 +79,7 @@ async function adminFetch(token,path,options={}){
 
   const mkj=await adminFetch(token,'/.netlify/functions/access-reconciliation-readonly');
   if(mkj.readOnly!==true||Number(mkj.total)!==15||Number(mkj.reconciled)!==15)throw new Error(`MKJ read-only incompleto: ${Number(mkj.reconciled)||0}/15.`);
+  const mkjClassification=classifyMkj(mkj);
 
   const close=await adminFetch(token,'/.netlify/functions/monthly-close',{method:'POST',body:JSON.stringify({dryRun:true})});
   if(!close.validation||!close.planHash)throw new Error('El cierre mensual DRY RUN no devolvió validation y planHash.');
@@ -78,12 +100,23 @@ async function adminFetch(token,path,options={}){
       total:Number(mkj.total),
       reconciled:Number(mkj.reconciled),
       coherent:Number(mkj.coherent||0),
-      discrepancies:Number(mkj.discrepancyCount||0)
+      discrepancies:Number(mkj.discrepancyCount||0),
+      identityIssueRows:mkjClassification.identityRows.length,
+      stateDivergenceRows:mkjClassification.stateRows.length,
+      manualStateDivergences:mode.mode==='Manual'?mkjClassification.stateRows.length:0,
+      discrepancyDetails:mkjClassification.details
     },
     closeDryRun:true
   };
   fs.writeFileSync('admin-authenticated-readonly-result.json',JSON.stringify(evidence,null,2));
   console.log(JSON.stringify(evidence,null,2));
+
+  if(mkjClassification.identityRows.length){
+    throw new Error(`MKJ tiene ${mkjClassification.identityRows.length} casa(s) con problemas de identidad/lectura: ${mkjClassification.identityRows.map(row=>`Casa ${row.casa} [${[...row.identityIssues,...row.otherIssues].join(',')}]`).join('; ')}`);
+  }
+  if(mode.mode==='Automático'&&mkjClassification.stateRows.length){
+    throw new Error(`MKJ automático tiene ${mkjClassification.stateRows.length} discrepancia(s) de estado.`);
+  }
 })().catch(error=>{
   fs.writeFileSync('admin-authenticated-readonly-error.txt',String(error.stack||error));
   console.error(error.stack||error);
