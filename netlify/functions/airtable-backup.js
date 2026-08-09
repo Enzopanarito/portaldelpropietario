@@ -11,7 +11,8 @@ const { sha256, sortRecords } = require('./_shared/_integrity');
 
 const TABLES = [
   'Propietarios','Gastos del Mes','Configuración','Pagos','Historial de Cargos','Reportes de Pago',
-  'Recibos de Pago','Cierres de Auditoría','ControlVersiones','WhatsApp Jobs','WhatsApp Programaciones'
+  'Recibos de Pago','Cierres de Auditoría','ControlVersiones','WhatsApp Jobs','WhatsApp Programaciones',
+  'Cuentas de Cobro Autorizadas'
 ];
 const FETCH_TIMEOUT_MS = 12000;
 
@@ -53,7 +54,7 @@ const handler = async function(event) {
     const generatedAt = new Date().toISOString();
     const backup = {
       backupType: 'airtable-full-operational-backup',
-      schemaVersion: 3,
+      schemaVersion: 4,
       generatedAt,
       generatedAtCaracas: todayCaracasISO(),
       baseId: AIRTABLE_BASE_ID,
@@ -102,3 +103,4 @@ const handler = async function(event) {
 };
 
 exports.handler = withAirtableUsage('airtable-backup', handler);
+exports.TABLES = TABLES;
