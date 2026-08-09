@@ -9,6 +9,7 @@ permissions:
 
 jobs:
   verify-admin-preview:
+    if: ${{ !contains(github.event.pull_request.title, '[skip netlify]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
