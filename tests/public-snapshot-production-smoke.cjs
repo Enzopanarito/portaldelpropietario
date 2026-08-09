@@ -2,7 +2,7 @@
 
 const assert=require('assert');
 
-const ENDPOINT=process.env.PUBLIC_DATA_ENDPOINT||'https://villalosapamates.netlify.app/.netlify/functions/public-data';
+const ENDPOINT=process.env.PUBLIC_DATA_ENDPOINT||'https://villalosapamates.netlify.app/api/vla/public-data';
 const MAX_ATTEMPTS=Number(process.env.PUBLIC_SNAPSHOT_MAX_ATTEMPTS||48);
 const DELAY_MS=Number(process.env.PUBLIC_SNAPSHOT_DELAY_MS||7500);
 const MAX_HIT_ATTEMPTS=Number(process.env.PUBLIC_SNAPSHOT_HIT_ATTEMPTS||15);

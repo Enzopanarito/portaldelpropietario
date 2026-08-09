@@ -11,11 +11,11 @@ function rewrite(from,to){
   return new RegExp(`\\[\\[redirects\\]\\][\\s\\S]*?from\\s*=\\s*"${escapedFrom}"[\\s\\S]*?to\\s*=\\s*"${escapedTo}"[\\s\\S]*?status\\s*=\\s*200[\\s\\S]*?force\\s*=\\s*true`);
 }
 
-test('los datos públicos usan el runtime moderno con contexto automático de Blobs',()=>{
-  assert.match(config,rewrite('/api/vla/public-data','/.netlify/functions/public-data-modern'));
-  const source=fs.readFileSync('netlify/functions/public-data-modern.mjs','utf8');
-  assert.match(source,/legacy-function-bridge\.mjs/);
-  assert.match(source,/invokeLegacy\(request,context,legacy\.handler\)/);
+test('los datos públicos entran directamente en la Lambda que recibe event.blobs',()=>{
+  assert.match(config,rewrite('/api/vla/public-data','/.netlify/functions/public-data'));
+  assert.equal(fs.existsSync('netlify/functions/public-data-modern.mjs'),false);
+  const source=fs.readFileSync('netlify/functions/public-data.js','utf8');
+  assert.match(source,/public-data-v3/);
 });
 
 test('el reporte entra directamente en la Lambda que recibe event.blobs',()=>{

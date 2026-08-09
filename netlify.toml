@@ -33,12 +33,11 @@
 [functions."provisional-access-expiration-scheduled"]
   schedule = "*/15 * * * *"
 
-# Las rutas públicas usan el runtime que corresponde a su operación. La lectura
-# pública entra por Functions v2 para disponer del contexto Blobs automático;
-# las escrituras cifradas siguen en Lambda v1, donde Netlify adjunta `event.blobs`.
+# Las rutas con Blobs usan Lambda v1, donde Netlify adjunta `event.blobs` y el
+# adaptador inicializa el SDK de forma explícita antes de abrir cada almacén.
 [[redirects]]
 from = "/api/vla/public-data"
-to = "/.netlify/functions/public-data-modern"
+to = "/.netlify/functions/public-data"
 status = 200
 force = true
 
