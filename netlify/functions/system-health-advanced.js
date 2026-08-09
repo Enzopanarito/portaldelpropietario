@@ -57,10 +57,12 @@ function keyState(record) {
 }
 function configured(value){return String(value||'').trim().length>0}
 function adminSessionKeyHealth(env=process.env){
-  const info=getSecretInfo(env),ok=Boolean(info.secret&&info.dedicated&&info.productionSafe&&info.source==='ADMIN_SESSION_SIGNING_KEY');
+  const info=getSecretInfo(env);
+  const acceptedSources=new Set(['ADMIN_TOKEN_SECRET','ADMIN_SESSION_SIGNING_KEY']);
+  const ok=Boolean(info.secret&&info.dedicated&&info.derived&&info.productionSafe&&acceptedSources.has(info.source));
   return ok
-    ?{ok:true,severity:'ok',detail:'Firma administrativa aislada con una clave dedicada de producción.',meta:{source:info.source,dedicated:true,keyVersion:info.keyVersion}}
-    :{ok:false,severity:'error',detail:'Producción debe usar ADMIN_SESSION_SIGNING_KEY dedicada. No se aceptan claves de cifrado, Airtable, tokens legacy ni contraseñas como raíz de firma.',meta:{source:info.source||'missing',dedicated:false,keyVersion:info.keyVersion||2}};
+    ?{ok:true,severity:'ok',detail:`Firma administrativa aislada mediante subclave HMAC derivada de ${info.source}.`,meta:{source:info.source,dedicated:true,derived:true,keyVersion:info.keyVersion}}
+    :{ok:false,severity:'error',detail:'Producción requiere una raíz administrativa fuerte y separada para derivar la firma de sesiones. No se aceptan Airtable, contraseña ni la clave de comprobantes como fuente primaria nueva.',meta:{source:info.source||'missing',dedicated:false,derived:Boolean(info.derived),keyVersion:info.keyVersion||2}};
 }
 function paymentProofKeyHealth(env=process.env){
   try{
