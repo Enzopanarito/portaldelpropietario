@@ -5,10 +5,22 @@
 
 const crypto = require('crypto');
 const TOKEN_TTL_MS = 6 * 60 * 60 * 1000;
+const CI_READONLY_TOKEN_TTL_MS = 20 * 60 * 1000;
 const CLOCK_SKEW_MS = 60 * 1000;
 const ISSUER = 'villa-los-apamates';
 const AUDIENCE = 'vla-admin';
 const SESSION_KEY_DOMAIN = 'vla/admin/session-signing/v2';
+const CI_READONLY_ROLE = 'admin-ci-readonly';
+const CI_SAFE_GET_PATHS = new Set([
+  '/.netlify/functions/admin-data',
+  '/.netlify/functions/admin-data-v2',
+  '/.netlify/functions/admin-data-v3',
+  '/.netlify/functions/api-usage',
+  '/.netlify/functions/system-health',
+  '/.netlify/functions/system-health-advanced',
+  '/.netlify/functions/access-mode',
+  '/.netlify/functions/access-reconciliation-readonly'
+]);
 
 function base64url(input) {
   return Buffer.from(input).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
@@ -48,18 +60,20 @@ function safeEqual(left, right) {
 function issueAdminToken(extra = {}) {
   const secret = getSecret();
   if (!secret) throw Object.assign(new Error('No existe una clave administrativa fuerte para firmar sesiones.'), { code: 'ADMIN_SIGNING_KEY_WEAK' });
+  const role = extra.role === CI_READONLY_ROLE ? CI_READONLY_ROLE : 'admin';
   const now = Date.now();
   const claims = {
     iss: ISSUER,
     aud: AUDIENCE,
-    role: 'admin',
+    role,
     jti: crypto.randomBytes(16).toString('hex'),
     iat: now,
     nbf: now - CLOCK_SKEW_MS,
-    exp: now + TOKEN_TTL_MS,
+    exp: now + (role === CI_READONLY_ROLE ? CI_READONLY_TOKEN_TTL_MS : TOKEN_TTL_MS),
     authVersion: Math.max(0, Number(extra.authVersion || 0)),
     keyVersion: 2
   };
+  if (role === CI_READONLY_ROLE && /^\d+$/.test(String(extra.ciRunId || ''))) claims.ciRunId = String(extra.ciRunId);
   const payload = base64url(JSON.stringify(claims));
   return `${payload}.${sign(payload, secret)}`;
 }
@@ -73,23 +87,51 @@ function decodeAndVerifyAdminToken(token) {
   try {
     const data = JSON.parse(fromBase64url(payload));
     const now = Date.now();
-    if (!data || data.iss !== ISSUER || data.aud !== AUDIENCE || data.role !== 'admin') return null;
+    if (!data || data.iss !== ISSUER || data.aud !== AUDIENCE || !['admin', CI_READONLY_ROLE].includes(data.role)) return null;
     if (Number(data.nbf || 0) > now + CLOCK_SKEW_MS) return null;
     if (Number(data.exp || 0) <= now) return null;
     if (!/^[a-f0-9]{32}$/.test(String(data.jti || ''))) return null;
     return data;
   } catch (_) { return null; }
 }
-function verifyAdminToken(token) { return Boolean(decodeAndVerifyAdminToken(token)); }
+function verifyAdminToken(token) {
+  const claims = decodeAndVerifyAdminToken(token);
+  return Boolean(claims && claims.role === 'admin');
+}
 function getTokenFromEvent(event) {
   const headers = event.headers || {};
   const auth = headers.authorization || headers.Authorization || '';
   if (String(auth).toLowerCase().startsWith('bearer ')) return String(auth).slice(7).trim();
   return headers['x-admin-token'] || headers['X-Admin-Token'] || '';
 }
+function normalizedPath(event) {
+  try { return new URL(String(event.rawUrl || event.url || 'https://vla.invalid' + String(event.path || ''))).pathname; }
+  catch (_) { return String(event.path || '').split('?')[0]; }
+}
+function ciReadOnlyAllowed(event) {
+  const method = String(event.httpMethod || 'GET').toUpperCase();
+  const path = normalizedPath(event);
+  if ((method === 'GET' || method === 'HEAD') && CI_SAFE_GET_PATHS.has(path)) return true;
+  if (method === 'POST' && path === '/.netlify/functions/monthly-close') {
+    try { return JSON.parse(event.body || '{}').dryRun === true; }
+    catch (_) { return false; }
+  }
+  return false;
+}
+function forbiddenReadOnlyResponse() {
+  return {
+    statusCode: 403,
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    body: JSON.stringify({ message: 'La sesión técnica de verificación solo permite lecturas y cierre DRY RUN.' })
+  };
+}
 function requireAdmin(event) {
   const claims = decodeAndVerifyAdminToken(getTokenFromEvent(event));
-  if (claims) return { ok: true, claims };
+  if (claims?.role === 'admin') return { ok: true, claims };
+  if (claims?.role === CI_READONLY_ROLE) {
+    if (ciReadOnlyAllowed(event)) return { ok: true, claims };
+    return { ok: false, response: forbiddenReadOnlyResponse() };
+  }
   return {
     ok: false,
     response: {
@@ -100,4 +142,16 @@ function requireAdmin(event) {
   };
 }
 
-module.exports = { SESSION_KEY_DOMAIN, strong, deriveSessionSecret, getSecret, issueAdminToken, verifyAdminToken, decodeAndVerifyAdminToken, requireAdmin };
+module.exports = {
+  SESSION_KEY_DOMAIN,
+  CI_READONLY_ROLE,
+  CI_SAFE_GET_PATHS,
+  strong,
+  deriveSessionSecret,
+  getSecret,
+  issueAdminToken,
+  verifyAdminToken,
+  decodeAndVerifyAdminToken,
+  ciReadOnlyAllowed,
+  requireAdmin
+};
