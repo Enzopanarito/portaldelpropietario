@@ -35,11 +35,12 @@ test('portal acepta solo recuperación transitoria y exige estado financiero fin
   assert(owner.includes("breakdownVersion!=='owner-breakdown-v7'"));
 });
 
-test('auditor de pagos evita evaluateAll frágil para escoger casas live',()=>{
+test('auditor de pagos evita navegación frágil y exige ambas cuentas donde ambas deudas existen',()=>{
   assert(paymentBrowser.includes('async function houseOptionValue'));
   assert(paymentBrowser.includes("await houseOptionValue(page,'#welcomeSelector',4,15000)"));
-  assert(paymentBrowser.includes("await houseOptionValue(page,'#userSelector',2,10000)"));
   assert(paymentBrowser.includes("page.locator('#main').waitFor"));
+  assert(paymentBrowser.includes("accountModes.includes('USD')&&accountModes.includes('Bs BCV')"));
+  assert(paymentBrowser.includes('Casa 4, que tiene deuda en ambas monedas'));
 });
 
 test('verificación y diagnóstico esperan el release canónico exacto',()=>{
@@ -55,9 +56,11 @@ test('verificación y diagnóstico esperan el release canónico exacto',()=>{
   assert(!diagnostic.includes('push:\n    branches: [main]'));
 });
 
-test('producción exige Functions Node 22 además del release y diff financiero',()=>{
+test('producción exige commit exacto, Functions Node 22, release y diff financiero',()=>{
   assert(production.includes('AWS_LAMBDA_JS_RUNTIME: nodejs22.x'));
   assert(production.includes("runtimes[0]!=='nodejs22.x'"));
+  assert(production.includes('commit_ref'));
+  assert(production.includes('titleCommit!==expected'));
   assert(production.includes('FINANCIAL_BEFORE_AFTER_OK 15/15 houses · 150/150 fields · $0.00'));
   assert(production.includes('verify-release-contract.js'));
 });
