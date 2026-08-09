@@ -33,6 +33,14 @@ jobs:
       - name: Run financial, payment, snapshot, close and security release gates
         run: npm test
 
+      - name: Resolve canonical publish directory
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          publish_dir="$(node -e "const r=require('./release.json');const d=String(r.productionPublishDirectory||'').trim();if(!d)process.exit(1);process.stdout.write(d)")"
+          echo "publish_dir=$publish_dir" >> "$GITHUB_OUTPUT"
+
       - name: Build the exact production artifact in GitHub
         env:
           CONTEXT: production
@@ -103,7 +111,7 @@ jobs:
           npx --yes netlify-cli@latest deploy \
             --prod \
             --no-build \
-            --dir=dist \
+            --dir="${{ steps.release.outputs.publish_dir }}" \
             --functions=netlify/functions \
             --context=production \
             --site="$NETLIFY_SITE_ID" \
