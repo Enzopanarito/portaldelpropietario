@@ -1,0 +1,143 @@
+name: Deploy Netlify CLI Preview
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vla-cli-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  deploy-preview:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NETLIFY_AUTH_TOKEN_PRIMARY: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_AUTH_TOKEN_FALLBACK: ${{ secrets.NETLIFY_TOKEN }}
+      NETLIFY_SITE_ID_PRIMARY: ${{ secrets.NETLIFY_SITE_ID }}
+      NETLIFY_SITE_ID_FALLBACK: ${{ secrets.NETLIFY_SITE_ID_VILLALOSAPAMATES }}
+      PREVIEW_ALIAS: vla-pr-${{ github.event.pull_request.number }}
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
+      - name: Install dependencies safely
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run complete release gates
+        run: npm test
+
+      - name: Build preview artifact in GitHub
+        env:
+          CONTEXT: deploy-preview
+          VLA_DATA_ENVIRONMENT: staging
+          PUBLIC_BLOB_CACHE_ENABLED: 'false'
+          PUBLIC_BLOB_CACHE_MAX_AGE_MS: '120000'
+        run: npm run build:public
+
+      - name: Resolve Netlify credentials safely
+        id: credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          AUTH_TOKEN="${NETLIFY_AUTH_TOKEN_PRIMARY:-${NETLIFY_AUTH_TOKEN_FALLBACK:-}}"
+          SITE_ID="${NETLIFY_SITE_ID_PRIMARY:-${NETLIFY_SITE_ID_FALLBACK:-}}"
+          if [ -n "$AUTH_TOKEN" ]; then echo "::add-mask::$AUTH_TOKEN"; fi
+          if [ -n "$SITE_ID" ]; then echo "::add-mask::$SITE_ID"; fi
+          if [ -z "$AUTH_TOKEN" ] || [ -z "$SITE_ID" ]; then
+            echo "Faltan credenciales Netlify para desplegar la vista previa CLI."
+            exit 1
+          fi
+          echo "NETLIFY_AUTH_TOKEN=$AUTH_TOKEN" >> "$GITHUB_ENV"
+          echo "NETLIFY_SITE_ID=$SITE_ID" >> "$GITHUB_ENV"
+
+      - name: Upload prepared preview without hosted build
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="${RUNNER_TEMP}/netlify-cli-preview.json"
+          npx --yes netlify-cli@latest deploy \
+            --no-build \
+            --dir=dist \
+            --functions=netlify/functions \
+            --context=deploy-preview \
+            --alias="$PREVIEW_ALIAS" \
+            --site="$NETLIFY_SITE_ID" \
+            --auth="$NETLIFY_AUTH_TOKEN" \
+            --skip-functions-cache \
+            --message="VLA PR #${{ github.event.pull_request.number }} ${GITHUB_SHA}" \
+            --json > "$output"
+          cat "$output"
+          node - "$output" "$GITHUB_OUTPUT" <<'NODE'
+          const fs=require('fs');
+          const [file,out]=process.argv.slice(2);
+          const data=JSON.parse(fs.readFileSync(file,'utf8'));
+          const id=String(data.deploy_id||data.id||'');
+          const url=String(data.deploy_url||data.deploy_ssl_url||data.url||'');
+          if(!id) throw new Error('Netlify CLI no devolvió deploy_id.');
+          fs.appendFileSync(out,`deploy_id=${id}\n`);
+          fs.appendFileSync(out,`deploy_url=${url}\n`);
+          NODE
+
+      - name: Verify predictable preview and critical serverless routes
+        env:
+          DEPLOY_ID: ${{ steps.deploy.outputs.deploy_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET_URL="https://${PREVIEW_ALIAS}--villalosapamates.netlify.app"
+          for attempt in $(seq 1 30); do
+            owner_code="$(curl --silent --show-error --location --output /tmp/owner.html --write-out '%{http_code}' --max-time 20 "${TARGET_URL}/?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            admin_code="$(curl --silent --show-error --location --output /tmp/admin.html --write-out '%{http_code}' --max-time 20 "${TARGET_URL}/admin.html?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            data_code="$(curl --silent --show-error --location --output /tmp/public-data.json --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/.netlify/functions/public-data?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            if [ "$owner_code" = "200" ] && [ "$admin_code" = "200" ] && [ "$data_code" = "200" ] \
+              && grep -q 'owner-payment-report-v3.js' /tmp/owner.html \
+              && grep -q 'admin-premium-10.css' /tmp/admin.html; then
+              echo "CLI preview ready: $TARGET_URL"
+              echo "preview_url=$TARGET_URL" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Attempt ${attempt}: owner=${owner_code:-missing} admin=${admin_code:-missing} public-data=${data_code:-missing}"
+            sleep 5
+          done
+          echo "La vista previa CLI no quedó operativa."
+          exit 1
+
+      - name: Verify Netlify deploy metadata
+        env:
+          DEPLOY_ID: ${{ steps.deploy.outputs.deploy_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          deploy_json="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            -H "User-Agent: VLA-GitHub-Actions" \
+            "https://api.netlify.com/api/v1/deploys/$DEPLOY_ID")"
+          printf '%s' "$deploy_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const d=JSON.parse(s);if(d.state!=='ready')throw new Error('Deploy state='+d.state);console.log(JSON.stringify({id:d.id,state:d.state,context:d.context,branch:d.branch,commit_ref:d.commit_ref,alias:d.links?.alias||d.deploy_ssl_url||d.deploy_url},null,2))})"
+
+      - name: Publish preview summary
+        if: success()
+        run: |
+          {
+            echo '### VLA CLI preview ✅'
+            echo
+            echo "Preview: \`https://${PREVIEW_ALIAS}--villalosapamates.netlify.app\`"
+            echo "Deploy: \`${{ steps.deploy.outputs.deploy_id }}\`"
+            echo "PR head: \`${{ github.event.pull_request.head.sha }}\`"
+            echo
+            echo 'El artefacto se construyó en GitHub y se subió con Netlify CLI; no consume un hosted build de Netlify.'
+          } >> "$GITHUB_STEP_SUMMARY"
