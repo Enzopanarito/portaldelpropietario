@@ -79,3 +79,17 @@ test('producción exige commit exacto, release y diff financiero',()=>{
   assert(production.includes('FINANCIAL_BEFORE_AFTER_OK 15/15 houses · 150/150 fields · $0.00'));
   assert(production.includes('verify-release-contract.js'));
 });
+
+test('producción falla cerrada si la configuración crítica está vacía o los secretos no están clasificados',()=>{
+  for(const marker of [
+    'Fail closed unless production environment is complete and sensitive values are secret',
+    'VLA_PRODUCTION_CONFIG_BLOCKED',
+    'VLA_PRODUCTION_CONFIG_OK',
+    'AIRTABLE_API_TOKEN','ADMIN_TOKEN_SECRET','PAYMENT_PROOF_ENCRYPTION_KEY',
+    'SMTP_SECRET','MKJ_ADMIN_PASSWORD','GEMINI_API_KEY',
+    "variable.is_secret!==true",
+    'sin valor efectivo production/all'
+  ]) assert(production.includes(marker),`Falta gate productivo: ${marker}`);
+  assert(production.indexOf('VLA_PRODUCTION_CONFIG_BLOCKED') < production.indexOf('Capture immediate BEFORE financial baseline'));
+  assert(production.indexOf('Capture immediate BEFORE financial baseline') < production.indexOf('Upload prepared production deploy without hosted build'));
+});

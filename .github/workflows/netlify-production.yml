@@ -80,9 +80,59 @@ jobs:
             -H "User-Agent: VLA-GitHub-Actions" \
             "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID")"
           production_branch="$(printf '%s' "$site_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);process.stdout.write(String(j.build_settings?.repo_branch||j.repo?.branch||'unknown'))})")"
+          account_id="$(printf '%s' "$site_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);process.stdout.write(String(j.account_id||''))})")"
           [ "$production_branch" = "main" ] || { echo "La rama de producción es $production_branch, no main."; exit 1; }
+          [ -n "$account_id" ] || { echo "Netlify no devolvió account_id; producción queda bloqueada."; exit 1; }
           echo "production_branch=$production_branch" >> "$GITHUB_OUTPUT"
+          echo "account_id=$account_id" >> "$GITHUB_OUTPUT"
           echo "Production branch: $production_branch"
+
+      - name: Fail closed unless production environment is complete and sensitive values are secret
+        env:
+          NETLIFY_ACCOUNT_ID: ${{ steps.site.outputs.account_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const token=process.env.NETLIFY_AUTH_TOKEN;
+          const siteId=process.env.NETLIFY_SITE_ID;
+          const accountId=process.env.NETLIFY_ACCOUNT_ID;
+          const api='https://api.netlify.com/api/v1';
+          const required=[
+            'AIRTABLE_API_TOKEN','AIRTABLE_BASE_ID','ADMIN_TOKEN_SECRET','PAYMENT_PROOF_ENCRYPTION_KEY',
+            'GEMINI_API_KEY','SMTP_HOST','SMTP_USER','SMTP_SECRET','MKJ_BASE_URL','MKJ_ORG_ID',
+            'MKJ_ADMIN_EMAIL','MKJ_ADMIN_PASSWORD'
+          ];
+          const sensitive=new Set([
+            'AIRTABLE_API_TOKEN','ADMIN_TOKEN_SECRET','PAYMENT_PROOF_ENCRYPTION_KEY',
+            'GEMINI_API_KEY','SMTP_SECRET','MKJ_ADMIN_PASSWORD'
+          ]);
+          const headers={Authorization:`Bearer ${token}`,'User-Agent':'VLA-production-config-gate'};
+          const clean=value=>String(value??'').trim();
+          function effective(variable){
+            const values=Array.isArray(variable?.values)?variable.values:[];
+            const production=values.find(item=>item.context==='production'&&clean(item.value));
+            const all=values.find(item=>item.context==='all'&&clean(item.value));
+            return clean(production?.value||all?.value||'');
+          }
+          (async()=>{
+            const failures=[];
+            for(const key of required){
+              const url=`${api}/accounts/${encodeURIComponent(accountId)}/env/${encodeURIComponent(key)}?site_id=${encodeURIComponent(siteId)}`;
+              const response=await fetch(url,{headers});
+              if(!response.ok){failures.push(`${key}: HTTP ${response.status}`);continue;}
+              const variable=await response.json().catch(()=>({}));
+              if(!effective(variable))failures.push(`${key}: sin valor efectivo production/all`);
+              if(sensitive.has(key)&&variable.is_secret!==true)failures.push(`${key}: no está clasificada como secret`);
+            }
+            if(failures.length){
+              console.error('VLA_PRODUCTION_CONFIG_BLOCKED');
+              for(const failure of failures)console.error(`- ${failure}`);
+              process.exit(1);
+            }
+            console.log(`VLA_PRODUCTION_CONFIG_OK required=${required.length} sensitiveSecrets=${sensitive.size}`);
+          })().catch(error=>{console.error(String(error.message||error));process.exit(1)});
+          NODE
 
       - name: Capture immediate BEFORE financial baseline
         id: before
@@ -214,10 +264,10 @@ jobs:
         run: |
           if [ "$VERIFY_OUTCOME" = "success" ] && [ "$FINANCE_OUTCOME" = "success" ]; then
             title="Producción publicada y certificada ✅"
-            detail="Artefacto construido en GitHub, commit exacto, Functions Node 24, release canónico verificado y BEFORE/AFTER financiero = $0.00."
+            detail="Artefacto construido en GitHub, configuración segura, commit exacto, Functions Node 24, release canónico verificado y BEFORE/AFTER financiero = $0.00."
           else
             title="Producción no certificada ⚠️"
-            detail="El despliegue, runtime, contrato canónico o comparación financiera no concluyeron correctamente."
+            detail="La configuración, el despliegue, runtime, contrato canónico o comparación financiera no concluyeron correctamente."
           fi
           {
             echo "### $title"
