@@ -13,9 +13,7 @@ permissions:
 
 jobs:
   verify-owner-mobile:
-    if: >-
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
-      (github.event_name == 'pull_request' && !contains(github.event.pull_request.title, '[skip netlify]'))
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -34,6 +32,7 @@ jobs:
         run: |
           node tests/owner-mobile-v2.test.js
           node tests/owner-dark-contrast.test.js
+          node tests/owner-current-month-v1.test.js
 
       - name: Validate smart payment report structure
         run: |
@@ -52,7 +51,7 @@ jobs:
             echo "url=https://villalosapamates.netlify.app" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Wait for mobile, payment and dark assets
+      - name: Wait for mobile, payment, dark and current-month assets
         env:
           TARGET_URL: ${{ steps.target.outputs.url }}
         shell: bash
@@ -64,18 +63,22 @@ jobs:
             layout_code="$(curl --silent --show-error --location --output /tmp/owner-layout.css --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/owner-mobile-v2-layout-fix.css?v=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
             dark_code="$(curl --silent --show-error --location --output /tmp/owner-dark.css --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/owner-dark-contrast-v1.css?v=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
             payment_code="$(curl --silent --show-error --location --output /tmp/owner-payment.js --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/owner-payment-report-v3.js?v=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
-            if [ "$html_code" = "200" ] && [ "$mobile_code" = "200" ] && [ "$layout_code" = "200" ] && [ "$dark_code" = "200" ] && [ "$payment_code" = "200" ] \
-              && [ -s /tmp/owner-mobile.css ] && [ -s /tmp/owner-layout.css ] && [ -s /tmp/owner-payment.js ] \
+            current_css_code="$(curl --silent --show-error --location --output /tmp/owner-current-month.css --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/owner-current-month-v1.css?v=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            current_js_code="$(curl --silent --show-error --location --output /tmp/owner-current-month.js --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/owner-current-month-v1.js?v=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            if [ "$html_code" = "200" ] && [ "$mobile_code" = "200" ] && [ "$layout_code" = "200" ] && [ "$dark_code" = "200" ] && [ "$payment_code" = "200" ] && [ "$current_css_code" = "200" ] && [ "$current_js_code" = "200" ] \
+              && [ -s /tmp/owner-mobile.css ] && [ -s /tmp/owner-layout.css ] && [ -s /tmp/owner-payment.js ] && [ -s /tmp/owner-current-month.css ] && [ -s /tmp/owner-current-month.js ] \
               && grep -q 'data-vla-owner-mobile="fluid-v2"' /tmp/owner.html \
               && grep -q 'data-vla-owner-payment-cash="currency-mapped-v1"' /tmp/owner.html \
+              && grep -q 'vla-owner-current-month-v1' /tmp/owner.html \
+              && grep -q 'owner-current-month-v1' /tmp/owner-current-month.js \
               && grep -q 'Contraste integral modo oscuro wcag-v1' /tmp/owner-dark.css; then
-              echo "Assets móviles, de pago y contraste disponibles en $TARGET_URL"
+              echo "Assets móviles, pago, contraste y cuota corriente disponibles en $TARGET_URL"
               exit 0
             fi
-            echo "Attempt $attempt: html=${html_code:-missing} mobile=${mobile_code:-missing} layout=${layout_code:-missing} dark=${dark_code:-missing} payment=${payment_code:-missing}"
+            echo "Attempt $attempt: html=${html_code:-missing} mobile=${mobile_code:-missing} layout=${layout_code:-missing} dark=${dark_code:-missing} payment=${payment_code:-missing} current_css=${current_css_code:-missing} current_js=${current_js_code:-missing}"
             sleep 10
           done
-          echo "Los assets móviles no estuvieron disponibles de forma consistente."
+          echo "Los assets del portal propietario no estuvieron disponibles de forma consistente."
           exit 1
 
       - name: Install Chromium
@@ -128,7 +131,7 @@ jobs:
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
             -f state=success \
             -f context='Owner Mobile Production Verification' \
-            -f description='Portal móvil, pagos progressive-v8 y modo oscuro persistente verificados.' \
+            -f description='Portal móvil, pagos progressive-v8, cuota corriente y modo oscuro verificados.' \
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
       - name: Publish failed production status
@@ -140,5 +143,5 @@ jobs:
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
             -f state=failure \
             -f context='Owner Mobile Production Verification' \
-            -f description='Falló la verificación móvil, del reporte o del modo oscuro.' \
+            -f description='Falló la verificación móvil, de cuota corriente, del reporte o del modo oscuro.' \
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
