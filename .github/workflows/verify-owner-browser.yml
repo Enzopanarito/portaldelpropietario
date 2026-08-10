@@ -13,7 +13,9 @@ permissions:
 
 jobs:
   verify-owner-portal:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'pull_request' && !contains(github.event.pull_request.title, '[skip netlify]'))
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:

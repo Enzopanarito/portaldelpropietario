@@ -1,0 +1,34 @@
+name: Audit Netlify Function Surface
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Inventory top-level Netlify functions
+        run: node scripts/audit-function-surface.js
+
+      - name: Upload function surface evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: vla-function-surface-${{ github.event.pull_request.head.sha }}
+          path: function-surface-audit.json
+          retention-days: 14
