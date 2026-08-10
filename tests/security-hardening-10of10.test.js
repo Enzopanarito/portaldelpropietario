@@ -138,9 +138,11 @@ test('2FA deshabilitado se registra como riesgo aceptado, no como falso verde', 
   assert.doesNotMatch(source, /Autenticación de dos pasos',\s*true/);
 });
 
-test('el modo skip-netlify bloquea el workflow CLI de preview', () => {
+test('el CLI preview sigue activo aunque el PR use skip-netlify para omitir el build hospedado', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'netlify-cli-preview.yml'), 'utf8');
-  assert.match(source, /!contains\(github\.event\.pull_request\.title, '\[skip netlify\]'\)/);
+  assert.match(source, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
+  assert.match(source, /--no-build/);
+  assert.doesNotMatch(source, /contains\(github\.event\.pull_request\.title, '\[skip netlify\]'\)/);
 });
 
 test('el baseline financiero se liga al commit base y release reales, sin SHA hardcodeado', () => {
