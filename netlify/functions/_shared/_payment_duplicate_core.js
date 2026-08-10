@@ -44,10 +44,17 @@ function findDuplicateMatches(input,{reports=[],payments=[],history=[],visualDis
  for(const candidate of candidates){
   if(needle.exactSha&&candidate.exactSha&&needle.exactSha===candidate.exactSha){matches.push({...candidate,matchType:'Hash exacto',confidence:1,strong:true});continue}
   if(needle.fingerprint&&candidate.fingerprint&&needle.fingerprint===candidate.fingerprint){matches.push({...candidate,matchType:'Huella financiera exacta',confidence:1,strong:true});continue}
-  const distance=hammingDistance(needle.visualHash,candidate.visualHash);if(Number.isFinite(distance)&&distance<=visualDistance){matches.push({...candidate,matchType:'Hash visual',visualDistance:distance,confidence:Math.max(0,1-distance/64),strong:true});continue}
+  const distance=hammingDistance(needle.visualHash,candidate.visualHash);
+  if(Number.isFinite(distance)&&distance<=visualDistance){
+   // Un dHash parecido identifica una plantilla/imagen visualmente similar, no la
+   // misma transacción. Se conserva como alerta para revisión, pero nunca bloquea
+   // por sí solo. El mismo candidato todavía debe pasar por el contraste financiero
+   // inferior, de modo que referencia+monto+moneda+fecha sí puedan bloquear.
+   matches.push({...candidate,matchType:'Hash visual',visualDistance:distance,confidence:Math.max(0,1-distance/64),strong:false});
+  }
   if(needle.reference&&candidate.reference&&needle.reference===candidate.reference){const context=sameReferenceContext(needle,candidate);const required=['currency','amount','date'];const exactFinancialReference=required.every(key=>context.matchingKeys.includes(key));matches.push({...candidate,matchType:exactFinancialReference?'Referencia financiera exacta':'Referencia parcial',context,confidence:exactFinancialReference?.99:context.ratio,strong:exactFinancialReference})}
  }
- const rank={'Hash exacto':0,'Huella financiera exacta':1,'Hash visual':2,'Referencia financiera exacta':3,'Referencia parcial':4};matches.sort((a,b)=>rank[a.matchType]-rank[b.matchType]||(b.confidence||0)-(a.confidence||0)||a.id.localeCompare(b.id));
+ const rank={'Hash exacto':0,'Huella financiera exacta':1,'Referencia financiera exacta':2,'Hash visual':3,'Referencia parcial':4};matches.sort((a,b)=>rank[a.matchType]-rank[b.matchType]||(b.confidence||0)-(a.confidence||0)||a.id.localeCompare(b.id));
  const strong=matches.filter(match=>match.strong),partial=matches.filter(match=>!match.strong);return{isDuplicate:strong.length>0,possibleDuplicate:matches.length>0,type:strong[0]?.matchType||partial[0]?.matchType||'Sin coincidencia',matches,strongMatches:strong,partialMatches:partial};
 }
 
