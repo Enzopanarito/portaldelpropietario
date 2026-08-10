@@ -34,7 +34,7 @@ function candidateFromRecord(record,{kind='report'}={}){
  const amount=currency==='VES'
   ? fields['Monto Detectado']||fields['Monto Reportado Bs']||fields['Monto Recibido']||fields['Monto Pagado Bs']||fields['Monto Pagado']||fields['Monto Reportado']
   : fields['Monto Detectado']||fields['Monto Recibido']||fields['Equivalente USD Aplicado']||fields['Monto Pagado']||fields['Equivalente USD Reportado']||fields['Monto Reportado'];
- return{id:clean(record&&record.id),kind,house:Number(fields['Casa al Reportar']||fields.Casa||0)||null,status:clean(selectName(fields.Estado||fields['Decisión Administrativa'])),exactSha:normalizeExactSha(fields['Hash SHA-256']),visualHash:normalizeVisualHash(fields['Hash Perceptual']),fingerprint:clean(fields['Huella Financiera']),reference:normalizeReference(fields['Referencia Detectada']||fields.Referencia),bank:normalizeText(fields['Banco o Plataforma Detectada']||fields['Banco Reportado']||fields['Método de Pago']||''),method:normalizeText(selectName(fields['Método Detectado']||fields['Forma de Pago']||fields['Forma de Pago Reportada']||'')),currency,amount:normalizeAmount(amount),date:normalizeDate(fields['Fecha Operación Detectada']||fields['Fecha de Pago']||fields['Fecha del Reporte']),recipient:normalizeText(fields['Receptor Detectado']||'')};
+ return{id:clean(record&&record.id),kind,house:Number(fields['Casa al Reportar']||fields.Casa||0)||null,status:clean(selectName(fields.Estado||fields['Decisión Administrativa'])),exactSha:normalizeExactSha(fields['Hash SHA-256']),visualHash:normalizeVisualHash(fields['Hash Perceptual']),fingerprint:clean(fields['Huella Financiera']),reference:normalizeReference(fields['Referencia Detectada']||fields.Referencia),bank:normalizeText(fields['Banco o Plataforma Detectada']||fields['Banco Reportado']||''),method:normalizeText(selectName(fields['Método Detectado']||fields['Forma de Pago']||fields['Forma de Pago Reportada']||'')),currency,amount:normalizeAmount(amount),date:normalizeDate(fields['Fecha Operación Detectada']||fields['Fecha de Pago']||fields['Fecha del Reporte']),recipient:normalizeText(fields['Receptor Detectado']||'')};
 }
 function sameReferenceContext(input,candidate){let matching=0,total=0;const matchingKeys=[],differentKeys=[];for(const key of ['bank','method','currency','amount','date','recipient']){const left=clean(input[key]),right=clean(candidate[key]);if(left&&right){total+=1;if(left===right){matching+=1;matchingKeys.push(key)}else differentKeys.push(key)}}return{matching,total,ratio:total?matching/total:0,matchingKeys,differentKeys}}
 function findDuplicateMatches(input,{reports=[],payments=[],history=[],visualDistance=DEFAULT_VISUAL_DISTANCE,excludeIds=[]}={}){
@@ -44,10 +44,23 @@ function findDuplicateMatches(input,{reports=[],payments=[],history=[],visualDis
  for(const candidate of candidates){
   if(needle.exactSha&&candidate.exactSha&&needle.exactSha===candidate.exactSha){matches.push({...candidate,matchType:'Hash exacto',confidence:1,strong:true});continue}
   if(needle.fingerprint&&candidate.fingerprint&&needle.fingerprint===candidate.fingerprint){matches.push({...candidate,matchType:'Huella financiera exacta',confidence:1,strong:true});continue}
-  const distance=hammingDistance(needle.visualHash,candidate.visualHash);if(Number.isFinite(distance)&&distance<=visualDistance){matches.push({...candidate,matchType:'Hash visual',visualDistance:distance,confidence:Math.max(0,1-distance/64),strong:true});continue}
-  if(needle.reference&&candidate.reference&&needle.reference===candidate.reference){const context=sameReferenceContext(needle,candidate);const required=['currency','amount','date'];const exactFinancialReference=required.every(key=>context.matchingKeys.includes(key));matches.push({...candidate,matchType:exactFinancialReference?'Referencia financiera exacta':'Referencia parcial',context,confidence:exactFinancialReference?.99:context.ratio,strong:exactFinancialReference})}
+  const distance=hammingDistance(needle.visualHash,candidate.visualHash);
+  if(Number.isFinite(distance)&&distance<=visualDistance){
+   // El dHash identifica una plantilla visualmente similar, no una transacción.
+   // Se conserva como alerta, pero nunca bloquea por sí solo.
+   matches.push({...candidate,matchType:'Hash visual',visualDistance:distance,confidence:Math.max(0,1-distance/64),strong:false});
+  }
+  if(needle.reference&&candidate.reference&&needle.reference===candidate.reference){
+   const context=sameReferenceContext(needle,candidate);
+   // La identidad transaccional fuerte es entidad/plataforma específica +
+   // referencia normalizada. Casa, fecha, monto y moneda quedan como evidencia de
+   // auditoría: no forman parte de la clave para impedir que el mismo comprobante
+   // pueda reutilizarse cambiando de casa o alterando otros datos del formulario.
+   const sameBankReference=Boolean(needle.bank&&candidate.bank&&needle.bank===candidate.bank);
+   matches.push({...candidate,matchType:sameBankReference?'Banco + referencia exacta':'Referencia parcial',context,confidence:sameBankReference?1:context.ratio,strong:sameBankReference});
+  }
  }
- const rank={'Hash exacto':0,'Huella financiera exacta':1,'Hash visual':2,'Referencia financiera exacta':3,'Referencia parcial':4};matches.sort((a,b)=>rank[a.matchType]-rank[b.matchType]||(b.confidence||0)-(a.confidence||0)||a.id.localeCompare(b.id));
+ const rank={'Hash exacto':0,'Huella financiera exacta':1,'Banco + referencia exacta':2,'Hash visual':3,'Referencia parcial':4};matches.sort((a,b)=>rank[a.matchType]-rank[b.matchType]||(b.confidence||0)-(a.confidence||0)||a.id.localeCompare(b.id));
  const strong=matches.filter(match=>match.strong),partial=matches.filter(match=>!match.strong);return{isDuplicate:strong.length>0,possibleDuplicate:matches.length>0,type:strong[0]?.matchType||partial[0]?.matchType||'Sin coincidencia',matches,strongMatches:strong,partialMatches:partial};
 }
 
