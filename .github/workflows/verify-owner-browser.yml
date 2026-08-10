@@ -70,7 +70,26 @@ jobs:
       - name: Verify breakdown and all 15 visible balances
         env:
           TARGET_URL: ${{ steps.target.outputs.url }}
-        run: node tests/owner-production-browser.cjs
+        shell: bash
+        run: |
+          set -euo pipefail
+          # El alias de Deploy Preview puede cambiar de nodo mientras Edge/HTML/assets
+          # terminan de converger. Cada intento abre un navegador nuevo y debe completar
+          # TODA la certificación: desglose + 15/15 casas + saldos exactos. No se relaja
+          # ninguna aserción financiera; solo se tolera una sesión transitoria fallida.
+          for attempt in 1 2 3; do
+            echo "OWNER_BROWSER_CERT_ATTEMPT=${attempt}/3"
+            rm -f owner-production-result.json owner-production-error.txt owner-production.png
+            if node tests/owner-production-browser.cjs; then
+              echo "OWNER_BROWSER_CERT_STABLE attempt=${attempt}"
+              exit 0
+            fi
+            echo "OWNER_BROWSER_CERT_TRANSIENT_FAILURE attempt=${attempt}"
+            if [ -f owner-production-error.txt ]; then cat owner-production-error.txt; fi
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 2)); fi
+          done
+          echo "OWNER_BROWSER_CERT_FAILED after 3 complete browser sessions"
+          exit 1
 
       - name: Upload browser evidence
         if: always()
