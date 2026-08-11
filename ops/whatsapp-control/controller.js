@@ -15,14 +15,15 @@ const TOKEN = String(process.env.WA_AGENT_TOKEN || '').trim();
 const START_MINUTE = 8 * 60;
 const END_MINUTE = 21 * 60;
 const LOOP_MS = 15000;
+const RETRY_MS = 5 * 60 * 1000;
 
 const DEFAULT_CONFIG = Object.freeze({
   version: 1,
-  mode: 'automatic',
+  mode: 'paused',
   schedules: ['09:00', '18:00'],
   warmupMinutes: 5,
   updatedAt: null,
-  updatedBy: 'bootstrap'
+  updatedBy: 'safe-bootstrap'
 });
 
 const DEFAULT_RUNTIME = Object.freeze({
@@ -34,10 +35,15 @@ const DEFAULT_RUNTIME = Object.freeze({
   runInProgress: false,
   runStartedAt: null,
   runRequestId: null,
+  warmupInProgress: false,
+  warmupStartedAt: null,
+  warmupRequestId: null,
   ledger: {}
 });
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
+function clean(value) { return String(value || '').trim(); }
+function nowIso() { return new Date().toISOString(); }
 function ensureDir() { fs.mkdirSync(DATA_DIR, { recursive: true }); }
 function readJson(file, fallback) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { return clone(fallback); } }
 function writeJson(file, value) {
@@ -45,8 +51,7 @@ function writeJson(file, value) {
   fs.writeFileSync(tmp, JSON.stringify(value, null, 2));
   fs.renameSync(tmp, file);
 }
-function appendAudit(entry) { fs.appendFileSync(AUDIT_FILE, JSON.stringify({ at: new Date().toISOString(), ...entry }) + '\n'); }
-function clean(value) { return String(value || '').trim(); }
+function appendAudit(entry) { fs.appendFileSync(AUDIT_FILE, JSON.stringify({ at: nowIso(), ...entry }) + '\n'); }
 function parseTime(value) {
   const match = /^(\d{2}):(\d{2})$/.exec(clean(value));
   if (!match) return null;
@@ -73,7 +78,7 @@ function normalizeConfig(input = {}, current = DEFAULT_CONFIG) {
     mode,
     schedules,
     warmupMinutes,
-    updatedAt: new Date().toISOString(),
+    updatedAt: nowIso(),
     updatedBy: clean(input.updatedBy || 'admin') || 'admin'
   };
 }
@@ -99,7 +104,8 @@ function shiftMinutes(value, delta) {
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 function localIso(ymd, value) {
-  const [year, month, day] = ymd.split('-').map(Number), [hour, minute] = value.split(':').map(Number);
+  const [year, month, day] = ymd.split('-').map(Number);
+  const [hour, minute] = value.split(':').map(Number);
   return new Date(Date.UTC(year, month - 1, day, hour + 4, minute)).toISOString();
 }
 function nextRunAt(config, now = new Date()) {
@@ -117,11 +123,18 @@ function timingSafeToken(value) {
   return left.length === right.length && left.length > 0 && crypto.timingSafeEqual(left, right);
 }
 function recentHistory(file = AUDIT_FILE, limit = 30) {
-  try { return fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).slice(-limit).reverse().map(line => JSON.parse(line)); }
-  catch (_) { return []; }
+  try {
+    return fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).slice(-limit).reverse().map(line => JSON.parse(line));
+  } catch (_) { return []; }
 }
 function auditDetail(result, reason) {
-  return [reason, result?.action, Number.isFinite(Number(result?.recipientCount)) ? `destinatarios=${Number(result.recipientCount)}` : ''].filter(Boolean).join(' · ');
+  return [reason, result?.action, Number.isFinite(Number(result?.recipientCount)) ? `destinatarios=${Number(result.recipientCount)}` : '']
+    .filter(Boolean).join(' · ');
+}
+function conflict(message) {
+  const error = new Error(message);
+  error.status = 409;
+  return error;
 }
 
 function createControllerState() {
@@ -129,10 +142,23 @@ function createControllerState() {
   let config = normalizeConfig(readJson(CONFIG_FILE, DEFAULT_CONFIG), DEFAULT_CONFIG);
   let runtime = { ...clone(DEFAULT_RUNTIME), ...readJson(RUNTIME_FILE, DEFAULT_RUNTIME) };
   runtime.ledger = runtime.ledger && typeof runtime.ledger === 'object' ? runtime.ledger : {};
+
+  let interrupted = false;
   if (runtime.runInProgress) {
     runtime.runInProgress = false;
-    runtime.lastError = 'La ejecución anterior quedó interrumpida por reinicio del controlador; se habilitó recuperación segura.';
+    runtime.runRequestId = null;
+    interrupted = true;
   }
+  if (runtime.warmupInProgress) {
+    runtime.warmupInProgress = false;
+    runtime.warmupRequestId = null;
+    interrupted = true;
+  }
+  for (const [key, value] of Object.entries(runtime.ledger)) {
+    if ((typeof value === 'string' && value.startsWith('running:')) || value?.status === 'running') delete runtime.ledger[key];
+  }
+  if (interrupted) runtime.lastError = 'La operación anterior quedó interrumpida por reinicio; se habilitó recuperación segura.';
+
   writeJson(CONFIG_FILE, config);
   writeJson(RUNTIME_FILE, runtime);
 
@@ -143,8 +169,26 @@ function createControllerState() {
     return run;
   }
   function persistRuntime() { writeJson(RUNTIME_FILE, runtime); }
-  function markLedger(key, value) { runtime.ledger[key] = value; persistRuntime(); }
+  function busy() { return runtime.runInProgress || runtime.warmupInProgress; }
+  function markLedger(key, status, extra = {}) {
+    runtime.ledger[key] = { status, at: nowIso(), ...extra };
+    persistRuntime();
+  }
   function clearLedger(key) { delete runtime.ledger[key]; persistRuntime(); }
+  function ledgerBlocks(key, now = Date.now()) {
+    const value = runtime.ledger[key];
+    if (!value) return false;
+    if (typeof value === 'string') return true;
+    if (value.status === 'retry') {
+      const retryAt = Date.parse(value.retryAt || '');
+      if (Number.isFinite(retryAt) && retryAt <= now) {
+        delete runtime.ledger[key];
+        persistRuntime();
+        return false;
+      }
+    }
+    return true;
+  }
   function pruneLedger() {
     const keys = Object.keys(runtime.ledger).sort().reverse();
     if (keys.length <= 160) return;
@@ -155,9 +199,13 @@ function createControllerState() {
     const parts = caracasParts(), today = dayKey(parts), nowMinute = localMinute(parts);
     for (const schedule of config.schedules) {
       if (parseTime(schedule) <= nowMinute) {
-        runtime.ledger[`${today}|run|${schedule}`] ||= `${reason}:${new Date().toISOString()}`;
+        const runKey = `${today}|run|${schedule}`;
+        if (!runtime.ledger[runKey]) runtime.ledger[runKey] = { status: 'seeded', at: nowIso(), reason };
         const warm = shiftMinutes(schedule, -config.warmupMinutes);
-        if (warm && parseTime(warm) <= nowMinute) runtime.ledger[`${today}|warmup|${schedule}`] ||= `${reason}:${new Date().toISOString()}`;
+        const warmKey = `${today}|warmup|${schedule}`;
+        if (warm && parseTime(warm) <= nowMinute && !runtime.ledger[warmKey]) {
+          runtime.ledger[warmKey] = { status: 'seeded', at: nowIso(), reason };
+        }
       }
     }
     persistRuntime();
@@ -185,12 +233,13 @@ function createControllerState() {
     try { return await agent('/health', { method: 'GET' }); }
     catch (error) { return { ok: false, error: String(error.message || error) }; }
   }
-  async function warmup(reason = 'manual') {
+
+  async function warmupCore(reason = 'manual') {
     return locked(async () => {
       try {
         const session = await agent('/session/warmup', { method: 'POST', body: '{}' });
         runtime.session = session;
-        runtime.lastWarmupAt = new Date().toISOString();
+        runtime.lastWarmupAt = nowIso();
         runtime.lastError = null;
         persistRuntime();
         appendAudit({ action: 'warmup', result: session.loggedIn ? 'OK' : 'ATTENTION', detail: reason });
@@ -203,24 +252,48 @@ function createControllerState() {
       }
     });
   }
+  function reserveWarmup(reason = 'admin') {
+    if (busy()) throw conflict('Ya existe una operación WhatsApp en curso.');
+    const requestId = crypto.randomUUID();
+    runtime.warmupInProgress = true;
+    runtime.warmupStartedAt = nowIso();
+    runtime.warmupRequestId = requestId;
+    runtime.lastError = null;
+    persistRuntime();
+    appendAudit({ action: 'queue-warmup', result: 'ACCEPTED', detail: `${reason} · ${requestId}` });
+    return requestId;
+  }
+  async function performReservedWarmup(reason, requestId) {
+    try { return await warmupCore(reason); }
+    finally {
+      if (runtime.warmupRequestId === requestId) {
+        runtime.warmupInProgress = false;
+        runtime.warmupRequestId = null;
+        persistRuntime();
+      }
+    }
+  }
+  function queueWarmup(reason = 'admin') {
+    const requestId = reserveWarmup(reason);
+    const startedAt = runtime.warmupStartedAt;
+    setImmediate(() => performReservedWarmup(reason, requestId).catch(() => {}));
+    return { accepted: true, requestId, startedAt };
+  }
+  async function executeWarmup(reason = 'automatic') {
+    const requestId = reserveWarmup(reason);
+    return performReservedWarmup(reason, requestId);
+  }
+
   function assertRunAllowed() {
-    if (config.mode === 'paused') {
-      const error = new Error('La automatización está pausada.');
-      error.status = 409;
-      throw error;
-    }
-    if (!inAllowedWindow()) {
-      const error = new Error('Fuera de la ventana permitida 08:00–21:00.');
-      error.status = 409;
-      throw error;
-    }
+    if (config.mode === 'paused') throw conflict('La automatización está pausada.');
+    if (!inAllowedWindow()) throw conflict('Fuera de la ventana permitida 08:00–21:00.');
   }
   async function runCore(reason = 'manual') {
     return locked(async () => {
       assertRunAllowed();
       try {
         const result = await agent('/tick', { method: 'POST', body: JSON.stringify({ forcePlan: false }) });
-        runtime.lastRunAt = new Date().toISOString();
+        runtime.lastRunAt = nowIso();
         runtime.lastResult = result.action || 'OK';
         runtime.lastError = null;
         persistRuntime();
@@ -234,31 +307,39 @@ function createControllerState() {
       }
     });
   }
-  function queueRun(reason = 'admin-manual') {
+  function reserveRun(reason = 'admin-manual') {
     assertRunAllowed();
-    if (runtime.runInProgress) {
-      const error = new Error('Ya existe una ejecución WhatsApp en curso.');
-      error.status = 409;
-      throw error;
-    }
+    if (busy()) throw conflict('Ya existe una operación WhatsApp en curso.');
     const requestId = crypto.randomUUID();
     runtime.runInProgress = true;
-    runtime.runStartedAt = new Date().toISOString();
+    runtime.runStartedAt = nowIso();
     runtime.runRequestId = requestId;
     runtime.lastError = null;
     persistRuntime();
     appendAudit({ action: 'queue-run', result: 'ACCEPTED', detail: `${reason} · ${requestId}` });
-    setImmediate(() => {
-      runCore(reason)
-        .catch(() => {})
-        .finally(() => {
-          runtime.runInProgress = false;
-          runtime.runRequestId = null;
-          persistRuntime();
-        });
-    });
-    return { accepted: true, requestId, startedAt: runtime.runStartedAt };
+    return requestId;
   }
+  async function performReservedRun(reason, requestId) {
+    try { return await runCore(reason); }
+    finally {
+      if (runtime.runRequestId === requestId) {
+        runtime.runInProgress = false;
+        runtime.runRequestId = null;
+        persistRuntime();
+      }
+    }
+  }
+  function queueRun(reason = 'admin-manual') {
+    const requestId = reserveRun(reason);
+    const startedAt = runtime.runStartedAt;
+    setImmediate(() => performReservedRun(reason, requestId).catch(() => {}));
+    return { accepted: true, requestId, startedAt };
+  }
+  async function executeRun(reason = 'automatic') {
+    const requestId = reserveRun(reason);
+    return performReservedRun(reason, requestId);
+  }
+
   async function status() {
     const agentHealth = await health();
     return {
@@ -274,6 +355,9 @@ function createControllerState() {
         runInProgress: runtime.runInProgress,
         runStartedAt: runtime.runStartedAt,
         runRequestId: runtime.runRequestId,
+        warmupInProgress: runtime.warmupInProgress,
+        warmupStartedAt: runtime.warmupStartedAt,
+        warmupRequestId: runtime.warmupRequestId,
         nextRunAt: nextRunAt(config)
       },
       history: recentHistory(AUDIT_FILE, 30)
@@ -286,38 +370,58 @@ function createControllerState() {
     appendAudit({ action: 'config', result: 'OK', detail: `${config.mode} · ${config.schedules.join(', ')}` });
     return config;
   }
+
   async function attemptScheduled(kind, schedule, reason) {
     const parts = caracasParts(), key = `${dayKey(parts)}|${kind}|${schedule}`;
-    if (runtime.ledger[key]) return false;
-    markLedger(key, `running:${new Date().toISOString()}`);
+    if (busy() || ledgerBlocks(key)) return false;
+    markLedger(key, 'running', { reason });
     try {
-      if (kind === 'warmup') await warmup(reason);
-      else await runCore(reason);
-      markLedger(key, `done:${new Date().toISOString()}`);
+      if (kind === 'warmup') await executeWarmup(reason);
+      else await executeRun(reason);
+      markLedger(key, 'done', { reason });
       return true;
-    } catch (_) {
-      clearLedger(key);
+    } catch (error) {
+      markLedger(key, 'retry', { reason, retryAt: new Date(Date.now() + RETRY_MS).toISOString(), error: String(error.message || error).slice(0, 240) });
       return false;
     }
   }
   async function schedulerStep() {
     if (config.mode !== 'automatic') return;
     const parts = caracasParts(), now = hhmm(parts), nowMinute = localMinute(parts), today = dayKey(parts);
-    for (const schedule of config.schedules) {
-      const warm = shiftMinutes(schedule, -config.warmupMinutes);
-      if (warm && now === warm) await attemptScheduled('warmup', schedule, `auto warmup ${schedule}`);
+
+    if (!busy()) {
+      for (const schedule of config.schedules) {
+        const warm = shiftMinutes(schedule, -config.warmupMinutes);
+        if (warm && now === warm) {
+          const attempted = await attemptScheduled('warmup', schedule, `auto warmup ${schedule}`);
+          if (attempted || busy()) break;
+        }
+      }
     }
-    if (!inAllowedWindow(parts)) return;
-    const due = config.schedules.filter(schedule => parseTime(schedule) <= nowMinute && !runtime.ledger[`${today}|run|${schedule}`]);
+
+    if (!inAllowedWindow(parts) || busy()) return;
+    const due = config.schedules.filter(schedule => parseTime(schedule) <= nowMinute && !ledgerBlocks(`${today}|run|${schedule}`));
     if (due.length) {
       const latest = due[due.length - 1];
-      for (const older of due.slice(0, -1)) markLedger(`${today}|run|${older}`, `superseded:${latest}:${new Date().toISOString()}`);
+      for (const older of due.slice(0, -1)) markLedger(`${today}|run|${older}`, 'superseded', { by: latest });
       await attemptScheduled('run', latest, now === latest ? `auto ${latest}` : `recovery ${latest}`);
     }
     pruneLedger();
   }
 
-  return { getConfig: () => config, getRuntime: () => runtime, setConfig, status, warmup, runCore, queueRun, schedulerStep, seedPastSchedules };
+  return {
+    getConfig: () => config,
+    getRuntime: () => runtime,
+    setConfig,
+    status,
+    warmupCore,
+    queueWarmup,
+    runCore,
+    queueRun,
+    schedulerStep,
+    seedPastSchedules,
+    ledgerBlocks
+  };
 }
 
 function readBody(req) {
@@ -332,7 +436,11 @@ function readBody(req) {
   });
 }
 function send(res, statusCode, body) {
-  res.writeHead(statusCode, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+  res.writeHead(statusCode, {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff'
+  });
   res.end(JSON.stringify(body));
 }
 
@@ -345,10 +453,15 @@ async function dispatchControl(state, action, payload = {}) {
     return { ...(await state.status()), queued, message: 'Ejecución manual aceptada. El resultado aparecerá en el historial.' };
   }
   if (normalized === 'warmup') {
-    const session = await state.warmup('admin');
-    return { ...(await state.status()), session };
+    const queued = state.queueWarmup('admin');
+    return { ...(await state.status()), queued, message: 'Verificación de WhatsApp aceptada. El estado se actualizará automáticamente.' };
   }
-  if (normalized === 'pause') { state.setConfig({ mode: 'paused', updatedBy: 'admin' }); return state.status(); }
+  if (normalized === 'pause') {
+    state.setConfig({ mode: 'paused', updatedBy: 'admin' });
+    const result = await state.status();
+    result.message = result.runtime.runInProgress ? 'Pausa aplicada a nuevos ciclos. La ejecución que ya estaba en curso terminará de forma segura.' : 'Automatización pausada.';
+    return result;
+  }
   if (normalized === 'resume') { state.setConfig({ mode: 'automatic', updatedBy: 'admin' }); return state.status(); }
   const error = new Error('Acción de control no reconocida.');
   error.status = 400;
@@ -360,7 +473,7 @@ function startServer() {
   const state = createControllerState();
   const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && req.url === '/health') {
-      return send(res, 200, { ok: true, service: 'vla-whatsapp-controller', version: '1.1.0', mode: state.getConfig().mode });
+      return send(res, 200, { ok: true, service: 'vla-whatsapp-controller', version: '1.2.0', mode: state.getConfig().mode });
     }
     if (!timingSafeToken(req.headers['x-agent-token'])) return send(res, 401, { ok: false, message: 'Token inválido o ausente.' });
     try {
@@ -374,8 +487,8 @@ function startServer() {
         return send(res, 202, { ...(await state.status()), queued, message: 'Ejecución manual aceptada.' });
       }
       if (req.url === '/warmup') {
-        const session = await state.warmup(clean(body.reason) || 'admin');
-        return send(res, 200, { ...(await state.status()), session });
+        const queued = state.queueWarmup(clean(body.reason) || 'admin');
+        return send(res, 202, { ...(await state.status()), queued, message: 'Verificación WhatsApp aceptada.' });
       }
       if (req.url === '/pause') { state.setConfig({ mode: 'paused', updatedBy: 'admin' }); return send(res, 200, await state.status()); }
       if (req.url === '/resume') { state.setConfig({ mode: 'automatic', updatedBy: 'admin' }); return send(res, 200, await state.status()); }
@@ -387,7 +500,7 @@ function startServer() {
 
   setInterval(() => state.schedulerStep().catch(() => {}), LOOP_MS).unref();
   setTimeout(() => state.schedulerStep().catch(() => {}), 15000).unref();
-  server.listen(PORT, '0.0.0.0', () => console.log(`VLA WhatsApp Controller v1.1.0 escuchando en :${PORT} · modo=${state.getConfig().mode}`));
+  server.listen(PORT, '0.0.0.0', () => console.log(`VLA WhatsApp Controller v1.2.0 escuchando en :${PORT} · modo=${state.getConfig().mode}`));
   return { server, state };
 }
 
@@ -398,6 +511,7 @@ module.exports = {
   DEFAULT_RUNTIME,
   START_MINUTE,
   END_MINUTE,
+  RETRY_MS,
   parseTime,
   validSchedule,
   normalizeConfig,
