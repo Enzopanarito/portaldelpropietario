@@ -1,0 +1,82 @@
+{
+  "name": "VLA WhatsApp Admin Gateway v1 - PREPARADO NO PUBLICAR",
+  "active": false,
+  "settings": {
+    "timezone": "America/Caracas",
+    "executionOrder": "v1"
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vla-whatsapp-control-v1",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [-320, 0],
+      "id": "48fb6132-d1c3-47dc-8bbd-578ea5edb87c",
+      "name": "Control seguro desde Admin VLA",
+      "webhookId": "ff0ed10a-f254-4f94-8328-1ced7a1adcda",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__VLA_CONTROL_HEADER_CREDENTIAL_ID__",
+          "name": "VLA WhatsApp Control Secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://whatsapp-controller:8788/control",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-80, 0],
+      "id": "4c873f6c-21b3-4fb1-b6d8-6187d7659439",
+      "name": "Controlador WhatsApp local",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__WA_AGENT_HEADER_CREDENTIAL_ID__",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [160, 0],
+      "id": "d91e0984-6680-4cbf-b144-172d3698d6ea",
+      "name": "Responder al Admin"
+    }
+  ],
+  "connections": {
+    "Control seguro desde Admin VLA": {
+      "main": [[{"node":"Controlador WhatsApp local","type":"main","index":0}]]
+    },
+    "Controlador WhatsApp local": {
+      "main": [[{"node":"Responder al Admin","type":"main","index":0}]]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "preparedFor": "n8n 2.33.7",
+    "warning": "PLANTILLA. Reemplazar ambos IDs de credencial antes de importar y mantener inactiva hasta pruebas."
+  }
+}
