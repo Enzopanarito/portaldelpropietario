@@ -133,6 +133,7 @@ const SCRIPT = `<script>
   }
   function wirePremiumLink(){
     const link=document.querySelector('#vla-premium-sidebar a[href="/whatsapp.html"]');if(!link)return false;
+    const baseNav=document.querySelector("nav [data-target='whatsapp-control']");if(baseNav)baseNav.remove();
     if(link.dataset.waControl!=='1'){
       link.dataset.waControl='1';link.setAttribute('href','#whatsapp-control');link.innerHTML='<span class="ico">✉</span>WhatsApp';
       link.addEventListener('click',e=>{e.preventDefault();showWhatsApp()});
