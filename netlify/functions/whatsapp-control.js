@@ -21,6 +21,11 @@ function json(statusCode, body) {
 }
 
 function clean(value) { return String(value || '').trim(); }
+function badRequest(message) {
+  const error = new Error(message);
+  error.status = 400;
+  return error;
+}
 function parseTime(value) {
   const match = /^(\d{2}):(\d{2})$/.exec(clean(value));
   if (!match) return null;
@@ -34,19 +39,19 @@ function validSchedule(value) {
   return minute !== null && minute >= START_MINUTE && minute < END_MINUTE;
 }
 function normalizeSchedules(input) {
-  if (!Array.isArray(input)) throw new Error('Los horarios deben enviarse como una lista.');
+  if (!Array.isArray(input)) throw badRequest('Los horarios deben enviarse como una lista.');
   const unique = [...new Set(input.map(clean).filter(Boolean))].sort();
-  if (unique.length > 12) throw new Error('Máximo 12 horarios automáticos.');
-  if (unique.some(value => !validSchedule(value))) throw new Error('Cada horario debe estar entre 08:00 y 20:59, hora Venezuela.');
+  if (unique.length > 12) throw badRequest('Máximo 12 horarios automáticos.');
+  if (unique.some(value => !validSchedule(value))) throw badRequest('Cada horario debe estar entre 08:00 y 20:59, hora Venezuela.');
   return unique;
 }
 function normalizeConfig(input = {}) {
   const mode = clean(input.mode).toLowerCase();
-  if (!MODES.has(mode)) throw new Error('Modo inválido.');
+  if (!MODES.has(mode)) throw badRequest('Modo inválido.');
   const schedules = normalizeSchedules(input.schedules || []);
-  if (mode === 'automatic' && !schedules.length) throw new Error('El modo automático requiere al menos un horario.');
+  if (mode === 'automatic' && !schedules.length) throw badRequest('El modo automático requiere al menos un horario.');
   const warmupMinutes = Number(input.warmupMinutes ?? 5);
-  if (!Number.isInteger(warmupMinutes) || warmupMinutes < 0 || warmupMinutes > 30) throw new Error('El precalentamiento debe estar entre 0 y 30 minutos.');
+  if (!Number.isInteger(warmupMinutes) || warmupMinutes < 0 || warmupMinutes > 30) throw badRequest('El precalentamiento debe estar entre 0 y 30 minutos.');
   return { mode, schedules, warmupMinutes };
 }
 function relayConfig() {
