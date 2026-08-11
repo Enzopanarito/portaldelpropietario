@@ -109,7 +109,14 @@ const SCRIPT = `<script>
     banner.innerHTML=ok?(busy?'<b>⏳ Operación WhatsApp en curso</b><br><span class="text-sm">Puede cerrar esta pantalla. La Mac continuará trabajando y el panel se actualizará.</span>':'<b>✅ Controlador WhatsApp operativo</b><br><span class="text-sm">Modo '+modeText(cfg.mode)+' · agente '+(agent.mode||'—')+'</span>'):'<b>❌ Controlador WhatsApp requiere atención</b><br><span class="text-sm">'+(d.message||runtime.lastError||'No disponible')+'</span>';
     schedulePoll(busy);
   }
-  async function load(preserveForm=false){try{render(await adminFetch(endpoint),preserveForm)}catch(e){render({ok:false,message:e.message,config:waState&&waState.config||{}},preserveForm)}}
+  async function load(preserveForm=false){try{render(await adminFetch(endpoint),preserveForm);return true}catch(e){render({ok:false,message:e.message,config:waState&&waState.config||{}},preserveForm);return false}}
+  async function refreshWithFeedback(){
+    const button=el('wa-refresh');if(!button||button.disabled)return;
+    button.disabled=true;button.textContent='⏳ Actualizando…';
+    const ok=await load(false);
+    button.textContent=ok?'✅ Actualizado':'❌ Error';
+    setTimeout(()=>{button.disabled=false;button.textContent='🔄 Actualizar'},900);
+  }
   async function post(action,extra={}){return adminFetch(endpoint,{method:'POST',body:JSON.stringify({action,...extra})})}
   async function save(){try{const schedules=[...document.querySelectorAll('.wa-time')].map(x=>x.value).filter(Boolean);const config={mode:el('wa-mode').value,schedules,warmupMinutes:Number(el('wa-warmup-minutes').value||0)};const d=await post('set-config',{config});toast('Configuración WhatsApp guardada.');render(d)}catch(e){toast(e.message,true)}}
   async function runNow(){if(!confirm('¿Ejecutar ahora una revisión REAL de recordatorios? Se respetarán el ciclo vigente, saldos actuales, duplicados y la ventana 08:00–21:00.'))return;try{const d=await post('run-now',{confirm:'ENVIAR'});toast(d.message||'Ejecución manual aceptada.');render(d)}catch(e){toast(e.message,true)}}
@@ -142,7 +149,7 @@ const SCRIPT = `<script>
   }
   function bind(){
     if(!el('wa-refresh')||el('wa-refresh').dataset.bound)return;el('wa-refresh').dataset.bound='1';
-    el('wa-refresh').onclick=()=>load(false);el('wa-warmup').onclick=warmup;el('wa-save-config').onclick=save;el('wa-run-now').onclick=runNow;
+    el('wa-refresh').onclick=refreshWithFeedback;el('wa-warmup').onclick=warmup;el('wa-save-config').onclick=save;el('wa-run-now').onclick=runNow;
     el('wa-pause').onclick=()=>simple('pause','Automatización pausada.');el('wa-resume').onclick=()=>simple('resume','Automatización reanudada.');el('wa-add-time').onclick=()=>el('wa-times').appendChild(timeRow('09:00'));
     const nav=document.querySelector("[data-target='whatsapp-control']");if(nav)nav.addEventListener('click',()=>setTimeout(()=>load(false),0));
     let attempts=0;const timer=setInterval(()=>{const wired=wirePremiumLink();if(wired&&location.hash==='#whatsapp-control')showWhatsApp();if(wired||++attempts>80)clearInterval(timer)},100);
