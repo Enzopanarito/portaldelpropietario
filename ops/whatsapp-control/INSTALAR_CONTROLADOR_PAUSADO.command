@@ -11,6 +11,7 @@ fail(){ echo "❌ $*"; exit 1; }
 [[ -d "$N8N_DIR" ]] || fail "No existe $N8N_DIR"
 command -v docker >/dev/null 2>&1 || fail "Docker no está disponible."
 command -v curl >/dev/null 2>&1 || fail "curl no está disponible."
+command -v python3 >/dev/null 2>&1 || fail "python3 no está disponible."
 
 for f in controller.js Dockerfile bootstrap-control.json docker-compose.whatsapp-control.yml; do
   [[ -f "$SCRIPT_DIR/$f" ]] || fail "Falta archivo preparado: $SCRIPT_DIR/$f"
@@ -48,7 +49,11 @@ N8N_CID="$(docker compose -f compose.yaml -f docker-compose.whatsapp.yml ps -q n
 
 docker exec -u node "$N8N_CID" n8n export:workflow --all --output=/tmp/vla-workflows-before-wa-admin.json >/dev/null || fail "No se pudo exportar workflows. No se modifica nada."
 docker cp "$N8N_CID:/tmp/vla-workflows-before-wa-admin.json" "$BACKUP_DIR/n8n-workflows-before.json" >/dev/null
-chmod 600 "$BACKUP_DIR"/* 2>/dev/null || true
+
+# Secretos/respaldos: archivos 600, directorios 700. Nunca quitar permiso de
+# traversal a directorios, porque volvería inútil el propio respaldo.
+find "$BACKUP_DIR" -type d -exec chmod 700 {} +
+find "$BACKUP_DIR" -type f -exec chmod 600 {} +
 
 echo "Backup local creado: $BACKUP_DIR"
 
@@ -77,8 +82,30 @@ cp "$SCRIPT_DIR/Dockerfile" whatsapp-controller/Dockerfile
 cp "$SCRIPT_DIR/bootstrap-control.json" whatsapp-controller/bootstrap-control.json
 cp "$SCRIPT_DIR/docker-compose.whatsapp-control.yml" docker-compose.whatsapp-control.yml
 
-# Si no existía configuración previa, el contenedor copiará bootstrap-control.json,
-# cuyo modo es PAUSADO. No se toca whatsapp-agent ni su perfil.
+# Garantía de instalación segura: incluso si existe configuración previa del
+# controlador, conservar sus horarios pero forzar PAUSADO antes de levantarlo.
+if [[ -f whatsapp-controller-data/control.json ]]; then
+  python3 - <<'PY'
+import json
+from pathlib import Path
+p=Path.home()/"n8n"/"whatsapp-controller-data"/"control.json"
+try:
+    data=json.loads(p.read_text())
+except Exception:
+    data={}
+data['version']=1
+data['mode']='paused'
+data.setdefault('schedules',['09:00','18:00'])
+data.setdefault('warmupMinutes',5)
+data['updatedBy']='safe-installer'
+p.write_text(json.dumps(data,indent=2,ensure_ascii=False)+"\n")
+PY
+else
+  cp "$SCRIPT_DIR/bootstrap-control.json" whatsapp-controller-data/control.json
+fi
+chmod 600 whatsapp-controller-data/control.json
+
+# Solo se crea/recrea whatsapp-controller. --no-deps impide reiniciar el agente.
 docker compose \
   -f compose.yaml \
   -f docker-compose.whatsapp.yml \
@@ -87,6 +114,7 @@ docker compose \
 
 echo
 echo "===== 4. COMPROBANDO HEALTH ====="
+rm -f /tmp/vla-wa-controller-health.json /tmp/vla-wa-controller-status.json
 for i in {1..40}; do
   if curl -fsS http://127.0.0.1:8788/health > /tmp/vla-wa-controller-health.json 2>/dev/null; then break; fi
   sleep 0.5
@@ -119,7 +147,8 @@ python3 - <<'PY'
 import json
 j=json.load(open('/tmp/vla-wa-controller-status.json'))
 assert j.get('config',{}).get('mode')=='paused', j
-print('Agente alcanzable:', bool(j.get('agent',{}).get('ok')))
+assert j.get('agent',{}).get('ok') is True, j
+print('Agente existente: alcanzable')
 print('Modo controlador: PAUSADO')
 PY
 
@@ -127,7 +156,8 @@ echo
 echo "===== RESULTADO ====="
 echo "✅ Respaldo creado antes de modificar."
 echo "✅ Controlador agregado sin reiniciar whatsapp-agent."
-echo "✅ Controlador PAUSADO."
+echo "✅ Controlador PAUSADO, incluso ante configuración previa."
+echo "✅ Agente existente alcanzable."
 echo "✅ No se importó/publicó ningún workflow nuevo."
 echo "✅ No se modificó Netlify."
 echo "✅ No se modificó el perfil de WhatsApp."
