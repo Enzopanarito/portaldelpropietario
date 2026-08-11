@@ -65,8 +65,34 @@ test('relay WhatsApp es independiente de Airtable y exige confirmación manual',
   assert.match(source, /requireAdmin\(event\)/);
 });
 
-test('controlador no fuerza ciclos artificiales del agente', () => {
+test('controlador no fuerza ciclos artificiales y encola la ejecución manual', () => {
   const source = fs.readFileSync(path.join(ROOT, 'ops/whatsapp-control/controller.js'), 'utf8');
   assert.match(source, /forcePlan: false/);
   assert.doesNotMatch(source, /forcePlan: true/);
+  assert.match(source, /queueRun/);
+  assert.match(source, /runInProgress/);
+  assert.match(source, /\/control/);
+});
+
+test('gateway n8n nace inactivo, usa Header Auth y no contiene secretos reales', () => {
+  const file = path.join(ROOT, 'ops/whatsapp-control/n8n/VLA_WhatsApp_Admin_Gateway_v1.template.json');
+  const workflow = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(workflow.active, false);
+  const webhook = workflow.nodes.find(node => node.type === 'n8n-nodes-base.webhook');
+  const http = workflow.nodes.find(node => node.type === 'n8n-nodes-base.httpRequest');
+  assert.equal(webhook.parameters.authentication, 'headerAuth');
+  assert.equal(webhook.parameters.responseMode, 'responseNode');
+  assert.equal(http.parameters.url, 'http://whatsapp-controller:8788/control');
+  assert.equal(http.parameters.authentication, 'genericCredentialType');
+  assert.equal(http.parameters.genericAuthType, 'httpHeaderAuth');
+  const raw = fs.readFileSync(file, 'utf8');
+  assert.match(raw, /__VLA_CONTROL_HEADER_CREDENTIAL_ID__/);
+  assert.match(raw, /__WA_AGENT_HEADER_CREDENTIAL_ID__/);
+  assert.doesNotMatch(raw, /NGROK_AUTHTOKEN|WA_AGENT_TOKEN=/);
+});
+
+test('bootstrap del controlador es PAUSADO para instalación segura', () => {
+  const bootstrap = JSON.parse(fs.readFileSync(path.join(ROOT, 'ops/whatsapp-control/bootstrap-control.json'), 'utf8'));
+  assert.equal(bootstrap.mode, 'paused');
+  assert.deepEqual(bootstrap.schedules, ['09:00', '18:00']);
 });
