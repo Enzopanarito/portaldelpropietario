@@ -1,0 +1,15 @@
+services:
+  whatsapp-controller:
+    build:
+      context: ./whatsapp-controller
+    container_name: vla-whatsapp-controller
+    restart: unless-stopped
+    environment:
+      CONTROL_PORT: 8788
+      CONTROL_DATA_DIR: /data
+      WA_AGENT_URL: http://whatsapp-agent:8787
+      WA_AGENT_TOKEN: ${WA_AGENT_TOKEN}
+    volumes:
+      - ./whatsapp-controller-data:/data
+    depends_on:
+      - whatsapp-agent
