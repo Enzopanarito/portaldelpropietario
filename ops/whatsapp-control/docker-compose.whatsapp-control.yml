@@ -11,5 +11,7 @@ services:
       WA_AGENT_TOKEN: ${WA_AGENT_TOKEN}
     volumes:
       - ./whatsapp-controller-data:/data
+    ports:
+      - "127.0.0.1:8788:8788"
     depends_on:
       - whatsapp-agent
