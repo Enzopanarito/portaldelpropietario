@@ -49,4 +49,30 @@ const intelligence=require('../payment-report-intelligence');
   assert.equal(result.ok,false);assert.equal(result.reason,'missing-rate');
 })();
 
+(function bolivarPaymentSelectsBsAccountWithoutQuestion(){
+  const result=intelligence.inferTargetMode({enteredCurrency:'BS',amount:39852,rate:180,debtUsd:85,debtBs:221.4});
+  assert.deepEqual({status:result.status,mode:result.mode},{status:'clear',mode:'Bs BCV'});
+})();
+
+(function exactUsdAmountSelectsUsdAccountWhenBothExist(){
+  const result=intelligence.inferTargetMode({enteredCurrency:'USD',amount:85,rate:180,debtUsd:85,debtBs:221.4});
+  assert.equal(result.status,'clear');assert.equal(result.mode,'USD');assert.equal(result.reason,'exact-usd-balance');
+})();
+
+(function exactBsReferenceAmountSelectsBsAccountWhenBothExist(){
+  const result=intelligence.inferTargetMode({enteredCurrency:'USD',amount:221.4,rate:180,debtUsd:85,debtBs:221.4});
+  assert.equal(result.status,'clear');assert.equal(result.mode,'Bs BCV');assert.equal(result.reason,'exact-bs-balance');
+})();
+
+(function ambiguousPartialPaymentAsksOnlyForTargetAccount(){
+  const result=intelligence.inferTargetMode({enteredCurrency:'USD',amount:50,rate:180,debtUsd:85,debtBs:90});
+  assert.equal(result.status,'ambiguous');assert.equal(result.mode,'');assert.equal(result.reason,'both-accounts-plausible');
+})();
+
+(function singleDebtAndAdvanceNeedNoAccountQuestion(){
+  assert.equal(intelligence.inferTargetMode({enteredCurrency:'USD',amount:20,debtUsd:50,debtBs:0}).mode,'USD');
+  assert.equal(intelligence.inferTargetMode({enteredCurrency:'USD',amount:20,debtUsd:0,debtBs:50}).mode,'Bs BCV');
+  assert.equal(intelligence.inferTargetMode({enteredCurrency:'USD',amount:20,debtUsd:0,debtBs:0}).mode,'USD');
+})();
+
 console.log('payment-report-intelligence: OK');
