@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROD_SITE_ID="74f4f122-352c-4a3b-aa6f-5937ab99f8d3"
-LAB_NAME="vla-lab-enzopanarito-74f4f122"
+LAB_PREFIX="vla-lab-enzopanarito-"
 LAB_STAGING_BASE_ID="appZhq8nVZ7lZ2k6K"
 NETLIFY_TEAM_SLUG="enzopanarito"
 AUTH_TOKEN="${NETLIFY_AUTH_TOKEN_PRIMARY:-${NETLIFY_AUTH_TOKEN_FALLBACK:-}}"
@@ -22,24 +22,61 @@ sites_json="$(curl --fail-with-body --silent --show-error \
   -H "Authorization: Bearer $AUTH_TOKEN" \
   -H 'User-Agent: VLA-LAB-GitHub-Actions' \
   'https://api.netlify.com/api/v1/sites?per_page=100')"
-lab_id="$(printf '%s' "$sites_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);const hit=(Array.isArray(j)?j:[]).find(x=>x&&x.name==='vla-lab-enzopanarito-74f4f122');process.stdout.write(String(hit?.id||''))})")"
+lab_record="$(printf '%s' "$sites_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);const hits=(Array.isArray(j)?j:[]).filter(x=>x&&String(x.name||'').startsWith('vla-lab-enzopanarito-')).sort((a,b)=>Date.parse(b.updated_at||b.created_at||0)-Date.parse(a.updated_at||a.created_at||0));const h=hits[0]||{};process.stdout.write(JSON.stringify({id:h.id||'',name:h.name||'',url:h.ssl_url||h.url||''}))})")"
+lab_id="$(printf '%s' "$lab_record" | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).id")"
+lab_name="$(printf '%s' "$lab_record" | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).name")"
+lab_url="$(printf '%s' "$lab_record" | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).url")"
+
 if [ -z "$lab_id" ]; then
   STAGE="crear-sitio-lab"
-  create_json="$(curl --fail-with-body --silent --show-error \
+  tmp_body="$(mktemp)"
+  status="$(curl --silent --show-error \
+    -o "$tmp_body" -w '%{http_code}' \
     -X POST \
     -H "Authorization: Bearer $AUTH_TOKEN" \
     -H 'User-Agent: VLA-LAB-GitHub-Actions' \
     -H 'Content-Type: application/json' \
-    --data '{"name":"vla-lab-enzopanarito-74f4f122","force_ssl":true}' \
+    --data '{}' \
     "https://api.netlify.com/api/v1/${NETLIFY_TEAM_SLUG}/sites")"
+  if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+    safe_error="$(node -e "const fs=require('fs');let j={};try{j=JSON.parse(fs.readFileSync(process.argv[1],'utf8'))}catch{};process.stdout.write(String(j.message||j.error||'Netlify rechazó la creación').replace(/[\r\n]+/g,' ').slice(0,240))" "$tmp_body")"
+    rm -f "$tmp_body"
+    echo "::error title=VLA LAB provisioning::Netlify create site HTTP $status: $safe_error"
+    exit 1
+  fi
+  create_json="$(cat "$tmp_body")"; rm -f "$tmp_body"
   lab_id="$(printf '%s' "$create_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);process.stdout.write(String(j.id||j.site_id||''))})")"
+  lab_url="$(printf '%s' "$create_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);process.stdout.write(String(j.ssl_url||j.url||''))})")"
+  [ -n "$lab_id" ] || { echo '::error title=VLA LAB provisioning::Netlify creó una respuesta sin Site ID.'; exit 1; }
+
+  STAGE="nombrar-sitio-lab"
+  lab_name="${LAB_PREFIX}${lab_id:0:8}"
+  patch_body="$(mktemp)"
+  patch_status="$(curl --silent --show-error -o "$patch_body" -w '%{http_code}' \
+    -X PATCH \
+    -H "Authorization: Bearer $AUTH_TOKEN" \
+    -H 'User-Agent: VLA-LAB-GitHub-Actions' \
+    -H 'Content-Type: application/json' \
+    --data "{\"name\":\"$lab_name\",\"force_ssl\":true}" \
+    "https://api.netlify.com/api/v1/sites/${lab_id}")"
+  if [ "$patch_status" -ge 200 ] && [ "$patch_status" -lt 300 ]; then
+    patched_json="$(cat "$patch_body")"
+    patched_name="$(printf '%s' "$patched_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);process.stdout.write(String(j.name||''))})")"
+    patched_url="$(printf '%s' "$patched_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);process.stdout.write(String(j.ssl_url||j.url||''))})")"
+    [ -n "$patched_name" ] && lab_name="$patched_name"
+    [ -n "$patched_url" ] && lab_url="$patched_url"
+  else
+    echo "::warning title=VLA LAB provisioning::El alias amigable no pudo asignarse (HTTP $patch_status); se conservará el URL único generado por Netlify."
+  fi
+  rm -f "$patch_body"
 fi
 if [ -z "$lab_id" ]; then
   echo '::error title=VLA LAB provisioning::No se pudo resolver el ID del sitio LAB.'
   exit 1
 fi
-lab_url="https://${LAB_NAME}.netlify.app"
-echo "LAB site resuelto: $LAB_NAME"
+[ -n "$lab_name" ] || lab_name="site-${lab_id:0:8}"
+[ -n "$lab_url" ] || lab_url="https://${lab_name}.netlify.app"
+echo "LAB site resuelto: $lab_name ($lab_id)"
 
 STAGE="clonar-secretos"
 echo '=== 2. Clonar secretos internamente dentro de Netlify ==='
