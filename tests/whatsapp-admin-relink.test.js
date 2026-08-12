@@ -21,7 +21,7 @@ let tickLock = Promise.resolve();
 function serial(lockName,fn){const run=(lockName==='browser'?browserLock:tickLock).then(fn,fn);if(lockName==='browser')browserLock=run.catch(()=>{});else tickLock=run.catch(()=>{});return run;}
 function nowIso(){return new Date().toISOString();} function safeError(e){return String(e&&e.message||e);} function tokenOk(){return true;}
 async function ensureBrowser(){return {page};} async function firstVisible(){return null;} async function sessionStatus(){return {loggedIn:false};}
-function composerLocators(p){return [p.locator('footer')];}
+function composerLocators(p) {return [p.locator('footer')];}
 app.get('/health',(_req,res)=>{const p={};res.json({ok:true,service:'vla-whatsapp-agent',version: '1.2.0', mode: MODE, caracas: p, stateFile: STATE_FILE});});
 app.post('/session/warmup',async(req,res)=>{if(!tokenOk(req))return res.status(401).json({ok:false});try{res.json(await serial('browser',()=>sessionStatus({navigate:true})));}catch(error){res.status(500).json({ok:false,error:safeError(error)});}});
 app.get('/session/screenshot',async(_req,res)=>res.type('png').send(Buffer.from('x')));
