@@ -88,6 +88,27 @@
     return{status:'ambiguous',reason:'similar-or-unmatched',expectedUsd:money(expected),errors:{USD:usdError,BS:bsError},candidates};
   }
 
+  function inferTargetMode({enteredCurrency,amount,rate,debtUsd,debtBs}={}){
+    const currency=String(enteredCurrency||'').toUpperCase(),usdDebt=positive(debtUsd),bsDebt=positive(debtBs),raw=positive(amount),fx=positive(rate);
+    if(currency==='BS')return{status:'clear',mode:'Bs BCV',reason:'bolivar-payment'};
+    if(currency!=='USD')return{status:'ambiguous',mode:'',reason:'currency-unknown'};
+    if(usdDebt>0.01&&bsDebt<=0.01)return{status:'clear',mode:'USD',reason:'only-usd-debt'};
+    if(bsDebt>0.01&&usdDebt<=0.01)return{status:'clear',mode:'Bs BCV',reason:'only-bs-debt'};
+    if(usdDebt<=0.01&&bsDebt<=0.01)return{status:'clear',mode:'USD',reason:'advance-default-usd'};
+    if(!raw)return{status:'ambiguous',mode:'',reason:'amount-missing'};
+
+    const resolved=resolveAmount({amount:raw,enteredCurrency:'USD',rate:fx});
+    const usdRef=resolved.amountUsdRef||raw;
+    const usdError=relativeError(usdRef,usdDebt),bsError=relativeError(usdRef,bsDebt),difference=Math.abs(usdError-bsError);
+    const exactUsd=Math.abs(usdRef-usdDebt)<=0.01,exactBs=Math.abs(usdRef-bsDebt)<=0.01;
+    if(exactUsd&&!exactBs)return{status:'clear',mode:'USD',reason:'exact-usd-balance',errors:{USD:usdError,BS:bsError}};
+    if(exactBs&&!exactUsd)return{status:'clear',mode:'Bs BCV',reason:'exact-bs-balance',errors:{USD:usdError,BS:bsError}};
+
+    const best=usdError<bsError?'USD':'Bs BCV',bestError=Math.min(usdError,bsError),otherError=Math.max(usdError,bsError);
+    if(bestError<=0.08&&otherError>=0.25&&difference>=0.20)return{status:'clear',mode:best,reason:'strong-balance-match',errors:{USD:usdError,BS:bsError}};
+    return{status:'ambiguous',mode:'',reason:'both-accounts-plausible',errors:{USD:usdError,BS:bsError}};
+  }
+
   function analyzePayment({amount,rate,expectedUsd,forcedCurrency}){
     const forced=String(forcedCurrency||'').toUpperCase();
     let result;
@@ -109,5 +130,5 @@
     return result;
   }
 
-  return{money,parseAmountInput,resolveAmount,inferEnteredCurrency,analyzePayment};
+  return{money,parseAmountInput,resolveAmount,inferEnteredCurrency,inferTargetMode,analyzePayment};
 });
