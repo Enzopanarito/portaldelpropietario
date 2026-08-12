@@ -8,31 +8,39 @@
   "containsRealPersonalData": false,
   "containsRealMkjUserIds": false,
   "automaticActionsEnabled": false,
+  "aiExtractionEnabledForLab": true,
   "tables": {
     "Propietarios": {"id":"tblTEggPZO6Lmpxv4","expectedRecords":15},
     "Gastos del Mes": {"id":"tblEGylRcgP3ChHAG"},
     "Pagos": {"id":"tblXb89phS6O21qaF"},
     "Reportes de Pago — LEGACY TEST": {"id":"tblUFsStWB22oZhOm","purpose":"fixture de migración"},
     "ControlVersiones": {"id":"tbl8KKbslAELcHQMM","expectedCurrentBalances":15},
-    "Cuentas de Cobro Autorizadas": {"id":"tblS1yuwCbO3QqgB4","expectedRecords":3},
+    "Cuentas de Cobro Autorizadas": {"id":"tblS1yuwCbO3QqgB4","expectedRecords":6},
     "Reportes de Pago": {"id":"tbl7EOxqkYNurz14q","schema":"V2"},
     "Configuración": {"id":"tbl5tDM7b0GCrMzf4","expectedRecords":1}
   },
   "requiredDisabledFlags": [
-    "AI Enabled",
-    "AI Secondary Enabled",
     "External AI Fallback Enabled",
     "Automatic Provisional Access Enabled"
   ],
+  "requiredEnabledFlags": [
+    "AI Enabled",
+    "AI Secondary Enabled",
+    "Manual Review Urgent Enabled"
+  ],
   "seedRecipients": [
     "VE_TRANSFER_ENZO",
+    "VE_TRANSFER_BANESCO_ENZO",
     "VE_MOBILE_04140554700",
-    "US_ZELLE_ENZO"
+    "VE_MOBILE_MERCANTIL_04140554700",
+    "US_ZELLE_ENZO",
+    "USDT_ENZO_EMAIL"
   ],
   "notes": [
     "Los nombres, teléfonos y correos de propietarios son ficticios.",
     "MKJ User ID está vacío en las 15 casas.",
     "La tabla legacy se conserva para probar migraciones sin tocar producción.",
-    "La transferencia venezolana exige completar banco/cuenta antes de activar validación automática."
+    "LAB V10 replica únicamente los destinos de cobro autorizados necesarios para validar comprobantes; los saldos y propietarios permanecen ficticios.",
+    "La extracción AI está habilitada solo para probar lectura de comprobantes. Aprobación automática, acceso, WhatsApp y correo real permanecen deshabilitados."
   ]
 }

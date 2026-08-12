@@ -16,7 +16,7 @@ const PUBLIC_FILES=[
   'admin-premium.css','admin-premium.js','admin-responsive-v4.css','admin-responsive-v4.js',
   'admin-session-bridge.js','owner-current-month-v1.css','owner-current-month-v1.js',
   'owner-dark-contrast-v1.css','owner-mobile-v2-layout-fix.css','owner-mobile-v2.css',
-  'owner-payment-report-v3.css','owner-payment-report-v3.js',
+  'owner-payment-report-v3.css','owner-payment-report-v3.js','owner-payment-validation-v10.js',
   'owner-breakdown-v7.css','owner-breakdown-v7.js','payment-report-intelligence.js',
   'vla-finance-v7.js','pwa-register.js','release.json','service-worker.js'
 ];

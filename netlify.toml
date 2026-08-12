@@ -25,10 +25,23 @@
   PUBLIC_BLOB_CACHE_MAX_AGE_MS = "120000"
   VLA_DATA_ENVIRONMENT = "staging"
 
+# VLA LAB local: la configuración del repositorio prevalece sobre variables del sitio
+# y fuerza la base staging. Integraciones externas reales quedan neutralizadas.
 [context.dev.environment]
   PUBLIC_BLOB_CACHE_ENABLED = "false"
   PUBLIC_BLOB_CACHE_MAX_AGE_MS = "120000"
-  VLA_DATA_ENVIRONMENT = "local"
+  VLA_DATA_ENVIRONMENT = "staging"
+  VLA_LAB_MODE = "true"
+  AIRTABLE_BASE_ID = "appZhq8nVZ7lZ2k6K"
+  VLA_WHATSAPP_CONTROL_URL = "disabled://vla-lab"
+  VLA_WHATSAPP_CONTROL_SECRET = "VLA_LAB_DISABLED"
+  MKJ_BASE_URL = "http://127.0.0.1:9"
+  MKJ_ADMIN_EMAIL = "VLA_LAB_DISABLED"
+  MKJ_ADMIN_PASSWORD = "VLA_LAB_DISABLED"
+  SMTP_HOST = ""
+  SMTP_USER = ""
+  SMTP_SECRET = ""
+  MAIL_FROM = ""
 
 [functions."airtable-usage-rollup-scheduled"]
   schedule = "30 4 * * *"
@@ -61,6 +74,11 @@ from = "/api/vla/payment-report-analyzer"
 to = "/.netlify/functions/payment-report-analyzer-background"
 status = 200
 force = true
+
+# El banner solo altera HTML cuando VLA_LAB_MODE=true. En producción es pass-through.
+[[edge_functions]]
+function = "lab-banner"
+path = "/*"
 
 [[edge_functions]]
 function = "pwa-head"

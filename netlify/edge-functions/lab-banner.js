@@ -1,0 +1,10 @@
+export default async (request,context)=>{
+  const response=await context.next();
+  if(String(Deno.env.get('VLA_LAB_MODE')||'').toLowerCase()!=='true')return response;
+  const headers=new Headers(response.headers);headers.set('x-vla-lab','true');headers.set('cache-control','no-store, no-cache, must-revalidate');
+  const type=headers.get('content-type')||'';if(!type.toLowerCase().includes('text/html'))return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
+  let html=await response.text();
+  const banner=`<div id="vla-lab-banner" style="position:fixed;z-index:2147483647;left:0;right:0;top:0;background:#7f1d1d;color:#fff;text-align:center;padding:7px 12px;font:800 12px/1.2 system-ui,-apple-system,sans-serif;letter-spacing:.04em;box-shadow:0 2px 8px rgba(0,0,0,.25)">🧪 VLA LAB · ENTORNO DE PRUEBAS · NO MODIFICA SALDOS, PORTÓN NI WHATSAPP REALES</div><style id="vla-lab-banner-style">html{scroll-padding-top:32px}body{padding-top:32px!important}</style>`;
+  if(!html.includes('id="vla-lab-banner"'))html=html.includes('<body')?html.replace(/(<body[^>]*>)/i,`$1${banner}`):banner+html;
+  headers.delete('content-length');headers.delete('content-encoding');headers.set('content-type','text/html; charset=utf-8');return new Response(html,{status:response.status,statusText:response.statusText,headers});
+};
