@@ -6,7 +6,7 @@ const edge=fs.readFileSync('netlify/edge-functions/owner-mobile-assets.js','utf8
 const signature=fs.readFileSync('netlify/edge-functions/owner-signature.js','utf8');
 const server=fs.readFileSync('netlify/functions/public-report-payment.js','utf8');
 
-for(const marker of ['¿Cómo realizaste el pago?','Pago digital','Efectivo','Sube tu comprobante','Tomar foto / Elegir comprobante','Pago detectado','Confirmar pago','Necesitamos un dato adicional','¿Algo está incorrecto? Editar','Completar manualmente','Binance'])assert(ui.includes(marker),`Falta ${marker}`);
+for(const marker of ['¿Cómo realizaste el pago?','Pago digital','Efectivo','Sube tu comprobante','Tomar foto / Elegir comprobante','Pago detectado','Confirmar pago','Solo falta confirmar esto','¿Algo está incorrecto? Editar','Completar manualmente','Binance'])assert(ui.includes(marker),`Falta ${marker}`);
 assert(!/<input[^>]*name="payChannel"[^>]*\schecked(?:\s|>)/.test(ui),'La primera pantalla no debe preseleccionar un canal.');
 assert(/id="vla-pay-proof-section"[^>]*hidden/.test(ui),'La carga debe aparecer solo después de elegir pago digital.');
 assert(/id="vla-pay-details"[^>]*hidden/.test(ui),'El formulario no puede aparecer completo inicialmente.');
@@ -15,6 +15,12 @@ assert(!ui.includes('Estado visible'),'El propietario no debe elegir estados té
 assert(!ui.includes('FALLBACK_DATE_METHODS')&&ui.includes('automaticDateFromFile')&&ui.includes('transactionDateSource'),'La fecha debe resolverse automáticamente para todos los métodos.');
 assert(ui.includes('dateAttestation'),'La fecha visible autenticada debe viajar con atestación de servidor.');
 assert(!/function digitalMissing\(\)\{[^}]*missing\.push\('date'\)/.test(ui),'La fecha nunca debe bloquear el envío digital.');
+assert(!/function digitalMissing\(\)\{[^}]*missing\.push\('reference'\)/.test(ui),'La referencia ausente no debe obligar al propietario a escribirla.');
+assert(!/function digitalMissing\(\)\{[^}]*missing\.push\('bank'\)/.test(ui),'El banco ausente no debe obligar al propietario a escribirlo.');
+assert(ui.includes('generatedReference')&&ui.includes('reportReference')&&ui.includes('reportBank'),'Los datos no críticos deben viajar con trazabilidad para una segunda verificación.');
+assert(ui.includes('inferTargetMode'),'VLA debe inferir automáticamente a cuál cuenta corresponde el pago cuando la evidencia es inequívoca.');
+assert(ui.includes("const singleMissing=!cash&&!editAll&&!manualMode&&missing.length?missing[0]:''"),'Las excepciones digitales deben preguntarse una por una.');
+assert(!/confianza \$\{confidence\}%/i.test(ui),'El propietario no debe ver porcentajes técnicos de confianza.');
 assert(ui.includes('analysisSummary')&&ui.includes('possibleVisualModification'),'El administrador debe recibir la mayor información de la prelectura.');
 assert(ui.includes("cash?(currency==='BS'?'Bs BCV':currency==='USD'?'USD':'')"),'El efectivo debe asignar la cuenta desde su moneda sin pedir un campo oculto.');
 assert(!/function cashMissing\(\)\{[^}]*missing\.push\('mode'\)/.test(ui),'El flujo de efectivo no puede exigir una cuenta oculta.');
@@ -25,15 +31,16 @@ assert(ui.includes('/api/vla/payment-proof-prefill')&&ui.includes('/api/vla/repo
 assert(ui.includes('submissionId')&&ui.includes('readAsDataURL'),'Debe conservar idempotencia y carga segura.');
 assert(ui.includes('postPaymentReportWithRecovery')&&ui.includes('Reconectando…'),'Debe reintentar una interrupción transitoria con el mismo submissionId.');
 assert(ui.includes('La conexión se interrumpió')&&!ui.includes("message||'Load failed'"),'Nunca debe mostrar el error crudo de Safari.');
+assert(ui.includes('El comprobante igualmente será analizado de nuevo')||ui.includes('será analizado de nuevo al enviarlo'),'Una caída de prelectura no debe convertir el flujo digital en un formulario completo obligatorio.');
 assert(!signature.includes('form.onsubmit')&&!signature.includes('/.netlify/functions/public-report-payment'),'Ningún parche heredado puede duplicar el envío.');
 assert(!/recargo/i.test(ui+css),'El portal público no debe mencionar el recargo.');
 assert(css.includes('.vla-pay-two{display:grid')&&css.includes('font-size:16px'),'Debe seguir siendo móvil y evitar zoom en iPhone.');
 const darkCss=fs.readFileSync('owner-dark-contrast-v1.css','utf8');assert(darkCss.includes('html.dark #vla-pay-confirm-card')&&darkCss.includes('html.dark .vla-pay-edit'),'La confirmación detectada debe conservar contraste real en modo oscuro.');
-assert(edge.includes('progressive-v8'),'Falta el marcador del flujo progresivo.');
+assert(edge.includes('progressive-v8'),'Falta el marcador compatible del flujo progresivo.');
 for(const asset of ['owner-payment-report-v3.css','payment-report-intelligence.js','owner-payment-report-v3.js'])assert(edge.includes(asset),`Falta inyección de ${asset}`);
 assert(server.includes('resolveSubmittedDate')&&server.includes('REPORT_TIMESTAMP_FALLBACK'),'El servidor debe controlar la jerarquía automática de fecha.');
 assert(server.includes("paymentChannel==='DIGITAL'?decodeAttachment(body.attachment):null"),'El comprobante es obligatorio solo para digital.');
 assert(server.includes("'Archivo Obligatorio':paymentChannel==='DIGITAL'")&&server.includes('reserveIdentity'),'Debe conservar comprobante condicional y deduplicación.');
 assert(server.includes('connectLambdaEvent(event)')&&server.includes('POST_CREATE_TIMEOUT_MS'),'El guardado Blobs y las tareas posteriores deben estar protegidos.');
 assert(!server.includes('ACCEPTED_TRANSACTION_STATUSES'),'El cliente no decide si una transacción está completada.');
-console.log('owner-payment-report-progressive-v8: OK');
+console.log('owner-payment-report-proof-first-v9: OK');
