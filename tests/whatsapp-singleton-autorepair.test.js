@@ -83,3 +83,14 @@ test('patchers no contienen secretos ni rutas de envío', () => {
   const b = fs.readFileSync(path.join(ROOT,'ops/whatsapp-control/patch-whatsapp-compose-init.cjs'),'utf8');
   assert.doesNotMatch(a + b, /WA_AGENT_TOKEN|\/tick|\/session\/warmup|\/session\/link\/start/);
 });
+
+test('instalador respalda, preserva state y nunca dispara operaciones WhatsApp', () => {
+  const installer = fs.readFileSync(path.join(ROOT,'ops/whatsapp-control/INSTALAR_SINGLETON_AUTOREPAIR.command'),'utf8');
+  assert.match(installer, /BACKUP_DIR/);
+  assert.match(installer, /STATE_BEFORE/);
+  assert.match(installer, /STATE_AFTER/);
+  assert.match(installer, /--no-deps --force-recreate whatsapp-agent/);
+  assert.match(installer, /HostConfig.*Init/si);
+  assert.match(installer, /WA_STARTUP_RECOVERY/);
+  assert.doesNotMatch(installer, /curl[^\n]*\/tick|curl[^\n]*\/session\/warmup|curl[^\n]*\/session\/link\/start/);
+});
