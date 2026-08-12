@@ -24,7 +24,7 @@ async function ensureBrowser(){return {page};} async function firstVisible(){ret
 function composerLocators(p) {return [p.locator('footer')];}
 app.get('/health',(_req,res)=>{const p={};res.json({ok:true,service:'vla-whatsapp-agent',version: '1.2.0', mode: MODE, caracas: p, stateFile: STATE_FILE});});
 app.post('/session/warmup',async(req,res)=>{if(!tokenOk(req))return res.status(401).json({ok:false});try{res.json(await serial('browser',()=>sessionStatus({navigate:true})));}catch(error){res.status(500).json({ok:false,error:safeError(error)});}});
-app.get('/session/screenshot',async(_req,res)=>res.type('png').send(Buffer.from('x')));
+app.get('/session/screenshot', async (_req,res) => { res.type('png').send(Buffer.from('x')); });
 app.listen(PORT,'0.0.0.0',()=>console.log(\`VLA WhatsApp Agent v1.2 escuchando en :\${PORT} · modo=\${MODE}\`));`;
 }
 
