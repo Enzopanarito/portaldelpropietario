@@ -57,9 +57,19 @@ to = "/.netlify/functions/public-data"
 status = 200
 force = true
 
+# Todo reporte digital entra por el gateway V10. El propio gateway delega
+# efectivo y casos normales al flujo heredado cuando corresponde.
 [[redirects]]
 from = "/api/vla/report-payment"
-to = "/.netlify/functions/public-report-payment"
+to = "/.netlify/functions/public-report-payment-v10"
+status = 200
+force = true
+
+# La prelectura visible y cualquier llamada directa usan el mismo validador V10;
+# así no dependemos del overlay del navegador como barrera de seguridad.
+[[redirects]]
+from = "/api/vla/payment-proof-prefill"
+to = "/.netlify/functions/payment-proof-prefill-v10"
 status = 200
 force = true
 
