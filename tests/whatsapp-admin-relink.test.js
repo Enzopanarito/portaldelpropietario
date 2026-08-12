@@ -14,7 +14,10 @@ function source(rel) { return fs.readFileSync(path.join(ROOT, rel), 'utf8'); }
 function syntheticAgent() {
   return `'use strict';
 const express=require('express'); const app=express(); const PORT=8787, MODE='real', STATE_FILE='/data/state.json';
-let context=null; let page=null; let browserLock=Promise.resolve(); let tickLock=Promise.resolve();
+let context = null;
+let page = null;
+let browserLock = Promise.resolve();
+let tickLock = Promise.resolve();
 function serial(lockName,fn){const run=(lockName==='browser'?browserLock:tickLock).then(fn,fn);if(lockName==='browser')browserLock=run.catch(()=>{});else tickLock=run.catch(()=>{});return run;}
 function nowIso(){return new Date().toISOString();} function safeError(e){return String(e&&e.message||e);} function tokenOk(){return true;}
 async function ensureBrowser(){return {page};} async function firstVisible(){return null;} async function sessionStatus(){return {loggedIn:false};}
