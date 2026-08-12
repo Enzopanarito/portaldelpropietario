@@ -69,11 +69,12 @@ test('patch del agente es idempotente, respalda symlinks y corre antes de Chromi
   assert.doesNotThrow(() => new Function(once));
 });
 
-test('compose activa init sin tocar IPC y es idempotente', () => {
+test('compose activa init y startup recovery false sin tocar IPC', () => {
   const original = `services:\n  whatsapp-agent:\n    build:\n      context: ./whatsapp-agent\n    container_name: vla-whatsapp-agent\n    restart: unless-stopped\n    environment:\n      WA_MODE: real\n`;
   const once = composeInit.patchSource(original);
   assert.equal(composeInit.patchSource(once), once);
   assert.match(once, /restart: unless-stopped\n    init: true # VLA_PLAYWRIGHT_INIT_V1/);
+  assert.match(once, /environment:\n      WA_STARTUP_RECOVERY: "false" # VLA_STARTUP_RECOVERY_OFF_V1/);
   assert.doesNotMatch(once, /ipc:/);
 });
 
