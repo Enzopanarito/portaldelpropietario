@@ -21,4 +21,18 @@ patch('netlify/functions/process-payment-report.js',[
   ["        reference: safeDisplayText(f.Referencia || '',120)","        reference: verifiedReference"]
 ]);
 
+patch('netlify/edge-functions/owner-mobile-assets.js',[
+  [
+    "const MOBILE_RELEASE='owner-mobile-fluid-v2-payment-progressive-v8-2026-08-08';",
+    "const MOBILE_RELEASE='owner-mobile-fluid-v2-payment-proof-first-v9-2026-08-12';"
+  ]
+]);
+
+patch('.github/workflows/netlify-production.yml',[
+  [
+    'run: node --test tests/owner-payment-report-browser.cjs tests/payment-duplicate-feedback-browser.cjs tests/admin-owner-access-browser.cjs tests/admin-premium-browser.cjs tests/admin-responsive-fouc-browser.cjs',
+    'run: node --test tests/owner-payment-report-browser.cjs tests/payment-duplicate-feedback-browser.cjs tests/payment-report-proof-first-v9-browser.cjs tests/admin-owner-access-browser.cjs tests/admin-premium-browser.cjs tests/admin-responsive-fouc-browser.cjs'
+  ]
+]);
+
 console.log('payment-report-v9-surgical-patch: OK');
