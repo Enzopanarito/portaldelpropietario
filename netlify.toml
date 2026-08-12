@@ -104,6 +104,11 @@ path = "/admin*"
 function = "admin-whatsapp-control"
 path = "/admin*"
 
+# Re-vinculación se ejecuta después del control principal y solo extiende su UI.
+[[edge_functions]]
+function = "admin-whatsapp-relink"
+path = "/admin*"
+
 [[headers]]
 for = "/*"
   [headers.values]
