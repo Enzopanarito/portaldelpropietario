@@ -98,6 +98,17 @@ path = "/admin*"
 function = "admin-monthly-close"
 path = "/admin*"
 
+# WhatsApp se declara al final del pipeline admin para que solo añada su
+# interfaz/control y nunca altere los middlewares financieros ya existentes.
+[[edge_functions]]
+function = "admin-whatsapp-control"
+path = "/admin*"
+
+# Re-vinculación se ejecuta después del control principal y solo extiende su UI.
+[[edge_functions]]
+function = "admin-whatsapp-relink"
+path = "/admin*"
+
 [[headers]]
 for = "/*"
   [headers.values]

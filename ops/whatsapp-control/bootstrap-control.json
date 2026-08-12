@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "mode": "paused",
+  "schedules": ["09:00", "18:00"],
+  "warmupMinutes": 5,
+  "updatedAt": null,
+  "updatedBy": "safe-bootstrap"
+}
