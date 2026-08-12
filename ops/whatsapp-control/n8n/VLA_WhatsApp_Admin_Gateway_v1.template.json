@@ -3,7 +3,9 @@
   "active": false,
   "settings": {
     "timezone": "America/Caracas",
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveExecutionProgress": false
   },
   "nodes": [
     {
@@ -77,6 +79,6 @@
   "pinData": {},
   "meta": {
     "preparedFor": "n8n 2.33.7",
-    "warning": "PLANTILLA. Reemplazar ambos IDs de credencial antes de importar y mantener inactiva hasta pruebas."
+    "warning": "PLANTILLA. Reemplazar ambos IDs de credencial antes de importar y mantener inactiva hasta pruebas. Las ejecuciones exitosas no guardan payload para evitar persistir material efímero de vinculación."
   }
 }
