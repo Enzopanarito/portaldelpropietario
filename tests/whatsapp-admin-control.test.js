@@ -38,6 +38,13 @@ test('1440 minutos del día respetan exactamente la ventana 08:00..20:59', () =>
   }
 });
 
+test('relay calcula la ventana con hora de Venezuela y mantiene 21:00 excluida', () => {
+  assert.equal(relay.inAllowedWindowAt(new Date('2026-08-11T11:59:00Z')), false); // 07:59 Caracas
+  assert.equal(relay.inAllowedWindowAt(new Date('2026-08-11T12:00:00Z')), true);  // 08:00 Caracas
+  assert.equal(relay.inAllowedWindowAt(new Date('2026-08-12T00:59:00Z')), true);  // 20:59 Caracas
+  assert.equal(relay.inAllowedWindowAt(new Date('2026-08-12T01:00:00Z')), false); // 21:00 Caracas
+});
+
 test('configuración normaliza, ordena y elimina horarios duplicados', () => {
   const cfg = relay.normalizeConfig({ mode: 'automatic', schedules: ['18:00', '09:00', '09:00'], warmupMinutes: 5 });
   assert.deepEqual(cfg, { mode: 'automatic', schedules: ['09:00', '18:00'], warmupMinutes: 5 });
@@ -117,13 +124,69 @@ test('controlador encola run y warmup, serializa operaciones y limita reintentos
   assert.equal(controller.RETRY_MS, 5 * 60 * 1000);
 });
 
-test('frontend unifica Comunicaciones/WhatsApp y no expone secretos ni mutaciones financieras', () => {
+test('relay invalida visualmente una sesión cacheada si la última verificación falló', () => {
+  const raw = {
+    ok: true,
+    config: { mode: 'automatic', schedules: ['09:00', '18:00'], warmupMinutes: 5 },
+    agent: { ok: true, mode: 'real' },
+    session: { loggedIn: true },
+    runtime: {
+      lastWarmupAt: '2026-08-11T23:17:17.000Z',
+      lastRunAt: null,
+      lastResult: null,
+      lastError: 'browserType.launchPersistentContext: Target page, context or browser has been closed Browser logs: /ms-playwright/chromium-1234/chrome-linux/chrome',
+      runInProgress: false,
+      warmupInProgress: false,
+      nextRunAt: '2026-08-12T13:00:00.000Z'
+    },
+    history: [
+      { at: '2026-08-12T01:36:54.000Z', action: 'warmup', result: 'ERROR', detail: 'browserType.launchPersistentContext: Target page, context or browser has been closed Browser logs: /ms-playwright/chromium-1234/chrome-linux/chrome' },
+      { at: '2026-08-12T01:36:54.000Z', action: 'queue-warmup', result: 'ACCEPTED', detail: 'admin · c0174f7c-336a-4346-a8e6-1e9d614cd496' }
+    ]
+  };
+  const safe = relay.sanitizeStatus(raw);
+  assert.equal(safe.session.status, 'failed');
+  assert.equal(safe.session.loggedIn, null);
+  assert.equal(safe.general.status, 'attention');
+  assert.match(safe.runtime.lastError, /navegador del agente no inició correctamente/i);
+  const serialized = JSON.stringify(safe);
+  assert.doesNotMatch(serialized, /c0174f7c-336a-4346-a8e6-1e9d614cd496/);
+  assert.doesNotMatch(serialized, /\/ms-playwright\/chromium/);
+});
+
+test('relay presenta historial administrativo sin jerga ni IDs técnicos', () => {
+  const safe = relay.sanitizeStatus({
+    ok: true,
+    config: { mode: 'automatic', schedules: ['09:00', '18:00'], warmupMinutes: 5 },
+    agent: { ok: true, mode: 'real' },
+    session: { loggedIn: true },
+    runtime: { lastWarmupAt: '2026-08-12T01:43:33.000Z', lastError: null, runInProgress: false, warmupInProgress: false },
+    history: [
+      { at: '2026-08-12T01:43:33.000Z', action: 'warmup', result: 'OK', detail: 'admin' },
+      { at: '2026-08-12T01:43:25.000Z', action: 'queue-warmup', result: 'ACCEPTED', detail: 'admin · d8ab0b1b-937c-4fbc-9067-b71bdaaf05a1' },
+      { at: '2026-08-12T01:03:49.000Z', action: 'config', result: 'OK', detail: 'automatic · 09:00, 18:00' }
+    ]
+  });
+  assert.deepEqual(safe.history.map(x => x.event), ['Verificación de WhatsApp', 'Verificación solicitada', 'Configuración actualizada']);
+  assert.deepEqual(safe.history.map(x => x.status), ['Correcto', 'Aceptado', 'Correcto']);
+  assert.doesNotMatch(JSON.stringify(safe), /d8ab0b1b-937c-4fbc-9067-b71bdaaf05a1|queue-warmup|ACCEPTED/);
+});
+
+test('frontend unifica WhatsApp, bloquea acciones imposibles y tiene historial móvil', () => {
   const edge = source('netlify/edge-functions/admin-whatsapp-control.js');
   assert.match(edge, /data-target='whatsapp-control'/);
   assert.match(edge, /href=\"\/whatsapp\.html\"/);
   assert.match(edge, /data-wa-control/);
   assert.match(edge, /#whatsapp-control/);
-  assert.match(edge, /08:00–21:00/);
+  assert.match(edge, /08:00–20:59/);
+  assert.match(edge, /Fuera de horario/);
+  assert.match(edge, /windowState\.allowed===false/);
+  assert.match(edge, /cfg\.mode==='automatic'/);
+  assert.match(edge, /sm:hidden/);
+  assert.match(edge, /hidden sm:block overflow-x-auto/);
+  assert.match(edge, /Estado general/);
+  assert.match(edge, /Planificador/);
+  assert.match(edge, /Agente/);
   assert.doesNotMatch(edge, /WA_AGENT_TOKEN|AIRTABLE_API_TOKEN|ADMIN_TOKEN_SECRET|PAYMENT_PROOF_ENCRYPTION_KEY/);
   assert.doesNotMatch(edge, /monthly-close|admin-manual-payment|process-payment-report|mkj/i);
 });
@@ -142,7 +205,7 @@ test('backend histórico whatsapp-jobs queda conservado e independiente', () => 
   assert.match(oldBackend, /requireAdmin/);
 });
 
-test('relay WhatsApp nuevo es independiente de Airtable y exige confirmación manual', () => {
+test('relay WhatsApp nuevo es independiente de Airtable, sanea salida y exige confirmación manual', () => {
   const text = source('netlify/functions/whatsapp-control.js');
   assert.doesNotMatch(text, /AIRTABLE_|withAirtableUsage/);
   assert.match(text, /body\.confirm !== 'ENVIAR'/);
@@ -150,6 +213,8 @@ test('relay WhatsApp nuevo es independiente de Airtable y exige confirmación ma
   assert.match(text, /VLA_WHATSAPP_CONTROL_URL/);
   assert.match(text, /VLA_WHATSAPP_CONTROL_SECRET/);
   assert.match(text, /X-VLA-Control-Secret/);
+  assert.match(text, /sanitizeStatus/);
+  assert.match(text, /inAllowedWindowAt/);
   assert.doesNotMatch(text, /WA_AGENT_TOKEN/);
 });
 
