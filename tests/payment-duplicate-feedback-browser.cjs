@@ -31,7 +31,8 @@ test('un comprobante duplicado muestra un mensaje persistente y permite elegir o
     assert.match(await validation.innerText(),/Este comprobante ya fue (?:reportado|utilizado)/i,'La validación no debe borrar el mensaje de duplicado.');
     const second=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),Buffer.from('new-fixture')]);
     await page.setInputFiles('#payProof',{name:'comprobante-nuevo.png',mimeType:'image/png',buffer:second});
-    await page.getByText(/^Listo$/).waitFor({state:'visible',timeout:10000});
+    await page.locator('#vla-pay-confirmation').waitFor({state:'visible',timeout:10000});
+    await page.locator('#submitReport:not([disabled])').waitFor({state:'visible',timeout:10000});
     assert.doesNotMatch(await validation.innerText(),/Este comprobante ya fue (?:reportado|utilizado)/i,'Elegir otro archivo debe limpiar el error anterior.');
   }finally{await browser.close()}
 });
