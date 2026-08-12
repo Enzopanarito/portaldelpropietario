@@ -18,9 +18,20 @@ test('los datos públicos entran directamente en la Lambda que recibe event.blob
   assert.match(source,/public-data-v3/);
 });
 
-test('el reporte entra directamente en la Lambda que recibe event.blobs',()=>{
-  assert.match(config,rewrite('/api/vla/report-payment','/.netlify/functions/public-report-payment'));
+test('el reporte entra por el gateway V10 y conserva el acceso nativo a event.blobs',()=>{
+  assert.match(config,rewrite('/api/vla/report-payment','/.netlify/functions/public-report-payment-v10'));
   assert.equal(fs.existsSync('netlify/functions/public-report-payment-modern.mjs'),false);
+  const source=fs.readFileSync('netlify/functions/public-report-payment-v10.js','utf8');
+  assert.match(source,/connectLambdaEvent\(event\)/);
+  assert.match(source,/require\('\.\/public-report-payment'\)/,'V10 debe poder delegar el flujo normal al procesador heredado certificado.');
+});
+
+test('la prelectura pública entra por el validador V10',()=>{
+  assert.match(config,rewrite('/api/vla/payment-proof-prefill','/.netlify/functions/payment-proof-prefill-v10'));
+  const source=fs.readFileSync('netlify/functions/payment-proof-prefill-v10.js','utf8');
+  assert.match(source,/validateRecipient/);
+  assert.match(source,/findDuplicateMatches/);
+  assert.match(source,/signPrefillAttestation/);
 });
 
 test('el administrador recupera el comprobante desde Lambda nativa',()=>{
