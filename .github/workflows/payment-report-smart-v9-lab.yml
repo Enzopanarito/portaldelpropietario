@@ -5,7 +5,7 @@ on:
     branches: [agent/payment-report-smart-v9]
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: payment-report-smart-v9-lab
@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Checkout work branch
         uses: actions/checkout@v6
+        with:
+          ref: agent/payment-report-smart-v9
 
       - name: Use Node.js 24
         uses: actions/setup-node@v6
@@ -28,12 +30,16 @@ jobs:
       - name: Install dependencies safely
         run: npm ci --ignore-scripts --no-audit --no-fund
 
+      - name: Apply surgical reference precedence patch
+        run: node scripts/payment-report-v9-surgical-patch.js
+
       - name: Syntax checks
         run: |
           node --check owner-payment-report-v3.js
           node --check payment-report-intelligence.js
           node --check netlify/functions/payment-proof-prefill.js
           node --check netlify/functions/public-report-payment.js
+          node --check netlify/functions/process-payment-report.js
 
       - name: Run complete release suite
         run: npm test
@@ -63,3 +69,17 @@ jobs:
 
       - name: Run payment browser gates locally
         run: node --test tests/owner-payment-report-browser.cjs tests/payment-duplicate-feedback-browser.cjs
+
+      - name: Persist tested surgical patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- netlify/functions/process-payment-report.js; then
+            echo 'Surgical patch already persisted.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add netlify/functions/process-payment-report.js
+          git commit -m 'fix(payments): prefer verified reference at approval'
+          git push origin HEAD:agent/payment-report-smart-v9
