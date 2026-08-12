@@ -30,7 +30,7 @@ jobs:
       - name: Install dependencies safely
         run: npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Apply surgical reference precedence patch
+      - name: Apply surgical v9 release patch
         run: node scripts/payment-report-v9-surgical-patch.js
 
       - name: Syntax checks
@@ -52,6 +52,7 @@ jobs:
           node tests/owner-payment-report-v3.test.js
           node tests/public-report-payment-smart.test.js
           node tests/payment-date-resolver.test.js
+          node tests/payment-reference-precedence-v9.test.js
           node tests/canonical-balance-release-gate.test.js
           node tests/all-houses-current-balance.test.js
           node tests/vla-finance-v7.test.js
@@ -70,16 +71,16 @@ jobs:
       - name: Run payment browser gates locally
         run: node --test tests/owner-payment-report-browser.cjs tests/payment-duplicate-feedback-browser.cjs tests/payment-report-proof-first-v9-browser.cjs
 
-      - name: Persist tested surgical patch
+      - name: Persist tested v9 release patch
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --quiet -- netlify/functions/process-payment-report.js; then
-            echo 'Surgical patch already persisted.'
+          if git diff --quiet -- netlify/functions/process-payment-report.js netlify/edge-functions/owner-mobile-assets.js .github/workflows/netlify-production.yml; then
+            echo 'V9 release patch already persisted.'
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add netlify/functions/process-payment-report.js
-          git commit -m 'fix(payments): prefer verified reference at approval'
+          git add netlify/functions/process-payment-report.js netlify/edge-functions/owner-mobile-assets.js .github/workflows/netlify-production.yml
+          git commit -m 'fix(payments): finalize proof-first v9 release safeguards'
           git push origin HEAD:agent/payment-report-smart-v9
