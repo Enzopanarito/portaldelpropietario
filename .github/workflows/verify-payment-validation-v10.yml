@@ -1,0 +1,55 @@
+name: Verify Payment Validation V10
+
+on:
+  push:
+    branches:
+      - agent/vla-payment-validation-lab-v10
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser-v10:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Use Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: V10 duplicate / reject / review browser flow
+        id: v10_flow
+        continue-on-error: true
+        run: node tests/payment-validation-v10-browser.cjs
+      - name: Legacy duplicate feedback compatibility
+        id: duplicate_compat
+        continue-on-error: true
+        run: node tests/payment-duplicate-feedback-browser.cjs
+      - name: Proof-first V9 compatibility
+        id: proof_first_compat
+        continue-on-error: true
+        run: node tests/payment-report-proof-first-v9-browser.cjs
+      - name: Owner payment browser compatibility
+        id: owner_payment_compat
+        continue-on-error: true
+        run: node tests/owner-payment-report-browser.cjs
+      - name: Fail if any browser contract failed
+        if: always()
+        shell: bash
+        run: |
+          echo "v10_flow=${{ steps.v10_flow.outcome }}"
+          echo "duplicate_compat=${{ steps.duplicate_compat.outcome }}"
+          echo "proof_first_compat=${{ steps.proof_first_compat.outcome }}"
+          echo "owner_payment_compat=${{ steps.owner_payment_compat.outcome }}"
+          test "${{ steps.v10_flow.outcome }}" = success
+          test "${{ steps.duplicate_compat.outcome }}" = success
+          test "${{ steps.proof_first_compat.outcome }}" = success
+          test "${{ steps.owner_payment_compat.outcome }}" = success
