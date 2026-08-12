@@ -12,9 +12,10 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="$ROOT/backups/whatsapp-admin-relink-$STAMP"
 TMP_DIR="$(mktemp -d /tmp/vla-relink.XXXXXX)"
 OVERRIDE="$TMP_DIR/relink-override.yml"
-PATCH_REF="5c5b74f9ab2bf21c31ba37ab857a31ad513283d3"
+PATCH_REF="a2866ae8a8c786a5b02e3a752d8c7c0c84bbbd45"
 RAW_BASE="https://raw.githubusercontent.com/Enzopanarito/portaldelpropietario/$PATCH_REF/ops/whatsapp-control"
 STATE_BEFORE=""
+STATE_AFTER=""
 APPLIED=0
 
 cleanup() { rm -rf "$TMP_DIR" 2>/dev/null || true; }
@@ -96,7 +97,7 @@ print("✅ Override seguro validado")
 '
 
 echo
- echo "Descargando patchers inmutables..."
+echo "Descargando patchers inmutables..."
 curl -fsSL "$RAW_BASE/patch-agent-relink.cjs" -o "$TMP_DIR/patch-agent-relink.cjs"
 curl -fsSL "$RAW_BASE/patch-controller-relink.cjs" -o "$TMP_DIR/patch-controller-relink.cjs"
 node --check "$TMP_DIR/patch-agent-relink.cjs"
@@ -112,7 +113,7 @@ grep -q 'VLA_CONTROLLER_RELINK_V1' "$CONTROLLER_SOURCE"
 echo "✅ Fuentes parcheadas y sintácticamente válidas"
 
 echo
- echo "Construyendo SOLO agente y controller..."
+echo "Construyendo SOLO agente y controller..."
 cd "$ROOT"
 compose_cmd build whatsapp-agent whatsapp-controller
 compose_cmd up -d --no-deps --force-recreate whatsapp-agent whatsapp-controller
@@ -150,9 +151,9 @@ print("✅ WA_STARTUP_RECOVERY=false después del cambio")
 docker exec vla-whatsapp-agent sh -lc "grep -q VLA_ADMIN_RELINK_V1 /app/server.js"
 docker exec vla-whatsapp-controller sh -lc "grep -q VLA_CONTROLLER_RELINK_V1 /app/controller.js"
 
-after="$(shasum -a 256 "$STATE" | awk '{print $1}')"
-echo "state_sha_after=$after"
-if [ "$STATE_BEFORE" != "$after" ]; then
+STATE_AFTER="$(shasum -a 256 "$STATE" | awk '{print $1}')"
+echo "state_sha_after=$STATE_AFTER"
+if [ "$STATE_BEFORE" != "$STATE_AFTER" ]; then
   echo "❌ state.json cambió durante la instalación."
   exit 1
 fi
