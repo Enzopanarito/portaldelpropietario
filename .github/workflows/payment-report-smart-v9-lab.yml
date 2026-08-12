@@ -1,0 +1,65 @@
+name: Payment Report Smart v9 Lab
+
+on:
+  push:
+    branches: [agent/payment-report-smart-v9]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: payment-report-smart-v9-lab
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout work branch
+        uses: actions/checkout@v6
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Install dependencies safely
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Syntax checks
+        run: |
+          node --check owner-payment-report-v3.js
+          node --check payment-report-intelligence.js
+          node --check netlify/functions/payment-proof-prefill.js
+          node --check netlify/functions/public-report-payment.js
+
+      - name: Run complete release suite
+        run: npm test
+
+      - name: Run focused payment gates
+        run: |
+          node tests/payment-report-intelligence.test.js
+          node tests/payment-proof-prefill.test.js
+          node tests/payment-proof-prefill-resilience.test.js
+          node tests/owner-payment-report-v3.test.js
+          node tests/public-report-payment-smart.test.js
+          node tests/payment-date-resolver.test.js
+          node tests/canonical-balance-release-gate.test.js
+          node tests/all-houses-current-balance.test.js
+          node tests/vla-finance-v7.test.js
+
+      - name: Reproduce public build without Netlify
+        env:
+          CONTEXT: deploy-preview
+          VLA_DATA_ENVIRONMENT: staging
+          PUBLIC_BLOB_CACHE_ENABLED: 'false'
+          PUBLIC_BLOB_CACHE_MAX_AGE_MS: '120000'
+        run: npm run build:public
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run payment browser gates locally
+        run: node --test tests/owner-payment-report-browser.cjs tests/payment-duplicate-feedback-browser.cjs
