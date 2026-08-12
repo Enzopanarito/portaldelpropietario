@@ -5,24 +5,26 @@
   function byId(id){return document.getElementById(id)}
   function safe(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
   function digital(){return document.querySelector('input[name="payChannel"]:checked')?.value==='DIGITAL'}
-  function setScan(kind,title,text){const box=byId('vla-pay-scan');if(!box)return;box.className='vla-pay-scan '+kind;box.innerHTML=`<b>${safe(title)}</b><span>${safe(text)}</span>`}
-  function setValidation(kind,title,text){const box=byId('vla-pay-validation');if(!box)return;box.className=`vla-pay-validation ${kind}`;box.classList.remove('hidden');box.innerHTML=`<b>${safe(title)}</b><span>${safe(text)}</span>`}
+  function setScan(kind,title,text){const box=byId('vla-pay-scan');if(!box)return;const className='vla-pay-scan '+kind;if(box.className!==className)box.className=className;const html=`<b>${safe(title)}</b><span>${safe(text)}</span>`;if(box.innerHTML!==html)box.innerHTML=html}
+  function setValidation(kind,title,text){const box=byId('vla-pay-validation');if(!box)return;const className=`vla-pay-validation ${kind}`;if(box.className!==className)box.className=className;box.classList.remove('hidden');const html=`<b>${safe(title)}</b><span>${safe(text)}</span>`;if(box.innerHTML!==html)box.innerHTML=html}
+  function setSubmitDisabled(value){const submit=byId('submitReport');if(submit&&submit.disabled!==Boolean(value))submit.disabled=Boolean(value)}
+  function setSubmitText(value){const submit=byId('submitReport');if(submit&&submit.textContent!==value)submit.textContent=value}
   function decorate(){
     if(!state||!digital())return;
-    const action=state.validation?.action,submit=byId('submitReport');
+    const action=state.validation?.action;
     if(action==='REJECT'){
       setScan('error','Receptor no autorizado',state.validation.message||'El receptor visible no coincide con un receptor autorizado.');
       setValidation('warn','Pago no reportable con este comprobante',state.validation.message||'Revisa el destinatario del pago.');
-      if(submit){submit.disabled=true;submit.textContent='Receptor no autorizado'}
+      setSubmitDisabled(true);setSubmitText('Receptor no autorizado');
       const confirmation=byId('vla-pay-confirmation');if(confirmation)confirmation.classList.add('hidden');
     }else if(action==='DUPLICATE_CONFIRM'){
       setScan('warn','Comprobante utilizado anteriormente',state.validation.message||'Este comprobante ya fue utilizado. Puedes continuar únicamente para revisión administrativa.');
       setValidation('warn','Requiere tu confirmación','VLA detectó con certeza que este comprobante ya fue usado. Si continúas, quedará en revisión administrativa hasta por 72 horas.');
-      if(submit&&!submit.disabled)submit.textContent=state.ownerConfirmed?'Enviar para revisión':'Continuar con revisión';
+      setSubmitDisabled(false);setSubmitText(state.ownerConfirmed?'Enviar para revisión':'Continuar con revisión');
     }else if(action==='ADMIN_REVIEW'){
       setScan('warn','Revisión administrativa',state.validation.message||'No pudimos verificar todos los datos con certeza suficiente.');
       setValidation('warn','Será revisado por administración','Puedes enviar el reporte. No se rechazará ni modificará el saldo automáticamente y será revisado en un plazo no mayor de 72 horas.');
-      if(submit&&!submit.disabled)submit.textContent='Enviar para revisión';
+      setSubmitDisabled(false);setSubmitText('Enviar para revisión');
     }else if(action==='NORMAL'){
       const recipient=state.recipientValidation?.verified?'Receptor autorizado verificado.':'';
       if(recipient)setScan('ok','Comprobante verificado',recipient+' Revisa el resumen y confirma.');
@@ -63,7 +65,8 @@
     }
     return originalFetch(input,init);
   };
-  document.addEventListener('change',event=>{if(event.target?.id==='payProof'){state=null;document.documentElement.dataset.vlaPaymentValidation='v10-pending'}},true);
+  document.addEventListener('change',event=>{if(event.target?.id==='payProof'){state=null;document.documentElement.dataset.vlaPaymentValidation='v10-pending'}else if(state)setTimeout(decorate,0)},true);
+  document.addEventListener('input',()=>{if(state)setTimeout(decorate,0)},true);
   document.addEventListener('submit',event=>{
     if(event.target?.id!=='reportForm'||!digital())return;
     if(!state?.prefillAttestation){event.preventDefault();event.stopImmediatePropagation();setValidation('warn','Vuelve a analizar el comprobante','La validación protegida no está lista. Vuelve a seleccionar el comprobante antes de enviarlo.');return}
@@ -72,5 +75,4 @@
       event.preventDefault();event.stopImmediatePropagation();modalDialog().then(confirmed=>{if(!confirmed)return;state.ownerConfirmed=true;decorate();byId('reportForm')?.requestSubmit()});
     }
   },true);
-  const observer=new MutationObserver(()=>{if(state)setTimeout(decorate,0)});document.addEventListener('DOMContentLoaded',()=>{const modal=byId('modal');if(modal)observer.observe(modal,{childList:true,subtree:true,attributes:true,attributeFilter:['class','disabled']})},{once:true});
 })();
