@@ -1,9 +1,6 @@
-name: Provision VLA LAB
+name: Provision VLA LAB (manual only)
 
 on:
-  push:
-    branches:
-      - agent/vla-payment-validation-lab-v10
   workflow_dispatch:
 
 permissions:
@@ -14,6 +11,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
+      - name: Explain current infrastructure gate
+        run: |
+          echo 'The dedicated-site LAB path is manual-only because the Netlify account currently reports its site creation limit reached.'
+          echo 'Prefer ops/vla-lab/INICIAR_VLA_LAB.command on the Mac mini.'
+
       - name: Checkout LAB branch
         uses: actions/checkout@v6
 
