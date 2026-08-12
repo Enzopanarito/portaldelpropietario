@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - main
+      - agent/vla-payment-validation-lab-v10
       - hardening-final-all-2026-07-11
       - fix-balance-pronto-pago-2026-07-11
       - fix-all-houses-pronto-pago-2026-07-11
@@ -19,7 +20,7 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -36,6 +37,9 @@ jobs:
       - name: Check Netlify function syntax
         run: find netlify/functions -maxdepth 1 -type f -name '*.js' -print0 | xargs -0 -n1 node --check
 
+      - name: Check shared payment function syntax
+        run: find netlify/functions/_shared -maxdepth 1 -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+
       - name: Check Edge Function syntax
         shell: bash
         run: |
@@ -45,6 +49,14 @@ jobs:
 
       - name: Run complete unit release suite
         run: npm test
+
+      - name: Validate VLA LAB preflight contract
+        env:
+          CONTEXT: dev
+          VLA_LAB_MODE: 'true'
+          VLA_DATA_ENVIRONMENT: staging
+          AIRTABLE_BASE_ID: appZhq8nVZ7lZ2k6K
+        run: node ops/vla-lab/preflight.js
 
       - name: Validate generated browser scripts
         run: node tests/injected-browser-scripts.test.js
@@ -62,6 +74,19 @@ jobs:
         run: |
           node tests/owner-payment-report-v3.test.js
           node tests/public-report-payment-smart.test.js
+          node tests/payment-recipient-policy-v10.test.js
+          node tests/payment-prefill-attestation.test.js
+          node tests/payment-proof-prefill-v10-decision.test.js
+
+      - name: Install Chromium for payment LAB
+        run: npx playwright install --with-deps chromium
+
+      - name: Validate payment V10 browser flows
+        run: |
+          node tests/payment-validation-v10-browser.cjs
+          node tests/payment-duplicate-feedback-browser.cjs
+          node tests/payment-report-proof-first-v9-browser.cjs
+          node tests/owner-payment-report-browser.cjs
 
       - name: Validate owner gate indicators in admin
         run: node tests/admin-owner-access-indicator.test.js
@@ -131,10 +156,12 @@ jobs:
           if [ -f package-lock.json ]; then node -e "JSON.parse(require('fs').readFileSync('package-lock.json','utf8'))"; fi
           node -e "JSON.parse(require('fs').readFileSync('release.json','utf8'))"
 
-      - name: Reproduce Netlify public build
+      - name: Reproduce Netlify public build without deploying
         env:
-          CONTEXT: deploy-preview
+          CONTEXT: dev
+          VLA_LAB_MODE: 'true'
           VLA_DATA_ENVIRONMENT: staging
+          AIRTABLE_BASE_ID: appZhq8nVZ7lZ2k6K
           PUBLIC_BLOB_CACHE_ENABLED: 'false'
           PUBLIC_BLOB_CACHE_MAX_AGE_MS: '120000'
         run: npm run build:public
