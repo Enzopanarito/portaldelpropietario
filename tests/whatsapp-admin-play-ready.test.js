@@ -38,11 +38,12 @@ test('flujo QR de re-vinculación se apila en móvil y mantiene objetivos tácti
 
 test('Pausar y Reanudar usan acciones explícitas y reanudan únicamente AUTOMÁTICO', () => {
   const backend = relay();
+  const ui = controlEdge();
   assert.match(backend, /if \(action === 'pause'\) payload = \{ mode: 'paused' \}/);
   assert.match(backend, /if \(action === 'resume'\) payload = \{ mode: 'automatic' \}/);
-  assert.match(controlEdge(), /post\('pause'/);
-  assert.match(controlEdge(), /post\('resume'/);
-  assert.match(controlEdge(), /cfg\.mode==='automatic'/);
+  assert.match(ui, /simple\('pause','Automatización pausada\.'/);
+  assert.match(ui, /simple\('resume','Automatización reanudada\.'/);
+  assert.match(ui, /cfg\.mode==='automatic'/);
 });
 
 test('RUN NOW conserva doble protección: confirmación y ventana servidor', () => {
