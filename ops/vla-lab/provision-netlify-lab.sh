@@ -4,36 +4,52 @@ set -euo pipefail
 PROD_SITE_ID="74f4f122-352c-4a3b-aa6f-5937ab99f8d3"
 LAB_NAME="vla-lab-enzopanarito-74f4f122"
 LAB_STAGING_BASE_ID="appZhq8nVZ7lZ2k6K"
+NETLIFY_TEAM_SLUG="enzopanarito"
 AUTH_TOKEN="${NETLIFY_AUTH_TOKEN_PRIMARY:-${NETLIFY_AUTH_TOKEN_FALLBACK:-}}"
+STAGE="inicio"
+trap 'echo "::error title=VLA LAB provisioning::Etapa ${STAGE} falló en la línea ${LINENO}. No se tocó producción VLA."' ERR
 
 if [ -z "$AUTH_TOKEN" ]; then
-  echo 'Falta token Netlify; no se creó ni modificó ningún sitio.'
+  echo '::error title=VLA LAB provisioning::Falta token Netlify; no se creó ni modificó ningún sitio.'
   exit 1
 fi
 echo "::add-mask::$AUTH_TOKEN"
 export NETLIFY_AUTH_TOKEN="$AUTH_TOKEN"
 
+STAGE="resolver-sitio-lab"
 echo '=== 1. Resolver o crear sitio LAB independiente ==='
-search_json="$(netlify sites:search "$LAB_NAME" --json --auth "$AUTH_TOKEN" 2>/dev/null || printf '[]')"
-lab_id="$(printf '%s' "$search_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{let j=[];try{j=JSON.parse(s)}catch{};if(!Array.isArray(j))j=j.sites||j.items||[];const n='vla-lab-enzopanarito-74f4f122';const hit=j.find(x=>x&&x.name===n);process.stdout.write(String(hit?.id||hit?.site_id||''))})")"
+sites_json="$(curl --fail-with-body --silent --show-error \
+  -H "Authorization: Bearer $AUTH_TOKEN" \
+  -H 'User-Agent: VLA-LAB-GitHub-Actions' \
+  'https://api.netlify.com/api/v1/sites?per_page=100')"
+lab_id="$(printf '%s' "$sites_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);const hit=(Array.isArray(j)?j:[]).find(x=>x&&x.name==='vla-lab-enzopanarito-74f4f122');process.stdout.write(String(hit?.id||''))})")"
 if [ -z "$lab_id" ]; then
-  create_json="$(netlify sites:create --name "$LAB_NAME" --account-slug enzopanarito --disable-linking --json --auth "$AUTH_TOKEN")"
-  lab_id="$(printf '%s' "$create_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);process.stdout.write(String(j.id||j.site_id||j.site?.id||''))})")"
+  STAGE="crear-sitio-lab"
+  create_json="$(curl --fail-with-body --silent --show-error \
+    -X POST \
+    -H "Authorization: Bearer $AUTH_TOKEN" \
+    -H 'User-Agent: VLA-LAB-GitHub-Actions' \
+    -H 'Content-Type: application/json' \
+    --data '{"name":"vla-lab-enzopanarito-74f4f122","force_ssl":true}' \
+    "https://api.netlify.com/api/v1/${NETLIFY_TEAM_SLUG}/sites")"
+  lab_id="$(printf '%s' "$create_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);process.stdout.write(String(j.id||j.site_id||''))})")"
 fi
 if [ -z "$lab_id" ]; then
-  echo 'No se pudo resolver el ID del sitio LAB.'
+  echo '::error title=VLA LAB provisioning::No se pudo resolver el ID del sitio LAB.'
   exit 1
 fi
 lab_url="https://${LAB_NAME}.netlify.app"
-echo "LAB site: $LAB_NAME"
+echo "LAB site resuelto: $LAB_NAME"
 
+STAGE="clonar-secretos"
 echo '=== 2. Clonar secretos internamente dentro de Netlify ==='
 if ! netlify env:clone --from "$PROD_SITE_ID" --to "$lab_id" --force --auth "$AUTH_TOKEN" >/dev/null 2>&1; then
-  echo 'Netlify no pudo clonar internamente las variables protegidas. LAB no será desplegado.'
+  echo '::error title=VLA LAB provisioning::Netlify no pudo clonar internamente las variables protegidas. LAB no será desplegado.'
   exit 1
 fi
-echo 'Variables clonadas sin imprimir valores.'
+echo 'Variables clonadas internamente sin imprimir valores.'
 
+STAGE="neutralizar-destinos"
 echo '=== 3. Neutralizar destinos externos del LAB ==='
 setv(){ netlify env:set "$1" "$2" --context production --site "$lab_id" --auth "$AUTH_TOKEN" --force >/dev/null; }
 sets(){ netlify env:set "$1" "$2" --context production --site "$lab_id" --auth "$AUTH_TOKEN" --force --secret >/dev/null; }
@@ -55,6 +71,7 @@ sets SMTP_SECRET 'VLA_LAB_DISABLED'
 setv MAIL_FROM 'vla-lab-disabled@invalid.invalid'
 echo 'MKJ / WhatsApp / SMTP reales neutralizados.'
 
+STAGE="parche-contexto-lab"
 echo '=== 4. Convertir SOLO la copia de trabajo del TOML a contexto LAB ==='
 node <<'NODE'
 const fs=require('fs');
@@ -84,10 +101,11 @@ text=text.replace(re,replacement.trimEnd());
 fs.writeFileSync(file,text);
 NODE
 if grep -A25 '^\[context.production.environment\]' netlify.toml | grep -q 'VLA_DATA_ENVIRONMENT = "production"'; then
-  echo 'El contexto LAB conserva production; despliegue bloqueado.'
+  echo '::error title=VLA LAB provisioning::El contexto LAB conserva production; despliegue bloqueado.'
   exit 1
 fi
 
+STAGE="preflight"
 echo '=== 5. Preflight y gates críticos ==='
 export CONTEXT=dev
 export VLA_LAB_MODE=true
@@ -100,18 +118,21 @@ node tests/payment-prefill-attestation.test.js
 node tests/payment-proof-prefill-v10-decision.test.js
 node tests/payment-v10-routing-and-lab-guard.test.js
 
+STAGE="build-lab"
 echo '=== 6. Build exacto LAB ==='
 export CONTEXT=production
 export PUBLIC_BLOB_CACHE_ENABLED=false
 export PUBLIC_BLOB_CACHE_MAX_AGE_MS=120000
 npm run build:public
 
+STAGE="deploy-lab"
 echo '=== 7. Deploy SOLO al sitio LAB ==='
 deploy_json="$(netlify deploy --prod --context production --no-build --dir dist --functions netlify/functions --site "$lab_id" --auth "$AUTH_TOKEN" --skip-functions-cache --message "VLA LAB ${GITHUB_SHA:-manual}" --json)"
 deploy_url="$(printf '%s' "$deploy_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);process.stdout.write(String(j.url||j.deploy_url||j.deploy_ssl_url||''))})")"
 [ -n "$deploy_url" ] || deploy_url="$lab_url"
 echo "LAB deployed: $deploy_url"
 
+STAGE="readiness"
 echo '=== 8. Readiness: secretos presentes, staging 15/15 y 6/6 ==='
 ready=''
 for _ in $(seq 1 24); do
@@ -119,13 +140,14 @@ for _ in $(seq 1 24); do
   sleep 5
 done
 if [ -z "$ready" ]; then
-  echo 'LAB no respondió readiness.'
+  echo '::error title=VLA LAB provisioning::LAB no respondió readiness.'
   exit 1
 fi
 printf '%s' "$ready" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);const ok=j.ready===true&&j.lab===true&&j.stagingBase===true&&j.airtableTokenAvailable===true&&j.geminiKeyAvailable===true&&j.airtableReachable===true&&j.houses===15&&j.authorizedRecipients===6&&j.externalWritesBlocked===true&&j.productionBaseAccessible===false;if(!ok){console.error(JSON.stringify(j));process.exit(1)}console.log('VLA_LAB_READINESS_OK 15/15 houses · 6/6 recipients · Gemini available · production blocked')})"
 html="$(curl --fail-with-body --silent --show-error "$deploy_url/")"
-printf '%s' "$html" | grep -q 'VLA LAB' || { echo 'Falta banner visible VLA LAB.'; exit 1; }
+printf '%s' "$html" | grep -q 'VLA LAB' || { echo '::error title=VLA LAB provisioning::Falta banner visible VLA LAB.'; exit 1; }
 
+STAGE="publicar-coordenadas"
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
   {
     echo '### 🧪 VLA LAB READY'
