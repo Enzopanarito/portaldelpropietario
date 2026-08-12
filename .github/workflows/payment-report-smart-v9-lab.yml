@@ -68,7 +68,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run payment browser gates locally
-        run: node --test tests/owner-payment-report-browser.cjs tests/payment-duplicate-feedback-browser.cjs
+        run: node --test tests/owner-payment-report-browser.cjs tests/payment-duplicate-feedback-browser.cjs tests/payment-report-proof-first-v9-browser.cjs
 
       - name: Persist tested surgical patch
         shell: bash
