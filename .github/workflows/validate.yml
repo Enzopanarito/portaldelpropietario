@@ -48,7 +48,19 @@ jobs:
           done < <(find netlify/edge-functions -maxdepth 1 -type f -name '*.js' -print0)
 
       - name: Run complete unit release suite
-        run: npm test
+        shell: bash
+        run: |
+          set -o pipefail
+          for file in tests/*.test.js; do
+            echo "===== $file ====="
+            if ! output="$(node --test "$file" 2>&1)"; then
+              echo "$output"
+              detail="$(printf '%s\n' "$output" | tail -n 18 | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g' | cut -c1-1800)"
+              echo "::error file=$file,title=VLA unit test failed::$detail"
+              exit 1
+            fi
+            echo "$output" | tail -n 5
+          done
 
       - name: Validate VLA LAB preflight contract
         env:
