@@ -3,7 +3,7 @@ const assert=require('assert');
 const att=require('../netlify/functions/_shared/_payment_prefill_attestation');
 
 (()=>{
- const env={PAYMENT_PREFILL_ATTESTATION_SECRET:'test-secret-that-is-long-enough-for-hmac'},now=new Date('2026-08-12T21:00:00Z'),ownerId:'recOwner1234567890',attachmentSha:'a'.repeat(64);
+ const env={PAYMENT_PREFILL_ATTESTATION_SECRET:'test-secret-that-is-long-enough-for-hmac'},now=new Date('2026-08-12T21:00:00Z'),ownerId='recOwner1234567890',attachmentSha='a'.repeat(64);
  const token=att.signPrefillAttestation({ownerId,attachmentSha,analysis:{method:'ZELLE',bank_or_platform:'Zelle',amount:25,currency:'USD',transaction_date:'2026-08-12',reference:'ABC',recipient_email:'payee@example.com'},recipient:{status:'VERIFIED',reasonCode:'RECIPIENT_VERIFIED',accountId:'recAccount1234567',matchType:'email'},duplicate:{certainty:'NONE'}},{env,now});
  let result=att.verifyPrefillAttestation(token,{ownerId,attachmentSha,env,now});assert.strictEqual(result.ok,true);assert.strictEqual(result.payload.ownerId,ownerId);assert.strictEqual(result.payload.analysis.recipient_email,'payee@example.com');
  result=att.verifyPrefillAttestation(token,{ownerId:'recOther123456789',attachmentSha,env,now});assert.strictEqual(result.ok,false);assert.strictEqual(result.reason,'PREFILL_OWNER_MISMATCH');
