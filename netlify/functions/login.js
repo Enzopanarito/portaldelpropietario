@@ -94,7 +94,7 @@ const handler = async function(event) {
       source: 'vla-lab-passwordless',
       passwordConfigVersion: 0,
       lab: true
-    }, { 'X-VLA-LAB-Admin': 'passwordless-session' });
+    }, { 'X-VLA-LAB-Admin': 'lab-session' });
   }
 
   const password = String(body.password || '');
