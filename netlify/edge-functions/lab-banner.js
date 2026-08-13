@@ -1,15 +1,13 @@
 async function labAdminToken(request){
   try{
-    const password=String(Deno.env.get('ADMIN_PASSWORD')||'');
-    if(!password)return'';
     const url=new URL(request.url);
     const response=await fetch(`${url.origin}/.netlify/functions/login`,{
       method:'POST',
       headers:{'content-type':'application/json','accept':'application/json','x-vla-lab-autologin':'true'},
-      body:JSON.stringify({password})
+      body:JSON.stringify({labAutologin:true})
     });
     const data=await response.json().catch(()=>({}));
-    return response.ok&&data?.success===true&&typeof data?.token==='string'?data.token:'';
+    return response.ok&&data?.success===true&&data?.lab===true&&typeof data?.token==='string'?data.token:'';
   }catch(_){return''}
 }
 
@@ -30,6 +28,8 @@ export default async (request,context)=>{
       html=html.includes('</body>')?html.replace('</body>',script+'</body>'):html+script;
       headers.set('x-vla-lab-admin','passwordless-session');
       headers.set('x-vla-lab-admin-data','isolated-staging');
+    }else{
+      headers.set('x-vla-lab-admin','passwordless-session-failed');
     }
   }
 
