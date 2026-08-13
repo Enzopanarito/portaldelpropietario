@@ -145,9 +145,10 @@ if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
   sleep 1
 fi
 
-# Usamos context=production únicamente para que Netlify Dev inyecte los secretos
-# protegidos del sitio. El netlify.toml TEMPORAL fuerza datos y destinos a LAB/staging.
-"${NETLIFY[@]}" dev --context production --host 0.0.0.0 --port 8888 --dir dist --no-open >"$LOG" 2>&1 &
+# Netlify CLI v27 no soporta --host en `netlify dev`.
+# Lo mantenemos deliberadamente en localhost y exponemos el LAB solo por túnel HTTPS
+# después de superar el readiness de staging y de bloqueo de destinos externos.
+"${NETLIFY[@]}" dev --context production --port 8888 --dir dist --no-open >"$LOG" 2>&1 &
 NETLIFY_PID=$!
 echo "$NETLIFY_PID" > "$PIDFILE"
 
@@ -175,16 +176,12 @@ if [ -z "$READY_JSON" ]; then
   exit 1
 fi
 
-LAN_IP="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)"
 LOCAL_URL="http://127.0.0.1:8888"
-LAN_URL=""
-[ -n "$LAN_IP" ] && LAN_URL="http://${LAN_IP}:8888"
 
 printf '\n%s\n' '============================================================'
 echo "🧪 VLA LAB VALIDADO Y ACTIVO"
 echo "Commit: $(git rev-parse --short HEAD)"
-echo "Local:  $LOCAL_URL"
-[ -n "$LAN_URL" ] && echo "iPhone/Mac misma Wi-Fi: $LAN_URL"
+echo "Local Mac mini: $LOCAL_URL"
 echo "Readiness: 15/15 casas · 6/6 receptores · Gemini OK"
 echo "Base: STAGING"
 echo "Producción VLA: NO desplegada"
@@ -209,16 +206,16 @@ if command -v docker >/dev/null 2>&1 && [ -n "$NGROK_TOKEN" ]; then
     done
     if [ -n "$PUBLIC_URL" ]; then
       echo "🌐 LINK HTTPS VLA LAB: $PUBLIC_URL"
-      echo "Ese es el enlace que puedes abrir también fuera de la Wi-Fi."
+      echo "Ábrelo desde tu iPhone o cualquier navegador mientras esta ventana siga abierta."
     else
-      echo "Ngrok no entregó URL externa; usa el enlace LAN mostrado arriba."
+      echo "Ngrok arrancó pero no entregó URL externa. Revisa: http://127.0.0.1:4041"
     fi
   else
     NGROK_CONTAINER=""
-    echo "Ngrok no pudo abrir una segunda sesión; usa el enlace LAN mostrado arriba."
+    echo "No se pudo abrir un segundo túnel ngrok. El LAB sigue activo localmente en $LOCAL_URL"
   fi
 else
-  echo "No se abrió túnel ngrok separado; usa el enlace LAN mostrado arriba."
+  echo "No hay ngrok disponible para este LAB. Sigue activo localmente en $LOCAL_URL"
 fi
 
 printf '\n%s\n' 'Mantén esta ventana abierta mientras pruebas. Ctrl+C apaga el LAB y restaura el netlify.toml local.'
