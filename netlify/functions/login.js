@@ -8,10 +8,12 @@ const { withAirtableUsage } = require('./_shared/_airtable_meter');
 const { issueAdminToken } = require('./_shared/_auth');
 const { loadConfigRecord, verifyPassword } = require('./_shared/_admin_auth_store');
 const { consume } = require('./_shared/_persistent_rate_limit');
+const { isLab, assertLabDataIsolation, STAGING_BASE_ID } = require('./_shared/_lab_guard');
 
 const ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
 const BLOCK_TIME_MS = 15 * 60 * 1000;
 const MAX_FAILED_ATTEMPTS = 5;
+const LAB_AUTOLOGIN_SIGNAL = '__VLA_LAB_AUTOLOGIN_STAGING_ONLY__';
 const attemptsByIp = new Map();
 
 function json(statusCode, body, extraHeaders = {}) {
@@ -59,6 +61,15 @@ async function persistentFailure(ip) {
     return { allowed: true, count: 0, retryAfter: Math.ceil(BLOCK_TIME_MS / 1000) };
   }
 }
+function labAutologinAllowed(password) {
+  if (password !== LAB_AUTOLOGIN_SIGNAL || !isLab(process.env)) return false;
+  try {
+    const isolation = assertLabDataIsolation(process.env);
+    return isolation.lab === true && isolation.baseId === STAGING_BASE_ID && isolation.dataEnvironment === 'staging';
+  } catch (_) {
+    return false;
+  }
+}
 
 const handler = async function(event) {
   if (event.httpMethod !== 'POST') return json(405, { message: 'Method Not Allowed' });
@@ -78,6 +89,18 @@ const handler = async function(event) {
     registerLocalFailure(ip);
     await persistentFailure(ip);
     return json(401, { success: false, message: 'Contraseña incorrecta.' });
+  }
+
+  if (labAutologinAllowed(password)) {
+    clearLocal(ip);
+    return json(200, {
+      success: true,
+      token: issueAdminToken({ authVersion: 0 }),
+      expiresInHours: 6,
+      source: 'vla-lab-passwordless',
+      passwordConfigVersion: 0,
+      lab: true
+    }, { 'X-VLA-LAB-Admin': 'passwordless-session' });
   }
 
   try {
@@ -116,3 +139,5 @@ const handler = async function(event) {
 };
 
 exports.handler = withAirtableUsage('login', handler);
+exports.LAB_AUTOLOGIN_SIGNAL = LAB_AUTOLOGIN_SIGNAL;
+exports.labAutologinAllowed = labAutologinAllowed;
