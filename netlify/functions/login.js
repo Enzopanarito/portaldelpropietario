@@ -13,7 +13,6 @@ const { isLab, assertLabDataIsolation, STAGING_BASE_ID } = require('./_shared/_l
 const ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
 const BLOCK_TIME_MS = 15 * 60 * 1000;
 const MAX_FAILED_ATTEMPTS = 5;
-const LAB_AUTOLOGIN_SIGNAL = '__VLA_LAB_AUTOLOGIN_STAGING_ONLY__';
 const attemptsByIp = new Map();
 
 function json(statusCode, body, extraHeaders = {}) {
@@ -61,8 +60,10 @@ async function persistentFailure(ip) {
     return { allowed: true, count: 0, retryAfter: Math.ceil(BLOCK_TIME_MS / 1000) };
   }
 }
-function labAutologinAllowed(password) {
-  if (password !== LAB_AUTOLOGIN_SIGNAL || !isLab(process.env)) return false;
+function labAutologinAllowed(event, body) {
+  const headers = event.headers || {};
+  const requested = body && body.labAutologin === true && String(headers['x-vla-lab-autologin'] || headers['X-Vla-Lab-Autologin'] || '').toLowerCase() === 'true';
+  if (!requested || !isLab(process.env)) return false;
   try {
     const isolation = assertLabDataIsolation(process.env);
     return isolation.lab === true && isolation.baseId === STAGING_BASE_ID && isolation.dataEnvironment === 'staging';
@@ -84,14 +85,7 @@ const handler = async function(event) {
   try { body = JSON.parse(event.body || '{}'); }
   catch (_) { return json(400, { success: false, message: 'Solicitud de acceso inválida.' }); }
 
-  const password = String(body.password || '');
-  if (!password || password.length > 256) {
-    registerLocalFailure(ip);
-    await persistentFailure(ip);
-    return json(401, { success: false, message: 'Contraseña incorrecta.' });
-  }
-
-  if (labAutologinAllowed(password)) {
+  if (labAutologinAllowed(event, body)) {
     clearLocal(ip);
     return json(200, {
       success: true,
@@ -101,6 +95,13 @@ const handler = async function(event) {
       passwordConfigVersion: 0,
       lab: true
     }, { 'X-VLA-LAB-Admin': 'passwordless-session' });
+  }
+
+  const password = String(body.password || '');
+  if (!password || password.length > 256) {
+    registerLocalFailure(ip);
+    await persistentFailure(ip);
+    return json(401, { success: false, message: 'Contraseña incorrecta.' });
   }
 
   try {
@@ -139,5 +140,4 @@ const handler = async function(event) {
 };
 
 exports.handler = withAirtableUsage('login', handler);
-exports.LAB_AUTOLOGIN_SIGNAL = LAB_AUTOLOGIN_SIGNAL;
 exports.labAutologinAllowed = labAutologinAllowed;
