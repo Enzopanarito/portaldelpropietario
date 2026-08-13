@@ -152,8 +152,9 @@ fi
 NETLIFY_PID=$!
 echo "$NETLIFY_PID" > "$PIDFILE"
 
+echo "Esperando a que Netlify Dev termine de cargar Functions/Edge y extensiones locales..."
 READY_JSON=""
-for _ in $(seq 1 50); do
+for attempt in $(seq 1 240); do
   if ! kill -0 "$NETLIFY_PID" 2>/dev/null; then
     echo "ERROR: VLA LAB se detuvo al iniciar."
     tail -n 100 "$LOG" || true
@@ -166,13 +167,16 @@ for _ in $(seq 1 50); do
     fi
   fi
   READY_JSON=""
+  if [ $((attempt % 15)) -eq 0 ]; then
+    echo "  ...LAB todavía iniciando (${attempt}s); no se ha abierto ningún enlace externo."
+  fi
   sleep 1
 done
 
 if [ -z "$READY_JSON" ]; then
-  echo "ERROR: el LAB arrancó pero NO superó el readiness de aislamiento."
+  echo "ERROR: el LAB arrancó pero NO superó el readiness de aislamiento después de 240 segundos."
   echo "No se abrirá ningún enlace externo."
-  tail -n 100 "$LOG" || true
+  tail -n 120 "$LOG" || true
   exit 1
 fi
 
