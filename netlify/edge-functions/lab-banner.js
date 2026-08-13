@@ -26,9 +26,10 @@ export default async (request,context)=>{
   if(pathname==='/admin.html'||pathname==='/admin'){
     const token=await labAdminToken(request);
     if(token){
-      const script=`<script id="vla-lab-admin-autologin">(function(){try{sessionStorage.setItem('vla-admin-auth','true');sessionStorage.setItem('vla-admin-token',${JSON.stringify(token)});sessionStorage.setItem('vla-admin-lab','true');if(typeof showApp==='function'){showApp();}else{var login=document.getElementById('login'),app=document.getElementById('app');if(login)login.classList.add('hidden');if(app)app.classList.remove('hidden');}}catch(e){console.error('VLA LAB autologin no disponible');}})();</script>`;
+      const script=`<script id="vla-lab-admin-autologin">(function(){try{var nativeFetch=window.fetch.bind(window);window.fetch=function(input,init){try{var url=typeof input==='string'?input:(input&&input.url)||'';if(url.indexOf('/.netlify/functions/admin-data')===0){var replacement=url.replace('/.netlify/functions/admin-data','/.netlify/functions/admin-data-lab');if(typeof input==='string')input=replacement;else input=new Request(replacement,input);}}catch(_){}return nativeFetch(input,init);};sessionStorage.setItem('vla-admin-auth','true');sessionStorage.setItem('vla-admin-token',${JSON.stringify(token)});sessionStorage.setItem('vla-admin-lab','true');if(typeof showApp==='function'){showApp();}else{var login=document.getElementById('login'),app=document.getElementById('app');if(login)login.classList.add('hidden');if(app)app.classList.remove('hidden');}}catch(e){console.error('VLA LAB autologin no disponible');}})();</script>`;
       html=html.includes('</body>')?html.replace('</body>',script+'</body>'):html+script;
       headers.set('x-vla-lab-admin','passwordless-session');
+      headers.set('x-vla-lab-admin-data','isolated-staging');
     }
   }
 
