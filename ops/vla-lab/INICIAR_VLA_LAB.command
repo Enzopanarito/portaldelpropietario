@@ -1,9 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-SITE_ID="74f4f122-352c-4a3b-aa6f-5937ab99f8d3"
 STAGING_BASE="appZhq8nVZ7lZ2k6K"
 LAB_BRANCH="agent/vla-payment-validation-lab-v10"
+SECRETS_FILE="$HOME/.config/vla-lab/secrets.env"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 cd "$ROOT"
@@ -11,27 +11,25 @@ cd "$ROOT"
 LOG="/tmp/vla-lab-netlify.log"
 PIDFILE="/tmp/vla-lab-netlify.pid"
 READINESS_FILE="/tmp/vla-lab-readiness.json"
-TOML_BACKUP="$(mktemp /tmp/vla-lab-netlify.toml.XXXXXX)"
+ENV_BACKUP=""
 NETLIFY_PID=""
 NGROK_CONTAINER=""
-RESTORED=0
 
-restore_toml(){
-  if [ "$RESTORED" -eq 0 ] && [ -f "$TOML_BACKUP" ]; then
-    cp "$TOML_BACKUP" "$ROOT/netlify.toml" 2>/dev/null || true
-    rm -f "$TOML_BACKUP" 2>/dev/null || true
-    RESTORED=1
+restore_env(){
+  if [ -n "$ENV_BACKUP" ] && [ -f "$ENV_BACKUP" ]; then
+    cp "$ENV_BACKUP" "$ROOT/.env" 2>/dev/null || true
+    rm -f "$ENV_BACKUP" 2>/dev/null || true
+  else
+    rm -f "$ROOT/.env" 2>/dev/null || true
   fi
 }
 cleanup(){
   if [ -n "$NGROK_CONTAINER" ]; then docker rm -f "$NGROK_CONTAINER" >/dev/null 2>&1 || true; fi
   if [ -n "$NETLIFY_PID" ]; then kill "$NETLIFY_PID" 2>/dev/null || true; fi
   rm -f "$PIDFILE" "$READINESS_FILE" 2>/dev/null || true
-  restore_toml
+  restore_env
 }
 trap cleanup EXIT INT TERM HUP
-
-cp netlify.toml "$TOML_BACKUP"
 
 printf '\n🧪 VLA LAB · ARRANQUE SEGURO\n'
 printf '%s\n' '----------------------------------------------'
@@ -54,11 +52,64 @@ if [ -n "$(git status --porcelain --untracked-files=no 2>/dev/null || true)" ]; 
   exit 1
 fi
 
+if [ ! -f "$SECRETS_FILE" ]; then
+  echo "ERROR: faltan las credenciales locales exclusivas del LAB."
+  echo "Ejecuta primero:"
+  echo "  chmod +x ops/vla-lab/CONFIGURAR_CREDENCIALES_LAB.command"
+  echo "  ./ops/vla-lab/CONFIGURAR_CREDENCIALES_LAB.command"
+  exit 1
+fi
+
+# shellcheck disable=SC1090
+source "$SECRETS_FILE"
+[ -n "${AIRTABLE_API_TOKEN:-}" ] || { echo 'ERROR: AIRTABLE_API_TOKEN LAB vacío.'; exit 1; }
+[ -n "${GEMINI_API_KEY:-}" ] || { echo 'ERROR: GEMINI_API_KEY LAB vacío.'; exit 1; }
+
+# Verificación directa antes de levantar Netlify Dev. Nunca imprime las claves.
+echo 'Verificando credenciales exclusivas del LAB...'
+AIR_STATUS="$(curl -sS -o /tmp/vla-lab-airtable-check.json -w '%{http_code}' \
+  -H "Authorization: Bearer $AIRTABLE_API_TOKEN" \
+  "https://api.airtable.com/v0/${STAGING_BASE}/Propietarios?maxRecords=1" 2>/dev/null || true)"
+[ "$AIR_STATUS" = "200" ] || { echo "ERROR: Airtable STAGING rechazó la credencial LAB (HTTP ${AIR_STATUS:-sin respuesta})."; rm -f /tmp/vla-lab-airtable-check.json; exit 1; }
+rm -f /tmp/vla-lab-airtable-check.json
+
+GEM_STATUS="$(curl -sS -o /tmp/vla-lab-gemini-check.json -w '%{http_code}' \
+  "https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_API_KEY}" 2>/dev/null || true)"
+[ "$GEM_STATUS" = "200" ] || { echo "ERROR: Gemini rechazó la credencial LAB (HTTP ${GEM_STATUS:-sin respuesta})."; rm -f /tmp/vla-lab-gemini-check.json; exit 1; }
+rm -f /tmp/vla-lab-gemini-check.json
+
+echo 'Credenciales LAB: Airtable STAGING OK · Gemini OK'
+
+# Netlify Dev lee .env localmente. Creamos uno efímero y lo eliminamos/restauramos al cerrar.
+if [ -f "$ROOT/.env" ]; then
+  ENV_BACKUP="$(mktemp /tmp/vla-lab-existing-env.XXXXXX)"
+  cp "$ROOT/.env" "$ENV_BACKUP"
+fi
+{
+  printf 'AIRTABLE_API_TOKEN=%s\n' "$AIRTABLE_API_TOKEN"
+  printf 'GEMINI_API_KEY=%s\n' "$GEMINI_API_KEY"
+  printf 'AIRTABLE_BASE_ID=%s\n' "$STAGING_BASE"
+  printf 'VLA_DATA_ENVIRONMENT=staging\n'
+  printf 'VLA_LAB_MODE=true\n'
+  printf 'PUBLIC_BLOB_CACHE_ENABLED=false\n'
+  printf 'PUBLIC_BLOB_CACHE_MAX_AGE_MS=120000\n'
+  printf 'VLA_WHATSAPP_CONTROL_URL=disabled://vla-lab\n'
+  printf 'VLA_WHATSAPP_CONTROL_SECRET=VLA_LAB_DISABLED\n'
+  printf 'MKJ_BASE_URL=http://127.0.0.1:9\n'
+  printf 'MKJ_ORG_ID=0\n'
+  printf 'MKJ_ADMIN_EMAIL=vla-lab-disabled@invalid.invalid\n'
+  printf 'MKJ_ADMIN_PASSWORD=VLA_LAB_DISABLED\n'
+  printf 'SMTP_HOST=127.0.0.1\n'
+  printf 'SMTP_PORT=9\n'
+  printf 'SMTP_USER=vla-lab-disabled@invalid.invalid\n'
+  printf 'SMTP_SECRET=VLA_LAB_DISABLED\n'
+  printf 'MAIL_FROM=vla-lab-disabled@invalid.invalid\n'
+} > "$ROOT/.env"
+chmod 600 "$ROOT/.env"
+
 export VLA_LAB_MODE=true
 export VLA_DATA_ENVIRONMENT=staging
 export AIRTABLE_BASE_ID="$STAGING_BASE"
-export PUBLIC_BLOB_CACHE_ENABLED=false
-export PUBLIC_BLOB_CACHE_MAX_AGE_MS=120000
 export VLA_WHATSAPP_CONTROL_URL='disabled://vla-lab'
 export VLA_WHATSAPP_CONTROL_SECRET='VLA_LAB_DISABLED'
 export MKJ_BASE_URL='http://127.0.0.1:9'
@@ -71,43 +122,6 @@ export SMTP_USER='vla-lab-disabled@invalid.invalid'
 export SMTP_SECRET='VLA_LAB_DISABLED'
 export MAIL_FROM='vla-lab-disabled@invalid.invalid'
 export BROWSER=none
-
-node <<'NODE'
-const fs=require('fs');
-const file='netlify.toml';
-let text=fs.readFileSync(file,'utf8');
-const replacement=`[context.production.environment]
-  PUBLIC_BLOB_CACHE_ENABLED = "false"
-  PUBLIC_BLOB_CACHE_MAX_AGE_MS = "120000"
-  VLA_DATA_ENVIRONMENT = "staging"
-  VLA_LAB_MODE = "true"
-  AIRTABLE_BASE_ID = "appZhq8nVZ7lZ2k6K"
-  VLA_WHATSAPP_CONTROL_URL = "disabled://vla-lab"
-  VLA_WHATSAPP_CONTROL_SECRET = "VLA_LAB_DISABLED"
-  MKJ_BASE_URL = "http://127.0.0.1:9"
-  MKJ_ORG_ID = "0"
-  MKJ_ADMIN_EMAIL = "vla-lab-disabled@invalid.invalid"
-  MKJ_ADMIN_PASSWORD = "VLA_LAB_DISABLED"
-  SMTP_HOST = "127.0.0.1"
-  SMTP_PORT = "9"
-  SMTP_USER = "vla-lab-disabled@invalid.invalid"
-  SMTP_SECRET = "VLA_LAB_DISABLED"
-  MAIL_FROM = "vla-lab-disabled@invalid.invalid"
-`;
-const re=/\[context\.production\.environment\][\s\S]*?(?=\n\[context\.|\n\[functions|\n#|$)/;
-if(!re.test(text))throw new Error('No se encontró context.production.environment.');
-text=text.replace(re,replacement.trimEnd());
-fs.writeFileSync(file,text);
-NODE
-
-if grep -A28 '^\[context.production.environment\]' netlify.toml | grep -q 'VLA_DATA_ENVIRONMENT = "production"'; then
-  echo "ERROR: el contexto temporal del LAB todavía apunta a production. Abortado."
-  exit 1
-fi
-if grep -A28 '^\[context.production.environment\]' netlify.toml | grep -q 'app4nE4ReGRi2SuP2'; then
-  echo "ERROR: la base productiva apareció en el contexto temporal del LAB. Abortado."
-  exit 1
-fi
 
 node ops/vla-lab/preflight.js
 
@@ -122,20 +136,6 @@ else
   NETLIFY=(npx --yes netlify-cli@27.0.0)
 fi
 
-LOCAL_SITE=""
-if [ -f .netlify/state.json ]; then
-  LOCAL_SITE="$(node -e "try{const j=require('./.netlify/state.json');process.stdout.write(String(j.siteId||''))}catch{}" 2>/dev/null || true)"
-fi
-if [ "$LOCAL_SITE" != "$SITE_ID" ]; then
-  echo "Enlazando el clon LAB a las variables protegidas de VLA (sin deploy)..."
-  "${NETLIFY[@]}" link --id "$SITE_ID"
-fi
-
-if grep -A28 '^\[context.production.environment\]' netlify.toml | grep -q 'VLA_DATA_ENVIRONMENT = "production"'; then
-  echo "ERROR: netlify link alteró el aislamiento del LAB. Abortado."
-  exit 1
-fi
-
 npm run build:public
 
 if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
@@ -143,7 +143,8 @@ if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
   sleep 1
 fi
 
-"${NETLIFY[@]}" dev --context production --port 8888 --dir dist --no-open >"$LOG" 2>&1 &
+# IMPORTANTE: contexto dev, nunca production. Las credenciales LAB provienen del .env efímero.
+"${NETLIFY[@]}" dev --context dev --port 8888 --dir dist --no-open >"$LOG" 2>&1 &
 NETLIFY_PID=$!
 echo "$NETLIFY_PID" > "$PIDFILE"
 
@@ -169,9 +170,7 @@ for attempt in $(seq 1 60); do
 
   if [ "$HTTP_STATUS" = "503" ] && [ -n "$LAST_READINESS" ]; then
     FATAL="$(printf '%s' "$LAST_READINESS" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{process.stdout.write(JSON.parse(s).fatal===true?'true':'false')}catch{process.stdout.write('false')}})" 2>/dev/null || echo false)"
-    if [ "$FATAL" = "true" ]; then
-      break
-    fi
+    if [ "$FATAL" = "true" ]; then break; fi
   fi
 
   if [ $((attempt % 10)) -eq 0 ]; then
@@ -195,7 +194,6 @@ if [ -z "$READY_JSON" ]; then
 fi
 
 LOCAL_URL="http://127.0.0.1:8888"
-
 printf '\n%s\n' '============================================================'
 echo "🧪 VLA LAB VALIDADO Y ACTIVO"
 echo "Commit: $(git rev-parse --short HEAD)"
@@ -235,5 +233,5 @@ else
   echo "No hay ngrok disponible para este LAB. Sigue activo localmente en $LOCAL_URL"
 fi
 
-printf '\n%s\n' 'Mantén esta ventana abierta mientras pruebas. Ctrl+C apaga el LAB y restaura el netlify.toml local.'
+printf '\n%s\n' 'Mantén esta ventana abierta mientras pruebas. Ctrl+C apaga el LAB y elimina/restaura el .env efímero.'
 while kill -0 "$NETLIFY_PID" 2>/dev/null; do sleep 2; done
