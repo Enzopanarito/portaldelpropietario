@@ -10,6 +10,7 @@ cd "$ROOT"
 
 LOG="/tmp/vla-lab-netlify.log"
 PIDFILE="/tmp/vla-lab-netlify.pid"
+READINESS_FILE="/tmp/vla-lab-readiness.json"
 TOML_BACKUP="$(mktemp /tmp/vla-lab-netlify.toml.XXXXXX)"
 NETLIFY_PID=""
 NGROK_CONTAINER=""
@@ -25,7 +26,7 @@ restore_toml(){
 cleanup(){
   if [ -n "$NGROK_CONTAINER" ]; then docker rm -f "$NGROK_CONTAINER" >/dev/null 2>&1 || true; fi
   if [ -n "$NETLIFY_PID" ]; then kill "$NETLIFY_PID" 2>/dev/null || true; fi
-  rm -f "$PIDFILE" 2>/dev/null || true
+  rm -f "$PIDFILE" "$READINESS_FILE" 2>/dev/null || true
   restore_toml
 }
 trap cleanup EXIT INT TERM HUP
@@ -121,8 +122,6 @@ else
   NETLIFY=(npx --yes netlify-cli@27.0.0)
 fi
 
-# Enlaza únicamente este clon local al sitio para que Netlify Dev pueda leer
-# las variables secretas del contexto production. Este comando NO despliega.
 LOCAL_SITE=""
 if [ -f .netlify/state.json ]; then
   LOCAL_SITE="$(node -e "try{const j=require('./.netlify/state.json');process.stdout.write(String(j.siteId||''))}catch{}" 2>/dev/null || true)"
@@ -132,7 +131,6 @@ if [ "$LOCAL_SITE" != "$SITE_ID" ]; then
   "${NETLIFY[@]}" link --id "$SITE_ID"
 fi
 
-# Revalidar el parche después de netlify link.
 if grep -A28 '^\[context.production.environment\]' netlify.toml | grep -q 'VLA_DATA_ENVIRONMENT = "production"'; then
   echo "ERROR: netlify link alteró el aislamiento del LAB. Abortado."
   exit 1
@@ -145,38 +143,54 @@ if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
   sleep 1
 fi
 
-# Netlify CLI v27 no soporta --host en `netlify dev`.
-# Lo mantenemos deliberadamente en localhost y exponemos el LAB solo por túnel HTTPS
-# después de superar el readiness de staging y de bloqueo de destinos externos.
 "${NETLIFY[@]}" dev --context production --port 8888 --dir dist --no-open >"$LOG" 2>&1 &
 NETLIFY_PID=$!
 echo "$NETLIFY_PID" > "$PIDFILE"
 
-echo "Esperando a que Netlify Dev termine de cargar Functions/Edge y extensiones locales..."
+echo "Esperando readiness real del VLA LAB..."
 READY_JSON=""
-for attempt in $(seq 1 240); do
+LAST_READINESS=""
+for attempt in $(seq 1 60); do
   if ! kill -0 "$NETLIFY_PID" 2>/dev/null; then
     echo "ERROR: VLA LAB se detuvo al iniciar."
     tail -n 100 "$LOG" || true
     exit 1
   fi
-  READY_JSON="$(curl -fsS http://127.0.0.1:8888/.netlify/functions/lab-readiness 2>/dev/null || true)"
-  if [ -n "$READY_JSON" ]; then
-    if printf '%s' "$READY_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);process.exit(j.ready===true&&j.lab===true&&j.stagingBase===true&&j.airtableTokenAvailable===true&&j.geminiKeyAvailable===true&&j.airtableReachable===true&&j.houses===15&&j.authorizedRecipients===6&&j.externalWritesBlocked===true&&j.productionBaseAccessible===false?0:1)}catch{process.exit(1)}})"; then
+
+  HTTP_STATUS="$(curl -sS -o "$READINESS_FILE" -w '%{http_code}' http://127.0.0.1:8888/.netlify/functions/lab-readiness 2>/dev/null || true)"
+  if [ -s "$READINESS_FILE" ]; then LAST_READINESS="$(cat "$READINESS_FILE")"; fi
+
+  if [ "$HTTP_STATUS" = "200" ] && [ -n "$LAST_READINESS" ]; then
+    if printf '%s' "$LAST_READINESS" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);process.exit(j.ready===true&&j.lab===true&&j.stagingBase===true&&j.airtableTokenAvailable===true&&j.geminiKeyAvailable===true&&j.airtableReachable===true&&j.houses===15&&j.authorizedRecipients===6&&j.externalWritesBlocked===true&&j.productionBaseAccessible===false?0:1)}catch{process.exit(1)}})"; then
+      READY_JSON="$LAST_READINESS"
       break
     fi
   fi
-  READY_JSON=""
-  if [ $((attempt % 15)) -eq 0 ]; then
+
+  if [ "$HTTP_STATUS" = "503" ] && [ -n "$LAST_READINESS" ]; then
+    FATAL="$(printf '%s' "$LAST_READINESS" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{process.stdout.write(JSON.parse(s).fatal===true?'true':'false')}catch{process.stdout.write('false')}})" 2>/dev/null || echo false)"
+    if [ "$FATAL" = "true" ]; then
+      break
+    fi
+  fi
+
+  if [ $((attempt % 10)) -eq 0 ]; then
     echo "  ...LAB todavía iniciando (${attempt}s); no se ha abierto ningún enlace externo."
   fi
   sleep 1
 done
 
 if [ -z "$READY_JSON" ]; then
-  echo "ERROR: el LAB arrancó pero NO superó el readiness de aislamiento después de 240 segundos."
+  echo "ERROR: el LAB NO superó el readiness de aislamiento."
   echo "No se abrirá ningún enlace externo."
-  tail -n 120 "$LOG" || true
+  if [ -n "$LAST_READINESS" ]; then
+    echo
+    echo "Diagnóstico seguro del readiness:"
+    printf '%s' "$LAST_READINESS" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);const out={blocker:j.blocker||null,reason:j.reason||null,airtableStatus:j.airtableStatus||null,airtableTable:j.airtableTable||null,stagingBase:j.stagingBase,airtableTokenAvailable:j.airtableTokenAvailable,geminiKeyAvailable:j.geminiKeyAvailable,airtableReachable:j.airtableReachable,houses:j.houses,authorizedRecipients:j.authorizedRecipients,externalWritesBlocked:j.externalWritesBlocked,externalWriteChecks:j.externalWriteChecks};console.log(JSON.stringify(out,null,2))}catch{console.log('No se pudo interpretar el diagnóstico JSON.')}})"
+  fi
+  echo
+  echo "Últimas líneas de Netlify Dev:"
+  tail -n 80 "$LOG" || true
   exit 1
 fi
 
@@ -192,7 +206,6 @@ echo "Producción VLA: NO desplegada"
 echo "MKJ / WhatsApp / correo real: BLOQUEADOS"
 printf '%s\n\n' '============================================================'
 
-# Túnel HTTPS opcional y aislado. No toca el ngrok que ya use n8n.
 NGROK_TOKEN="${NGROK_AUTHTOKEN:-}"
 if [ -z "$NGROK_TOKEN" ] && [ -f "$HOME/n8n/.env" ]; then
   NGROK_TOKEN="$(grep -E '^NGROK_AUTHTOKEN=' "$HOME/n8n/.env" | tail -n 1 | cut -d= -f2- | tr -d '\r\n' || true)"
