@@ -25,8 +25,9 @@
   PUBLIC_BLOB_CACHE_MAX_AGE_MS = "120000"
   VLA_DATA_ENVIRONMENT = "staging"
 
-# VLA LAB local: la configuración del repositorio prevalece sobre variables del sitio
-# y fuerza la base staging. Integraciones externas reales quedan neutralizadas.
+# VLA LAB local. Credenciales sensibles se cargan desde ~/.config/vla-lab/secrets.env
+# y nunca se almacenan en este repositorio. Este contexto fuerza staging y neutraliza
+# todos los destinos externos reales.
 [context.dev.environment]
   PUBLIC_BLOB_CACHE_ENABLED = "false"
   PUBLIC_BLOB_CACHE_MAX_AGE_MS = "120000"
@@ -36,12 +37,14 @@
   VLA_WHATSAPP_CONTROL_URL = "disabled://vla-lab"
   VLA_WHATSAPP_CONTROL_SECRET = "VLA_LAB_DISABLED"
   MKJ_BASE_URL = "http://127.0.0.1:9"
-  MKJ_ADMIN_EMAIL = "VLA_LAB_DISABLED"
+  MKJ_ORG_ID = "0"
+  MKJ_ADMIN_EMAIL = "vla-lab-disabled@invalid.invalid"
   MKJ_ADMIN_PASSWORD = "VLA_LAB_DISABLED"
-  SMTP_HOST = ""
-  SMTP_USER = ""
-  SMTP_SECRET = ""
-  MAIL_FROM = ""
+  SMTP_HOST = "127.0.0.1"
+  SMTP_PORT = "9"
+  SMTP_USER = "vla-lab-disabled@invalid.invalid"
+  SMTP_SECRET = "VLA_LAB_DISABLED"
+  MAIL_FROM = "vla-lab-disabled@invalid.invalid"
 
 [functions."airtable-usage-rollup-scheduled"]
   schedule = "30 4 * * *"
@@ -142,27 +145,3 @@ for = "/*"
   [headers.values]
   X-Content-Type-Options = "nosniff"
   Referrer-Policy = "strict-origin-when-cross-origin"
-  Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()"
-  X-Frame-Options = "SAMEORIGIN"
-  Cross-Origin-Opener-Policy = "same-origin-allow-popups"
-  Cross-Origin-Resource-Policy = "same-site"
-  X-DNS-Prefetch-Control = "off"
-  X-Permitted-Cross-Domain-Policies = "none"
-  Strict-Transport-Security = "max-age=31536000; includeSubDomains"
-  Content-Security-Policy = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://upload.wikimedia.org; connect-src 'self'; manifest-src 'self'; worker-src 'self' blob:; upgrade-insecure-requests"
-
-[[headers]]
-for = "/.netlify/functions/*"
-  [headers.values]
-  Cache-Control = "no-store"
-  X-Content-Type-Options = "nosniff"
-
-[[headers]]
-for = "/service-worker.js"
-  [headers.values]
-  Cache-Control = "no-cache, no-store, must-revalidate"
-
-[[headers]]
-for = "/release.json"
-  [headers.values]
-  Cache-Control = "no-store, no-cache, must-revalidate"
