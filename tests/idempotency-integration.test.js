@@ -26,7 +26,7 @@ assert(guard.includes('blobs.failSafe'));
 assert.strictEqual(pkg.dependencies['@netlify/blobs'],'9.1.5');
 const installedBlobs=String(lock.packages?.['node_modules/@netlify/blobs']?.version||'');
 assert.strictEqual(installedBlobs,'9.1.5','Netlify Blobs queda fijado en la versión compatible sin la dependencia vulnerable image-size.');
-assert.strictEqual(pkg.overrides?.nanoid,'3.3.17','nanoid debe permanecer en la versión corregida.');
+assert.strictEqual(pkg.overrides?.nanoid,'3.3.18','nanoid debe permanecer en la versión corregida.');
 assert(ledger.includes("require('./_blobs_compat')"));
 assert(ledger.includes('blobsCompat.getAtomicStore(STORE_NAME)'));
 assert(ledger.includes('connectForEvent'));

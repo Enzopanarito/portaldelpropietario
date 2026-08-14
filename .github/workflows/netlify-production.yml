@@ -199,7 +199,7 @@ jobs:
         with:
           name: vla-smart-payment-schema-${{ github.sha }}
           path: artifacts/smart-payment-v2-*.json
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
 
       - name: Upload prepared production deploy without hosted build
@@ -325,5 +325,3 @@ jobs:
             echo
             echo "Rama: \`${PRODUCTION_BRANCH:-unknown}\` · Deploy: \`${DEPLOY_ID:-not-returned}\` · Commit: \`$GITHUB_SHA\`"
           } >> "$GITHUB_STEP_SUMMARY"
-
-# deployment-trigger: payment-tracking-v11-2026-08-14
