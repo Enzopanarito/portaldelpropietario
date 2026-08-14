@@ -1,0 +1,35 @@
+name: Validate Payment Report Tracking Branch
+
+on:
+  push:
+    branches:
+      - agent/payment-report-tracking-v11
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact branch commit
+        uses: actions/checkout@v6
+      - name: Use Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install dependencies safely
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run complete unit and static gates
+        run: npm test
+      - name: Build production artifact
+        env:
+          CONTEXT: production
+          VLA_DATA_ENVIRONMENT: production
+        run: npm run build:public
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run critical payment and admin browser gates
+        run: node --test tests/owner-payment-report-browser.cjs tests/payment-duplicate-feedback-browser.cjs tests/payment-report-proof-first-v9-browser.cjs tests/payment-report-tracking-browser.cjs tests/admin-owner-access-browser.cjs tests/admin-premium-browser.cjs tests/admin-responsive-fouc-browser.cjs
