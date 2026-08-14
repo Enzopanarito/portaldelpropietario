@@ -325,3 +325,5 @@ jobs:
             echo
             echo "Rama: \`${PRODUCTION_BRANCH:-unknown}\` · Deploy: \`${DEPLOY_ID:-not-returned}\` · Commit: \`$GITHUB_SHA\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+# deployment-trigger: payment-tracking-v11-2026-08-14
