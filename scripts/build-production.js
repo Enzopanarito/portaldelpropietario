@@ -12,6 +12,7 @@ const PUBLIC_FILES=[
   'mkj-access.html','seguridad.html','verificar-respaldo.html','whatsapp.html',
   'admin-autopilot.css','admin-autopilot.js','admin-feature-parity.js',
   'admin-owner-access-v1.js','admin-premium-10.css','admin-premium-10.js',
+  'admin-payment-review-v10.css','admin-payment-review-v10.js',
   'admin-premium-controls.js','admin-premium-polish.css','admin-premium-preflight.js',
   'admin-premium.css','admin-premium.js','admin-responsive-v4.css','admin-responsive-v4.js',
   'admin-session-bridge.js','owner-current-month-v1.css','owner-current-month-v1.js',

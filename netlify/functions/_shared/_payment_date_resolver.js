@@ -4,9 +4,9 @@ const DAY_MS=24*60*60*1000;
 const MAX_AGE_YEARS=2;
 const DATE_SOURCES=Object.freeze({
   PROOF_EXTRACTED:'PROOF_EXTRACTED',
-  FILE_LAST_MODIFIED:'FILE_LAST_MODIFIED',
-  REPORT_TIMESTAMP_FALLBACK:'REPORT_TIMESTAMP_FALLBACK',
-  USER_CONFIRMED:'USER_CONFIRMED'
+  USER_CONFIRMED:'USER_CONFIRMED',
+  ADMIN_CORRECTED:'ADMIN_CORRECTED',
+  UNDETERMINED:'UNDETERMINED'
 });
 const ALLOWED_DATE_SOURCES=new Set(Object.values(DATE_SOURCES));
 
@@ -44,28 +44,19 @@ function requiresServerReceptionDate(method,bank=''){
   const hint=`${normalized} ${String(bank||'')}`.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();
   return /\b(?:ZELLE|BINANCE|CRIPTO|CRYPTO|USDT|USDC|WALLET|COINBASE|PAYPAL|VENMO|CASH APP)\b/.test(hint);
 }
-function result(date,source,confidence,needsReview,evidence){return{transactionDate:date,transactionDateSource:source,transactionDateConfidence:confidence,transactionDateNeedsReview:needsReview,transactionDateEvidence:evidence}}
-function receptionTimestampResult(now){return result(todayCaracasISO(now),DATE_SOURCES.REPORT_TIMESTAMP_FALLBACK,'HIGH',false,'Fecha oficial de recepción del reporte en el servidor, zona horaria America/Caracas; el comprobante no mostró una fecha visible confiable.')}
+function result(date,source,confidence,needsReview,evidence){return{transactionDate:date||'',transactionDateSource:source,transactionDateConfidence:confidence,transactionDateNeedsReview:needsReview,transactionDateEvidence:evidence}}
+function unresolvedDateResult(){return result('',DATE_SOURCES.UNDETERMINED,'LOW',true,'El comprobante no mostró una fecha de operación confiable. La fecha de carga y la fecha del archivo no se usan como fecha de pago.')}
 function resolvePrefillDate({proofDate,attachment,method,bank,now=new Date()}={}){
   if(validTransactionDate(proofDate,{now}))return result(String(proofDate).trim(),DATE_SOURCES.PROOF_EXTRACTED,'HIGH',false,'Fecha visible extraída del comprobante por el lector inteligente.');
-  if(requiresServerReceptionDate(method,bank))return receptionTimestampResult(now);
-  const fileDate=attachmentLastModifiedDate(attachment,{now});
-  if(fileDate)return result(fileDate,DATE_SOURCES.FILE_LAST_MODIFIED,'MEDIUM',true,'Fecha de última modificación informada por el archivo; debe contrastarse con el comprobante.');
-  return result(todayCaracasISO(now),DATE_SOURCES.REPORT_TIMESTAMP_FALLBACK,'LOW',true,'Fecha oficial de Venezuela al momento de recibir el reporte; debe contrastarse con el comprobante.');
+  return unresolvedDateResult();
 }
 function resolveSubmittedDate({clientDate,clientSource,attachment,paymentChannel='DIGITAL',method,bank,trustedProofDate=null,now=new Date()}={}){
-  if(String(paymentChannel).toUpperCase()==='CASH')return result(todayCaracasISO(now),DATE_SOURCES.REPORT_TIMESTAMP_FALLBACK,'LOW',true,'Fecha oficial de Venezuela al momento de reportar el efectivo.');
   if(trustedProofDate&&trustedProofDate.transactionDateSource===DATE_SOURCES.PROOF_EXTRACTED&&validTransactionDate(trustedProofDate.transactionDate,{now}))return result(trustedProofDate.transactionDate,DATE_SOURCES.PROOF_EXTRACTED,'HIGH',false,trustedProofDate.transactionDateEvidence||'Fecha visible extraída del comprobante durante la prelectura autenticada del servidor.');
-  if(requiresServerReceptionDate(method,bank))return receptionTimestampResult(now);
   const source=ALLOWED_DATE_SOURCES.has(String(clientSource||'').trim().toUpperCase())?String(clientSource).trim().toUpperCase():'';
   const date=String(clientDate||'').trim();
-  if(source===DATE_SOURCES.FILE_LAST_MODIFIED){
-    const fileDate=attachmentLastModifiedDate(attachment,{now});
-    if(fileDate&&fileDate===date)return result(date,source,'MEDIUM',true,'Fecha de última modificación del archivo, verificada contra los metadatos recibidos.');
-  }
   if(source===DATE_SOURCES.USER_CONFIRMED&&validTransactionDate(date,{now}))return result(date,source,'MEDIUM',true,'Fecha editada o confirmada por el propietario; debe contrastarse con el comprobante.');
-  if(!source&&validTransactionDate(date,{now}))return result(date,DATE_SOURCES.USER_CONFIRMED,'MEDIUM',true,'Fecha recibida de una versión anterior del portal; debe contrastarse con el comprobante.');
-  return result(todayCaracasISO(now),DATE_SOURCES.REPORT_TIMESTAMP_FALLBACK,'LOW',true,'Fecha oficial de Venezuela al momento de recibir el reporte; debe contrastarse con el comprobante.');
+  if(!source&&!String(clientSource||'').trim()&&validTransactionDate(date,{now}))return result(date,DATE_SOURCES.USER_CONFIRMED,'MEDIUM',true,'Fecha recibida de una versión anterior del portal; debe contrastarse con el comprobante.');
+  return unresolvedDateResult();
 }
 
-module.exports={DAY_MS,MAX_AGE_YEARS,DATE_SOURCES,ALLOWED_DATE_SOURCES,datePartsInCaracas,todayCaracasISO,validTransactionDate,attachmentLastModifiedDate,requiresServerReceptionDate,receptionTimestampResult,resolvePrefillDate,resolveSubmittedDate};
+module.exports={DAY_MS,MAX_AGE_YEARS,DATE_SOURCES,ALLOWED_DATE_SOURCES,datePartsInCaracas,todayCaracasISO,validTransactionDate,attachmentLastModifiedDate,requiresServerReceptionDate,unresolvedDateResult,resolvePrefillDate,resolveSubmittedDate};

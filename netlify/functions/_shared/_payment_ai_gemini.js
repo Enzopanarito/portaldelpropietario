@@ -15,23 +15,26 @@ function safeModel(value){
 function extractionPrompt({promptVersion='',report={}}={}){
  const fields=report&&report.fields?report.fields:report||{};
  const reportedMode=clean(report.targetMode||fields['Forma de Pago Reportada']);
+ const dateFocus=clean(report.analysisFocus)==='DATE_ONLY_SECOND_PASS';
  return[
-  `Contrato de extracción: ${clean(promptVersion)||'VLA_PAYMENT_PROOF_V2'}.`,
+  `Contrato de extracción: ${clean(promptVersion)||'VLA_PAYMENT_PROOF_V3'}.`,
   'Analiza exclusivamente el comprobante adjunto. Devuelve únicamente un objeto JSON, sin Markdown ni texto adicional.',
   'No apruebes ni rechaces pagos, no declares autenticidad y no decidas acceso al portón. Solo extrae evidencia visible.',
   `La cuenta indicada por el usuario es "${reportedMode||'no indicada'}"; úsala solo como contexto, nunca para inventar datos.`,
   'Campos exactos requeridos:',
-  '{"method":"TRANSFER_VE|MOBILE_PAYMENT_VE|ZELLE|TRANSFER_US|BINANCE_PAY|CRYPTO_TRANSFER|OTHER|UNKNOWN","bank_or_platform":string|null,"amount":number|null,"currency":"VES|USD|UNKNOWN","transaction_date":"YYYY-MM-DD"|null,"transaction_time":"HH:mm:ss"|null,"reference":string|null,"transaction_status":"COMPLETED|SENT|PROCESSED|PENDING|SCHEDULED|FAILED|CANCELLED|REJECTED|UNKNOWN","recipient_name":string|null,"recipient_phone":string|null,"recipient_email":string|null,"recipient_account_visible":string|null,"memo":string|null,"confidence":number,"critical_fields_visible":boolean,"warnings":string[],"possible_visual_modification":boolean}',
+  '{"method":"TRANSFER_VE|MOBILE_PAYMENT_VE|ZELLE|TRANSFER_US|BINANCE_PAY|CRYPTO_TRANSFER|OTHER|UNKNOWN","bank_or_platform":string|null,"amount":number|null,"currency":"VES|USD|UNKNOWN","transaction_date":"YYYY-MM-DD"|null,"transaction_time":"HH:mm:ss"|null,"reference":string|null,"transaction_status":"COMPLETED|SENT|PROCESSED|PENDING|SCHEDULED|FAILED|CANCELLED|REJECTED|UNKNOWN","recipient_name":string|null,"recipient_phone":string|null,"recipient_email":string|null,"recipient_account_visible":string|null,"recipient_account_last4":string|null,"recipient_document":string|null,"recipient_binance_id":string|null,"sender_name":string|null,"sender_account_visible":string|null,"memo":string|null,"confidence":number,"critical_fields_visible":boolean,"warnings":string[],"possible_visual_modification":boolean}',
   'Reconoce comprobantes de bancos venezolanos, pago móvil, Zelle, transferencias de Estados Unidos y Binance.',
   'Para Binance usa BINANCE_PAY cuando sea Binance Pay y CRYPTO_TRANSFER cuando sea una transferencia on-chain.',
+  'Extrae por separado nombre, teléfono, correo, documento, cuenta visible, últimos cuatro dígitos y Binance/Pay ID del receptor; extrae también nombre y cuenta visible del emisor. No mezcles emisor y receptor.',
   'Si el activo visible es USDT, USDC o FDUSD usa currency="USD", conserva activo y red visibles en memo y no inventes equivalencias, red, TxID, Pay ID ni receptor.',
   'Haz una segunda revisión enfocada en la fecha: examina encabezado, detalle de operación, línea cercana al monto, referencia, estado y receptor; reconoce DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD y fechas con meses en español o inglés, y normalízalas a YYYY-MM-DD.',
+  dateFocus?'Esta es una segunda lectura independiente solicitada únicamente para resolver la fecha de la operación. Revisa la imagen completa, devuelve el contrato entero y no rellenes una fecha si sigue siendo ambigua.':'',
   'Prioriza la fecha que pertenezca a la operación o confirmación. No confundas la hora o fecha de la barra del teléfono, la fecha de descarga, la fecha del archivo ni una fecha ajena al movimiento.',
   'Si solo hay una fecha contextual junto a los datos del pago y no existe una contradicción visible, úsala como transaction_date. Si hay dos candidatas ambiguas o ninguna fecha legible, usa null y enumera brevemente las candidatas o la ambigüedad en warnings.',
   'Usa null cuando un dato no sea visible. confidence refleja solo legibilidad y certeza de extracción.',
   'critical_fields_visible solo puede ser true cuando se ven monto, moneda o activo, fecha, referencia, estado y algún dato del receptor.',
   'Si observas señales de posible edición visual, marca possible_visual_modification=true y descríbelas brevemente en warnings.'
- ].join('\n');
+ ].filter(Boolean).join('\n');
 }
 function responseText(data){
  const parts=data?.candidates?.[0]?.content?.parts;

@@ -3,14 +3,15 @@
 const assert=require('assert');
 const contract=require('../netlify/functions/_shared/_payment_ai_contract');
 
-function valid(overrides={}){return{method:'TRANSFER_VE',bank_or_platform:'Banco de Venezuela',amount:1250.5,currency:'VES',transaction_date:'2026-07-13',transaction_time:'15:30:10',reference:'000123456',transaction_status:'COMPLETED',recipient_name:'ENZO PANARITO',recipient_phone:'04140554700',recipient_email:null,recipient_account_visible:'****1234',memo:null,confidence:0.96,critical_fields_visible:true,warnings:[],possible_visual_modification:false,...overrides}}
+function valid(overrides={}){return{method:'TRANSFER_VE',bank_or_platform:'Banco de Venezuela',amount:1250.5,currency:'VES',transaction_date:'2026-07-13',transaction_time:'15:30:10',reference:'000123456',transaction_status:'COMPLETED',recipient_name:'ENZO PANARITO',recipient_phone:'04140554700',recipient_email:null,recipient_account_visible:'****1234',recipient_account_last4:'1234',recipient_document:'V12345678',recipient_binance_id:null,sender_name:'PROPIETARIO PRUEBA',sender_account_visible:'****9876',memo:null,confidence:0.96,critical_fields_visible:true,warnings:[],possible_visual_modification:false,...overrides}}
 function raw(value){return JSON.stringify(value)}
 
 (()=>{
  const schema=contract.schemaManifest();
- assert.strictEqual(schema.additionalProperties,false);assert.strictEqual(schema.minProperties,17);assert.strictEqual(schema.maxProperties,17);assert.deepStrictEqual(schema.required,contract.REQUIRED);assert.strictEqual(Object.prototype.hasOwnProperty.call(schema.properties,'approved'),false);
+ assert.strictEqual(schema.additionalProperties,false);assert.strictEqual(schema.minProperties,22);assert.strictEqual(schema.maxProperties,22);assert.deepStrictEqual(schema.required,contract.REQUIRED);assert.strictEqual(Object.prototype.hasOwnProperty.call(schema.properties,'approved'),false);
 
  const accepted=contract.evaluateRawOutput(raw(valid()),{minimumConfidence:0.85});assert.strictEqual(accepted.ok,true);assert.strictEqual(accepted.normalized.amount,1250.5);assert.strictEqual(accepted.normalized.method,'TRANSFER_VE');assert.strictEqual(accepted.normalized.critical_fields_visible,true);
+ assert.strictEqual(accepted.normalized.recipient_account_last4,'1234');assert.strictEqual(accepted.normalized.recipient_document,'V12345678');assert.strictEqual(accepted.normalized.sender_name,'PROPIETARIO PRUEBA');
  const trimmed=contract.evaluateRawOutput(raw(valid({bank_or_platform:'  Banco X  ',warnings:['  baja nitidez  ','']})));assert.strictEqual(trimmed.ok,true);assert.strictEqual(trimmed.normalized.bank_or_platform,'Banco X');assert.deepStrictEqual(trimmed.normalized.warnings,['baja nitidez']);
 
  const forbidden=contract.evaluateRawOutput(raw(valid({approved:true})));assert.strictEqual(forbidden.ok,false);assert.strictEqual(forbidden.reason,'FORBIDDEN_DECISION_OUTPUT');assert(forbidden.errors.some(message=>message.includes('approved')));

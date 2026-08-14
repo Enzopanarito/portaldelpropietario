@@ -16,7 +16,7 @@ const { parseAmountInput, resolveAmount } = require('../../payment-report-intell
 const { decodeAttachment } = require('./_shared/_payment_report_attachment');
 const { createProofStore } = require('./_shared/_payment_proof_store');
 const { computePerceptualHash } = require('./_shared/_payment_visual_hash');
-const { findDuplicateMatches } = require('./_shared/_payment_duplicate_core');
+const { findDuplicateMatches, normalizeReference:normalizeFinancialReference, canonicalFingerprint, fingerprintHash } = require('./_shared/_payment_duplicate_core');
 const { sign } = require('./_shared/_internal_job_auth');
 const { connectLambdaEvent } = require('./_shared/_blobs_compat');
 const { todayCaracasISO, resolveSubmittedDate } = require('./_shared/_payment_date_resolver');
@@ -61,7 +61,7 @@ function normalizeAnalysisSummary(value){
     prefillComplete:source.prefillComplete===true,missingLabels:(Array.isArray(source.missingLabels)?source.missingLabels:[]).slice(0,8).map(item=>optionalText(item,80)).filter(Boolean)
   };
 }
-function dateSourceLabel(source){return({PROOF_EXTRACTED:'Leída del comprobante',FILE_LAST_MODIFIED:'Inferida de la fecha del archivo',REPORT_TIMESTAMP_FALLBACK:'Hora oficial del reporte',USER_CONFIRMED:'Editada o confirmada por el propietario'}[source]||source||'No identificada')}
+function dateSourceLabel(source){return({PROOF_EXTRACTED:'Leída del comprobante',USER_CONFIRMED:'Editada o confirmada por el propietario',ADMIN_CORRECTED:'Corregida por administración',UNDETERMINED:'No detectada; requiere revisión'}[source]||source||'No identificada')}
 
 async function rateLimit(scope,identity,max){
   try{return await consume({scope,identity,max,windowMs:ABUSE_WINDOW_MS,countBeforeRecord:true});}
@@ -96,9 +96,18 @@ async function findRecentDuplicate({ownerId,mode,amountUsdRef,reference}){
   return reports.find(report=>{const fields=report.fields||{},owners=fields['Propietario que Reporta']||[],createdAt=Date.parse(report.createdTime||''),reportMode=String(fields['Forma de Pago Reportada']||''),reportAmount=money(Number(fields['Equivalente USD Reportado']||fields['Monto Reportado']||0)),reportReference=normalizeReference(fields.Referencia||'');return Array.isArray(owners)&&owners.includes(ownerId)&&reportMode===mode&&Math.abs(reportAmount-amountUsdRef)<=0.01&&reportReference===normalizedReference&&Number.isFinite(createdAt)&&createdAt>=cutoff;})||null;
 }
 
-async function listProofCandidates(tableName,{includeVisual=false}={}){
-  const formula=includeVisual?`OR({Hash SHA-256}!='',{Hash Perceptual}!='')`:`{Hash SHA-256}!=''`,params=new URLSearchParams({pageSize:'100',filterByFormula:formula});
-  ['Hash SHA-256',...(includeVisual?['Hash Perceptual']:[])].forEach(field=>params.append('fields[]',field));
+function duplicateCandidateFields(tableName,{includeVisual=false}={}){
+  const shared=['Hash SHA-256',...(includeVisual?['Hash Perceptual']:[]),'Huella Financiera','Referencia'];
+  if(tableName===TABLES.reportes)return[...shared,'Referencia Detectada','Banco o Plataforma Detectada','Banco Reportado','Método Detectado','Moneda Detectada','Forma de Pago Reportada','Monto Detectado','Monto Reportado Bs','Equivalente USD Reportado','Monto Reportado','Fecha Operación Detectada','Fecha del Reporte','Receptor Detectado'];
+  return[...shared,'Forma de Pago','Moneda Recibida','Monto Recibido','Equivalente USD Aplicado','Monto Pagado','Monto Pagado Bs','Fecha de Pago'];
+}
+async function listProofCandidates(tableName,{includeVisual=false,exactSha='',fingerprint='',reference=''}={}){
+  const referenceKey=normalizeFinancialReference(reference),clauses=[];
+  if(/^[a-f0-9]{64}$/i.test(exactSha))clauses.push(`{Hash SHA-256}='${exactSha.toLowerCase()}'`);
+  if(/^[a-f0-9]{64}$/i.test(fingerprint))clauses.push(`{Huella Financiera}='${fingerprint.toLowerCase()}'`);
+  if(referenceKey)clauses.push(`REGEX_REPLACE(UPPER({Referencia}),'[^A-Z0-9]','')='${referenceKey}'`);
+  const formula=clauses.length===1?clauses[0]:`OR(${clauses.join(',')})`,params=new URLSearchParams({pageSize:'100',filterByFormula:formula});
+  duplicateCandidateFields(tableName,{includeVisual}).forEach(field=>params.append('fields[]',field));
   let records=[],offset=null;
   do{
     if(offset)params.set('offset',offset);else params.delete('offset');
@@ -109,9 +118,11 @@ async function listProofCandidates(tableName,{includeVisual=false}={}){
   return records;
 }
 
-async function findHistoricalFileDuplicate(identity){
-  const [reports,payments]=await Promise.all([listProofCandidates(TABLES.reportes,{includeVisual:true}),listProofCandidates(TABLES.pagos,{includeVisual:true})]);
-  return findDuplicateMatches({exactSha:identity.sha256,visualHash:identity.visualHash},{reports,payments});
+async function findHistoricalFileDuplicate(identity,financial={}){
+  const fingerprint=financial.reference&&financial.bank_or_platform&&financial.currency&&financial.amount&&financial.transaction_date?fingerprintHash(canonicalFingerprint(financial)):'';
+  const query={includeVisual:true,exactSha:identity.sha256,fingerprint,reference:financial.reference};
+  const [reports,payments]=await Promise.all([listProofCandidates(TABLES.reportes,query),listProofCandidates(TABLES.pagos,query)]);
+  return findDuplicateMatches({...financial,fingerprint,exactSha:identity.sha256,visualHash:identity.visualHash},{reports,payments});
 }
 
 async function notifyAdminPaymentReport({ownerId,owner,mode,enteredCurrency,amountEntered,usdEq,amountBs,reference,rateInfo,reportId,access,bank,transactionDate,transactionDateSource,transactionDateConfidence,transactionDateNeedsReview,transactionDateEvidence,transactionStatus,observations,analysisSummary={},attachment,paymentChannel='DIGITAL',cashReceiver='',submissionId=''}){
@@ -160,7 +171,7 @@ const handler = async function(event){
   try{
     const body=JSON.parse(event.body||'{}');
     const ownerId=String(body.ownerId||'').trim(),mode=String(body.mode||'').trim(),enteredCurrency=String(body.enteredCurrency||'').trim().toUpperCase(),paymentChannel=String(body.paymentChannel||'DIGITAL').trim().toUpperCase(),rawReference=sanitizeReference(body.reference),amount=parseAmountInput(body.amount),ip=clientIp(event);
-    const cashReceiver=optionalText(body.cashReceiver,120),reportedBank=optionalText(body.bank,100),bank=paymentChannel==='CASH'?'Efectivo':reportedBank,method=paymentChannel==='CASH'?'CASH':normalizePaymentMethod(body.method,reportedBank),clientTransactionDate=String(body.transactionDate||'').trim(),transactionStatus=paymentChannel==='CASH'?'PENDING_ADMIN_CONFIRMATION':'PENDING_REVIEW',observations=optionalText(body.observations,300),analysisSummary=normalizeAnalysisSummary(body.analysisSummary),reportTimestamp=new Date().toISOString();
+    const cashReceiver=optionalText(body.cashReceiver,120),reportedBank=optionalText(body.bank,100),bank=paymentChannel==='CASH'?'Efectivo':reportedBank,method=paymentChannel==='CASH'?'CASH':normalizePaymentMethod(body.method,reportedBank),clientTransactionDate=String(body.transactionDate||'').trim(),transactionStatus=paymentChannel==='CASH'?'PENDING_ADMIN_CONFIRMATION':'PENDING_REVIEW',observations=optionalText(body.observations,300),analysisSummary=normalizeAnalysisSummary(body.analysisSummary),reportTimestamp=new Date().toISOString(),duplicateReviewRequested=body.duplicateReviewRequested===true;
     const submissionId=/^[A-Za-z0-9_-]{8,100}$/.test(String(body.submissionId||''))?String(body.submissionId):crypto.randomUUID();
     auditContext={event:'VLA_PAYMENT_REPORT_FAILED',ownerId,paymentChannel,method,submissionId};
     if(!validRecordId(ownerId))return json(400,{message:'Propietario inválido.'});
@@ -177,7 +188,7 @@ const handler = async function(event){
     const attachmentSha=attachment?crypto.createHash('sha256').update(attachment.content).digest('hex'):'';
     const trustedProofDate=attachment?verifyDateAttestation(body.dateAttestation,{ownerId,attachmentSha,method},{now:Date.parse(reportTimestamp)}):null;
     const dateResolution=resolveSubmittedDate({clientDate:clientTransactionDate,clientSource:body.transactionDateSource,attachment:body.attachment,paymentChannel,method,bank,trustedProofDate,now:new Date(reportTimestamp)}),{transactionDate,transactionDateSource,transactionDateConfidence,transactionDateNeedsReview,transactionDateEvidence}=dateResolution;
-    const reference=rawReference||(paymentChannel==='CASH'?`EFECTIVO · ${cashReceiver} · ${transactionDate}`:'');
+    const reference=rawReference||(paymentChannel==='CASH'?`EFECTIVO · ${cashReceiver} · ${submissionId.slice(-12)}`:'');
 
     const [ipLimit,ownerLimit]=await Promise.all([rateLimit('PUBLIC_REPORT_IP',ip,MAX_REPORTS_PER_IP),rateLimit('PUBLIC_REPORT_OWNER',ownerId,MAX_REPORTS_PER_OWNER)]);
     if(!ipLimit.allowed||!ownerLimit.allowed){const retryAfter=Math.max(ipLimit.retryAfter||0,ownerLimit.retryAfter||0,60);return json(429,{success:false,protected:true,message:'Se alcanzó el límite temporal de reportes. Espere antes de intentar nuevamente.'},{'Retry-After':String(retryAfter)});}
@@ -190,23 +201,24 @@ const handler = async function(event){
     const owner=await airtableGetRecord(TABLES.propietarios,ownerId);
     const ownerFields=owner?.fields||{};
 
-    const duplicate=await findRecentDuplicate({ownerId,mode,amountUsdRef:usdEq,reference});
-    if(duplicate)return json(409,{success:false,duplicate:true,retryAfterSeconds:300,message:'Este pago ya fue reportado recientemente. La administración se encuentra verificándolo. Espere al menos 5 minutos antes de intentar nuevamente.'},{'Retry-After':'300'});
+    const recentDuplicate=await findRecentDuplicate({ownerId,mode,amountUsdRef:usdEq,reference});
 
-    let proof=null,identity=null,identityReservation=null,proofStore=null;
+    let proof=null,identity=null,identityReservation=null,proofStore=null,historicalDuplicate={isDuplicate:false,possibleDuplicate:false,level:'none',score:0,type:'Sin coincidencia',evidence:[],matches:[]},specialDuplicateReview=duplicateReviewRequested;
     if(paymentChannel==='DIGITAL'){
       identity=await attachmentIdentity(attachment);
-      const historicalDuplicate=await findHistoricalFileDuplicate(identity);
-      if(historicalDuplicate.isDuplicate)return json(409,{success:false,duplicate:true,duplicateType:historicalDuplicate.type,message:'Este comprobante ya fue utilizado en un reporte o pago anterior. No se creó un reporte nuevo.'});
+      historicalDuplicate=await findHistoricalFileDuplicate(identity,{reference,bank_or_platform:bank,method,currency:enteredCurrency==='BS'?'VES':'USD',amount,transaction_date:transactionDate,recipient_name:analysisSummary.recipient});
+      if(historicalDuplicate.isDuplicate&&!duplicateReviewRequested)return json(409,{success:false,duplicate:true,duplicateLevel:'confirmed',duplicateScore:historicalDuplicate.score||100,duplicateType:historicalDuplicate.type,duplicateEvidence:historicalDuplicate.evidence||[],canSubmitForReview:true,message:'Este comprobante coincide exactamente con uno ya reportado. No se creó ningún reporte. Puedes cancelar o enviarlo de forma excepcional para revisión administrativa.'});
+      specialDuplicateReview=duplicateReviewRequested||historicalDuplicate.isDuplicate;
       proofStore=createProofStore();
-      identityReservation=await proofStore.reserveIdentity({attachmentSha:identity.sha256,requestId:submissionId,ownerId});
+      const reservationSha=specialDuplicateReview?crypto.createHash('sha256').update(`duplicate-review|${identity.sha256}|${ownerId}`).digest('hex'):identity.sha256;
+      identityReservation=await proofStore.reserveIdentity({attachmentSha:reservationSha,requestId:submissionId,ownerId});
       if(identityReservation.idempotent)return json(200,{success:true,idempotent:true,reportId:identityReservation.reportId,message:'Este reporte ya había sido recibido correctamente. No se creó un duplicado.'});
-      if(!identityReservation.acquired)return json(409,{success:false,duplicate:true,duplicateType:'Hash exacto en proceso',message:'Este comprobante ya está siendo procesado o fue usado anteriormente. No se creó un reporte nuevo.'});
-      proof=await storeEncryptedProof(`upload-${identity.sha256}`,attachment,identity,proofStore);
+      if(!identityReservation.acquired)return json(409,{success:false,duplicate:true,duplicateLevel:'confirmed',duplicateScore:100,duplicateType:'Hash exacto en proceso',duplicateEvidence:['archivo SHA-256 idéntico'],canSubmitForReview:!specialDuplicateReview,message:specialDuplicateReview?'Este comprobante ya tiene una revisión especial en curso. No se creó otro reporte.':'Este comprobante ya está siendo procesado o fue usado anteriormente. No se creó un reporte nuevo.'});
+      proof=await storeEncryptedProof(`${specialDuplicateReview?'duplicate-review':'upload'}-${reservationSha}`,attachment,identity,proofStore);
     }
 
-    const reportContext=[`Canal reportado: ${paymentChannel==='CASH'?'EFECTIVO':'DIGITAL'}`,paymentChannel==='CASH'?`Efectivo entregado a: ${cashReceiver}`:'',`Método detectado/confirmado: ${method}`,`Fecha usada por el portal: ${transactionDate}`,`Fuente de fecha: ${transactionDateSource} (${dateSourceLabel(transactionDateSource)})`,`Confianza de fecha: ${transactionDateConfidence}`,`Fecha requiere contraste: ${transactionDateNeedsReview?'SÍ':'NO'}`,`Evidencia de fecha: ${transactionDateEvidence}`,`Estado interno inicial: ${transactionStatus}`,paymentChannel==='DIGITAL'?`Prelectura completa: ${analysisSummary.prefillComplete?'SÍ':'NO'}`:'',analysisSummary.provider?`Proveedor/modelo de prelectura: ${analysisSummary.provider}`:'',analysisSummary.route?`Ruta de prelectura: ${analysisSummary.route}`:'',paymentChannel==='DIGITAL'?`Confianza de prelectura: ${Math.round(analysisSummary.confidence*100)}%`:'',analysisSummary.transactionTime?`Hora visible detectada: ${analysisSummary.transactionTime}`:'',analysisSummary.transactionStatus?`Estado visible detectado: ${analysisSummary.transactionStatus}`:'',analysisSummary.recipient?`Receptor visible detectado: ${analysisSummary.recipient}`:'',paymentChannel==='DIGITAL'?`Posible modificación visual: ${analysisSummary.possibleVisualModification?'SÍ':'NO señalada'}`:'',analysisSummary.warnings.length?`Advertencias de prelectura: ${analysisSummary.warnings.join(' · ')}`:'',analysisSummary.missingLabels.length?`Datos que requirieron apoyo: ${analysisSummary.missingLabels.join(' · ')}`:'',`ID de envío: ${submissionId}`,observations].filter(Boolean).join('\n');
-    const fields={'Propietario que Reporta':[ownerId],'Monto Reportado':usdEq,Referencia:reference,Estado:'Pendiente','Fecha del Reporte':todayCaracasISO(),'Forma de Pago Reportada':mode,'Equivalente USD Reportado':usdEq,'Estado Acceso al Reportar':String(ownerFields['Estado Acceso Portón']||'Sin configurar'),'Casa al Reportar':Number(ownerFields.Casa||0),'Fecha y Hora del Reporte':reportTimestamp,'Moneda Ingresada':enteredCurrency==='BS'?'VES':'USD','Monto Ingresado':amount,'Fuente Tasa BCV Reporte':rateInfo.source,'Archivo Obligatorio':paymentChannel==='DIGITAL','Estado de Procesamiento':paymentChannel==='CASH'?'Pendiente de administrador':'Recibido','Resultado Validación':paymentChannel==='CASH'?'Revisión manual urgente':'Pendiente','Decisión Administrativa':'Pendiente','Banco Reportado':bank,'Observaciones Reportadas':reportContext};
+    const reportContext=[`Canal reportado: ${paymentChannel==='CASH'?'EFECTIVO':'DIGITAL'}`,paymentChannel==='CASH'?`Efectivo entregado a: ${cashReceiver}`:'',`Método detectado/confirmado: ${method}`,`Fecha de operación: ${transactionDate||'NO DETECTADA'}`,`Fuente de fecha: ${transactionDateSource} (${dateSourceLabel(transactionDateSource)})`,`Confianza de fecha: ${transactionDateConfidence}`,`Fecha requiere contraste: ${transactionDateNeedsReview?'SÍ':'NO'}`,`Evidencia de fecha: ${transactionDateEvidence}`,`Estado interno inicial: ${transactionStatus}`,specialDuplicateReview?'El propietario solicitó revisión excepcional de un duplicado confirmado.':'',recentDuplicate?'Existe otro reporte reciente con propietario, cuenta, monto y referencia coincidentes.':'',paymentChannel==='DIGITAL'?`Prelectura completa: ${analysisSummary.prefillComplete?'SÍ':'NO'}`:'',analysisSummary.provider?`Proveedor/modelo de prelectura: ${analysisSummary.provider}`:'',analysisSummary.route?`Ruta de prelectura: ${analysisSummary.route}`:'',paymentChannel==='DIGITAL'?`Confianza de prelectura: ${Math.round(analysisSummary.confidence*100)}%`:'',analysisSummary.transactionTime?`Hora visible detectada: ${analysisSummary.transactionTime}`:'',analysisSummary.transactionStatus?`Estado visible detectado: ${analysisSummary.transactionStatus}`:'',analysisSummary.recipient?`Receptor visible detectado: ${analysisSummary.recipient}`:'',paymentChannel==='DIGITAL'?`Posible modificación visual: ${analysisSummary.possibleVisualModification?'SÍ':'NO señalada'}`:'',analysisSummary.warnings.length?`Advertencias de prelectura: ${analysisSummary.warnings.join(' · ')}`:'',analysisSummary.missingLabels.length?`Datos que requirieron apoyo: ${analysisSummary.missingLabels.join(' · ')}`:'',`ID de envío: ${submissionId}`,observations].filter(Boolean).join('\n');
+    const fields={'Propietario que Reporta':[ownerId],'Monto Reportado':usdEq,Referencia:reference,Estado:'Pendiente','Fecha del Reporte':todayCaracasISO(),'Forma de Pago Reportada':mode,'Equivalente USD Reportado':usdEq,'Estado Acceso al Reportar':String(ownerFields['Estado Acceso Portón']||'Sin configurar'),'Casa al Reportar':Number(ownerFields.Casa||0),'Fecha y Hora del Reporte':reportTimestamp,'Moneda Ingresada':enteredCurrency==='BS'?'VES':'USD','Monto Ingresado':amount,'Fuente Tasa BCV Reporte':rateInfo.source,'Archivo Obligatorio':paymentChannel==='DIGITAL','Estado de Procesamiento':specialDuplicateReview?'Pendiente de administrador':paymentChannel==='CASH'?'Pendiente de administrador':'Recibido','Resultado Validación':specialDuplicateReview?'Duplicado':paymentChannel==='CASH'?'Revisión manual urgente':'Pendiente','Decisión Administrativa':'Pendiente','Banco Reportado':bank,'Observaciones Reportadas':reportContext,'Fuente Fecha Operación':transactionDateSource,'Confianza Fecha Operación':transactionDateConfidence,'Fecha Requiere Revisión':transactionDateNeedsReview,'Evidencia Fecha Operación':transactionDateEvidence,'Posible Duplicado':specialDuplicateReview||Boolean(recentDuplicate),'Nivel de Duplicado':specialDuplicateReview?'confirmed':recentDuplicate?'possible':'none','Puntaje de Duplicado':specialDuplicateReview?(historicalDuplicate.score||100):recentDuplicate?60:0,'Tipo de Coincidencia':specialDuplicateReview?historicalDuplicate.type||'Hash exacto':recentDuplicate?'Referencia parcial':'Sin coincidencia','Evidencia de Duplicado':JSON.stringify(specialDuplicateReview?(historicalDuplicate.evidence||['archivo señalado para revisión especial']):recentDuplicate?['reporte reciente con datos coincidentes']:[]),'Detalle de Coincidencia':JSON.stringify(historicalDuplicate.matches||[])};
     if(paymentChannel==='DIGITAL'){
       Object.assign(fields,{
         'Normalized Analysis JSON':JSON.stringify({stage:'prefill',untrustedClientRelay:true,provider:analysisSummary.provider,route:analysisSummary.route,confidence:analysisSummary.confidence,transactionDate,transactionDateSource,transactionDateConfidence,transactionDateNeedsReview,transactionDateEvidence,transactionTime:analysisSummary.transactionTime,transactionStatus:analysisSummary.transactionStatus,recipient:analysisSummary.recipient,warnings:analysisSummary.warnings,possibleVisualModification:analysisSummary.possibleVisualModification,prefillComplete:analysisSummary.prefillComplete,missingLabels:analysisSummary.missingLabels}),
@@ -216,11 +228,11 @@ const handler = async function(event){
         'Banco o Plataforma Detectada':bank,
         'Moneda Detectada':enteredCurrency==='BS'?'VES':'USD',
         'Monto Detectado':amount,
-        'Fecha Operación Detectada':transactionDate,
         'Hora Detectada':analysisSummary.transactionTime,
         'Referencia Detectada':reference,
         'Receptor Detectado':analysisSummary.recipient
       });
+      if(transactionDate)fields['Fecha Operación Detectada']=transactionDate;
     }
     if(proof){Object.assign(fields,{'Comprobante Blob Key':proof.key,'Comprobante Nombre Original':attachment.filename,'Comprobante MIME':attachment.contentType,'Comprobante Bytes':attachment.size,'Hash SHA-256':identity.sha256,'Hash Perceptual':identity.visualHash});}
     if(mode==='Bs BCV'){fields['Monto Reportado Bs']=amountBs;fields['Tasa BCV Reporte']=rateInfo.rate;}
@@ -230,9 +242,10 @@ const handler = async function(event){
     const automationTask=paymentChannel==='CASH'?Promise.resolve({queued:false,status:'CASH_ADMIN_CONFIRMATION_REQUIRED'}):triggerBackgroundAnalysis(report.id).catch(error=>({queued:false,status:safeDisplayText(error.code||error.message,160)}));
     const notificationTask=notifyAdminPaymentReport({ownerId,owner,mode,enteredCurrency,amountEntered:amount,usdEq,amountBs,reference,rateInfo,reportId:report?.id,access,bank,transactionDate,transactionDateSource,transactionDateConfidence,transactionDateNeedsReview,transactionDateEvidence,transactionStatus,observations,analysisSummary,attachment,paymentChannel,cashReceiver,submissionId}).catch(error=>({sent:false,status:'Error enviando notificación admin',detail:safeDisplayText(error.message,500)}));
     const [automation,adminNotification]=await Promise.all([within(automationTask,POST_CREATE_TIMEOUT_MS,{queued:false,status:'BACKGROUND_TRIGGER_TIMEOUT'}),within(notificationTask,POST_CREATE_TIMEOUT_MS,{sent:false,status:'Notificación diferida para proteger la respuesta del portal'})]);
-    const message=paymentChannel==='CASH'?'Efectivo reportado. Quedó pendiente de confirmación administrativa; no se modificará el saldo ni el acceso hasta que la entrega sea verificada.':automation.queued?'Pago recibido. El motor inteligente está validando el comprobante, el receptor y posibles duplicados.':'Pago recibido y protegido. La validación se reintentará automáticamente.';
+    const requiresReview=specialDuplicateReview||transactionDateNeedsReview||analysisSummary.possibleVisualModification||!analysisSummary.prefillComplete||!['COMPLETED','SENT','PROCESSED'].includes(analysisSummary.transactionStatus);
+    const message=paymentChannel==='CASH'?'Efectivo reportado. Quedó pendiente de confirmación administrativa; no se modificará el saldo ni el acceso hasta que la entrega sea verificada.':requiresReview?'Tu pago fue recibido para revisión. Esto no cambia tu saldo ni tu acceso. Recibirás respuesta en un plazo máximo de 72 horas.':automation.queued?'Pago recibido. El motor inteligente está validando el comprobante, el receptor y posibles duplicados.':'Pago recibido y protegido. La validación se reintentará automáticamente.';
     console.info(JSON.stringify({event:'VLA_PAYMENT_REPORT_CREATED',reportId:report?.id||null,ownerId,paymentChannel,method,submissionId,reportTimestamp,transactionDate,transactionDateSource,transactionDateConfidence,dateAttestationVerified:Boolean(trustedProofDate),targetMode:mode,proofStored:Boolean(proof?.verified),analysisQueued:Boolean(automation.queued)}));
-    return json(200,deepEscapeStrings({success:true,message,reportId:report?.id,paymentChannel,targetMode:mode,enteredCurrency,amountEntered:amount,amountUsdRef:usdEq,amountBs,rateApplied:rateInfo.rate||null,method,transactionDate,transactionDateSource,transactionDateConfidence,transactionDateNeedsReview,transactionDateEvidence,reportTimestamp,attachmentIncluded:Boolean(attachment),proofStored:Boolean(proof?.verified),visualHashStored:Boolean(identity?.visualHash),automation,access,adminNotification}));
+    return json(200,deepEscapeStrings({success:true,message,reportId:report?.id,paymentChannel,targetMode:mode,enteredCurrency,amountEntered:amount,amountUsdRef:usdEq,amountBs,rateApplied:rateInfo.rate||null,method,transactionDate,transactionDateSource,transactionDateConfidence,transactionDateNeedsReview,transactionDateEvidence,duplicateReview:specialDuplicateReview,reviewDeadlineHours:requiresReview?72:null,reportTimestamp,attachmentIncluded:Boolean(attachment),proofStored:Boolean(proof?.verified),visualHashStored:Boolean(identity?.visualHash),automation,access,adminNotification}));
   }catch(error){
     console.error(JSON.stringify({...auditContext,errorCode:safeDisplayText(error.code||error.name||'UNKNOWN',120)}));
     const clientError=/adjunto|formato no permitido|no coincide con su formato|3 MB|datos inválidos|archivo vacío/i.test(String(error.message||''));

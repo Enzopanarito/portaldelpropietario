@@ -13,7 +13,7 @@ const analysis=readJson('config/payment-proof-analysis-v2.schema.json');
 const staging=readJson('config/smart-payment-staging-v2.json');
 
 assert.strictEqual(schema.schemaVersion,2);
-assert.strictEqual(schema.promptVersion,'VLA_PAYMENT_PROOF_V2_2026-07-13');
+assert.strictEqual(schema.promptVersion,'VLA_PAYMENT_PROOF_V3_2026-08-14');
 assert.strictEqual(schema.baseId,'app4nE4ReGRi2SuP2');
 assert.strictEqual(schema.safety.externalAiFallbackEnabled,false);
 assert.strictEqual(schema.safety.aiEnabledByDefault,false);
@@ -61,6 +61,7 @@ assert.deepStrictEqual(analysis.properties.transaction_status.enum,['COMPLETED',
 assert.strictEqual(analysis.properties.confidence.minimum,0);
 assert.strictEqual(analysis.properties.confidence.maximum,1);
 assert(Array.isArray(analysis.properties.reference.type)&&analysis.properties.reference.type.includes('string'),'La referencia debe conservarse como string.');
+for(const field of ['recipient_account_last4','recipient_document','recipient_binance_id','sender_name','sender_account_visible'])assert(analysis.required.includes(field),`El contrato AI no exige ${field}.`);
 
 assert.strictEqual(staging.environment,'staging');
 assert.notStrictEqual(staging.baseId,schema.baseId,'Staging no puede ser la base productiva.');

@@ -25,5 +25,5 @@ test('la certificación de producción respeta el CSP estricto del portal', () =
   assert.match(sources[2], /waitForHealthyFinancialState\(page,10000\)/);
   assert.equal(sources[3].includes('blockedTailwind<1'), false);
   assert.match(sources[4], /waitForDark\(page,10000\)/);
-  assert.match(sources[5], /progressive-v8/);
+  assert.match(sources[5], /progressive-v10/);
 });

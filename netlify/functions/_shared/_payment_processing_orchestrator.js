@@ -19,7 +19,7 @@ function defaults(){
  return{proofCore,proofStore,processingStore,duplicateCore,snapshotCore,aiContract,arbiter};
 }
 function aiFailureCode(error){const code=clean(error?.code).toUpperCase();if(code)return code;const message=clean(error?.message).toLowerCase();if(/timeout|timed out/.test(message))return'TIMEOUT';if(/rate|429/.test(message))return'RATE_LIMIT';if(/unavailable|503|502/.test(message))return'PROVIDER_UNAVAILABLE';return'TEMPORARY_ERROR'}
-function duplicateInput(proof,analysis,fingerprint){return{exactSha:proof.sha256,visualHash:clean(proof?.visualHash||analysis?.visualHash||analysis?.perceptualHash),fingerprint:clean(fingerprint),reference:analysis?.reference,bank_or_platform:analysis?.bank_or_platform,method:analysis?.method,currency:analysis?.currency,amount:analysis?.amount,transaction_date:analysis?.transaction_date,recipient_name:analysis?.recipient_name,recipient_phone:analysis?.recipient_phone,recipient_email:analysis?.recipient_email}}
+function duplicateInput(proof,analysis,fingerprint){return{exactSha:proof.sha256,visualHash:clean(proof?.visualHash||analysis?.visualHash||analysis?.perceptualHash),fingerprint:clean(fingerprint),reference:analysis?.reference,bank_or_platform:analysis?.bank_or_platform,method:analysis?.method,currency:analysis?.currency,amount:analysis?.amount,transaction_date:analysis?.transaction_date,recipient_name:analysis?.recipient_name,recipient_phone:analysis?.recipient_phone,recipient_email:analysis?.recipient_email,recipient:analysis?.recipient_binance_id||analysis?.recipient_account_last4}}
 function createOrchestrator(deps={}){
  const base=deps.modules||defaults(),proofCore=deps.proofCore||base.proofCore,duplicateCore=deps.duplicateCore||base.duplicateCore,snapshotCore=deps.snapshotCore||base.snapshotCore,aiContract=deps.aiContract||base.aiContract,arbiter=deps.arbiter||base.arbiter;
  const proofStore=deps.proofStore||base.proofStore.createProofStore(deps.proofStoreOptions||{}),processingStore=deps.processingStore||base.processingStore.createProcessingStore(deps.processingStoreOptions||{}),analysisRunner=deps.analysisRunner||null,now=deps.now||(()=>new Date());
@@ -40,7 +40,7 @@ function createOrchestrator(deps={}){
    let analysisResult=null,rawPrimary='',rawSecondary='',aiAudit=[];
    if(!config.aiEnabled||!config.primaryModel||typeof analysisRunner!=='function')analysisResult={ok:false,reason:'AI_NOT_CONFIGURED',raw:''};
    else{
-    let primaryAttempts=0,secondaryAttempts=0,lastFailure='';
+    let primaryAttempts=0,secondaryAttempts=0,lastFailure='',primaryExtracted=null,dateRefinement=false;
     for(let guard=0;guard<4;guard+=1){
      const action=aiContract.nextAiAction({config,primaryAttempts,secondaryAttempts,lastFailure});
      if(action.action==='MANUAL_URGENT'){analysisResult={ok:false,reason:action.reason||lastFailure||'AI_ATTEMPTS_EXHAUSTED',raw:rawSecondary||rawPrimary};break}
@@ -48,22 +48,29 @@ function createOrchestrator(deps={}){
      if(secondary)secondaryAttempts+=1;else primaryAttempts+=1;
      await processingStore.update(marker,secondary?'Analizando IA secundaria':action.action==='PRIMARY_RETRY'?'Reintentando IA principal':'Analizando IA principal',{primaryAttempts,secondaryAttempts});
      try{
-      const raw=await analysisRunner({role:secondary?'secondary':'primary',model,attempt:secondary?secondaryAttempts:primaryAttempts,proof:{filename:proof.filename,content:proof.content,contentType:proof.contentType,sha256:proof.sha256},report,owner:input.owner,promptVersion});
+      const analysisReport=secondary&&dateRefinement?{...report,analysisFocus:'DATE_ONLY_SECOND_PASS'}:report;
+      const raw=await analysisRunner({role:secondary?'secondary':'primary',model,attempt:secondary?secondaryAttempts:primaryAttempts,proof:{filename:proof.filename,content:proof.content,contentType:proof.contentType,sha256:proof.sha256},report:analysisReport,owner:input.owner,promptVersion});
       if(secondary)rawSecondary=String(raw??'');else rawPrimary=String(raw??'');
       const evaluated=aiContract.evaluateRawOutput(String(raw??''),{minimumConfidence:config.minimumConfidence});
       aiAudit.push(aiContract.analysisAudit({provider:'Gemini API',model,promptVersion,startedAt,completedAt:now(),attempt:secondary?secondaryAttempts:primaryAttempts,secondary,result:evaluated}));
+      const secondaryUsable=config.secondaryEnabled&&config.secondaryModel&&config.secondaryModel!==config.primaryModel;
+      if(!secondary&&evaluated.normalized&&!evaluated.normalized.transaction_date&&secondaryUsable){primaryExtracted=evaluated.normalized;dateRefinement=true;lastFailure='CRITICAL_FIELDS_MISSING';analysisResult=evaluated;continue}
+      if(secondary&&dateRefinement&&primaryExtracted){
+       if(evaluated.normalized){const merged={...primaryExtracted,transaction_date:evaluated.normalized.transaction_date||null,transaction_time:evaluated.normalized.transaction_time||primaryExtracted.transaction_time,warnings:[...new Set([...(primaryExtracted.warnings||[]),...(evaluated.normalized.warnings||[])])].slice(0,30)};merged.critical_fields_visible=Boolean(merged.amount&&merged.currency!=='UNKNOWN'&&merged.transaction_date&&merged.reference&&merged.transaction_status!=='UNKNOWN'&&(merged.recipient_name||merged.recipient_phone||merged.recipient_email||merged.recipient_account_visible||merged.recipient_binance_id));analysisResult={...aiContract.evaluateRawOutput(JSON.stringify(merged),{minimumConfidence:config.minimumConfidence}),dateSecondaryUsed:true};}else analysisResult={...analysisResult,normalized:primaryExtracted,dateSecondaryUsed:true};
+       break;
+      }
       if(evaluated.ok){analysisResult=evaluated;break}
       lastFailure=evaluated.reason;analysisResult=evaluated;
      }catch(error){lastFailure=aiFailureCode(error);const failed={ok:false,reason:lastFailure,raw:''};aiAudit.push(aiContract.analysisAudit({provider:'Gemini API',model,promptVersion,startedAt,completedAt:now(),attempt:secondary?secondaryAttempts:primaryAttempts,secondary,result:failed}));analysisResult=failed}
     }
    }
-   const analysis=analysisResult&&analysisResult.ok?analysisResult.normalized:null;
+   const analysis=analysisResult?.normalized||null;
    const fingerprint=analysis?duplicateCore.fingerprintHash(duplicateCore.canonicalFingerprint(analysis)):'';
    const duplicate=duplicateCore.findDuplicateMatches(duplicateInput(proof,analysis,fingerprint),duplicateData);
    let snapshot=null,snapshotValidation=null;
    if(input.owner){const dueDay=input.rules?.payment?.dueDay||10,surchargeRate=input.rules?.payment?.surchargeRate??0.10;snapshot=snapshotCore.buildAccessSnapshot({owner:input.owner,expenses:input.expenses||[],payments:input.payments||[],officialRecords:input.officialRecords||[],bcvRate:input.bcvRate,bcvSource:input.bcvSource||'Configuración',now:now(),maxAgeMs:input.maxSnapshotAgeMs,dueDay,surchargeRate});snapshotValidation=snapshotCore.validateSnapshotStillCurrent(snapshot,{owner:input.owner,expenses:input.expenses||[],payments:input.payments||[],officialRecords:input.officialRecords||[],bcvRate:input.bcvRate,bcvSource:input.bcvSource||'Configuración',now:now(),maxAgeMs:input.maxSnapshotAgeMs,dueDay,surchargeRate})}
    const decision=arbiter.evaluatePaymentReport({report,owner:input.owner,attachment:{valid:proof.quality.acceptable!==false,sha256:proof.sha256},analysis,snapshot,snapshotValidation,duplicate,authorizedAccounts:input.authorizedAccounts||[],config:{minimumConfidence:config.minimumConfidence,automaticApprovalEnabled:config.automaticApprovalEnabled,minimumAutomaticConfidence:config.minimumAutomaticConfidence},now:now()});
-   const result=decisionActions({ok:true,processingState:decision.processingState,resultValidation:decision.resultValidation,proof:{key:stored.key,sha256:proof.sha256,visualHash:proof.visualHash,contentType:proof.contentType,size:proof.size,quality:proof.quality},analysis:{ok:Boolean(analysis),normalized:analysis,rawPrimary,rawSecondary,audit:aiAudit,failureReason:analysisResult&&analysisResult.ok?'':clean(analysisResult?.reason)},financialFingerprint:fingerprint,duplicate,snapshot,decision},decision);
+   const result=decisionActions({ok:true,processingState:decision.processingState,resultValidation:decision.resultValidation,proof:{key:stored.key,sha256:proof.sha256,visualHash:proof.visualHash,contentType:proof.contentType,size:proof.size,quality:proof.quality},analysis:{ok:analysisResult?.ok===true,normalized:analysis,rawPrimary,rawSecondary,audit:aiAudit,dateSecondaryUsed:analysisResult?.dateSecondaryUsed===true,failureReason:analysisResult&&analysisResult.ok?'':clean(analysisResult?.reason)},financialFingerprint:fingerprint,duplicate,snapshot,decision},decision);
    await processingStore.complete(marker,result);return result;
   }catch(error){const result=failureResult(error.code||'PROCESSING_FAILED',error.message,{proofSha:clean(input?.attachmentSha)});if(marker)await processingStore.fail(marker,error,{result}).catch(()=>null);return result}
  }

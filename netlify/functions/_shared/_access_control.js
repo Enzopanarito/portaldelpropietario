@@ -398,6 +398,7 @@ module.exports = {
   nowCaracas,
   requiredAccessEnv,
   airtableGetRecord,
+  airtableListAll,
   airtableCreateRecord,
   airtablePatchRecord,
   getAccessMode,

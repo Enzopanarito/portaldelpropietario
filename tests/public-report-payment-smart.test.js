@@ -3,7 +3,7 @@ const assert=require('assert');
 const Module=require('module');
 const path=require('path');
 
-const created=[];const mails=[];const encrypted=new Map();let reservationCount=0;
+const created=[];const mails=[];const encrypted=new Map();let reservationCount=0;let historicalExactDuplicate=false,historicalFinancialDuplicate=false;
 const originalLoad=Module._load;
 Module._load=function(request,parent,isMain){
   if(parent&&String(parent.filename||'').endsWith(path.join('netlify','functions','public-report-payment.js'))){
@@ -37,7 +37,15 @@ Module._load=function(request,parent,isMain){
   return originalLoad.apply(this,arguments);
 };
 
-global.fetch=async()=>({ok:true,status:200,json:async()=>({records:[]})});
+global.fetch=async input=>{
+  const url=String(input||'');
+  let records=[];
+  if(url.includes('Reportes%20de%20Pago')&&url.includes('Hash+SHA-256')){
+    if(historicalExactDuplicate)records=[{id:'recHISTORICAL0001',fields:{'Hash SHA-256':proofSha}}];
+    else if(historicalFinancialDuplicate)records=[{id:'recFINANCIAL00001',fields:{'Hash SHA-256':'b'.repeat(64),Referencia:'EXACT-FIN-001','Referencia Detectada':'EXACT-FIN-001','Banco o Plataforma Detectada':'Zelle','Método Detectado':'ZELLE','Moneda Detectada':'USD','Monto Detectado':85,'Fecha Operación Detectada':'2026-08-12'}}];
+  }
+  return{ok:true,status:200,json:async()=>({records})};
+};
 process.env.AIRTABLE_API_TOKEN='test-token';
 process.env.AIRTABLE_BASE_ID='appTEST';
 process.env.SMTP_USER='villalosapamates@gmail.com';
@@ -51,6 +59,7 @@ function parse(response){return JSON.parse(response.body)}
 const png=Buffer.concat([Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]),Buffer.from('proof')]);
 const proofSha=require('crypto').createHash('sha256').update(png).digest('hex');
 const dateAttestation=require('../netlify/functions/_shared/_payment_date_attestation').signDateAttestation({ownerId:'recABCDEFGHIJKLMN',attachmentSha:proofSha,method:'MOBILE_PAYMENT_VE',transactionDate:'2026-07-31'});
+const zelleDateAttestation=require('../netlify/functions/_shared/_payment_date_attestation').signDateAttestation({ownerId:'recABCDEFGHIJKLMN',attachmentSha:proofSha,method:'ZELLE',transactionDate:'2026-08-12'});
 
 (async()=>{
   let response=await handler(event({ownerId:'recABCDEFGHIJKLMN',submissionId:'submission-smart-001',mode:'USD',amount:'15.300,00',enteredCurrency:'BS',reference:'ABC-123',rate:100,bank:'Pago móvil',method:'MOBILE_PAYMENT_VE',transactionDate:'2026-07-31',transactionDateSource:'PROOF_EXTRACTED',dateAttestation,analysisSummary:{provider:'gemini-test',route:'direct',confidence:.98,transactionTime:'10:30:00',transactionStatus:'COMPLETED',recipient:'Enzo Panarito',warnings:['Lectura clara'],possibleVisualModification:false,prefillComplete:true,missingLabels:[]},observations:'Prueba',attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}}));
@@ -62,7 +71,7 @@ const dateAttestation=require('../netlify/functions/_shared/_payment_date_attest
   assert.equal(created[0]['Forma de Pago Reportada'],'USD');
   assert.equal(created[0]['Monto Reportado'],85);
   assert.equal(created[0]['Archivo Obligatorio'],true);
-  assert(created[0]['Observaciones Reportadas'].includes('Fecha usada por el portal: 2026-07-31'));
+  assert(created[0]['Observaciones Reportadas'].includes('Fecha de operación: 2026-07-31'));
   assert(created[0]['Observaciones Reportadas'].includes('Fuente de fecha: PROOF_EXTRACTED'));
   assert(created[0]['Observaciones Reportadas'].includes('Proveedor/modelo de prelectura: gemini-test'));
   assert(created[0]['Observaciones Reportadas'].includes('Receptor visible detectado: Enzo Panarito'));
@@ -82,18 +91,19 @@ const dateAttestation=require('../netlify/functions/_shared/_payment_date_attest
   assert.equal(created[1]['Forma de Pago Reportada'],'Bs BCV');
   assert.equal(created[1]['Monto Reportado Bs'],39852);
   assert.equal(created[1]['Tasa BCV Reporte'],180);
-  assert.equal(body.transactionDateSource,'REPORT_TIMESTAMP_FALLBACK');
-  assert.match(body.transactionDate,/^\d{4}-\d{2}-\d{2}$/);
-  assert(created[1]['Observaciones Reportadas'].includes('Fuente de fecha: REPORT_TIMESTAMP_FALLBACK'));
+  assert.equal(body.transactionDateSource,'UNDETERMINED');
+  assert.equal(body.transactionDate,'');
+  assert(created[1]['Observaciones Reportadas'].includes('Fuente de fecha: UNDETERMINED'));
+  assert.equal(Object.hasOwn(created[1],'Fecha Operación Detectada'),false);
 
   response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:'20,00',enteredCurrency:'USD',reference:'BIN-123',bank:'Binance Pay',method:'BINANCE_PAY',attachment:{name:'binance.png',type:'image/png',base64:png.toString('base64')}}));
   assert.equal(response.statusCode,200,JSON.stringify(parse(response)));body=parse(response);
-  assert.equal(body.method,'BINANCE_PAY');assert.equal(body.transactionDateSource,'REPORT_TIMESTAMP_FALLBACK');
+  assert.equal(body.method,'BINANCE_PAY');assert.equal(body.transactionDateSource,'UNDETERMINED');
 
   response=await handler(event({ownerId:'recABCDEFGHIJKLMN',paymentChannel:'CASH',mode:'USD',amount:'50,00',enteredCurrency:'USD',cashReceiver:'Administración'}));
   assert.equal(response.statusCode,200,JSON.stringify(parse(response)));body=parse(response);
   assert.equal(body.paymentChannel,'CASH');assert.equal(body.attachmentIncluded,false);assert.equal(body.automation.status,'CASH_ADMIN_CONFIRMATION_REQUIRED');
-  assert.equal(body.transactionDateSource,'REPORT_TIMESTAMP_FALLBACK');
+  assert.equal(body.transactionDateSource,'UNDETERMINED');
   assert.equal(created[3]['Archivo Obligatorio'],false);assert.equal(created[3]['Estado de Procesamiento'],'Pendiente de administrador');assert.match(created[3].Referencia,/EFECTIVO/);
   assert.equal(mails[3].attachments.length,0);
 
@@ -115,8 +125,29 @@ const dateAttestation=require('../netlify/functions/_shared/_payment_date_attest
 
   response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:85,enteredCurrency:'USD',reference:'NO-DATE',bank:'Pago móvil',method:'MOBILE_PAYMENT_VE',attachment:{name:'sin-fecha.png',type:'image/png',base64:png.toString('base64')}}));
   assert.equal(response.statusCode,200,JSON.stringify(parse(response)));body=parse(response);
-  assert.equal(body.transactionDateSource,'REPORT_TIMESTAMP_FALLBACK');assert.equal(body.transactionDateConfidence,'LOW');assert.equal(body.transactionDateNeedsReview,true);
+  assert.equal(body.transactionDateSource,'UNDETERMINED');assert.equal(body.transactionDate,'');assert.equal(body.transactionDateConfidence,'LOW');assert.equal(body.transactionDateNeedsReview,true);
   assert(created.at(-1)['Observaciones Reportadas'].includes('Fecha requiere contraste: SÍ'));
+
+  historicalFinancialDuplicate=true;
+  const reportsBeforeFinancialDuplicate=created.length;
+  response=await handler(event({ownerId:'recABCDEFGHIJKLMN',submissionId:'submission-financial-duplicate-001',mode:'USD',amount:85,enteredCurrency:'USD',reference:'EXACT-FIN-001',bank:'Zelle',method:'ZELLE',transactionDate:'2026-08-12',transactionDateSource:'PROOF_EXTRACTED',dateAttestation:zelleDateAttestation,attachment:{name:'otro-archivo.png',type:'image/png',base64:png.toString('base64')}}));body=parse(response);
+  assert.equal(response.statusCode,409,JSON.stringify(body));assert.equal(body.duplicateType,'Referencia financiera exacta');assert.equal(body.duplicateLevel,'confirmed');
+  assert.equal(created.length,reportsBeforeFinancialDuplicate,'Una coincidencia financiera exacta debe pedir confirmación antes de crear el reporte.');
+  historicalFinancialDuplicate=false;
+
+  historicalExactDuplicate=true;
+  const reportsBeforeExactDuplicate=created.length;
+  const exactDuplicatePayload={ownerId:'recABCDEFGHIJKLMN',submissionId:'submission-exact-duplicate-001',mode:'USD',amount:85,enteredCurrency:'USD',reference:'EXACT-001',bank:'Zelle',method:'ZELLE',attachment:{name:'repetido.png',type:'image/png',base64:png.toString('base64')}};
+  response=await handler(event(exactDuplicatePayload));body=parse(response);
+  assert.equal(response.statusCode,409,JSON.stringify(body));
+  assert.equal(body.duplicateLevel,'confirmed');assert.equal(body.canSubmitForReview,true);assert.match(body.message,/No se creó ningún reporte/i);
+  assert.equal(created.length,reportsBeforeExactDuplicate,'El primer intento de duplicado exacto no puede crear un reporte.');
+
+  response=await handler(event({...exactDuplicatePayload,duplicateReviewRequested:true}));body=parse(response);
+  assert.equal(response.statusCode,200,JSON.stringify(body));assert.equal(body.duplicateReview,true);assert.equal(body.reviewDeadlineHours,72);
+  assert.match(body.message,/no cambia tu saldo ni tu acceso/i);assert.equal(created.length,reportsBeforeExactDuplicate+1);
+  assert.equal(created.at(-1)['Estado de Procesamiento'],'Pendiente de administrador');assert.equal(created.at(-1)['Nivel de Duplicado'],'confirmed');
+  historicalExactDuplicate=false;
 
   console.log('PUBLIC_REPORT_PAYMENT_SMART_OK');
 })().catch(error=>{console.error(error);process.exit(1)});

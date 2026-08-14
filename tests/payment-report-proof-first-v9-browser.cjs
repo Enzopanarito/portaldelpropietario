@@ -19,15 +19,15 @@ async function runScenario(browser,{amount,expectedMode,debtUsd=85,debtBs=221.4}
   await page.addScriptTag({path:path.resolve('owner-payment-report-v3.js')});
   await page.click('#reportBtn');await page.getByText('Pago digital',{exact:true}).click();
   await page.setInputFiles('#payProof',{name:'comprobante.png',mimeType:'image/png',buffer:png});
-  await page.locator('#vla-pay-confirmation').waitFor({state:'visible',timeout:10000});
+  await page.locator('#vla-field-reference').waitFor({state:'visible',timeout:10000});
   assert(await page.locator('#payMode').inputValue()===expectedMode,`Cuenta inferida incorrecta: ${await page.locator('#payMode').inputValue()} vs ${expectedMode}`);
-  assert(await page.locator('#vla-pay-details').isHidden(),'Una referencia no detectada no debe abrir un formulario al propietario.');
+  assert(await page.locator('#vla-field-bank').isHidden(),'Debe preguntar una sola excepción a la vez.');
   assert(!(await page.locator('#modal').innerText()).includes('93%'),'La confianza técnica no debe mostrarse al propietario.');
-  assert((await page.locator('#vla-pay-confirm-card').innerText()).includes('VLA la verificará'),'Debe explicar que VLA verificará la referencia.');
-  assert(!(await page.locator('#submitReport').isDisabled()),'El reporte debe poder confirmarse sin escribir la referencia.');
+  await page.fill('#payRef','REF-ADMIN-123');await page.locator('#vla-pay-confirmation').waitFor({state:'visible',timeout:10000});
+  assert(!(await page.locator('#submitReport').isDisabled()),'El reporte debe poder confirmarse después de completar la única excepción crítica.');
   await page.click('#submitReport');await page.locator('#modal.hidden').waitFor({state:'attached',timeout:10000});
   assert(payload&&payload.mode===expectedMode,'El payload no conserva la cuenta inferida.');
-  assert(/^PENDIENTE-[A-Za-z0-9]+$/.test(payload.reference),'Debe enviar una referencia técnica trazable mientras la segunda lectura verifica la real.');
+  assert(payload.reference==='REF-ADMIN-123','Debe enviar la referencia confirmada, sin inventar una referencia técnica.');
   assert(payload.bank==='Zelle','Debe conservar el método detectado sin pedirlo al propietario.');
   await page.close();
 }
