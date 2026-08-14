@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('assert');const fs=require('fs');const path=require('path');
 const breakdown=require('../owner-breakdown-v7');const release=require('../release.json');
-assert.strictEqual(release.release,'2026-08-14-v11');assert.strictEqual(release.expectedHouses,15);assert.strictEqual(release.breakdownPresentation,'owner-breakdown-v7');
+assert.strictEqual(release.release,'2026-08-14-v12');assert.strictEqual(release.expectedHouses,15);assert.strictEqual(release.breakdownPresentation,'owner-breakdown-v7');
 const source=fs.readFileSync(path.join(__dirname,'../owner-breakdown-v7.js'),'utf8');for(const forbidden of ['Saldo USD Actual','Saldo Bs Ref Actual','Saldo Total Actual','window.calc','setTimeout','setInterval','MutationObserver','currentOwner'])assert(!source.includes(forbidden),`El desglose no debe depender de ${forbidden}`);
 for(const required of ['Deuda del Mes Anterior','Beneficio Pronto Pago','Total Pagado','Costo<br>Total','Su<br>Parte'])assert(source.includes(required),`Falta ${required}`);
 const owner={id:'casa-1',Casa:1,Alicuota:.07994,'Deuda Anterior':65},data={gastos:[{fields:{Concepto:'Vigilancia',Monto:1000,'Tipo de Gasto':'Gasto Común','Forma de Pago':'Bs BCV',Propietarios:[]}},{fields:{Concepto:'Gasoil',Monto:85,'Tipo de Gasto':'Gasto Especial','Forma de Pago':'USD',Propietarios:['casa-1']}}],pagos:[{fields:{'Propietario que Paga':['casa-1'],'[x] Aplicado al Cierre':false,'Equivalente USD Aplicado':66}}]};

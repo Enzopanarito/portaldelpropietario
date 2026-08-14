@@ -24,6 +24,7 @@ assert(!/confianza \$\{confidence\}%/i.test(ui),'El propietario no debe ver porc
 assert(ui.includes('analysisSummary')&&ui.includes('possibleVisualModification'),'El administrador debe recibir la mayor información de la prelectura.');
 assert(ui.includes("cash?(currency==='BS'?'Bs BCV':currency==='USD'?'USD':'')"),'El efectivo debe asignar la cuenta desde su moneda sin pedir un campo oculto.');
 assert(!/function cashMissing\(\)\{[^}]*missing\.push\('mode'\)/.test(ui),'El flujo de efectivo no puede exigir una cuenta oculta.');
+assert(ui.includes('La fecha se registrará automáticamente con el día de hoy. Administración confirmará la entrega.'),'El propietario debe saber que la fecha del efectivo la asigna el servidor al reportarlo.');
 assert(ui.includes("if(!selectedFile)return['proof']"),'Antes del comprobante solo debe pedirse el comprobante.');
 assert(ui.includes("openReport=openSmartReport"),'Debe sustituir el flujo heredado.');
 assert(ui.includes("addEventListener('submit',submitSmartReport)"),'Debe existir un único manejador de envío.');
@@ -36,11 +37,12 @@ assert(!signature.includes('form.onsubmit')&&!signature.includes('/.netlify/func
 assert(!/recargo/i.test(ui+css),'El portal público no debe mencionar el recargo.');
 assert(css.includes('.vla-pay-two{display:grid')&&css.includes('font-size:16px'),'Debe seguir siendo móvil y evitar zoom en iPhone.');
 const darkCss=fs.readFileSync('owner-dark-contrast-v1.css','utf8');assert(darkCss.includes('html.dark #vla-pay-confirm-card')&&darkCss.includes('html.dark .vla-pay-edit'),'La confirmación detectada debe conservar contraste real en modo oscuro.');
-assert(edge.includes('progressive-v11'),'Falta el marcador final del flujo progresivo.');
+assert(edge.includes('progressive-v12'),'Falta el marcador final del flujo progresivo.');
 assert(ui.includes('Mis reportes')&&ui.includes('/api/vla/payment-reports/status')&&ui.includes('/api/vla/payment-reports/supplement'),'Falta el seguimiento privado y la respuesta sobre el mismo reporte.');
 assert(ui.includes('¿Aun así quieres reportarlo?')&&ui.includes('Sí, reportar pago')&&ui.includes('No, revisar'),'Las dudas deben ofrecer una decisión humana sin rechazar el reporte.');
 for(const asset of ['owner-payment-report-v3.css','payment-report-intelligence.js','owner-payment-report-v3.js'])assert(edge.includes(asset),`Falta inyección de ${asset}`);
 assert(server.includes('resolveSubmittedDate')&&server.includes('UNDETERMINED'),'El servidor debe dejar sin determinar una fecha no visible.');
+assert(server.includes("if(transactionDate)fields['Fecha Operación Detectada']=transactionDate"),'La fecha automática del efectivo debe guardarse como fecha de operación.');
 assert(ui.includes('Sí, enviar para revisión')&&ui.includes('duplicateReviewRequested')&&ui.includes('No se creó ningún reporte'),'El duplicado exacto debe ofrecer Cancelar o revisión excepcional explícita.');
 assert(server.includes("paymentChannel==='DIGITAL'?decodeAttachment(body.attachment):null"),'El comprobante es obligatorio solo para digital.');
 assert(server.includes("'Archivo Obligatorio':paymentChannel==='DIGITAL'")&&server.includes('reserveIdentity'),'Debe conservar comprobante condicional y deduplicación.');

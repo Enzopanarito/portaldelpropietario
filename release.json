@@ -1,5 +1,5 @@
 {
-  "release": "2026-08-14-v11",
+  "release": "2026-08-14-v12",
   "canonicalMonth": "2026-07",
   "expectedHouses": 15,
   "balanceEngine": 7,
@@ -7,7 +7,7 @@
   "canonicalBalanceRelease": "2026-07-11-v6",
   "balanceSource": "canonical-july-2026",
   "breakdownPresentation": "owner-breakdown-v7",
-  "paymentReport": "progressive-v11",
+  "paymentReport": "progressive-v12",
   "financialFailClosed": "canonical-v7-required",
   "paymentDatePolicy": "proof-date-strict-v2",
   "healthControlCenter": "release-mkj-readonly-v1",
