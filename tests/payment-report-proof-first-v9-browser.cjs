@@ -25,10 +25,11 @@ async function runScenario(browser,{amount,expectedMode,debtUsd=85,debtBs=221.4}
   assert(!(await page.locator('#modal').innerText()).includes('93%'),'La confianza técnica no debe mostrarse al propietario.');
   await page.fill('#payRef','REF-ADMIN-123');await page.locator('#vla-pay-confirmation').waitFor({state:'visible',timeout:10000});
   assert(!(await page.locator('#submitReport').isDisabled()),'El reporte debe poder confirmarse después de completar la única excepción crítica.');
-  await page.click('#submitReport');await page.locator('#modal.hidden').waitFor({state:'attached',timeout:10000});
+  await page.click('#submitReport');await page.locator('#vla-pay-uncertainty-choice').waitFor({state:'visible',timeout:10000});assert(payload===null,'La duda debe resolverse antes de llamar al servidor.');await page.click('#vla-pay-uncertainty-submit');await page.locator('#modal.hidden').waitFor({state:'attached',timeout:10000});
   assert(payload&&payload.mode===expectedMode,'El payload no conserva la cuenta inferida.');
   assert(payload.reference==='REF-ADMIN-123','Debe enviar la referencia confirmada, sin inventar una referencia técnica.');
   assert(payload.bank==='Zelle','Debe conservar el método detectado sin pedirlo al propietario.');
+  assert(payload.uncertaintyAcknowledged===true,'El propietario debe poder continuar explícitamente ante una duda.');
   await page.close();
 }
 

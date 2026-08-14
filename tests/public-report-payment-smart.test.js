@@ -71,6 +71,9 @@ const zelleDateAttestation=require('../netlify/functions/_shared/_payment_date_a
   assert.equal(created[0]['Forma de Pago Reportada'],'USD');
   assert.equal(created[0]['Monto Reportado'],85);
   assert.equal(created[0]['Archivo Obligatorio'],true);
+  assert.match(body.trackingCode,/^rec[A-Za-z0-9]{14}\.[A-Za-z0-9_-]{43}$/);
+  assert.match(created[0]['Tracking Token Hash'],/^[a-f0-9]{64}$/);
+  assert(!JSON.stringify(created[0]).includes(body.trackingCode.split('.')[1]),'Airtable no puede recibir el token privado en texto claro.');
   assert(created[0]['Observaciones Reportadas'].includes('Fecha de operación: 2026-07-31'));
   assert(created[0]['Observaciones Reportadas'].includes('Fuente de fecha: PROOF_EXTRACTED'));
   assert(created[0]['Observaciones Reportadas'].includes('Proveedor/modelo de prelectura: gemini-test'));
@@ -83,7 +86,7 @@ const zelleDateAttestation=require('../netlify/functions/_shared/_payment_date_a
   assert(mails[0].html.includes('Pago móvil'));
   assert(mails[0].html.includes('gemini-test'));assert(mails[0].html.includes('REQUIERE CONTRASTE')===false);
 
-  response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'Bs BCV',amount:'221,40',enteredCurrency:'USD',reference:'BS-123',rate:180,bank:'Zelle',method:'ZELLE',attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}}));
+  response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'Bs BCV',amount:'221,40',enteredCurrency:'USD',reference:'BS-123',rate:180,bank:'Zelle',method:'ZELLE',uncertaintyAcknowledged:true,attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}}));
   assert.equal(response.statusCode,200,JSON.stringify(parse(response)));
   body=parse(response);
   assert.equal(body.amountUsdRef,221.4);
@@ -96,7 +99,7 @@ const zelleDateAttestation=require('../netlify/functions/_shared/_payment_date_a
   assert(created[1]['Observaciones Reportadas'].includes('Fuente de fecha: UNDETERMINED'));
   assert.equal(Object.hasOwn(created[1],'Fecha Operación Detectada'),false);
 
-  response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:'20,00',enteredCurrency:'USD',reference:'BIN-123',bank:'Binance Pay',method:'BINANCE_PAY',attachment:{name:'binance.png',type:'image/png',base64:png.toString('base64')}}));
+  response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:'20,00',enteredCurrency:'USD',reference:'BIN-123',bank:'Binance Pay',method:'BINANCE_PAY',uncertaintyAcknowledged:true,attachment:{name:'binance.png',type:'image/png',base64:png.toString('base64')}}));
   assert.equal(response.statusCode,200,JSON.stringify(parse(response)));body=parse(response);
   assert.equal(body.method,'BINANCE_PAY');assert.equal(body.transactionDateSource,'UNDETERMINED');
 
@@ -123,21 +126,24 @@ const zelleDateAttestation=require('../netlify/functions/_shared/_payment_date_a
     const count=created.length;response=await handler(event(incomplete));assert.equal(response.statusCode,400);assert.equal(created.length,count,'Los datos incompletos no deben crear reportes.');
   }
 
-  response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:85,enteredCurrency:'USD',reference:'NO-DATE',bank:'Pago móvil',method:'MOBILE_PAYMENT_VE',attachment:{name:'sin-fecha.png',type:'image/png',base64:png.toString('base64')}}));
+  const beforeUncertain=created.length;
+  response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:85,enteredCurrency:'USD',reference:'NO-DATE',bank:'Pago móvil',method:'MOBILE_PAYMENT_VE',attachment:{name:'sin-fecha.png',type:'image/png',base64:png.toString('base64')}}));body=parse(response);
+  assert.equal(response.statusCode,428);assert.equal(body.confirmationRequired,true);assert.match(body.message,/¿Aun así quieres reportarlo\?/);assert.equal(created.length,beforeUncertain,'Una duda debe preguntar antes de crear el reporte.');
+  response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:85,enteredCurrency:'USD',reference:'NO-DATE',bank:'Pago móvil',method:'MOBILE_PAYMENT_VE',uncertaintyAcknowledged:true,attachment:{name:'sin-fecha.png',type:'image/png',base64:png.toString('base64')}}));
   assert.equal(response.statusCode,200,JSON.stringify(parse(response)));body=parse(response);
   assert.equal(body.transactionDateSource,'UNDETERMINED');assert.equal(body.transactionDate,'');assert.equal(body.transactionDateConfidence,'LOW');assert.equal(body.transactionDateNeedsReview,true);
   assert(created.at(-1)['Observaciones Reportadas'].includes('Fecha requiere contraste: SÍ'));
 
   historicalFinancialDuplicate=true;
   const reportsBeforeFinancialDuplicate=created.length;
-  response=await handler(event({ownerId:'recABCDEFGHIJKLMN',submissionId:'submission-financial-duplicate-001',mode:'USD',amount:85,enteredCurrency:'USD',reference:'EXACT-FIN-001',bank:'Zelle',method:'ZELLE',transactionDate:'2026-08-12',transactionDateSource:'PROOF_EXTRACTED',dateAttestation:zelleDateAttestation,attachment:{name:'otro-archivo.png',type:'image/png',base64:png.toString('base64')}}));body=parse(response);
+  response=await handler(event({ownerId:'recABCDEFGHIJKLMN',submissionId:'submission-financial-duplicate-001',mode:'USD',amount:85,enteredCurrency:'USD',reference:'EXACT-FIN-001',bank:'Zelle',method:'ZELLE',transactionDate:'2026-08-12',transactionDateSource:'PROOF_EXTRACTED',dateAttestation:zelleDateAttestation,uncertaintyAcknowledged:true,attachment:{name:'otro-archivo.png',type:'image/png',base64:png.toString('base64')}}));body=parse(response);
   assert.equal(response.statusCode,409,JSON.stringify(body));assert.equal(body.duplicateType,'Referencia financiera exacta');assert.equal(body.duplicateLevel,'confirmed');
   assert.equal(created.length,reportsBeforeFinancialDuplicate,'Una coincidencia financiera exacta debe pedir confirmación antes de crear el reporte.');
   historicalFinancialDuplicate=false;
 
   historicalExactDuplicate=true;
   const reportsBeforeExactDuplicate=created.length;
-  const exactDuplicatePayload={ownerId:'recABCDEFGHIJKLMN',submissionId:'submission-exact-duplicate-001',mode:'USD',amount:85,enteredCurrency:'USD',reference:'EXACT-001',bank:'Zelle',method:'ZELLE',attachment:{name:'repetido.png',type:'image/png',base64:png.toString('base64')}};
+  const exactDuplicatePayload={ownerId:'recABCDEFGHIJKLMN',submissionId:'submission-exact-duplicate-001',mode:'USD',amount:85,enteredCurrency:'USD',reference:'EXACT-001',bank:'Zelle',method:'ZELLE',uncertaintyAcknowledged:true,attachment:{name:'repetido.png',type:'image/png',base64:png.toString('base64')}};
   response=await handler(event(exactDuplicatePayload));body=parse(response);
   assert.equal(response.statusCode,409,JSON.stringify(body));
   assert.equal(body.duplicateLevel,'confirmed');assert.equal(body.canSubmitForReview,true);assert.match(body.message,/No se creó ningún reporte/i);

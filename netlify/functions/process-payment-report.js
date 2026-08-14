@@ -28,6 +28,7 @@ function operationResponse(result){
 }
 function adminId(auth,decisionSource){return decisionSource==='automatic'?'AUTOPILOT':safeDisplayText(auth.claims?.jti||'ADMIN',120)}
 function audit(fields,context){return adminDecision.appendAudit(fields['Log de Auditoría'],context)}
+function appendInformationRequest(existing,reason,at){const current=String(existing||'').trim(),entry=`[${at}] ${reason}`;return[current,entry].filter(Boolean).join('\n').slice(-9000)}
 function terminalPatch(action,fields,{who,reason,now}){
  const duplicate=action==='mark_duplicate';
  return{Estado:'Rechazado','Estado de Procesamiento':duplicate?'Duplicado detectado':'Rechazado','Resultado Validación':duplicate?'Duplicado':selectName(fields['Resultado Validación'])||'Revisión manual urgente','Decisión Administrativa':duplicate?'Marcado duplicado':'Rechazado','Validación Realizada Por':'Administrador','Administrador que Revisó':who,'Fecha Revisión':now,'Motivo del Rechazo':reason,'Posible Duplicado':duplicate||fields['Posible Duplicado']===true,...(duplicate?{'Nivel de Duplicado':'confirmed'}:{}),'Log de Auditoría':audit(fields,{action,adminId:who,reason,result:duplicate?'duplicate-confirmed':'rejected',at:now})};
@@ -56,7 +57,7 @@ const handler=async function(event){
   if(status==='Rechazado')return json(200,{success:true,decision:'already-rejected',message:'Este reporte ya estaba rechazado. No se hizo ningún cambio.',report:deepEscapeStrings(report)});
 
   if(input.action==='request_information'){
-   const patched=await airtablePatchRecord(TABLES.reportes,reportId,{'Estado de Procesamiento':'Información solicitada','Decisión Administrativa':'Información solicitada','Validación Realizada Por':'Administrador','Administrador que Revisó':who,'Fecha Revisión':reviewedAt,'Notificación Propietario':input.reason,'Log de Auditoría':audit(fields,{action:input.action,adminId:who,reason:input.reason,result:'information-requested',at:reviewedAt})});
+   const requestHistory=appendInformationRequest(fields['Solicitud de Información'],input.reason,reviewedAt),patched=await airtablePatchRecord(TABLES.reportes,reportId,{'Estado de Procesamiento':'Información solicitada','Decisión Administrativa':'Información solicitada','Validación Realizada Por':'Administrador','Administrador que Revisó':who,'Fecha Revisión':reviewedAt,'Solicitud de Información':requestHistory,'Fecha Solicitud Información':reviewedAt,'Notificación Propietario':input.reason,'Log de Auditoría':audit(fields,{action:input.action,adminId:who,reason:input.reason,result:'information-requested',at:reviewedAt})});
    return json(200,{success:true,decision:input.action,message:'Información solicitada. El reporte sigue pendiente y no se modificó saldo ni acceso.',report:deepEscapeStrings(patched)});
   }
 
@@ -116,3 +117,4 @@ exports.handler=withAirtableUsage('process-payment-report',handler);
 exports.linkedPaymentForReport=linkedPaymentForReport;
 exports.findExistingPayment=findExistingPayment;
 exports.terminalPatch=terminalPatch;
+exports.appendInformationRequest=appendInformationRequest;

@@ -66,6 +66,18 @@
         {"name":"Observaciones Reportadas","type":"multilineText"},
         {"name":"Fuente Tasa BCV Reporte","type":"singleLineText"},
         {"name":"Archivo Obligatorio","type":"checkbox"},
+        {"name":"Tracking Token Hash","type":"singleLineText"},
+        {"name":"Alerta Aceptada por Propietario","type":"checkbox"},
+        {"name":"Alertas Presentadas","type":"multilineText"},
+        {"name":"Solicitud de Información","type":"multilineText"},
+        {"name":"Fecha Solicitud Información","type":"dateTime"},
+        {"name":"Respuesta del Propietario","type":"multilineText"},
+        {"name":"Fecha Respuesta Propietario","type":"dateTime"},
+        {"name":"Complemento Blob Key","type":"singleLineText"},
+        {"name":"Complemento SHA-256","type":"singleLineText"},
+        {"name":"Complemento Nombre Original","type":"singleLineText"},
+        {"name":"Complemento MIME","type":"singleLineText"},
+        {"name":"Complemento Bytes","type":"number","precision":0},
         {"name":"Balance Snapshot ID","type":"singleLineText"},
         {"name":"Deuda Snapshot USD","type":"currency","symbol":"$","precision":2},
         {"name":"Deuda Snapshot Bs","type":"currency","symbol":"Bs","precision":2},
@@ -279,6 +291,7 @@
     "No existing select choice is renamed or removed.",
     "AI Enabled, Automatic Provisional Access Enabled and Piloto Automático Habilitado remain false after migration.",
     "No owner, payment, report, receipt, balance or MKJ status record is changed by schema migration.",
+    "Tracking tokens are stored only as SHA-256 hashes; raw tracking credentials remain on the owner's device.",
     "Every mutating migration step records an action/rollback ledger."
   ]
 }

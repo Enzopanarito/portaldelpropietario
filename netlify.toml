@@ -51,6 +51,18 @@ status = 200
 force = true
 
 [[redirects]]
+from = "/api/vla/payment-reports/status"
+to = "/.netlify/functions/public-payment-report-status"
+status = 200
+force = true
+
+[[redirects]]
+from = "/api/vla/payment-reports/supplement"
+to = "/.netlify/functions/public-payment-report-supplement"
+status = 200
+force = true
+
+[[redirects]]
 from = "/api/vla/payment-proof"
 to = "/.netlify/functions/_admin_payment_proof"
 status = 200

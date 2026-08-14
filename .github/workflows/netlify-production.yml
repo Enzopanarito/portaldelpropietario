@@ -52,7 +52,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run critical payment and admin browser gates
-        run: node --test tests/owner-payment-report-browser.cjs tests/payment-duplicate-feedback-browser.cjs tests/payment-report-proof-first-v9-browser.cjs tests/admin-owner-access-browser.cjs tests/admin-premium-browser.cjs tests/admin-responsive-fouc-browser.cjs
+        run: node --test tests/owner-payment-report-browser.cjs tests/payment-duplicate-feedback-browser.cjs tests/payment-report-proof-first-v9-browser.cjs tests/payment-report-tracking-browser.cjs tests/admin-owner-access-browser.cjs tests/admin-premium-browser.cjs tests/admin-responsive-fouc-browser.cjs
 
       - name: Resolve Netlify credentials safely
         id: credentials
@@ -152,6 +152,55 @@ jobs:
           console.log('BEFORE_FINANCIAL_BASELINE_OK 15/15');
           NODE
           echo "path=$before" >> "$GITHUB_OUTPUT"
+
+      - name: Load protected Airtable migration credentials from Netlify
+        env:
+          NETLIFY_ACCOUNT_ID: ${{ steps.site.outputs.account_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('fs');
+          const api='https://api.netlify.com/api/v1';
+          const headers={Authorization:`Bearer ${process.env.NETLIFY_AUTH_TOKEN}`,'User-Agent':'VLA-schema-migration'};
+          const clean=value=>String(value??'').trim();
+          function effective(variable){const values=Array.isArray(variable?.values)?variable.values:[];return clean(values.find(item=>item.context==='production'&&clean(item.value))?.value||values.find(item=>item.context==='all'&&clean(item.value))?.value||'')}
+          (async()=>{
+            const values={};
+            for(const key of ['AIRTABLE_API_TOKEN','AIRTABLE_BASE_ID']){
+              const response=await fetch(`${api}/accounts/${encodeURIComponent(process.env.NETLIFY_ACCOUNT_ID)}/env/${encodeURIComponent(key)}?site_id=${encodeURIComponent(process.env.NETLIFY_SITE_ID)}`,{headers});
+              if(!response.ok)throw new Error(`${key}: HTTP ${response.status}`);
+              values[key]=effective(await response.json());if(!values[key])throw new Error(`${key}: sin valor efectivo production/all`);
+            }
+            if(values.AIRTABLE_BASE_ID!=='app4nE4ReGRi2SuP2')throw new Error('AIRTABLE_BASE_ID no coincide con la base productiva autorizada.');
+            for(const value of Object.values(values))console.log(`::add-mask::${value}`);
+            fs.appendFileSync(process.env.GITHUB_ENV,`AIRTABLE_API_TOKEN=${values.AIRTABLE_API_TOKEN}\nAIRTABLE_BASE_ID=${values.AIRTABLE_BASE_ID}\nAIRTABLE_TARGET_BASE_ID=${values.AIRTABLE_BASE_ID}\nAIRTABLE_TARGET_ENVIRONMENT=production\n`);
+            console.log('VLA_AIRTABLE_MIGRATION_CREDENTIALS_READY');
+          })().catch(error=>{console.error(String(error.message||error));process.exit(1)});
+          NODE
+
+      - name: Plan, apply and verify append-only Airtable schema migration
+        env:
+          SMART_PAYMENT_MIGRATION_CONFIRM: APPLY_SMART_PAYMENT_V2_TO_PRODUCTION
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/smart-payment-airtable-migrate.js plan
+          node scripts/smart-payment-airtable-migrate.js apply
+          node scripts/smart-payment-airtable-migrate.js verify
+
+      - name: Verify normalized authorized-account coverage without exposing identifiers
+        shell: bash
+        run: node scripts/verify-authorized-payment-accounts.js
+
+      - name: Preserve schema plan, metadata snapshot and rollback ledger
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: vla-smart-payment-schema-${{ github.sha }}
+          path: artifacts/smart-payment-v2-*.json
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload prepared production deploy without hosted build
         id: deploy

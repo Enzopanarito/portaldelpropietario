@@ -43,6 +43,12 @@ function recipientEvidence(analysis){
  const values={name:normalizeText(analysis.recipient_name),phone:normalizePhone(analysis.recipient_phone),email:normalizeEmail(analysis.recipient_email),account:normalizeAccount(analysis.recipient_account_visible),last4:normalizeIdentifier(analysis.recipient_account_last4),document:normalizeIdentifier(analysis.recipient_document),binanceId:normalizeIdentifier(analysis.recipient_binance_id)};
  return{values,visible:Object.values(values).some(Boolean)};
 }
+function normalizedIdentifierReady(analysis,account){
+ const method=clean(analysis&&analysis.method).toUpperCase(),fields=fieldsOf(account);
+ if(['MOBILE_PAYMENT_VE','TRANSFER_VE'].includes(method))return Boolean(normalizeIdentifier(fields['Documento Normalizado']));
+ if(method==='BINANCE_PAY')return Boolean(normalizeIdentifier(fields['Binance ID Normalizado']));
+ return true;
+}
 function recipientMatchesAccount(analysis,account){
  const evidence=recipientEvidence(analysis),fields=fieldsOf(account);
  if(!evidence.visible)return{visible:false,matched:false,classification:'NOT_VISIBLE',matchType:'',evidence:[]};
@@ -56,12 +62,13 @@ function recipientMatchesAccount(analysis,account){
  const phoneMatch=Boolean(evidence.values.phone&&phones.includes(evidence.values.phone)),emailMatch=Boolean(evidence.values.email&&emails.includes(evidence.values.email)),documentMatch=Boolean(evidence.values.document&&documents.includes(evidence.values.document)),binanceMatch=Boolean(evidence.values.binanceId&&binanceIds.includes(evidence.values.binanceId)),nameMatch=Boolean(evidence.values.name&&names.includes(evidence.values.name));
  const method=clean(analysis.method).toUpperCase(),strong=[];
  if(method==='ZELLE'&&emailMatch)strong.push('email');
- if(['BINANCE_PAY','CRYPTO_TRANSFER'].includes(method)&&(binanceMatch||emailMatch))strong.push(binanceMatch?'binance_id':'email');
- if(method==='MOBILE_PAYMENT_VE'&&phoneMatch&&(documentMatch||bankMatch))strong.push(documentMatch?'phone+document':'phone+bank');
+ if(method==='BINANCE_PAY'&&binanceMatch)strong.push('binance_id');
+ if(method==='CRYPTO_TRANSFER'&&(binanceMatch||emailMatch))strong.push(binanceMatch?'binance_id':'email');
+ if(method==='MOBILE_PAYMENT_VE'&&phoneMatch&&documentMatch)strong.push('phone+document');
  if(['TRANSFER_VE','TRANSFER_US'].includes(method)&&accountMatch&&bankMatch)strong.push('account+bank');
- if(strong.length)return{visible:true,matched:true,classification:'CONFIRMED',matchType:strong[0],evidence:strong,bankMatch};
+ if(strong.length&&normalizedIdentifierReady(analysis,account))return{visible:true,matched:true,classification:'CONFIRMED',matchType:strong[0],evidence:strong,bankMatch};
  const probable=[];if(nameMatch)probable.push('name');if(phoneMatch)probable.push('phone');if(emailMatch)probable.push('email');if(accountMatch)probable.push('account');if(documentMatch)probable.push('document');if(binanceMatch)probable.push('binance_id');
- if(probable.length)return{visible:true,matched:false,classification:'PROBABLE',matchType:probable.join('+'),evidence:probable,bankMatch};
+ if(strong.length||probable.length)return{visible:true,matched:false,classification:'PROBABLE',matchType:(strong.length?strong:probable).join('+'),evidence:strong.length?strong:probable,bankMatch,reason:strong.length?'Falta identificador normalizado aplicable':'Receptor probable'};
  return{visible:true,matched:false,classification:'UNAUTHORIZED',matchType:'',evidence:[],bankMatch};
 }
 function findAuthorizedRecipient(analysis,accounts,{now=new Date()}={}){
@@ -72,7 +79,7 @@ function findAuthorizedRecipient(analysis,accounts,{now=new Date()}={}){
  for(const account of compatible){
   const match=recipientMatchesAccount(analysis,account);
   if(match.classification==='CONFIRMED')return{ok:true,classification:'CONFIRMED',accountId:clean(account.id),expected:expectedRecipientSummary(account),matchType:match.matchType,evidence:match.evidence,compatible:compatible.length,methodMismatch:false};
-  if(match.classification==='PROBABLE'&&!probable)probable={ok:false,classification:'PROBABLE',accountId:clean(account.id),expected:expectedRecipientSummary(account),matchType:match.matchType,evidence:match.evidence,compatible:compatible.length,methodMismatch:false,reason:'Receptor probable'};
+  if(match.classification==='PROBABLE'&&!probable)probable={ok:false,classification:'PROBABLE',accountId:clean(account.id),expected:expectedRecipientSummary(account),matchType:match.matchType,evidence:match.evidence,compatible:compatible.length,methodMismatch:false,reason:match.reason||'Receptor probable'};
  }
  // La IA puede confundir transferencia y pago móvil aunque haya leído un
  // identificador exacto del receptor. En ese caso se acepta únicamente una
@@ -82,7 +89,7 @@ function findAuthorizedRecipient(analysis,accounts,{now=new Date()}={}){
  for(const account of sameCurrency){
   const match=recipientMatchesAccount({...analysis,method:methodCodeForAccount(account)},account);
   if(match.classification==='CONFIRMED')return{ok:true,classification:'CONFIRMED',accountId:clean(account.id),expected:expectedRecipientSummary(account),matchType:match.matchType,evidence:match.evidence,compatible:compatible.length,methodMismatch:true,reason:'Identificador autorizado fuerte; método reclasificado'};
-  if(match.classification==='PROBABLE'&&!probable)probable={ok:false,classification:'PROBABLE',accountId:clean(account.id),expected:expectedRecipientSummary(account),matchType:match.matchType,evidence:match.evidence,compatible:compatible.length,methodMismatch:true,reason:'Receptor probable'};
+  if(match.classification==='PROBABLE'&&!probable)probable={ok:false,classification:'PROBABLE',accountId:clean(account.id),expected:expectedRecipientSummary(account),matchType:match.matchType,evidence:match.evidence,compatible:compatible.length,methodMismatch:true,reason:match.reason||'Receptor probable'};
  }
  return probable||{ok:false,classification:'UNAUTHORIZED',reason:'Receptor incorrecto',compatible:compatible.length,evidence:[]};
 }
@@ -132,4 +139,4 @@ function evaluatePaymentReport({report={},owner={},attachment={},analysis=null,s
  return resultEnvelope({processingState:'Coincide preliminarmente',resultValidation:'Coincide preliminarmente',preliminaryMatch:true,reasons:['ADMIN_DECISION_REQUIRED'],checks,receiver:recipient});
 }
 
-module.exports={TOLERANCE,COMPLETED_STATUSES,METHOD_ACCOUNT_MAP,clean,money,choice,normalizeText,normalizePhone,normalizeEmail,normalizeAccount,normalizeIdentifier,dateMs,fieldsOf,splitAlternatives,targetCurrency,accountActive,accountCompatibility,accountCurrencyCompatibility,methodCodeForAccount,expectedRecipientSummary,recipientEvidence,recipientMatchesAccount,findAuthorizedRecipient,check,resultEnvelope,evaluatePaymentReport};
+module.exports={TOLERANCE,COMPLETED_STATUSES,METHOD_ACCOUNT_MAP,clean,money,choice,normalizeText,normalizePhone,normalizeEmail,normalizeAccount,normalizeIdentifier,dateMs,fieldsOf,splitAlternatives,targetCurrency,accountActive,accountCompatibility,accountCurrencyCompatibility,methodCodeForAccount,expectedRecipientSummary,recipientEvidence,normalizedIdentifierReady,recipientMatchesAccount,findAuthorizedRecipient,check,resultEnvelope,evaluatePaymentReport};

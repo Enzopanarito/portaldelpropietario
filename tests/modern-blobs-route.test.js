@@ -20,6 +20,8 @@ test('los datos públicos entran directamente en la Lambda que recibe event.blob
 
 test('el reporte entra directamente en la Lambda que recibe event.blobs',()=>{
   assert.match(config,rewrite('/api/vla/report-payment','/.netlify/functions/public-report-payment'));
+  assert.match(config,rewrite('/api/vla/payment-reports/status','/.netlify/functions/public-payment-report-status'));
+  assert.match(config,rewrite('/api/vla/payment-reports/supplement','/.netlify/functions/public-payment-report-supplement'));
   assert.equal(fs.existsSync('netlify/functions/public-report-payment-modern.mjs'),false);
 });
 
