@@ -46,6 +46,7 @@ function requiresServerReceptionDate(method,bank=''){
 }
 function result(date,source,confidence,needsReview,evidence){return{transactionDate:date||'',transactionDateSource:source,transactionDateConfidence:confidence,transactionDateNeedsReview:needsReview,transactionDateEvidence:evidence}}
 function unresolvedDateResult(){return result('',DATE_SOURCES.UNDETERMINED,'LOW',true,'El comprobante no mostró una fecha de operación confiable. La fecha de carga y la fecha del archivo no se usan como fecha de pago.')}
+function reportDateFallbackResult(now=new Date()){return result(todayCaracasISO(now),DATE_SOURCES.UNDETERMINED,'LOW',true,'El comprobante no mostró una fecha de operación confiable. Se registró provisionalmente la fecha del reporte según la hora de Venezuela y se envió a revisión automática.')}
 function resolvePrefillDate({proofDate,attachment,method,bank,now=new Date()}={}){
   if(validTransactionDate(proofDate,{now}))return result(String(proofDate).trim(),DATE_SOURCES.PROOF_EXTRACTED,'HIGH',false,'Fecha visible extraída del comprobante por el lector inteligente.');
   return unresolvedDateResult();
@@ -57,7 +58,7 @@ function resolveSubmittedDate({clientDate,clientSource,attachment,paymentChannel
   const date=String(clientDate||'').trim();
   if(source===DATE_SOURCES.USER_CONFIRMED&&validTransactionDate(date,{now}))return result(date,source,'MEDIUM',true,'Fecha editada o confirmada por el propietario; debe contrastarse con el comprobante.');
   if(!source&&!String(clientSource||'').trim()&&validTransactionDate(date,{now}))return result(date,DATE_SOURCES.USER_CONFIRMED,'MEDIUM',true,'Fecha recibida de una versión anterior del portal; debe contrastarse con el comprobante.');
-  return unresolvedDateResult();
+  return reportDateFallbackResult(now);
 }
 
-module.exports={DAY_MS,MAX_AGE_YEARS,DATE_SOURCES,ALLOWED_DATE_SOURCES,datePartsInCaracas,todayCaracasISO,validTransactionDate,attachmentLastModifiedDate,requiresServerReceptionDate,unresolvedDateResult,resolvePrefillDate,resolveSubmittedDate};
+module.exports={DAY_MS,MAX_AGE_YEARS,DATE_SOURCES,ALLOWED_DATE_SOURCES,datePartsInCaracas,todayCaracasISO,validTransactionDate,attachmentLastModifiedDate,requiresServerReceptionDate,unresolvedDateResult,reportDateFallbackResult,resolvePrefillDate,resolveSubmittedDate};

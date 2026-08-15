@@ -50,8 +50,8 @@ function proofDescriptor(report){
  const fields=fieldsOf(report);
  return{sha256:clean(fields['Hash SHA-256']),visualHash:clean(fields['Hash Perceptual']),blobKey:clean(fields['Comprobante Blob Key']),contentType:clean(fields['Comprobante MIME']),filename:clean(fields['Comprobante Nombre Original']||'comprobante')};
 }
-function resultFields(result){
- const analysis=result?.analysis?.normalized||{},snapshot=result?.snapshot||{},decision=result?.decision||{},audit=result?.analysis?.audit||[],primaryAudit=audit.find(item=>item?.secondary!==true)||{},secondaryAudit=audit.find(item=>item?.secondary===true)||{},lastAudit=audit[audit.length-1]||{};
+function resultFields(result,report=null){
+ const analysis=result?.analysis?.normalized||{},snapshot=result?.snapshot||{},decision=result?.decision||{},audit=result?.analysis?.audit||[],primaryAudit=audit.find(item=>item?.secondary!==true)||{},secondaryAudit=audit.find(item=>item?.secondary===true)||{},lastAudit=audit[audit.length-1]||{},reportFields=fieldsOf(report),priorDate=clean(reportFields['Fecha Operación Detectada']),priorDateSource=clean(select(reportFields['Fuente Fecha Operación']))||'UNDETERMINED',priorDateEvidence=clean(reportFields['Evidencia Fecha Operación']),resolvedDate=clean(analysis.transaction_date)||priorDate,dateVerified=Boolean(clean(analysis.transaction_date));
  const fields={
   'Estado de Procesamiento':clean(result?.processingState||'Revisión manual urgente'),
   'Resultado Validación':clean(result?.resultValidation||'Revisión manual urgente'),
@@ -75,11 +75,11 @@ function resultFields(result){
   'Banco o Plataforma Detectada':clean(analysis.bank_or_platform),
   'Moneda Detectada':clean(analysis.currency),
   'Monto Detectado':Number(analysis.amount||0),
-  'Fecha Operación Detectada':analysis.transaction_date||null,
-  'Fuente Fecha Operación':analysis.transaction_date?'PROOF_EXTRACTED':'UNDETERMINED',
-  'Confianza Fecha Operación':analysis.transaction_date?'HIGH':'LOW',
-  'Fecha Requiere Revisión':!analysis.transaction_date,
-  'Evidencia Fecha Operación':analysis.transaction_date?'Fecha visible extraída durante el análisis autenticado del comprobante.':'No se encontró una fecha visible confiable; no se usó la fecha de carga.',
+  'Fecha Operación Detectada':resolvedDate||null,
+  'Fuente Fecha Operación':dateVerified?'PROOF_EXTRACTED':priorDateSource,
+  'Confianza Fecha Operación':dateVerified?'HIGH':'LOW',
+  'Fecha Requiere Revisión':!dateVerified,
+  'Evidencia Fecha Operación':dateVerified?'Fecha visible extraída durante el análisis autenticado del comprobante.':priorDate?`${priorDateEvidence||'Fecha provisional del reporte.'} El análisis posterior no confirmó una fecha visible; se conserva para revisión administrativa.`:'No se encontró una fecha visible confiable; requiere revisión administrativa.',
   'Hora Detectada':clean(analysis.transaction_time),
   'Referencia Detectada':clean(analysis.reference),
   'Estado Transacción Detectado':clean(analysis.transaction_status),
@@ -156,7 +156,7 @@ function createPaymentReportAutomation(deps={}){
  return{async process(reportId,env=process.env){
   if(!validRecordId(reportId))throw new Error('Reporte inválido.');
   const bundle=await loadBundle(reportId,env),result=await orchestrator.run(bundle,env);
-  await patch(reportId,resultFields(result));
+  await patch(reportId,resultFields(result,bundle.report));
   let execution=null;
   if(result.automaticApproval===true&&result.canCreatePayment===true&&result.canEnableAccess===false)execution=await executeApproval({reportId,result,bundle,env});
   return{success:true,reportId,result,execution,automatic:result.automaticApproval===true};
