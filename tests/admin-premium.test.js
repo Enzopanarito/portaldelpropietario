@@ -63,7 +63,7 @@ assert(cssTen.includes('font-size:calc(14px * var(--vla-reading-scale))'));
 assert(premiumTen.includes('protectedRunClose'));
 assert(premiumTen.includes('protectedHandleReport'));
 for(const action of ['approve','correct_and_approve','reject','request_information','mark_duplicate','approve_exception'])assert(paymentReview.includes(action),`Falta acción administrativa ${action}`);
-for(const label of ['Aprobar','Corregir y aprobar','Rechazar','Solicitar información','Marcar duplicado','Aprobar excepción'])assert(paymentReview.includes(label),`Falta etiqueta ${label}`);
+for(const label of ['Aprobar','Revisar y aprobar','Confirmar efectivo','Corregir datos','Rechazar','Solicitar información','Marcar duplicado','Más acciones'])assert(paymentReview.includes(label),`Falta etiqueta ${label}`);
 for(const detail of ['Receptor visible','Esperado:','Motor / parser','Duplicado ${level}','Ver detalle técnico y evidencia'])assert(paymentReview.includes(detail),`Falta detalle ${detail}`);
 assert(paymentReview.includes('handleReport.__vlaTen=true'),'La capa premium no debe reemplazar el flujo v10.');
 assert(paymentReviewCss.includes('@media(max-width:780px)'));

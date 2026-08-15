@@ -10,10 +10,14 @@ function green(overrides={}){return{'Forma de Pago Reportada':'USD','Monto Repor
  assert(decision.normalApprovalBlockers(green({'Clasificación Receptor':'PROBABLE'})).includes('RECIPIENT_PROBABLE'));
  assert(decision.normalApprovalBlockers(green({'Posible Duplicado':true,'Nivel de Duplicado':'confirmed'})).includes('DUPLICATE_REVIEW_REQUIRED'));
  assert(decision.normalApprovalBlockers(green({'Normalized Analysis JSON':'{"possible_visual_modification":true}'})).includes('POSSIBLE_VISUAL_MODIFICATION'));
- assert.strictEqual(decision.validateDecisionInput({decision:'reject',reason:'no'}).ok,false);
+ assert.strictEqual(decision.validateDecisionInput({decision:'reject',reason:''}).ok,true);
  assert.strictEqual(decision.validateDecisionInput({decision:'request_information',reason:'Falta referencia visible'}).ok,true);
- assert.strictEqual(decision.validateDecisionInput({decision:'approve_exception',reason:'corto'}).ok,false);
+ assert.strictEqual(decision.validateDecisionInput({decision:'approve_exception',reason:''}).ok,true);
  const correction=decision.validateDecisionInput({decision:'correct_and_approve',reason:'Verificado contra comprobante',corrections:{transactionDate:'2026-08-12',reference:'REF-OK'}});assert.strictEqual(correction.ok,true);
+ const correctionWithoutReason=decision.validateDecisionInput({decision:'correct_and_approve',reason:'',corrections:{reference:'REF-SIN-NOTA'}});assert.strictEqual(correctionWithoutReason.ok,true);
+ assert.strictEqual(decision.validateDecisionInput({decision:'correct_and_approve',reason:''}).ok,false);
+ for(const action of ['reject','mark_duplicate','approve_exception'])assert.strictEqual(decision.validateDecisionInput({decision:action,reason:''}).ok,true,`${action} no debe exigir una justificación escrita`);
+ assert.strictEqual(decision.validateDecisionInput({decision:'request_information',reason:''}).ok,false,'Solicitar información necesita el mensaje que recibirá el propietario.');
  const effective=decision.effectivePayment(green(),correction.corrections);assert.strictEqual(effective.ok,true);assert.strictEqual(effective.transactionDate,'2026-08-12');assert.strictEqual(effective.reference,'REF-OK');
  const bs=decision.effectivePayment(green({'Forma de Pago Reportada':'Bs BCV','Equivalente USD Reportado':50,'Monto Reportado Bs':10000,'Tasa BCV Reporte':200,'Moneda Ingresada':'VES','Monto Ingresado':10000}),{});assert.strictEqual(bs.ok,true);assert.strictEqual(bs.amountBs,10000);
  const badBs=decision.effectivePayment(green({'Forma de Pago Reportada':'Bs BCV','Equivalente USD Reportado':50,'Monto Reportado Bs':9999,'Tasa BCV Reporte':200}),{});assert.strictEqual(badBs.ok,false);

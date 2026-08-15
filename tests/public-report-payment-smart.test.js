@@ -60,6 +60,7 @@ const png=Buffer.concat([Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]),
 const proofSha=require('crypto').createHash('sha256').update(png).digest('hex');
 const dateAttestation=require('../netlify/functions/_shared/_payment_date_attestation').signDateAttestation({ownerId:'recABCDEFGHIJKLMN',attachmentSha:proofSha,method:'MOBILE_PAYMENT_VE',transactionDate:'2026-07-31'});
 const zelleDateAttestation=require('../netlify/functions/_shared/_payment_date_attestation').signDateAttestation({ownerId:'recABCDEFGHIJKLMN',attachmentSha:proofSha,method:'ZELLE',transactionDate:'2026-08-12'});
+const {todayCaracasISO}=require('../netlify/functions/_shared/_payment_date_resolver');
 
 (async()=>{
   let response=await handler(event({ownerId:'recABCDEFGHIJKLMN',submissionId:'submission-smart-001',mode:'USD',amount:'15.300,00',enteredCurrency:'BS',reference:'ABC-123',rate:100,bank:'Pago móvil',method:'MOBILE_PAYMENT_VE',transactionDate:'2026-07-31',transactionDateSource:'PROOF_EXTRACTED',dateAttestation,analysisSummary:{provider:'gemini-test',route:'direct',confidence:.98,transactionTime:'10:30:00',transactionStatus:'COMPLETED',recipient:'Enzo Panarito',warnings:['Lectura clara'],possibleVisualModification:false,prefillComplete:true,missingLabels:[]},observations:'Prueba',attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}}));
@@ -106,9 +107,11 @@ const zelleDateAttestation=require('../netlify/functions/_shared/_payment_date_a
   response=await handler(event({ownerId:'recABCDEFGHIJKLMN',paymentChannel:'CASH',mode:'USD',amount:'50,00',enteredCurrency:'USD',cashReceiver:'Administración'}));
   assert.equal(response.statusCode,200,JSON.stringify(parse(response)));body=parse(response);
   assert.equal(body.paymentChannel,'CASH');assert.equal(body.attachmentIncluded,false);assert.equal(body.automation.status,'CASH_ADMIN_CONFIRMATION_REQUIRED');
-  assert.equal(body.transactionDateSource,'UNDETERMINED');
+  const cashReportDate=todayCaracasISO(new Date(body.reportTimestamp));
+  assert.equal(body.transactionDate,cashReportDate);assert.equal(body.transactionDateSource,'USER_CONFIRMED');assert.equal(body.transactionDateConfidence,'HIGH');assert.equal(body.transactionDateNeedsReview,false);
+  assert.equal(created[3]['Fecha Operación Detectada'],cashReportDate);assert.equal(created[3]['Fecha del Reporte'],cashReportDate);assert.match(created[3]['Evidencia Fecha Operación'],/servidor.*Venezuela/i);
   assert.equal(created[3]['Archivo Obligatorio'],false);assert.equal(created[3]['Estado de Procesamiento'],'Pendiente de administrador');assert.match(created[3].Referencia,/EFECTIVO/);
-  assert.equal(mails[3].attachments.length,0);
+  assert.equal(mails[3].attachments.length,0);assert.match(mails[3].html,/Asignada automáticamente al crear el reporte de efectivo/);
 
   const before=created.length;
   response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:85,enteredCurrency:'USD',reference:'BAD-PROOF',bank:'Banco',method:'TRANSFER_VE',transactionDate:'2026-07-31',attachment:{name:'falso.png',type:'image/png',base64:Buffer.from('not-png').toString('base64')}}));

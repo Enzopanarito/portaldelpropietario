@@ -53,3 +53,10 @@ test('una fecha editada por el propietario se conserva, pero no autoriza aprobac
   const result=resolver.resolveSubmittedDate({method:'TRANSFER_VE',clientDate:'2026-08-06',clientSource:'USER_CONFIRMED',now});
   assert.deepEqual([result.transactionDate,result.transactionDateSource,result.transactionDateConfidence,result.transactionDateNeedsReview],['2026-08-06','USER_CONFIRMED','MEDIUM',true]);
 });
+
+test('efectivo usa automáticamente el día del reporte en hora de Venezuela',()=>{
+  const nearMidnightUtc=new Date('2026-08-15T02:30:00.000Z');
+  const result=resolver.resolveSubmittedDate({paymentChannel:'CASH',clientDate:'2026-01-01',clientSource:'PROOF_EXTRACTED',now:nearMidnightUtc});
+  assert.deepEqual([result.transactionDate,result.transactionDateSource,result.transactionDateConfidence,result.transactionDateNeedsReview],['2026-08-14','USER_CONFIRMED','HIGH',false]);
+  assert.match(result.transactionDateEvidence,/servidor.*reporte de efectivo.*Venezuela/i);
+});

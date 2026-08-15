@@ -51,6 +51,7 @@ function resolvePrefillDate({proofDate,attachment,method,bank,now=new Date()}={}
   return unresolvedDateResult();
 }
 function resolveSubmittedDate({clientDate,clientSource,attachment,paymentChannel='DIGITAL',method,bank,trustedProofDate=null,now=new Date()}={}){
+  if(String(paymentChannel||'').trim().toUpperCase()==='CASH')return result(todayCaracasISO(now),DATE_SOURCES.USER_CONFIRMED,'HIGH',false,'Fecha asignada automáticamente por el servidor al día en que se creó el reporte de efectivo, según la hora de Venezuela.');
   if(trustedProofDate&&trustedProofDate.transactionDateSource===DATE_SOURCES.PROOF_EXTRACTED&&validTransactionDate(trustedProofDate.transactionDate,{now}))return result(trustedProofDate.transactionDate,DATE_SOURCES.PROOF_EXTRACTED,'HIGH',false,trustedProofDate.transactionDateEvidence||'Fecha visible extraída del comprobante durante la prelectura autenticada del servidor.');
   const source=ALLOWED_DATE_SOURCES.has(String(clientSource||'').trim().toUpperCase())?String(clientSource).trim().toUpperCase():'';
   const date=String(clientDate||'').trim();

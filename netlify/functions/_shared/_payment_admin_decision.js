@@ -31,8 +31,8 @@ function normalizeCorrections(value={}){
 function validateDecisionInput(body={}){
  const action=clean(body.decision).toLowerCase(),reason=bounded(body.reason,500),corrections=normalizeCorrections(body.corrections);
  if(!ALL_ACTIONS.has(action))return{ok:false,message:'Decisión inválida.'};
- const minimum=action==='approve_exception'?10:['reject','mark_duplicate','request_information','correct_and_approve'].includes(action)?5:0;
- if(reason.length<minimum)return{ok:false,message:`Indique un motivo de al menos ${minimum} caracteres para esta acción.`};
+ const minimum=action==='request_information'?5:0;
+ if(reason.length<minimum)return{ok:false,message:'Escriba el mensaje que recibirá el propietario.'};
  if(corrections.transactionDate&&!validDate(corrections.transactionDate))return{ok:false,message:'La fecha corregida no es válida.'};
  if(corrections.method&&!METHODS.has(corrections.method))return{ok:false,message:'El método corregido no es válido.'};
  if(corrections.mode&&!MODES.has(corrections.mode))return{ok:false,message:'La cuenta corregida no es válida.'};
