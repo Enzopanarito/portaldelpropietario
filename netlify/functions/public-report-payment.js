@@ -21,6 +21,7 @@ const { sign } = require('./_shared/_internal_job_auth');
 const { connectLambdaEvent } = require('./_shared/_blobs_compat');
 const { todayCaracasISO, resolveSubmittedDate } = require('./_shared/_payment_date_resolver');
 const { verifyDateAttestation } = require('./_shared/_payment_date_attestation');
+const { verifyRecipientAttestation } = require('./_shared/_payment_recipient_attestation');
 const paymentTracking = require('./_shared/_payment_report_tracking');
 
 const ALLOWED_MODES = new Set(['USD', 'Bs BCV']);
@@ -62,17 +63,10 @@ function normalizeAnalysisSummary(value){
     prefillComplete:source.prefillComplete===true,missingLabels:(Array.isArray(source.missingLabels)?source.missingLabels:[]).slice(0,8).map(item=>optionalText(item,80)).filter(Boolean)
   };
 }
-function dateSourceLabel(source,paymentChannel='DIGITAL'){if(paymentChannel==='CASH'&&source==='USER_CONFIRMED')return'Asignada automáticamente al crear el reporte de efectivo';return({PROOF_EXTRACTED:'Leída del comprobante',USER_CONFIRMED:'Editada o confirmada por el propietario',ADMIN_CORRECTED:'Corregida por administración',UNDETERMINED:'No detectada; requiere revisión'}[source]||source||'No identificada')}
-function uncertaintyWarnings({paymentChannel,method,dateResolution,analysisSummary}){
-  if(paymentChannel!=='DIGITAL')return[];
-  const warnings=[];
-  if(dateResolution.transactionDateNeedsReview)warnings.push('La fecha del pago no pudo confirmarse en el comprobante.');
-  if(!analysisSummary.prefillComplete||analysisSummary.confidence<0.85)warnings.push('Algunos datos del comprobante necesitan revisión humana.');
-  if(!['COMPLETED','SENT','PROCESSED'].includes(String(analysisSummary.transactionStatus||'').toUpperCase()))warnings.push('El estado final de la operación no quedó completamente claro.');
-  if(!analysisSummary.recipient)warnings.push('El receptor no pudo confirmarse automáticamente.');
-  if(analysisSummary.possibleVisualModification)warnings.push('La imagen presenta una señal que debe revisar la administración.');
-  if(method==='OTHER')warnings.push('El método de pago necesita confirmación.');
-  return[...new Set(warnings)].slice(0,6);
+function dateSourceLabel(source,paymentChannel='DIGITAL'){if(paymentChannel==='CASH'&&source==='USER_CONFIRMED')return'Asignada automáticamente al crear el reporte de efectivo';return({PROOF_EXTRACTED:'Leída del comprobante',USER_CONFIRMED:'Editada o confirmada por el propietario',ADMIN_CORRECTED:'Corregida por administración',UNDETERMINED:'Fecha provisional del reporte; requiere revisión'}[source]||source||'No identificada')}
+function uncertaintyWarnings({paymentChannel,recipientVerification}){
+  if(paymentChannel!=='DIGITAL'||recipientVerification?.classification!=='UNAUTHORIZED')return[];
+  return['El receptor detectado no coincide con las cuentas autorizadas de Villa Los Apamates.'];
 }
 
 async function rateLimit(scope,identity,max){
@@ -200,10 +194,10 @@ const handler = async function(event){
     if(paymentChannel==='DIGITAL')connectLambdaEvent(event);
     const attachmentSha=attachment?crypto.createHash('sha256').update(attachment.content).digest('hex'):'';
     const trustedProofDate=attachment?verifyDateAttestation(body.dateAttestation,{ownerId,attachmentSha,method},{now:Date.parse(reportTimestamp)}):null;
+    const recipientVerification=attachment?verifyRecipientAttestation(body.recipientAttestation,{ownerId,attachmentSha,method},{now:Date.parse(reportTimestamp)}):null;
     const dateResolution=resolveSubmittedDate({clientDate:clientTransactionDate,clientSource:body.transactionDateSource,attachment:body.attachment,paymentChannel,method,bank,trustedProofDate,now:new Date(reportTimestamp)}),{transactionDate,transactionDateSource,transactionDateConfidence,transactionDateNeedsReview,transactionDateEvidence}=dateResolution;
     const reference=rawReference||(paymentChannel==='CASH'?`EFECTIVO · ${cashReceiver} · ${submissionId.slice(-12)}`:'');
-    const presentedWarnings=uncertaintyWarnings({paymentChannel,method,dateResolution,analysisSummary});
-    if(presentedWarnings.length&&!uncertaintyAcknowledged)return json(428,{success:false,confirmationRequired:true,uncertainty:true,warnings:presentedWarnings,message:'Hay datos que VLA no pudo confirmar. Esto no significa que el pago sea incorrecto. ¿Aun así quieres reportarlo?'});
+    const presentedWarnings=duplicateReviewRequested?[]:uncertaintyWarnings({paymentChannel,recipientVerification});
 
     const [ipLimit,ownerLimit]=await Promise.all([rateLimit('PUBLIC_REPORT_IP',ip,MAX_REPORTS_PER_IP),rateLimit('PUBLIC_REPORT_OWNER',ownerId,MAX_REPORTS_PER_OWNER)]);
     if(!ipLimit.allowed||!ownerLimit.allowed){const retryAfter=Math.max(ipLimit.retryAfter||0,ownerLimit.retryAfter||0,60);return json(429,{success:false,protected:true,message:'Se alcanzó el límite temporal de reportes. Espere antes de intentar nuevamente.'},{'Retry-After':String(retryAfter)});}
@@ -223,6 +217,7 @@ const handler = async function(event){
       identity=await attachmentIdentity(attachment);
       historicalDuplicate=await findHistoricalFileDuplicate(identity,{reference,bank_or_platform:bank,method,currency:enteredCurrency==='BS'?'VES':'USD',amount,transaction_date:transactionDate,recipient_name:analysisSummary.recipient});
       if(historicalDuplicate.isDuplicate&&!duplicateReviewRequested)return json(409,{success:false,duplicate:true,duplicateLevel:'confirmed',duplicateScore:historicalDuplicate.score||100,duplicateType:historicalDuplicate.type,duplicateEvidence:historicalDuplicate.evidence||[],canSubmitForReview:true,message:'Este comprobante coincide exactamente con uno ya reportado. No se creó ningún reporte. Puedes cancelar o enviarlo de forma excepcional para revisión administrativa.'});
+      if(presentedWarnings.length&&!uncertaintyAcknowledged)return json(428,{success:false,confirmationRequired:true,confirmationCode:'RECIPIENT_MISMATCH',uncertainty:true,title:'Receptor no autorizado',warnings:presentedWarnings,message:'El receptor detectado no coincide con las cuentas autorizadas de Villa Los Apamates. Esto puede ser un error de lectura. ¿Aún quieres reportar el pago?'});
       specialDuplicateReview=duplicateReviewRequested||historicalDuplicate.isDuplicate;
       proofStore=createProofStore();
       const reservationSha=specialDuplicateReview?crypto.createHash('sha256').update(`duplicate-review|${identity.sha256}|${ownerId}`).digest('hex'):identity.sha256;
@@ -257,9 +252,9 @@ const handler = async function(event){
     const automationTask=paymentChannel==='CASH'?Promise.resolve({queued:false,status:'CASH_ADMIN_CONFIRMATION_REQUIRED'}):triggerBackgroundAnalysis(report.id).catch(error=>({queued:false,status:safeDisplayText(error.code||error.message,160)}));
     const notificationTask=notifyAdminPaymentReport({ownerId,owner,mode,enteredCurrency,amountEntered:amount,usdEq,amountBs,reference,rateInfo,reportId:report?.id,access,bank,transactionDate,transactionDateSource,transactionDateConfidence,transactionDateNeedsReview,transactionDateEvidence,transactionStatus,observations,analysisSummary,attachment,paymentChannel,cashReceiver,submissionId}).catch(error=>({sent:false,status:'Error enviando notificación admin',detail:safeDisplayText(error.message,500)}));
     const [automation,adminNotification]=await Promise.all([within(automationTask,POST_CREATE_TIMEOUT_MS,{queued:false,status:'BACKGROUND_TRIGGER_TIMEOUT'}),within(notificationTask,POST_CREATE_TIMEOUT_MS,{sent:false,status:'Notificación diferida para proteger la respuesta del portal'})]);
-    const requiresReview=specialDuplicateReview||transactionDateNeedsReview||analysisSummary.possibleVisualModification||!analysisSummary.prefillComplete||!['COMPLETED','SENT','PROCESSED'].includes(analysisSummary.transactionStatus);
+    const requiresReview=specialDuplicateReview||presentedWarnings.length>0||transactionDateNeedsReview||analysisSummary.possibleVisualModification||!analysisSummary.prefillComplete||!['COMPLETED','SENT','PROCESSED'].includes(analysisSummary.transactionStatus);
     const message=paymentChannel==='CASH'?'Efectivo reportado. Quedó pendiente de confirmación administrativa; no se modificará el saldo ni el acceso hasta que la entrega sea verificada.':requiresReview?'Tu pago fue recibido para revisión. Esto no cambia tu saldo ni tu acceso. Recibirás respuesta en un plazo máximo de 72 horas.':automation.queued?'Pago recibido. El motor inteligente está validando el comprobante, el receptor y posibles duplicados.':'Pago recibido y protegido. La validación se reintentará automáticamente.';
-    console.info(JSON.stringify({event:'VLA_PAYMENT_REPORT_CREATED',reportId:report?.id||null,ownerId,paymentChannel,method,submissionId,reportTimestamp,transactionDate,transactionDateSource,transactionDateConfidence,dateAttestationVerified:Boolean(trustedProofDate),targetMode:mode,proofStored:Boolean(proof?.verified),analysisQueued:Boolean(automation.queued)}));
+    console.info(JSON.stringify({event:'VLA_PAYMENT_REPORT_CREATED',reportId:report?.id||null,ownerId,paymentChannel,method,submissionId,reportTimestamp,transactionDate,transactionDateSource,transactionDateConfidence,dateAttestationVerified:Boolean(trustedProofDate),recipientAttestationVerified:Boolean(recipientVerification),recipientClassification:recipientVerification?.classification||'UNAVAILABLE',targetMode:mode,proofStored:Boolean(proof?.verified),analysisQueued:Boolean(automation.queued)}));
     return json(200,deepEscapeStrings({success:true,message,reportId:report?.id,trackingCode:paymentTracking.trackingCode(report.id,trackingCredential.token),paymentChannel,targetMode:mode,enteredCurrency,amountEntered:amount,amountUsdRef:usdEq,amountBs,rateApplied:rateInfo.rate||null,method,transactionDate,transactionDateSource,transactionDateConfidence,transactionDateNeedsReview,transactionDateEvidence,uncertaintyAcknowledged:presentedWarnings.length?uncertaintyAcknowledged:false,uncertaintyWarnings:presentedWarnings,duplicateReview:specialDuplicateReview,reviewDeadlineHours:requiresReview?72:null,reportTimestamp,attachmentIncluded:Boolean(attachment),proofStored:Boolean(proof?.verified),visualHashStored:Boolean(identity?.visualHash),automation,access,adminNotification}));
   }catch(error){
     console.error(JSON.stringify({...auditContext,errorCode:safeDisplayText(error.code||error.name||'UNKNOWN',120)}));

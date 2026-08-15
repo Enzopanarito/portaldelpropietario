@@ -60,6 +60,7 @@ const png=Buffer.concat([Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]),
 const proofSha=require('crypto').createHash('sha256').update(png).digest('hex');
 const dateAttestation=require('../netlify/functions/_shared/_payment_date_attestation').signDateAttestation({ownerId:'recABCDEFGHIJKLMN',attachmentSha:proofSha,method:'MOBILE_PAYMENT_VE',transactionDate:'2026-07-31'});
 const zelleDateAttestation=require('../netlify/functions/_shared/_payment_date_attestation').signDateAttestation({ownerId:'recABCDEFGHIJKLMN',attachmentSha:proofSha,method:'ZELLE',transactionDate:'2026-08-12'});
+const unauthorizedRecipientAttestation=require('../netlify/functions/_shared/_payment_recipient_attestation').signRecipientAttestation({ownerId:'recABCDEFGHIJKLMN',attachmentSha:proofSha,method:'MOBILE_PAYMENT_VE',classification:'UNAUTHORIZED'});
 const {todayCaracasISO}=require('../netlify/functions/_shared/_payment_date_resolver');
 
 (async()=>{
@@ -96,13 +97,14 @@ const {todayCaracasISO}=require('../netlify/functions/_shared/_payment_date_reso
   assert.equal(created[1]['Monto Reportado Bs'],39852);
   assert.equal(created[1]['Tasa BCV Reporte'],180);
   assert.equal(body.transactionDateSource,'UNDETERMINED');
-  assert.equal(body.transactionDate,'');
+  assert.equal(body.transactionDate,todayCaracasISO(new Date(body.reportTimestamp)));
   assert(created[1]['Observaciones Reportadas'].includes('Fuente de fecha: UNDETERMINED'));
-  assert.equal(Object.hasOwn(created[1],'Fecha Operación Detectada'),false);
+  assert.equal(created[1]['Fecha Operación Detectada'],body.transactionDate);
+  assert.match(created[1]['Evidencia Fecha Operación'],/provisionalmente.*fecha del reporte/i);
 
   response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:'20,00',enteredCurrency:'USD',reference:'BIN-123',bank:'Binance Pay',method:'BINANCE_PAY',uncertaintyAcknowledged:true,attachment:{name:'binance.png',type:'image/png',base64:png.toString('base64')}}));
   assert.equal(response.statusCode,200,JSON.stringify(parse(response)));body=parse(response);
-  assert.equal(body.method,'BINANCE_PAY');assert.equal(body.transactionDateSource,'UNDETERMINED');
+  assert.equal(body.method,'BINANCE_PAY');assert.equal(body.transactionDateSource,'UNDETERMINED');assert.equal(body.transactionDate,todayCaracasISO(new Date(body.reportTimestamp)));
 
   response=await handler(event({ownerId:'recABCDEFGHIJKLMN',paymentChannel:'CASH',mode:'USD',amount:'50,00',enteredCurrency:'USD',cashReceiver:'Administración'}));
   assert.equal(response.statusCode,200,JSON.stringify(parse(response)));body=parse(response);
@@ -131,11 +133,16 @@ const {todayCaracasISO}=require('../netlify/functions/_shared/_payment_date_reso
 
   const beforeUncertain=created.length;
   response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:85,enteredCurrency:'USD',reference:'NO-DATE',bank:'Pago móvil',method:'MOBILE_PAYMENT_VE',attachment:{name:'sin-fecha.png',type:'image/png',base64:png.toString('base64')}}));body=parse(response);
-  assert.equal(response.statusCode,428);assert.equal(body.confirmationRequired,true);assert.match(body.message,/¿Aun así quieres reportarlo\?/);assert.equal(created.length,beforeUncertain,'Una duda debe preguntar antes de crear el reporte.');
-  response=await handler(event({ownerId:'recABCDEFGHIJKLMN',mode:'USD',amount:85,enteredCurrency:'USD',reference:'NO-DATE',bank:'Pago móvil',method:'MOBILE_PAYMENT_VE',uncertaintyAcknowledged:true,attachment:{name:'sin-fecha.png',type:'image/png',base64:png.toString('base64')}}));
-  assert.equal(response.statusCode,200,JSON.stringify(parse(response)));body=parse(response);
-  assert.equal(body.transactionDateSource,'UNDETERMINED');assert.equal(body.transactionDate,'');assert.equal(body.transactionDateConfidence,'LOW');assert.equal(body.transactionDateNeedsReview,true);
+  assert.equal(response.statusCode,200,JSON.stringify(body));assert.equal(created.length,beforeUncertain+1,'Una fecha ilegible debe enviarse a revisión sin interrumpir al propietario.');
+  assert.equal(body.transactionDateSource,'UNDETERMINED');assert.equal(body.transactionDate,todayCaracasISO(new Date(body.reportTimestamp)));assert.equal(body.transactionDateConfidence,'LOW');assert.equal(body.transactionDateNeedsReview,true);
   assert(created.at(-1)['Observaciones Reportadas'].includes('Fecha requiere contraste: SÍ'));
+
+  const beforeRecipientMismatch=created.length;
+  const mismatchPayload={ownerId:'recABCDEFGHIJKLMN',submissionId:'submission-recipient-mismatch-001',mode:'USD',amount:85,enteredCurrency:'USD',reference:'RECIPIENT-MISMATCH',bank:'Pago móvil',method:'MOBILE_PAYMENT_VE',recipientAttestation:unauthorizedRecipientAttestation,analysisSummary:{provider:'gemini-test',route:'direct',confidence:.98,transactionStatus:'COMPLETED',recipient:'Persona distinta',prefillComplete:true},attachment:{name:'receptor-distinto.png',type:'image/png',base64:png.toString('base64')}};
+  response=await handler(event(mismatchPayload));body=parse(response);
+  assert.equal(response.statusCode,428,JSON.stringify(body));assert.equal(body.confirmationCode,'RECIPIENT_MISMATCH');assert.equal(body.title,'Receptor no autorizado');assert.match(body.message,/receptor detectado no coincide.*cuentas autorizadas/i);assert.match(body.message,/error de lectura/i);assert.match(body.message,/¿Aún quieres reportar el pago\?/);assert.equal(created.length,beforeRecipientMismatch,'La alerta precisa debe preguntar antes de crear el reporte.');
+  response=await handler(event({...mismatchPayload,uncertaintyAcknowledged:true}));body=parse(response);
+  assert.equal(response.statusCode,200,JSON.stringify(body));assert.equal(created.length,beforeRecipientMismatch+1);assert.equal(body.uncertaintyAcknowledged,true);assert.equal(body.reviewDeadlineHours,72);assert.equal(created.at(-1)['Alerta Aceptada por Propietario'],true);assert.match(created.at(-1)['Alertas Presentadas'],/receptor detectado no coincide/i);
 
   historicalFinancialDuplicate=true;
   const reportsBeforeFinancialDuplicate=created.length;

@@ -12,6 +12,8 @@ const {mergeConfig}=require('./_shared/_automation_rules');
 const {listAll,TABLES,aiConfig}=require('./_shared/_payment_report_automation');
 const {resolvePrefillDate}=require('./_shared/_payment_date_resolver');
 const {signDateAttestation}=require('./_shared/_payment_date_attestation');
+const {METHOD_ACCOUNT_MAP,accountActive,findAuthorizedRecipient}=require('./_shared/_payment_deterministic_arbiter');
+const {signRecipientAttestation}=require('./_shared/_payment_recipient_attestation');
 
 const WINDOW_MS=60*60*1000;
 const CURRENT_STABLE_MODELS=Object.freeze(['gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-2.5-flash']);
@@ -36,6 +38,18 @@ function missingFields(analysis){
  return missing;
 }
 async function loadAiConfig(){const records=await listAll(TABLES.config,'?maxRecords=1'),record=records[0]||{fields:{}},rules=mergeConfig(record);return aiConfig(record,rules)}
+async function loadAuthorizedAccounts(){
+ if(!TABLES.accounts)return{available:false,records:[]};
+ try{return{available:true,records:await listAll(TABLES.accounts)}}
+ catch(error){console.error(JSON.stringify({event:'VLA_PAYMENT_PREFILL_ACCOUNTS_UNAVAILABLE',code:String(error?.code||'AIRTABLE_READ_FAILED').slice(0,80)}));return{available:false,records:[]}}
+}
+function recipientVerification(analysis,accountState,config={},now=new Date()){
+ const active=(accountState?.records||[]).filter(account=>accountActive(account,now));
+ const minimumConfidence=Math.max(0,Math.min(1,Number(config.minimumConfidence??0.85)));
+ if(accountState?.available!==true||!active.length||!METHOD_ACCOUNT_MAP[analysis?.method]||Number(analysis?.confidence||0)<minimumConfidence)return{classification:'INCONCLUSIVE',needsReview:true};
+ const match=findAuthorizedRecipient(analysis,active,{now}),classification=String(match?.classification||'INCONCLUSIVE').toUpperCase();
+ return{classification,needsReview:classification!=='CONFIRMED'};
+}
 function unique(values){return[...new Set((values||[]).map(value=>String(value||'').trim()).filter(Boolean))]}
 function modelCandidates(config={},selection=null){
  return unique([
@@ -125,20 +139,22 @@ const handler=async event=>{
   if(!attachment)return json(400,{message:'Adjunte el comprobante antes de continuar.'});
   const [ipLimit,ownerLimit]=await Promise.all([allowed('PAYMENT_PREFILL_IP',clientIp(event),12),allowed('PAYMENT_PREFILL_OWNER',ownerId,8)]);
   if(!ipLimit.allowed||!ownerLimit.allowed){const retryAfter=Math.max(ipLimit.retryAfter||0,ownerLimit.retryAfter||0,60);return json(429,{message:'Se alcanzó el límite temporal de lecturas. Puede completar los datos manualmente.',manualAvailable:true},{'Retry-After':String(retryAfter)})}
-  const config=await loadAiConfig();
+  const [config,accountState]=await Promise.all([loadAiConfig(),loadAuthorizedAccounts()]);
   if(!config.aiEnabled)return json(503,{message:'La lectura automática no está disponible. Complete los datos manualmente.',manualAvailable:true});
   const result=await analyzeWithFallback({config,proof:{content:attachment.content,contentType:attachment.contentType},report:{targetMode:''},promptVersion:config.promptVersion}),raw=result.raw;
   const parsed=contract.parseRawJson(raw);
   if(!parsed.ok)return json(422,{message:'No pudimos leer el comprobante con seguridad. Complete los datos manualmente.',manualAvailable:true,reason:parsed.reason});
   const validation=contract.validateAnalysis(parsed.value,{minimumConfidence:0}),fatal=(validation.issueCodes||[]).filter(code=>!['CRITICAL_FIELDS_MISSING','LOW_CONFIDENCE'].includes(code));
   if(fatal.length)return json(422,{message:'El comprobante no devolvió datos utilizables. Complete los datos manualmente.',manualAvailable:true,reason:fatal[0]});
-  const analysis=contract.normalizeAnalysis(parsed.value),missing=missingFields(analysis),bank=analysis.bank_or_platform||methodLabel(analysis.method),date=resolvePrefillDate({proofDate:analysis.transaction_date,attachment:body.attachment,method:analysis.method,bank});
-  let dateAttestation='';
+  const analysis=contract.normalizeAnalysis(parsed.value),missing=missingFields(analysis),bank=analysis.bank_or_platform||methodLabel(analysis.method),date=resolvePrefillDate({proofDate:analysis.transaction_date,attachment:body.attachment,method:analysis.method,bank}),attachmentSha=crypto.createHash('sha256').update(attachment.content).digest('hex'),recipient=recipientVerification(analysis,accountState,config);
+  let dateAttestation='',recipientAttestation='';
   if(date.transactionDateSource==='PROOF_EXTRACTED'){
-   try{dateAttestation=signDateAttestation({ownerId,attachmentSha:crypto.createHash('sha256').update(attachment.content).digest('hex'),method:analysis.method,transactionDate:date.transactionDate,transactionDateEvidence:date.transactionDateEvidence})}
+   try{dateAttestation=signDateAttestation({ownerId,attachmentSha,method:analysis.method,transactionDate:date.transactionDate,transactionDateEvidence:date.transactionDateEvidence})}
    catch(error){console.error(JSON.stringify({event:'VLA_PAYMENT_DATE_ATTESTATION_FAILED',ownerId,code:error.code||'DATE_ATTESTATION_ERROR'}))}
   }
-  return json(200,{success:true,complete:missing.length===0,analysis:{amount:analysis.amount,currency:analysis.currency,reference:analysis.reference||'',bank,method:analysis.method,...date,dateAttestation,transactionTime:analysis.transaction_time||'',transactionStatus:analysis.transaction_status,recipient:analysis.recipient_name||analysis.recipient_phone||analysis.recipient_email||analysis.recipient_account_visible||'',confidence:analysis.confidence,warnings:analysis.warnings||[],possibleVisualModification:analysis.possible_visual_modification===true},missing,analysisProvider:result.model,analysisRoute:result.provider||'unknown'},{'X-Payment-AI-Provider':result.provider||'unknown'});
+  try{recipientAttestation=signRecipientAttestation({ownerId,attachmentSha,method:analysis.method,classification:recipient.classification})}
+  catch(error){console.error(JSON.stringify({event:'VLA_PAYMENT_RECIPIENT_ATTESTATION_FAILED',ownerId,code:error.code||'RECIPIENT_ATTESTATION_ERROR'}))}
+  return json(200,{success:true,complete:missing.length===0,analysis:{amount:analysis.amount,currency:analysis.currency,reference:analysis.reference||'',bank,method:analysis.method,...date,dateAttestation,recipientAttestation,recipientClassification:recipient.classification,recipientNeedsReview:recipient.needsReview,transactionTime:analysis.transaction_time||'',transactionStatus:analysis.transaction_status,recipient:analysis.recipient_name||analysis.recipient_phone||analysis.recipient_email||analysis.recipient_account_visible||'',confidence:analysis.confidence,warnings:analysis.warnings||[],possibleVisualModification:analysis.possible_visual_modification===true},missing,analysisProvider:result.model,analysisRoute:result.provider||'unknown'},{'X-Payment-AI-Provider':result.provider||'unknown'});
  }catch(error){
   const message=String(error?.message||'');
   if(['INVALID_ATTACHMENT'].includes(errorCode(error))||/adjunto|JPG|PNG|PDF|3 MB|formato/i.test(message))return json(400,{message:safeDisplayText(message,300),manualAvailable:false});
@@ -159,4 +175,6 @@ exports.validateRawForPrefill=validateRawForPrefill;
 exports.analyzeViaProxy=analyzeViaProxy;
 exports.analyzeDirect=analyzeDirect;
 exports.analyzeWithFallback=analyzeWithFallback;
+exports.loadAuthorizedAccounts=loadAuthorizedAccounts;
+exports.recipientVerification=recipientVerification;
 exports.CURRENT_STABLE_MODELS=CURRENT_STABLE_MODELS;

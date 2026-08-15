@@ -10,7 +10,7 @@ const originalFetch=global.fetch;
 global.fetch=async()=>({ok:false,status:503,json:async()=>({}),text:async()=>''});
 test.after(()=>{global.fetch=originalFetch});
 
-function loadWithAnalysis(analysis,{runnerFactory}={}){
+function loadWithAnalysis(analysis,{runnerFactory,accounts=[]}={}){
  process.env.GEMINI_API_KEY='test-key';
  process.env.PAYMENT_PROOF_ENCRYPTION_KEY=Buffer.alloc(32,9).toString('hex');
  const original=Module._load;
@@ -23,7 +23,7 @@ function loadWithAnalysis(analysis,{runnerFactory}={}){
    if(request==='./_shared/_persistent_rate_limit')return{consume:async()=>({allowed:true})};
    if(request==='./_shared/_security_utils')return{safeDisplayText:value=>String(value||'')};
    if(request==='./_shared/_automation_rules')return{mergeConfig:()=>({})};
-   if(request==='./_shared/_payment_report_automation')return{listAll:async()=>[{fields:{}}],TABLES:{config:'Configuración'},aiConfig:()=>({aiEnabled:true,primaryModel:'gemini-2.5-flash',promptVersion:'V2'})};
+   if(request==='./_shared/_payment_report_automation')return{listAll:async table=>table==='Cuentas de Cobro Autorizadas'?accounts:[{fields:{}}],TABLES:{config:'Configuración',accounts:'Cuentas de Cobro Autorizadas'},aiConfig:()=>({aiEnabled:true,primaryModel:'gemini-2.5-flash',promptVersion:'V2',minimumConfidence:.85})};
   }
   return original.apply(this,arguments);
  };
@@ -42,3 +42,5 @@ test('ningún método digital bloquea la prelectura cuando la fecha no aparece',
 test('ningún método usa la fecha del archivo cuando la operación no es visible',async()=>{const modified=Date.now()-86400000,{handler}=loadWithAnalysis(base({transaction_date:null,critical_fields_visible:false})),response=await handler(event({base64:'x',lastModified:modified})),body=JSON.parse(response.body);assert.equal(response.statusCode,200);assert.equal(body.complete,true);assert.equal(body.analysis.transactionDate,'');assert.equal(body.analysis.transactionDateSource,'UNDETERMINED');assert.equal(body.analysis.transactionDateConfidence,'LOW');assert.equal(body.analysis.transactionDateNeedsReview,true)});
 test('Zelle, Binance y cripto sin fecha quedan para revisión',async()=>{for(const method of ['ZELLE','BINANCE_PAY','CRYPTO_TRANSFER']){const {handler}=loadWithAnalysis(base({method,bank_or_platform:method,transaction_date:null,critical_fields_visible:false})),response=await handler(event({base64:'x',lastModified:Date.now()-86400000})),body=JSON.parse(response.body);assert.equal(response.statusCode,200);assert.equal(body.analysis.transactionDate,'');assert.equal(body.analysis.transactionDateSource,'UNDETERMINED');assert.equal(body.analysis.transactionDateConfidence,'LOW');assert.equal(body.analysis.transactionDateNeedsReview,true)}});
 test('una fecha visible genera atestación de servidor para el envío final',async()=>{const {handler}=loadWithAnalysis(base({method:'ZELLE',bank_or_platform:'Zelle'})),response=await handler(event()),body=JSON.parse(response.body);assert.equal(response.statusCode,200);assert.match(body.analysis.dateAttestation,/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/)});
+test('una incompatibilidad clara del receptor genera una clasificación precisa y firmada',async()=>{const accounts=[{id:'recACCOUNT0000001',fields:{Activo:true,Método:'Zelle',Moneda:'USD','Correo Normalizado':'cobros@villalosapamates.com','Titular Autorizado':'Villa Los Apamates'}}],analysis=base({method:'ZELLE',bank_or_platform:'Zelle',currency:'USD',recipient_name:'Persona distinta',recipient_email:'otra@ejemplo.com'}),{handler}=loadWithAnalysis(analysis,{accounts}),response=await handler(event()),body=JSON.parse(response.body);assert.equal(response.statusCode,200);assert.equal(body.analysis.recipientClassification,'UNAUTHORIZED');assert.equal(body.analysis.recipientNeedsReview,true);assert.match(body.analysis.recipientAttestation,/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/)});
+test('una lectura de receptor inconclusa no se presenta como receptor no autorizado',async()=>{const accounts=[{id:'recACCOUNT0000001',fields:{Activo:true,Método:'Zelle',Moneda:'USD','Correo Normalizado':'cobros@villalosapamates.com'}}],analysis=base({method:'ZELLE',bank_or_platform:'Zelle',currency:'USD',recipient_name:'Persona distinta',recipient_email:'otra@ejemplo.com',confidence:.4}),{handler}=loadWithAnalysis(analysis,{accounts}),response=await handler(event()),body=JSON.parse(response.body);assert.equal(response.statusCode,200);assert.equal(body.analysis.recipientClassification,'INCONCLUSIVE');assert.equal(body.analysis.recipientNeedsReview,true)});

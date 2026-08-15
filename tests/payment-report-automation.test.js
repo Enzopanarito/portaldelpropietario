@@ -19,5 +19,8 @@ const automation=require('../netlify/functions/_shared/_payment_report_automatio
  const manualResult=await manual.process(reportId,{});assert.strictEqual(manualResult.automatic,false);
  assert.strictEqual(Object.prototype.hasOwnProperty.call(manualPatches[0].fields,'Decisión Administrativa'),false,'El análisis manual no puede sobrescribir una decisión administrativa existente.');
  assert.strictEqual(Object.prototype.hasOwnProperty.call(manualPatches[0].fields,'Validación Realizada Por'),false,'El análisis manual no puede atribuirse una aprobación.');
+ const fallbackFields=automation.resultFields({...baseResult,automaticApproval:false,analysis:{...baseResult.analysis,normalized:{...baseResult.analysis.normalized,transaction_date:null}}},{fields:{'Fecha Operación Detectada':'2026-08-15','Fuente Fecha Operación':'UNDETERMINED','Confianza Fecha Operación':'LOW','Fecha Requiere Revisión':true,'Evidencia Fecha Operación':'Fecha provisional del reporte.'}});
+ assert.strictEqual(fallbackFields['Fecha Operación Detectada'],'2026-08-15','El análisis posterior no puede borrar la fecha provisional del reporte.');
+ assert.strictEqual(fallbackFields['Fuente Fecha Operación'],'UNDETERMINED');assert.strictEqual(fallbackFields['Fecha Requiere Revisión'],true);assert.match(fallbackFields['Evidencia Fecha Operación'],/se conserva para revisión administrativa/i);
  console.log('PAYMENT_REPORT_AUTOMATION_OK');
 })().catch(error=>{console.error(error);process.exit(1)});
