@@ -1,17 +1,29 @@
 const { withAirtableUsage } = require('./_shared/_airtable_meter');
 // netlify/functions/whatsapp-jobs.js
-// Módulo liviano e independiente para órdenes de WhatsApp. No afecta admin-data ni contabilidad.
+// Módulo histórico de órdenes de WhatsApp.
+// Desde la arquitectura Controller/Agent, este endpoint es SOLO LECTURA por defecto.
+// El Controller local es el único scheduler autorizado.
 
 const { requireAdmin } = require('./_shared/_auth');
 
 const JOBS_TABLE = 'WhatsApp Jobs';
 const SCHEDULES_TABLE = 'WhatsApp Programaciones';
+const LEGACY_MUTATIONS_ENABLED = String(process.env.VLA_ENABLE_LEGACY_WHATSAPP_JOBS || '').trim().toLowerCase() === 'true';
 
 function headers() {
   return { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
 }
 function json(statusCode, body) {
   return { statusCode, headers: headers(), body: JSON.stringify(body) };
+}
+function legacyDisabled(reason = 'El módulo histórico de WhatsApp está en modo solo lectura.') {
+  return json(410, {
+    ok: false,
+    code: 'LEGACY_WHATSAPP_JOBS_DISABLED',
+    message: reason,
+    schedulerAuthority: 'controller',
+    legacyMutationsEnabled: false
+  });
 }
 function airtableUrl(tableName, query = '') {
   return `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}${query}`;
@@ -42,7 +54,10 @@ async function listAll(tableName, query = '') {
   return records;
 }
 function caracasParts(date = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(date);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).formatToParts(date);
   return Object.fromEntries(parts.map(p => [p.type, p.value]));
 }
 function nowIso() { return new Date().toISOString(); }
@@ -128,40 +143,14 @@ async function updateJobByJobId(id, fields) {
   const data = await airtable(JOBS_TABLE, { method: 'PATCH', body: JSON.stringify({ records: [{ id: records[0].id, fields }], typecast: true }) });
   return normalizeJob(data.records[0]);
 }
-async function createSchedule(input = {}) {
-  const dayValue = Number(input.day ?? (input.frequency === 'Diario' ? 0 : 1));
-  const isDaily = dayValue === 0 || input.frequency === 'Diario';
-  const fields = {
-    'Nombre': input.name || (isDaily ? `Recordatorio diario ${input.hour || '09:00'}` : `Recordatorio día ${dayValue || 1}`),
-    'Día del Mes': isDaily ? 0 : (dayValue || 1),
-    'Hora': input.hour || '09:00',
-    'Modo': input.mode || 'Simulación',
-    'Activo': input.active !== false,
-    'Notas': input.notes || (isDaily ? 'Programación diaria automática. Día del Mes = 0 significa diario.' : '')
-  };
-  const data = await airtable(SCHEDULES_TABLE, { method: 'POST', body: JSON.stringify({ records: [{ fields }], typecast: true }) });
-  return normalizeSchedule(data.records[0]);
+
+// Conservadas únicamente como ruta de contingencia explícita para jobs históricos.
+// NUNCA deben crear o ejecutar programación automática: esa autoridad pertenece al Controller.
+async function createSchedule() {
+  throw new Error('LEGACY_SCHEDULER_DISABLED');
 }
 async function runScheduler() {
-  const p = caracasParts();
-  const today = `${p.year}-${p.month}-${p.day}`;
-  const currentDay = Number(p.day);
-  const currentMinute = Number(p.hour) * 60 + Number(p.minute);
-  const schedules = await listSchedules();
-  const created = [];
-  for (const s of schedules) {
-    const isDaily = s.day === 0;
-    if (!s.active || !/^\d{2}:\d{2}$/.test(s.hour)) continue;
-    if (!isDaily && s.day !== currentDay) continue;
-    const [hh, mm] = s.hour.split(':').map(Number);
-    const target = hh * 60 + mm;
-    if (currentMinute < target || currentMinute > target + 14) continue;
-    if (s.lastRun && String(s.lastRun).slice(0, 10) === today) continue;
-    const job = await createJob({ mode: s.mode || 'Simulación', requestedBy: isDaily ? 'Programación diaria automática' : 'Programación automática', source: 'scheduler', scheduleId: s.recordId, frequency: isDaily ? 'Diario' : 'Mensual' });
-    await airtable(SCHEDULES_TABLE, { method: 'PATCH', body: JSON.stringify({ records: [{ id: s.recordId, fields: { 'Última Ejecución': nowIso(), 'Último Job ID': job.jobId } }], typecast: true }) });
-    created.push(job);
-  }
-  return { checkedAt: nowIso(), createdCount: created.length, created };
+  throw new Error('LEGACY_SCHEDULER_DISABLED');
 }
 
 const handler = async function(event) {
@@ -171,23 +160,53 @@ const handler = async function(event) {
     if (event.httpMethod === 'GET') {
       const params = new URLSearchParams(event.rawQuery || '');
       const resource = params.get('resource') || 'jobs';
-      if (resource === 'schedules') return json(200, { schedules: await listSchedules() });
-      if (resource === 'due-jobs') return json(200, { jobs: await dueJobs() });
-      if (resource === 'scheduler-run') return json(200, await runScheduler());
-      return json(200, { jobs: await listJobs() });
+      if (resource === 'schedules') return json(200, {
+        schedules: await listSchedules(), legacy: true, readOnly: true, schedulerAuthority: 'controller'
+      });
+      if (resource === 'due-jobs') return json(200, {
+        jobs: await dueJobs(), legacy: true, readOnly: true, schedulerAuthority: 'controller'
+      });
+      if (resource === 'scheduler-run') {
+        return legacyDisabled('El scheduler histórico está retirado. El Controller local es el único planificador autorizado.');
+      }
+      return json(200, {
+        jobs: await listJobs(), legacy: true, readOnly: true, schedulerAuthority: 'controller'
+      });
     }
+
     if (event.httpMethod !== 'POST') return json(405, { message: 'Method Not Allowed' });
+
     const body = JSON.parse(event.body || '{}');
-    if (body.action === 'createJob' || !body.action) return json(200, { job: await createJob(body) });
-    if (body.action === 'cancelJob') return json(200, { job: await updateJobByJobId(body.jobId, { Estado: 'Cancelado', Log: `Cancelado desde admin ${nowIso()}` }) });
-    if (body.action === 'claimJob') return json(200, { job: await updateJobByJobId(body.jobId, { Estado: 'Ejecutando', 'Ejecutado En': nowIso(), 'Ejecutado Por': body.executedBy || 'Mac local' }) });
-    if (body.action === 'finishJob') return json(200, { job: await updateJobByJobId(body.jobId, { Estado: body.status === 'Error' ? 'Error' : 'Completado', 'Finalizado En': nowIso(), Enviados: Number(body.sent || 0), Simulados: Number(body.simulated || 0), Errores: Number(body.errors || 0), Log: body.log || '' }) });
-    if (body.action === 'createSchedule') return json(200, { schedule: await createSchedule(body) });
-    if (body.action === 'runScheduler') return json(200, await runScheduler());
+    const action = body.action || 'createJob';
+
+    // Las mutaciones que podrían reintroducir un segundo scheduler permanecen
+    // deshabilitadas incluso si se habilita la contingencia legacy.
+    if (action === 'createSchedule' || action === 'runScheduler') {
+      return legacyDisabled('La programación histórica está retirada de forma permanente. Use el Controller WhatsApp.');
+    }
+
+    // Escape hatch explícito para administrar jobs históricos durante una contingencia.
+    // Por defecto está apagado y no debe habilitarse en operación normal.
+    if (!LEGACY_MUTATIONS_ENABLED) {
+      return legacyDisabled('Las mutaciones del módulo histórico están deshabilitadas. El Control WhatsApp canónico vive en Controller/Agent.');
+    }
+
+    if (action === 'createJob') return json(200, { job: await createJob(body), legacy: true });
+    if (action === 'cancelJob') return json(200, { job: await updateJobByJobId(body.jobId, { Estado: 'Cancelado', Log: `Cancelado desde admin ${nowIso()}` }), legacy: true });
+    if (action === 'claimJob') return json(200, { job: await updateJobByJobId(body.jobId, { Estado: 'Ejecutando', 'Ejecutado En': nowIso(), 'Ejecutado Por': body.executedBy || 'Mac local' }), legacy: true });
+    if (action === 'finishJob') return json(200, { job: await updateJobByJobId(body.jobId, { Estado: body.status === 'Error' ? 'Error' : 'Completado', 'Finalizado En': nowIso(), Enviados: Number(body.sent || 0), Simulados: Number(body.simulated || 0), Errores: Number(body.errors || 0), Log: body.log || '' }), legacy: true });
     return json(400, { message: 'Acción no reconocida.' });
   } catch (error) {
+    if (error.message === 'LEGACY_SCHEDULER_DISABLED') {
+      return legacyDisabled('El scheduler histórico está retirado. El Controller local es el único planificador autorizado.');
+    }
     return json(500, { message: 'Error en módulo WhatsApp.', detail: error.message });
   }
 };
 
 exports.handler = withAirtableUsage('whatsapp-jobs', handler);
+exports._test = {
+  LEGACY_MUTATIONS_ENABLED,
+  createSchedule,
+  runScheduler
+};
