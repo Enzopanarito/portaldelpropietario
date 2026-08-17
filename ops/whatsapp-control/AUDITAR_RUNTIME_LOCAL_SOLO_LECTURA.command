@@ -24,6 +24,7 @@ OUTROOT="$HOME/Desktop"
 CAPTURE="$OUTROOT/VLA_WHATSAPP_RUNTIME_CAPTURE_$STAMP"
 BUNDLE="$CAPTURE.tar.gz"
 TMP="$(mktemp -d /tmp/vla-wa-runtime.XXXXXX)"
+chmod 700 "$TMP"
 
 cleanup() { rm -rf "$TMP" 2>/dev/null || true; }
 trap cleanup EXIT
@@ -138,7 +139,6 @@ redact_yaml "$COMPOSE_AGENT" "$CAPTURE/compose/compose.agent.redacted.yml"
 redact_yaml "$COMPOSE_CTRL" "$CAPTURE/compose/compose.controller.redacted.yml"
 
 RAW_EFFECTIVE="$TMP/effective-compose.raw.yml"
-chmod 600 "$TMP"
 (
   cd "$ROOT"
   docker compose -f "$COMPOSE_BASE" -f "$COMPOSE_AGENT" -f "$COMPOSE_CTRL" config > "$RAW_EFFECTIVE"
