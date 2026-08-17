@@ -38,11 +38,9 @@ sensitive=re.compile(r'(TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE.?KEY|API.?KEY|AUTH|
 out=[]
 for raw in open(src,encoding='utf-8',errors='replace'):
     line=raw.rstrip('\n')
-    # YAML mapping: SECRET_NAME: value
     m=re.match(r'^(\s*)([^:#][^:]*?):(.*)$',line)
     if m and sensitive.search(m.group(2)):
         line=f'{m.group(1)}{m.group(2)}: "<REDACTED>"'
-    # YAML/list/env: - SECRET_NAME=value
     m2=re.match(r'^(\s*-\s*)([^=\s]+)=(.*)$',line)
     if m2 and sensitive.search(m2.group(2)):
         line=f'{m2.group(1)}{m2.group(2)}=<REDACTED>'
@@ -174,12 +172,15 @@ for name in names:
 open(sys.argv[1],'w').write(json.dumps(out,indent=2,ensure_ascii=False)+'\n')
 PY
 
+AGENT_NODE="$(docker exec vla-whatsapp-agent node -p 'process.version' 2>/dev/null || echo unavailable)"
+CONTROLLER_NODE="$(docker exec vla-whatsapp-controller node -p 'process.version' 2>/dev/null || echo unavailable)"
+PLAYWRIGHT_VERSION="$(docker exec vla-whatsapp-agent node -e 'try{console.log(require("playwright/package.json").version)}catch(e){console.log("unavailable")}' 2>/dev/null || echo unavailable)"
 {
-  echo "agent_node=$(docker exec vla-whatsapp-agent node -p 'process.version' 2>/dev/null || echo unavailable)"
-  echo "controller_node=$(docker exec vla-whatsapp-controller node -p 'process.version' 2>/dev/null || echo unavailable)"
-  echo "playwright=$(docker exec vla-whatsapp-agent node -e \"try{console.log(require('playwright/package.json').version)}catch(e){console.log('unavailable')}\" 2>/dev/null || echo unavailable)"
-  echo "agent_health=$(cat "$TMP/agent-health.json")"
-  echo "controller_health=$(cat "$TMP/controller-health.json")"
+  echo "agent_node=$AGENT_NODE"
+  echo "controller_node=$CONTROLLER_NODE"
+  echo "playwright=$PLAYWRIGHT_VERSION"
+  printf 'agent_health='; cat "$TMP/agent-health.json"; echo
+  printf 'controller_health='; cat "$TMP/controller-health.json"; echo
 } > "$CAPTURE/metadata/runtime-versions.txt"
 
 docker exec vla-whatsapp-agent sh -lc 'find /ms-playwright -maxdepth 2 -mindepth 1 -type d -print 2>/dev/null | sort | head -n 100' \
