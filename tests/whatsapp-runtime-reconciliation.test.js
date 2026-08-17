@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 const ROOT = path.join(__dirname, '..');
 const read = rel => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -61,8 +62,10 @@ test('runtime local no se declara certificado sin hash exacto', () => {
   assert.equal(manifest.runtime.controller.sha256, null);
 });
 
-test('captura local es solo lectura y prohíbe tick, warmup y relink', () => {
-  const script = read('ops/whatsapp-control/AUDITAR_RUNTIME_LOCAL_SOLO_LECTURA.command');
+test('captura local es solo lectura, sintácticamente válida y prohíbe acciones de WhatsApp', () => {
+  const rel = 'ops/whatsapp-control/AUDITAR_RUNTIME_LOCAL_SOLO_LECTURA.command';
+  const scriptPath = path.join(ROOT, rel);
+  const script = read(rel);
   assert.match(script, /SOLO LECTURA/);
   assert.match(script, /controller.*paused/i);
   assert.match(script, /state_sha_before/);
@@ -75,4 +78,7 @@ test('captura local es solo lectura y prohíbe tick, warmup y relink', () => {
   assert.doesNotMatch(script, /\/tick\b/);
   assert.doesNotMatch(script, /\/session\/warmup\b/);
   assert.doesNotMatch(script, /\/session\/link\//);
+
+  const checked = spawnSync('bash', ['-n', scriptPath], { encoding: 'utf8' });
+  assert.equal(checked.status, 0, checked.stderr || checked.stdout);
 });
