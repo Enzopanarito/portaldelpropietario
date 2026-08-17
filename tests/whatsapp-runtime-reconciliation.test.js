@@ -67,7 +67,9 @@ test('captura local es solo lectura, sintácticamente válida y prohíbe accione
   const scriptPath = path.join(ROOT, rel);
   const script = read(rel);
   assert.match(script, /SOLO LECTURA/);
-  assert.match(script, /controller.*paused/i);
+  assert.match(script, /Controller/);
+  assert.match(script, /PAUSADO/);
+  assert.match(script, /c\.get\('mode'\)==['"]paused['"]/);
   assert.match(script, /state_sha_before/);
   assert.match(script, /state_sha_after/);
   assert.match(script, /control_sha_before/);
