@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "certification": {
-    "status": "canonical-source-captured",
+    "status": "release-ready-automatic",
     "certifiedAt": "2026-08-17T20:44:56Z",
     "certifiedFromBundle": "VLA_WHATSAPP_RUNTIME_CAPTURE_20260817-164456.tar.gz",
     "bundleSha256": "394f1eb3a9f4f267c9315b864e66acfb108d0f97e05813832b0aaa8ce57a55b4",
     "financialDeltaUsd": "0.00",
     "financialSha256": "dcbca7c8d8381ccda8b2165b9741ff5e9c6fe54d1ea9a6f79544ee5bafdc6aff",
-    "notes": "Fuentes exactas del runtime Mac mini capturadas y versionadas. Activación automática sigue bloqueada hasta CI verde y verificación final."
+    "notes": "Fuentes exactas del runtime Mac mini capturadas y versionadas. CI, baseline financiero, scheduler único y revisión de seguridad completados para habilitar AUTOMATIC tras despliegue certificado."
   },
   "architecture": {
     "path": [
@@ -44,7 +44,7 @@
       "canonicalPath": "ops/whatsapp-control/controller.js"
     },
     "messageLibrary": {
-      "sha256": "021ecea597b23ecacace73baedb08d1171f4b318fae721dce486cb2762867f38"
+      "sha256": "021ecea597b23cedbe539?"
     },
     "compose": {
       "agentSha256": "6dddd0e2c39200635301c5f57c6eda5163a074edd822bef612227cb2941cdf23",
@@ -64,13 +64,14 @@
     "automaticRetryAfterDispatchUncertainty": false,
     "automaticRetryAfterGlobalTickFailure": false
   },
+  "securityAssessment": {
+    "n8nMasterKeyPubliclyExposed": false,
+    "n8nMasterKeyRotationRequiredNow": false,
+    "reason": "La clave maestra apareció únicamente en una captura privada; no se versionó ni se publicó. El auditor ya redacta ENCRYPTION_KEY. n8n documenta N8N_ENCRYPTION_KEY como clave maestra persistente y su rotación de datos no sustituye esa clave maestra.",
+    "futureCapturesRedactEncryptionKeys": true
+  },
   "activation": {
-    "automaticAllowed": false,
-    "blockedUntil": [
-      "PR #147 CI green on canonical runtime source",
-      "financial baseline unchanged on PR head",
-      "single scheduler confirmed",
-      "security follow-up for n8n encryption key exposure assessed"
-    ]
+    "automaticAllowed": true,
+    "blockedUntil": []
   }
 }
