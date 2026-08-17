@@ -46,14 +46,18 @@ test('legacy whatsapp-jobs es fail-closed para mutaciones en operación normal',
   assert.doesNotMatch(getBlock, /await runScheduler\(/);
 });
 
-test('runtime local canónico exige hashes exactos y mantiene AUTOMATIC bloqueado', () => {
+test('runtime local canónico habilita AUTOMATIC solo tras cerrar todos los gates', () => {
   const manifest = JSON.parse(read('ops/whatsapp-control/runtime-release.json'));
   assert.equal(manifest.schemaVersion, 1);
-  assert.equal(manifest.certification.status, 'canonical-source-captured');
+  assert.equal(manifest.certification.status, 'release-ready-automatic');
   assert.equal(manifest.certification.financialDeltaUsd, '0.00');
   assert.equal(manifest.scheduler.authority, 'controller');
   assert.equal(manifest.scheduler.legacyNetlifySchedulerEnabled, false);
-  assert.equal(manifest.activation.automaticAllowed, false);
+  assert.equal(manifest.scheduler.legacyN8nSchedulerExpected, false);
+  assert.equal(manifest.securityAssessment.n8nMasterKeyPubliclyExposed, false);
+  assert.equal(manifest.securityAssessment.futureCapturesRedactEncryptionKeys, true);
+  assert.equal(manifest.activation.automaticAllowed, true);
+  assert.deepEqual(manifest.activation.blockedUntil, []);
   assert.equal(
     manifest.runtime.agent.sha256,
     'a4705ff28b52337597b8bf42ac15949acedc74798f62360f284fa758fdf3eee4'
@@ -61,6 +65,10 @@ test('runtime local canónico exige hashes exactos y mantiene AUTOMATIC bloquead
   assert.equal(
     manifest.runtime.controller.sha256,
     'b79e29f126d15f9d0a590d49bc9be48ac1b52715c59e9b8b7f3bbed89aacff67'
+  );
+  assert.equal(
+    manifest.runtime.messageLibrary.sha256,
+    '021ecea597b23ecacace73baedb08d1171f4b318fae721dce486cb2762867f38'
   );
 });
 
