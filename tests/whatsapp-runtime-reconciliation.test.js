@@ -46,15 +46,22 @@ test('legacy whatsapp-jobs es fail-closed para mutaciones en operación normal',
   assert.doesNotMatch(getBlock, /await runScheduler\(/);
 });
 
-test('runtime local no se declara certificado sin hash exacto', () => {
+test('runtime local canónico exige hashes exactos y mantiene AUTOMATIC bloqueado', () => {
   const manifest = JSON.parse(read('ops/whatsapp-control/runtime-release.json'));
   assert.equal(manifest.schemaVersion, 1);
-  assert.equal(manifest.certification.status, 'awaiting-local-capture');
+  assert.equal(manifest.certification.status, 'canonical-source-captured');
+  assert.equal(manifest.certification.financialDeltaUsd, '0.00');
   assert.equal(manifest.scheduler.authority, 'controller');
   assert.equal(manifest.scheduler.legacyNetlifySchedulerEnabled, false);
   assert.equal(manifest.activation.automaticAllowed, false);
-  assert.equal(manifest.runtime.agent.sha256, null);
-  assert.equal(manifest.runtime.controller.sha256, null);
+  assert.equal(
+    manifest.runtime.agent.sha256,
+    'a4705ff28b52337597b8bf42ac15949acedc74798f62360f284fa758fdf3eee4'
+  );
+  assert.equal(
+    manifest.runtime.controller.sha256,
+    'b79e29f126d15f9d0a590d49bc9be48ac1b52715c59e9b8b7f3bbed89aacff67'
+  );
 });
 
 test('captura local es solo lectura, sintácticamente válida y prohíbe acciones de WhatsApp', () => {

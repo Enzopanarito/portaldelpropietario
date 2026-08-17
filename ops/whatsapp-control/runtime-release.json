@@ -1,10 +1,13 @@
 {
   "schemaVersion": 1,
   "certification": {
-    "status": "awaiting-local-capture",
-    "certifiedAt": null,
-    "certifiedFromBundle": null,
-    "notes": "No declarar el runtime canónico hasta comparar los hashes exactos del Mac mini con GitHub."
+    "status": "canonical-source-captured",
+    "certifiedAt": "2026-08-17T20:44:56Z",
+    "certifiedFromBundle": "VLA_WHATSAPP_RUNTIME_CAPTURE_20260817-164456.tar.gz",
+    "bundleSha256": "394f1eb3a9f4f267c9315b864e66acfb108d0f97e05813832b0aaa8ce57a55b4",
+    "financialDeltaUsd": "0.00",
+    "financialSha256": "dcbca7c8d8381ccda8b2165b9741ff5e9c6fe54d1ea9a6f79544ee5bafdc6aff",
+    "notes": "Fuentes exactas del runtime Mac mini capturadas y versionadas. Activación automática sigue bloqueada hasta CI verde y verificación final."
   },
   "architecture": {
     "path": [
@@ -26,18 +29,26 @@
   "runtime": {
     "agent": {
       "observedVersion": "1.3.5",
-      "sha256": null
+      "sha256": "a4705ff28b52337597b8bf42ac15949acedc74798f62360f284fa758fdf3eee4",
+      "packageSha256": "85c25a5478dca33a27abf4d4b9844ba370090f9b3eaea0d01e69d98007df2ab8",
+      "dockerfileSha256": "c4ac2d02eed6d66e67ad59727a28130a42afa39fccaa675f21b40b6f9c78dc2d",
+      "node": "v24.18.0",
+      "playwright": "1.62.0",
+      "canonicalPath": "ops/whatsapp-runtime/agent"
     },
     "controller": {
       "observedVersion": "1.3.4",
-      "sha256": null
+      "sha256": "b79e29f126d15f9d0a590d49bc9be48ac1b52715c59e9b8b7f3bbed89aacff67",
+      "dockerfileSha256": "37e9f89187184605a5e3093c4365afede1af2c8c290de7a357f22b1469a8610f",
+      "node": "v22.23.2",
+      "canonicalPath": "ops/whatsapp-control/controller.js"
     },
     "messageLibrary": {
-      "sha256": null
+      "sha256": "021ecea597b23ecacace73baedb08d1171f4b318fae721dce486cb2762867f38"
     },
     "compose": {
-      "agentSha256": null,
-      "controllerSha256": null,
+      "agentSha256": "6dddd0e2c39200635301c5f57c6eda5163a074edd822bef612227cb2941cdf23",
+      "controllerSha256": "a021b9e4d218beeee800a3fbb8caba7adc1cde8dc663f584d179de5cfde6d816",
       "effectiveConfigSha256": null
     },
     "gateway": {
@@ -56,11 +67,10 @@
   "activation": {
     "automaticAllowed": false,
     "blockedUntil": [
-      "exact local source hashes captured",
-      "GitHub/runtime diff reconciled",
-      "tests green",
-      "financial baseline unchanged",
-      "single scheduler confirmed"
+      "PR #147 CI green on canonical runtime source",
+      "financial baseline unchanged on PR head",
+      "single scheduler confirmed",
+      "security follow-up for n8n encryption key exposure assessed"
     ]
   }
 }

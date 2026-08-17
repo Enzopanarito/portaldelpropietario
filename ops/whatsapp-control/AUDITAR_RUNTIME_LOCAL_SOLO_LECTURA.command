@@ -35,7 +35,7 @@ redact_yaml() {
   python3 - "$1" "$2" <<'PY'
 import re,sys
 src,dst=sys.argv[1:3]
-sensitive=re.compile(r'(TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE.?KEY|API.?KEY|AUTH|COOKIE|SESSION)',re.I)
+sensitive=re.compile(r'(TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE.?KEY|API.?KEY|AUTH|COOKIE|SESSION|ENCRYPTION(?:.?KEY)?)',re.I)
 out=[]
 for raw in open(src,encoding='utf-8',errors='replace'):
     line=raw.rstrip('\n')
