@@ -14,11 +14,8 @@ test('exactly_one_effective_whatsapp_scheduler: Controller es la única autorida
   const legacy = read('netlify/functions/whatsapp-jobs.js');
   const gateway = JSON.parse(read('ops/whatsapp-control/n8n/VLA_WhatsApp_Admin_Gateway_v1.template.json'));
 
-  // El Controller conserva el único loop de planificación efectivo.
   assert.match(controller, /schedulerStep/);
   assert.match(controller, /setInterval\(\(\) => state\.schedulerStep\(\)/);
-
-  // El backend histórico no puede crear ni ejecutar programaciones por HTTP.
   assert.match(legacy, /LEGACY_WHATSAPP_JOBS_DISABLED/);
   assert.match(legacy, /schedulerAuthority:\s*'controller'/);
   assert.match(legacy, /action === 'createSchedule' \|\| action === 'runScheduler'/);
@@ -26,7 +23,6 @@ test('exactly_one_effective_whatsapp_scheduler: Controller es la única autorida
   assert.doesNotMatch(legacy, /resource === 'scheduler-run'\) return json\(200, await runScheduler\(\)\)/);
   assert.doesNotMatch(legacy, /if \(body\.action === 'runScheduler'\) return json\(200, await runScheduler\(\)\)/);
 
-  // El gateway n8n es transporte, no scheduler.
   const nodeTypes = gateway.nodes.map(node => node.type);
   assert.equal(nodeTypes.some(type => /scheduleTrigger|cron/i.test(type)), false);
   assert.equal(gateway.active, false, 'La plantilla versionada debe nacer inactiva');
@@ -41,7 +37,6 @@ test('legacy whatsapp-jobs es fail-closed para mutaciones en operación normal',
   assert.match(legacy, /if \(!LEGACY_MUTATIONS_ENABLED\)/);
   assert.match(legacy, /return legacyDisabled/);
 
-  // GET nunca puede convertirse en una mutación encubierta.
   const getBlockStart = legacy.indexOf("if (event.httpMethod === 'GET')");
   const postBlockStart = legacy.indexOf("if (event.httpMethod !== 'POST')", getBlockStart);
   assert.ok(getBlockStart >= 0 && postBlockStart > getBlockStart);
@@ -76,6 +71,8 @@ test('captura local es solo lectura, sintácticamente válida y prohíbe accione
   assert.match(script, /control_sha_after/);
   assert.match(script, /runtime_sha_before/);
   assert.match(script, /runtime_sha_after/);
+  assert.match(script, /chmod 700 "\$TMP"/);
+  assert.doesNotMatch(script, /chmod 600 "\$TMP"/);
   assert.doesNotMatch(script, /-d\s+['\"]\{[^\n]*(tick|warmup|resume|link-start|run-now)/i);
   assert.doesNotMatch(script, /\/tick\b/);
   assert.doesNotMatch(script, /\/session\/warmup\b/);
