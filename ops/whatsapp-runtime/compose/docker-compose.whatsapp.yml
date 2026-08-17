@@ -1,0 +1,19 @@
+services:
+  whatsapp-agent:
+    build:
+      context: ./whatsapp-agent
+    container_name: vla-whatsapp-agent
+    restart: unless-stopped
+    init: true # VLA_PLAYWRIGHT_INIT_V1
+    environment:
+      WA_MODE: real
+      WA_STARTUP_RECOVERY: "false" # VLA_STARTUP_RECOVERY_OFF_V1
+      WA_AGENT_TOKEN: ${WA_AGENT_TOKEN:-}
+      WA_MAX_ATTEMPTS: ${WA_MAX_ATTEMPTS:-5}
+      WA_BETWEEN_MESSAGES_MS: ${WA_BETWEEN_MESSAGES_MS:-15000}
+      TZ: America/Caracas
+      VLA_PUBLIC_URL: https://villalosapamates.netlify.app/api/vla/public-data?force=1
+    volumes:
+      - ./whatsapp-agent-data:/data
+    ports:
+      - "127.0.0.1:8787:8787"
