@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "certification": {
+    "status": "awaiting-local-capture",
+    "certifiedAt": null,
+    "certifiedFromBundle": null,
+    "notes": "No declarar el runtime canónico hasta comparar los hashes exactos del Mac mini con GitHub."
+  },
+  "architecture": {
+    "path": [
+      "Admin VLA",
+      "Netlify whatsapp-control / whatsapp-relink",
+      "n8n Gateway",
+      "WhatsApp Controller",
+      "WhatsApp Agent",
+      "WhatsApp Web"
+    ]
+  },
+  "scheduler": {
+    "authority": "controller",
+    "legacyNetlifySchedulerEnabled": false,
+    "legacyN8nSchedulerExpected": false,
+    "window": "08:00-20:59",
+    "timezone": "America/Caracas"
+  },
+  "runtime": {
+    "agent": {
+      "observedVersion": "1.3.5",
+      "sha256": null
+    },
+    "controller": {
+      "observedVersion": "1.3.4",
+      "sha256": null
+    },
+    "messageLibrary": {
+      "sha256": null
+    },
+    "compose": {
+      "agentSha256": null,
+      "controllerSha256": null,
+      "effectiveConfigSha256": null
+    },
+    "gateway": {
+      "name": "VLA WhatsApp Admin Gateway v1",
+      "sha256": null
+    }
+  },
+  "safety": {
+    "agentModeExpected": "real",
+    "startupRecoveryExpected": false,
+    "realTestMessagesAllowed": false,
+    "forcedRelinkTestAllowed": false,
+    "automaticRetryAfterDispatchUncertainty": false,
+    "automaticRetryAfterGlobalTickFailure": false
+  },
+  "activation": {
+    "automaticAllowed": false,
+    "blockedUntil": [
+      "exact local source hashes captured",
+      "GitHub/runtime diff reconciled",
+      "tests green",
+      "financial baseline unchanged",
+      "single scheduler confirmed"
+    ]
+  }
+}
