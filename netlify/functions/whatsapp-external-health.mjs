@@ -1,12 +1,8 @@
-import {
-  evaluateStatus,
-  relayStatus,
-  unreachableHealth
-} from './_shared/_whatsapp_external_monitor.mjs';
+import { getStore } from '@netlify/blobs';
 
-function env(name) {
-  return String(Netlify.env.get(name) || '').trim();
-}
+const STORE_NAME = 'vla-whatsapp-monitor-v1';
+const STATE_KEY = 'state';
+const MAX_AGE_MS = 12 * 60 * 1000;
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -20,26 +16,50 @@ function json(body, status = 200) {
   });
 }
 
+function safeReasons(value) {
+  return Array.isArray(value)
+    ? [...new Set(value.map(item => String(item || '').trim()).filter(Boolean))].slice(0, 12)
+    : [];
+}
+
 export default async (req) => {
   if (req.method !== 'GET') return json({ ok: false, status: 'method-not-allowed' }, 405);
 
-  let health;
+  const store = getStore(STORE_NAME, { consistency: 'strong' });
+  let state = null;
   try {
-    const status = await relayStatus({
-      url: env('VLA_WHATSAPP_CONTROL_URL'),
-      secret: env('VLA_WHATSAPP_CONTROL_SECRET'),
-      timeoutMs: 15000
-    });
-    health = evaluateStatus(status);
-  } catch (error) {
-    health = unreachableHealth(error?.code === 'MONITOR_CONFIG_MISSING' ? 'MONITOR_CONFIG_MISSING' : 'MAC_OR_GATEWAY_UNREACHABLE');
+    state = await store.get(STATE_KEY, { type: 'json' });
+  } catch (_) {
+    state = null;
   }
 
-  const body = {
-    ok: health.healthy,
-    status: health.status,
-    reasons: health.reasons,
-    checkedAt: new Date().toISOString()
-  };
-  return json(body, health.healthy ? 200 : 503);
+  if (!state?.lastCheckedAt) {
+    return json({ ok: false, status: 'monitor-starting', reasons: ['MONITOR_STATE_MISSING'] }, 503);
+  }
+
+  const checkedMs = Date.parse(state.lastCheckedAt);
+  const ageMs = Number.isFinite(checkedMs) ? Date.now() - checkedMs : Number.POSITIVE_INFINITY;
+  if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > MAX_AGE_MS) {
+    return json({
+      ok: false,
+      status: 'monitor-stale',
+      reasons: ['MONITOR_HEARTBEAT_STALE'],
+      checkedAt: state.lastCheckedAt
+    }, 503);
+  }
+
+  const healthy = state.lastHealthStatus === 'operational'
+    && state.alertActive !== true
+    && Number(state.consecutiveFailures || 0) === 0;
+
+  if (!healthy) {
+    return json({
+      ok: false,
+      status: state.lastHealthStatus || 'attention',
+      reasons: safeReasons(state.lastReasons),
+      checkedAt: state.lastCheckedAt
+    }, 503);
+  }
+
+  return json({ ok: true, status: 'operational', checkedAt: state.lastCheckedAt }, 200);
 };
