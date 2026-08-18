@@ -72,6 +72,15 @@ function assertCloseDryRun(close){
   if(!close.closeWindow||typeof close.closeWindow.ok!=='boolean')throw new Error('DRY RUN no devolvió el estado de ventana de cierre.');
   if(close.validation.closeScopeReady===false)throw new Error(`DRY RUN bloqueado por ${Number(close.validation.invalidPaymentDatesCount)||0} pago(s) sin fecha válida.`);
 }
+function canonicalOwnerPlan(plan){
+  return JSON.stringify((Array.isArray(plan)?plan:[]).map(row=>({
+    id:String(row.id||''),
+    casa:Number(row.casa),
+    before:row.before||{},
+    target:row.target||{},
+    calculation:row.calculation||{}
+  })).sort((a,b)=>a.casa-b.casa));
+}
 
 (async()=>{
   const exchange=await request(`${target}/.netlify/functions/admin-ci-readonly-session`,{
@@ -98,8 +107,14 @@ function assertCloseDryRun(close){
   if(mkj.readOnly!==true||Number(mkj.total)!==15||Number(mkj.reconciled)!==15)throw new Error(`MKJ read-only incompleto: ${Number(mkj.reconciled)||0}/15.`);
   const mkjClassification=classifyMkj(mkj);
 
-  const close=await adminFetch(token,'/.netlify/functions/monthly-close',{method:'POST',body:JSON.stringify({dryRun:true})});
+  const closeRequest={method:'POST',body:JSON.stringify({dryRun:true})};
+  const close=await adminFetch(token,'/.netlify/functions/monthly-close',closeRequest);
+  const closeRepeat=await adminFetch(token,'/.netlify/functions/monthly-close',closeRequest);
   assertCloseDryRun(close);
+  assertCloseDryRun(closeRepeat);
+  if(String(close.planHash)!==String(closeRepeat.planHash))throw new Error(`DRY RUN no reproducible: planHash ${close.planHash} != ${closeRepeat.planHash}.`);
+  if(String(close.sourceHash)!==String(closeRepeat.sourceHash))throw new Error(`DRY RUN no reproducible: sourceHash ${close.sourceHash} != ${closeRepeat.sourceHash}.`);
+  if(canonicalOwnerPlan(close.ownerPlan)!==canonicalOwnerPlan(closeRepeat.ownerPlan))throw new Error('DRY RUN no reproducible: el plan 15/15 cambió entre dos lecturas consecutivas.');
 
   const evidence={
     target,
@@ -116,10 +131,13 @@ function assertCloseDryRun(close){
     mkj:{readOnly:mkj.readOnly,total:Number(mkj.total),reconciled:Number(mkj.reconciled),coherent:Number(mkj.coherent||0),discrepancies:Number(mkj.discrepancyCount||0),identityIssueRows:mkjClassification.identityRows.length,stateDivergenceRows:mkjClassification.stateRows.length,manualStateDivergences:mode.mode==='Manual'?mkjClassification.stateRows.length:0,discrepancyDetails:mkjClassification.details},
     closeDryRun:{
       success:true,
+      reproducible:true,
       month:String(close.month||''),
       monthDefaulted:Boolean(close.monthDefaulted),
       planHash:String(close.planHash),
+      repeatPlanHash:String(closeRepeat.planHash),
       sourceHash:String(close.sourceHash),
+      repeatSourceHash:String(closeRepeat.sourceHash),
       ownerCount:Number(close.validation.ownerCount),
       paymentCutoff:String(close.validation.paymentCutoff||''),
       pendingPaymentsCount:Number(close.validation.pendingPaymentsCount||0),
