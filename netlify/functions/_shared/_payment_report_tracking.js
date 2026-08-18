@@ -29,6 +29,7 @@ function statusFromFields(fields={}){
  const final=derivePaymentFinalOutcome(fields),processing=selectName(fields['Estado de Procesamiento']).toLowerCase();
  if(final.outcome==='APPROVED')return'APPROVED';
  if(final.outcome==='REJECTED')return'REJECTED';
+ if(final.conflict)return'IN_REVIEW';
  if(processing==='información solicitada'||processing==='informacion solicitada')return'INFORMATION_REQUESTED';
  if(!processing||processing==='recibido')return'RECEIVED';
  return'IN_REVIEW';
