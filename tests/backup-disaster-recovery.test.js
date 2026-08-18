@@ -152,3 +152,11 @@ test('workflow diario cifra, restaura y conserva solo el artefacto cifrado', () 
   assert.match(artifactBlock, /vla-airtable-backup\.enc\.json/);
   assert.doesNotMatch(artifactBlock, /\/tmp\/vla-airtable-backup\.json/);
 });
+
+test('endpoint automático de backup es estrictamente read-only sobre Airtable', () => {
+  const source = fs.readFileSync(path.join(ROOT, 'netlify/functions/airtable-backup-ci.js'), 'utf8');
+  assert.doesNotMatch(source, /withAirtableUsage|_airtable_meter/);
+  assert.doesNotMatch(source, /method:\s*['"](?:POST|PATCH|PUT|DELETE)['"]/i);
+  assert.match(source, /method:\s*['"]GET['"]/);
+  assert.match(source, /X-VLA-Backup-Access['"]?:\s*['"]read-only['"]/);
+});
