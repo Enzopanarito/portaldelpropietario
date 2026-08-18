@@ -1,6 +1,14 @@
 name: Backup VLA Production
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/backup-vla-production.yml'
+      - 'netlify/functions/airtable-backup-ci.js'
+      - 'netlify/functions/_shared/_github_oidc_backup.js'
+      - 'scripts/vla-backup-crypto.mjs'
+      - 'scripts/vla-backup-verify.mjs'
   schedule:
     - cron: '15 7 * * *'
   workflow_dispatch:
