@@ -134,6 +134,8 @@ test('OIDC de backup solo acepta workflow, repo, main y evento autorizados', () 
     exp: now + 300
   };
   assert.equal(oidc.validateClaims(valid, now), valid);
+  assert.equal(oidc.validateClaims({ ...valid, event_name: 'push' }, now).event_name, 'push');
+  assert.equal(oidc.validateClaims({ ...valid, event_name: 'workflow_dispatch' }, now).event_name, 'workflow_dispatch');
   assert.throws(() => oidc.validateClaims({ ...valid, repository: 'otro/repo' }, now), /OIDC_REPOSITORY_INVALID/);
   assert.throws(() => oidc.validateClaims({ ...valid, workflow: 'Otro Workflow' }, now), /OIDC_WORKFLOW_INVALID/);
   assert.throws(() => oidc.validateClaims({ ...valid, ref: 'refs/heads/feature' }, now), /OIDC_REF_INVALID/);
@@ -143,6 +145,8 @@ test('OIDC de backup solo acepta workflow, repo, main y evento autorizados', () 
 test('workflow diario cifra, restaura y conserva solo el artefacto cifrado', () => {
   const source = fs.readFileSync(path.join(ROOT, '.github/workflows/backup-vla-production.yml'), 'utf8');
   assert.match(source, /cron:\s*'15 7 \* \* \*'/);
+  assert.match(source, /push:/);
+  assert.match(source, /branches:\s*\[main\]/);
   assert.match(source, /VLA_BACKUP_ENCRYPTION_KEY/);
   assert.match(source, /airtable-backup-ci/);
   assert.match(source, /vla-backup-crypto\.mjs encrypt/);
