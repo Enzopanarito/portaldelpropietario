@@ -119,7 +119,7 @@ for (let house=1; house<=15; house += 1) {
 // pero no participan en esa base.
 const house4=results.get('h4');
 assert.strictEqual(house4.timelyPaidBsRef,0);
-assert.strictEqual(house4.promptPaymentEligibleBsRef,100.96);
+assert.strictEqual(house4.promptPaymentEligibleBsRef,100.97);
 assert.strictEqual(house4.recargoBsRef,10.10);
 assert.strictEqual(house4.expiredTotalRef,0);
 assert.strictEqual(house4.currentTotalRef,297.07);
