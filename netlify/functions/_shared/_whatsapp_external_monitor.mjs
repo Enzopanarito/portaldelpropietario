@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 const EXPECTED_SCHEDULES = Object.freeze(['09:00', '18:00']);
 const REASON_LABELS = Object.freeze({
   MONITOR_CONFIG_MISSING: 'El monitor externo no tiene configurado el puente seguro.',
@@ -102,7 +104,7 @@ async function relayStatus({ url, secret, fetchImpl = fetch, timeoutMs = 15000 }
       body: JSON.stringify({
         action: 'status',
         payload: {},
-        requestId: crypto.randomUUID(),
+        requestId: randomUUID(),
         requestedAt: new Date().toISOString()
       }),
       signal: controller.signal
