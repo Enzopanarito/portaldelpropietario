@@ -11,6 +11,12 @@ const {
   caracasClock
 } = base;
 
+const ALLOCATION = Object.freeze({
+  ALIQUOT: 'ALIQUOT',
+  EQUAL_SHARE: 'EQUAL_SHARE',
+  NONE: 'NONE'
+});
+
 function recordId(record) {
   return String(record && record.id || '');
 }
@@ -41,6 +47,17 @@ function isGasoilExpense(expense) {
   return /\bgasoil\b/i.test(String(fieldsOf(expense).Concepto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
 }
 
+// En el modelo VLA vigente, Tipo de Gasto no es solo una etiqueta: codifica
+// la forma de distribución. Gasto Común = monto × alícuota. Gasto Especial =
+// monto ÷ propietarios seleccionados. El Beneficio de Pronto Pago depende de
+// esta forma de distribución, no del concepto textual del gasto.
+function expenseAllocation(expense) {
+  const type = selectName(fieldsOf(expense)['Tipo de Gasto']);
+  if (type === 'Gasto Común') return ALLOCATION.ALIQUOT;
+  if (type === 'Gasto Especial') return ALLOCATION.EQUAL_SHARE;
+  return ALLOCATION.NONE;
+}
+
 function reconciledPrior(owner) {
   const fields = fieldsOf(owner);
   const legacy = money(fields['Deuda Anterior']);
@@ -65,25 +82,28 @@ function calculateCharges(owner, expenses) {
 
   for (const expense of expenses || []) {
     const fields = fieldsOf(expense);
-    const type = selectName(fields['Tipo de Gasto']);
+    const allocationMethod = expenseAllocation(expense);
     const mode = selectName(fields['Forma de Pago']) === 'USD' ? 'USD' : 'Bs BCV';
     const owners = linkedIds(fields.Propietarios);
     const concept = String(fields.Concepto || 'Gasto');
     const amount = Number(fields.Monto || 0);
-    // La clasificación vigente manda: solo Gasto Común participa del beneficio
-    // de pronto pago. Todo Gasto Especial se cobra y se arrastra al cierre, pero
-    // nunca forma parte de la base del 10 %. GASOIL conserva además un fail-safe
-    // por concepto para evitar incluirlo si algún registro quedara mal clasificado.
-    const promptPaymentExcluded = type !== 'Gasto Común' || isGasoilExpense(expense);
 
-    if (type === 'Gasto Común') {
+    if (allocationMethod === ALLOCATION.ALIQUOT) {
       if (owners.length && !owners.includes(ownerId)) continue;
       const raw = amount * aliquot;
       commonRaw[mode] += raw;
-      commonLines[mode].push({ id: recordId(expense), concept, raw, amount: money(raw), mode, promptPaymentExcluded });
-    } else if (type === 'Gasto Especial' && owners.includes(ownerId)) {
+      commonLines[mode].push({
+        id: recordId(expense), concept, raw, amount: money(raw), mode,
+        allocationMethod,
+        promptPaymentExcluded: false
+      });
+    } else if (allocationMethod === ALLOCATION.EQUAL_SHARE && owners.includes(ownerId)) {
       const share = money(amount / Math.max(1, owners.length));
-      specialLines[mode].push({ id: recordId(expense), concept, amount: share, mode, promptPaymentExcluded });
+      specialLines[mode].push({
+        id: recordId(expense), concept, amount: share, mode,
+        allocationMethod,
+        promptPaymentExcluded: true
+      });
     }
   }
 
@@ -99,8 +119,8 @@ function calculateCharges(owner, expenses) {
     const all = [...lines.map(({ raw, ...line }) => line), ...specials];
     return {
       amount: money(targetCommon + specials.reduce((sum, line) => sum + line.amount, 0)),
-      promptPaymentEligibleAmount: money(all.filter(line => !line.promptPaymentExcluded).reduce((sum, line) => sum + line.amount, 0)),
-      promptPaymentExcludedAmount: money(all.filter(line => line.promptPaymentExcluded).reduce((sum, line) => sum + line.amount, 0)),
+      promptPaymentEligibleAmount: money(all.filter(line => line.allocationMethod === ALLOCATION.ALIQUOT).reduce((sum, line) => sum + line.amount, 0)),
+      promptPaymentExcludedAmount: money(all.filter(line => line.allocationMethod !== ALLOCATION.ALIQUOT).reduce((sum, line) => sum + line.amount, 0)),
       lines: all
     };
   }
@@ -259,7 +279,9 @@ function calculateAllOwners(owners = [], expenses = [], payments = [], options =
 }
 
 module.exports = Object.assign({}, base, {
+  ALLOCATION,
   isGasoilExpense,
+  expenseAllocation,
   calculateOwnerBalance,
   calculateAllOwners
 });
