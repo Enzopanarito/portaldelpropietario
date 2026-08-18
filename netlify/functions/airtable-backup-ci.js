@@ -1,7 +1,6 @@
 'use strict';
 
 const crypto = require('crypto');
-const { withAirtableUsage } = require('./_shared/_airtable_meter');
 const { sha256, sortRecords } = require('./_shared/_integrity');
 const { TABLES } = require('./_shared/_backup_inventory');
 const { verifyBackupOidcToken } = require('./_shared/_github_oidc_backup');
@@ -28,6 +27,7 @@ async function airtableGetAll(tableName, token, baseId) {
   do {
     const query = offset ? `?offset=${encodeURIComponent(offset)}` : '';
     const response = await fetchWithTimeout(buildUrl(baseId, tableName, query), {
+      method: 'GET',
       headers: { Authorization: `Bearer ${token}` }
     });
     const data = await response.json().catch(() => ({}));
@@ -115,7 +115,8 @@ const handler = async function(event) {
       'Content-Disposition': `attachment; filename="${filename}"`,
       'X-VLA-Backup-Manifest-SHA256': backup.integrity.manifestHash,
       'X-VLA-Backup-Records': String(backup.totalRecords),
-      'X-VLA-Backup-Tables': String(TABLES.length)
+      'X-VLA-Backup-Tables': String(TABLES.length),
+      'X-VLA-Backup-Access': 'read-only'
     });
   } catch (error) {
     console.error(JSON.stringify({ event: 'VLA_BACKUP_EXPORT_FAILED', code: String(error.message || 'BACKUP_FAILED').slice(0, 120) }));
@@ -123,5 +124,6 @@ const handler = async function(event) {
   }
 };
 
-exports.handler = withAirtableUsage('airtable-backup-ci', handler);
+exports.handler = handler;
 exports.TABLES = TABLES;
+exports.airtableGetAll = airtableGetAll;
