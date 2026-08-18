@@ -10,6 +10,9 @@ const {evaluateAccessDecision}=require('../netlify/functions/_shared/_access_dec
 function commonExpense(id,amount,mode,ownerId){
  return{id,fields:{Concepto:id,Monto:amount,'Tipo de Gasto':'Gasto Común','Forma de Pago':mode,Propietarios:[ownerId]}};
 }
+function specialExpense(id,concept,amount,mode,ownerId){
+ return{id,fields:{Concepto:concept,Monto:amount,'Tipo de Gasto':'Gasto Especial','Forma de Pago':mode,Propietarios:[ownerId]}};
+}
 function payment(id,ownerId,amount,mode){
  return{id,fields:{'Propietario que Paga':[ownerId],'Monto Pagado':amount,'Equivalente USD Aplicado':amount,'Forma de Pago':mode,'Fecha de Pago':'2026-08-01','[x] Aplicado al Cierre':false}};
 }
@@ -60,4 +63,33 @@ test('al cerrar el mes solo el saldo anterior vence y la cuota nueva queda fuera
  const enabled=evaluateAccessDecision({rules:activeRules(),balance:{expiredUsd:settled.expiredUsd,expiredBsRef:settled.expiredBsRef},currentStatus:'Limitado',now:new Date('2026-08-01T16:00:00Z')});
  assert.equal(enabled.action,'ENABLE');
  assert.equal(enabled.desiredStatus,'Habilitado');
+});
+
+test('gasoil, planta y cualquier cuota especial impaga pasan al cierre y afectan el portón sin participar del beneficio de pronto pago',()=>{
+ const owner={id:'casaEspecial',fields:{Casa:16,Alicuota:1,'Deuda Anterior':0,'Deuda Anterior USD':0,'Deuda Anterior Bs Ref':0}};
+ const august=[
+  specialExpense('gasoil','GASOIL',85,'USD',owner.id),
+  specialExpense('planta','ARREGLO DE PLANTA',50,'Bs BCV',owner.id),
+  specialExpense('especial','CUOTA ESPECIAL',25,'Bs BCV',owner.id)
+ ];
+ const august31=calculateOwnerBalance(owner,august,[],{month:'2026-08',day:31,dueDay:10,surchargeRate:.10});
+ assert.equal(august31.promptPaymentEligibleBsRef,0);
+ assert.equal(august31.recargoBsRef,0);
+ assert.equal(august31.totalRef,160);
+ assert.equal(august31.expiredTotalRef,0,'Antes del cierre sigue siendo deuda corriente y no limita el portón');
+ const beforeClose=evaluateAccessDecision({rules:activeRules(),balance:{expiredUsd:august31.expiredUsd,expiredBsRef:august31.expiredBsRef},currentStatus:'Habilitado',now:new Date('2026-08-31T16:00:00Z')});
+ assert.equal(beforeClose.action,'ENABLE');
+
+ const plan=buildPlan({owners:[owner],expenses:august,payments:[],month:'2026-08',dueDay:10,surchargeRate:.10});
+ const target=plan.ownerUpdates[0].target;
+ assert.deepEqual(target,{deudaAnteriorUsd:85,deudaAnteriorBsRef:75,deudaAnterior:160});
+
+ const septemberOwner={id:owner.id,fields:{...owner.fields,'Deuda Anterior':target.deudaAnterior,'Deuda Anterior USD':target.deudaAnteriorUsd,'Deuda Anterior Bs Ref':target.deudaAnteriorBsRef}};
+ const september1=calculateOwnerBalance(septemberOwner,[],[],{month:'2026-09',day:1,dueDay:10,surchargeRate:.10});
+ assert.equal(september1.expiredUsd,85);
+ assert.equal(september1.expiredBsRef,75);
+ assert.equal(september1.expiredTotalRef,160);
+ const afterClose=evaluateAccessDecision({rules:activeRules(),balance:{expiredUsd:september1.expiredUsd,expiredBsRef:september1.expiredBsRef},currentStatus:'Habilitado',now:new Date('2026-09-01T04:05:00Z')});
+ assert.equal(afterClose.action,'DISABLE');
+ assert.equal(afterClose.desiredStatus,'Limitado');
 });

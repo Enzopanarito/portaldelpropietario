@@ -8,9 +8,6 @@ function ownerBefore(owner) {
   return { deudaAnteriorUsd: money(f['Deuda Anterior USD']), deudaAnteriorBsRef: money(f['Deuda Anterior Bs Ref']), deudaAnterior: money(f['Deuda Anterior']) };
 }
 function ownerTarget(balance) {
-  // El cierre conserva exactamente la posición contable de cada moneda.
-  // Un valor negativo representa un crédito real del propietario y no puede
-  // eliminarse ni compensarse entre monedas sin un movimiento explícito.
   return { deudaAnteriorUsd: money(balance.usd), deudaAnteriorBsRef: money(balance.bsRef), deudaAnterior: money(balance.totalRef) };
 }
 function compactOwner(owner) {
@@ -52,7 +49,17 @@ function buildPlan({owners=[],expenses=[],payments=[],month,dueDay=10,surchargeR
   const ownerUpdates=sortedOwners.map(owner=>{
     const balance=calculateOwnerBalance(owner,sortedExpenses,closingPayments,{month,day:31,dueDay,surchargeRate});
     const legacyTotal=money(owner?.fields?.['Deuda Restante']);
-    const calculation={usd:balance.usd,bsRef:balance.bsRef,totalRef:balance.totalRef,rawUsd:balance.usd,rawBsRef:balance.bsRef,rawTotal:balance.totalRef,legacyTotal,difference:money(balance.totalRef-legacyTotal),reconciled:false,recargoBsRef:balance.recargoBsRef};
+    const calculation={
+      priorUsd:money(balance.priorUsd),
+      priorBsRef:money(balance.priorBsRef),
+      chargesUsd:money(balance.chargesUsd),
+      chargesBsRef:money(balance.chargesBsRef),
+      paidUsd:money(balance.paidUsd),
+      paidBsRef:money(balance.paidBsRef),
+      promptPaymentEligibleBsRef:money(balance.promptPaymentEligibleBsRef ?? balance.chargesBsRef),
+      promptPaymentExcludedBsRef:money(balance.promptPaymentExcludedBsRef || 0),
+      usd:balance.usd,bsRef:balance.bsRef,totalRef:balance.totalRef,rawUsd:balance.usd,rawBsRef:balance.bsRef,rawTotal:balance.totalRef,legacyTotal,difference:money(balance.totalRef-legacyTotal),reconciled:false,recargoBsRef:balance.recargoBsRef
+    };
     return{id:owner.id,casa:owner?.fields?.Casa??null,propietario:String(owner?.fields?.Propietario||''),before:ownerBefore(owner),target:ownerTarget(balance),calculation};
   });
   const paymentIds=closingPayments.map(payment=>payment.id);
@@ -68,7 +75,7 @@ function buildPlan({owners=[],expenses=[],payments=[],month,dueDay=10,surchargeR
   const source={owners:sortedOwners.map(compactOwner),expenses:sortedExpenses.map(compactExpense),payments:closingPayments.map(compactPayment),invalidPayments:paymentScope.invalid.map(compactPayment)};
   const sourceHash=hashJson(source);
   const normalizedRules={dueDay:Number(dueDay),surchargeRate:Number(surchargeRate)};
-  const planHash=hashJson({version:7,month,sourceHash,normalizedRules,ownerUpdates:ownerUpdates.map(i=>({id:i.id,before:i.before,target:i.target})),paymentIds,invalidPaymentIds});
-  return{version:6,month,generatedAt:new Date().toISOString(),transitionMode:false,sourceHash,planHash,normalizedRules,ownerUpdates,paymentIds,validation};
+  const planHash=hashJson({version:8,month,sourceHash,normalizedRules,ownerUpdates:ownerUpdates.map(i=>({id:i.id,before:i.before,target:i.target})),paymentIds,invalidPaymentIds});
+  return{version:7,month,generatedAt:new Date().toISOString(),transitionMode:false,sourceHash,planHash,normalizedRules,ownerUpdates,paymentIds,validation};
 }
 module.exports={monthEnd,paymentDate,splitPaymentsForClose,buildPlan};

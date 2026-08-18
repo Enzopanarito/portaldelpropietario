@@ -1,64 +1,46 @@
-// netlify/functions/audit-snapshot.js
-// Genera o repara el corte de auditoría mensual con USD y Bs BCV.
-// Nunca duplica conceptos existentes y verifica las 10 filas esperadas por propietario.
-
 'use strict';
 
 const { withAirtableUsage } = require('./_shared/_airtable_meter');
-
 const { requireAdmin } = require('./_shared/_auth');
 const { begin, setState } = require('./_shared/_operation_guard');
 const { safeDisplayText } = require('./_shared/_security_utils');
 const { hashJson } = require('./_shared/_audit_cleanup');
-const { calculateOwnerBalance } = require('./_shared/_balance_engine_v4');
+const { buildPlan, splitPaymentsForClose } = require('./_shared/_monthly_close_core_v4');
 const { filterClosingExpenses } = require('./_shared/_expense_lifecycle');
-const { splitPaymentsForClose } = require('./_shared/_monthly_close_core_v4');
 const { attachOfficialBalances, officialControlQuery } = require('./_shared/_official_balances');
 const { mergeConfig } = require('./_shared/_automation_rules');
+const { expectedSnapshotEntries, validateSnapshotRecords } = require('./_shared/_monthly_close_snapshot');
+const { isValidMonth, closeWindowForMonth } = require('./_shared/_monthly_close_window');
 
 const TABLES = {
   propietarios: 'Propietarios',
   gastos: 'Gastos del Mes',
   pagos: 'Pagos',
   historial: 'Historial de Cargos',
-  control:'ControlVersiones',
-  config:'Configuración'
+  control: 'ControlVersiones',
+  config: 'Configuración'
 };
-const HF = { propietario: 'Propietario', monto: 'Monto Cargado', concepto: 'Concepto', fecha: 'Fecha' };
-const ROWS_PER_OWNER = 10;
+const HF = { propietario:'Propietario', monto:'Monto Cargado', concepto:'Concepto', fecha:'Fecha' };
 
 function json(statusCode, body, counter) {
   return {
     statusCode,
     headers: {
-      'Content-Type': 'application/json',
-      'Cache-Control': 'no-store, no-cache, must-revalidate',
-      'X-Airtable-Calls': String(counter?.calls || 0)
+      'Content-Type':'application/json',
+      'Cache-Control':'no-store, no-cache, must-revalidate',
+      'X-Airtable-Calls':String(counter?.calls || 0)
     },
-    body: JSON.stringify(body)
+    body:JSON.stringify(body)
   };
 }
 
 function todayCaracasISO() {
   return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit'
+    timeZone:'America/Caracas', year:'numeric', month:'2-digit', day:'2-digit'
   }).format(new Date());
 }
 
-function currentMonthCaracas() {
-  return todayCaracasISO().slice(0, 7);
-}
-
-function normalizeMonth(value) {
-  const month = String(value || '').trim();
-  return /^\d{4}-(0[1-9]|1[0-2])$/.test(month) ? month : currentMonthCaracas();
-}
-
-function money(value) {
-  return Math.round(Number(value || 0) * 100) / 100;
-}
-
-function buildUrl(baseId, tableName, query = '') {
+function buildUrl(baseId, tableName, query='') {
   return `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}${query}`;
 }
 
@@ -78,7 +60,7 @@ async function getAll(tableName, query, token, baseId, counter) {
     const separator = safeQuery ? '&' : '?';
     const data = await request(
       buildUrl(baseId, tableName, safeQuery + (offset ? `${separator}offset=${encodeURIComponent(offset)}` : '')),
-      { headers: { Authorization: `Bearer ${token}` } },
+      { headers:{ Authorization:`Bearer ${token}` } },
       counter
     );
     records = records.concat(data.records || []);
@@ -89,210 +71,271 @@ async function getAll(tableName, query, token, baseId, counter) {
 
 async function createRecords(tableName, records, token, baseId, counter) {
   const created = [];
-  for (let index = 0; index < records.length; index += 10) {
-    const batch = records.slice(index, index + 10);
+  for (let index=0; index<records.length; index+=10) {
+    const batch = records.slice(index,index+10);
     if (!batch.length) continue;
-    const data = await request(buildUrl(baseId, tableName), {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ records: batch, typecast: true })
+    const data = await request(buildUrl(baseId,tableName), {
+      method:'POST',
+      headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+      body:JSON.stringify({ records:batch, typecast:true })
     }, counter);
     created.push(...(data.records || []));
   }
   return created;
 }
 
-function hasLegacyIndividualCharges(gastos) {
-  return gastos.some(gasto => String(gasto.fields?.Concepto || '').toLowerCase().includes('(cargo individual)'));
-}
-
-function isAppliedPayment(payment) {
-  return payment?.fields?.['[x] Aplicado al Cierre'] === true;
-}
-
-function ownerShare(gasto, owner) {
-  const fields = gasto.fields || {};
-  const amount = Number(fields.Monto || 0);
-  const type = fields['Tipo de Gasto'];
-  const linked = fields.Propietarios || [];
-  const share = Number(owner.fields?.Alicuota || 0);
-  if (type === 'Gasto Común') {
-    if (linked.length && !linked.includes(owner.id)) return 0;
-    return money(amount * share);
+async function updateRecords(tableName, records, token, baseId, counter) {
+  const updated = [];
+  for (let index=0; index<records.length; index+=10) {
+    const batch = records.slice(index,index+10);
+    if (!batch.length) continue;
+    const data = await request(buildUrl(baseId,tableName), {
+      method:'PATCH',
+      headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+      body:JSON.stringify({ records:batch, typecast:true })
+    }, counter);
+    updated.push(...(data.records || []));
   }
-  if (type === 'Gasto Especial' && linked.includes(owner.id)) return money(amount / (linked.length || 1));
-  return 0;
-}
-
-function paymentEquivalentUsd(payment) {
-  const fields = payment.fields || {};
-  return money(fields['Equivalente USD Aplicado'] || fields['Monto Pagado'] || 0);
-}
-
-function explicitNegativeSplit(total, initialUsd, initialBs, rawUsd, rawBs) {
-  if (total >= -0.01) return { usd: 0, bs: 0 };
-  if (initialUsd < -0.01 && Math.abs(initialBs) <= 0.01) return { usd: total, bs: 0 };
-  if (initialBs < -0.01 && Math.abs(initialUsd) <= 0.01) return { usd: 0, bs: total };
-  const negativeUsd = Math.max(0, -rawUsd);
-  const negativeBs = Math.max(0, -rawBs);
-  const negativeTotal = negativeUsd + negativeBs;
-  if (negativeTotal <= 0.01) return { usd: 0, bs: total };
-  if (negativeUsd > 0.01 && negativeBs <= 0.01) return { usd: total, bs: 0 };
-  if (negativeBs > 0.01 && negativeUsd <= 0.01) return { usd: 0, bs: total };
-  const usd = money(total * (negativeUsd / negativeTotal));
-  return { usd, bs: money(total - usd) };
-}
-
-function compute(owner, gastos, pagos, transitionMode, month=currentMonthCaracas(),rules=mergeConfig({})) {
-  const balance=calculateOwnerBalance(owner,gastos,pagos,{month,day:31,dueDay:rules.payment.dueDay,surchargeRate:rules.payment.surchargeRate});
-  return {
-    initialUsd:money(balance.priorUsd),initialBs:money(balance.priorBsRef),
-    chargesUsd:money(balance.chargesUsd),chargesBs:money(balance.chargesBsRef),
-    paidUsd:money(balance.paidUsd),paidBs:money(balance.paidBsRef),
-    finalUsd:money(balance.usd),finalBs:money(balance.bsRef),total:money(balance.totalRef),
-    rawTotal:money(balance.totalRef),legacyTotal:money(owner?.fields?.['Deuda Restante'])
-  };
-}
-
-function status(balance) {
-  if (balance > 0.01) return 'Deuda';
-  if (balance < -0.01) return 'Saldo a favor';
-  return 'Solvente';
-}
-
-function concept(month, casa, label) {
-  return `AUDITORIA|${month}|Casa ${casa}|${label}`;
-}
-
-function rows(owner, calculation, month, date, transitionMode) {
-  const casa = owner.fields?.Casa || 'N/A';
-  const ownerName = owner.fields?.Propietario || 'Sin nombre';
-  const base = { [HF.propietario]: [owner.id], [HF.fecha]: date };
-  return [
-    { fields: { ...base, [HF.concepto]: concept(month, casa, `Saldo inicial USD | ${ownerName}`), [HF.monto]: calculation.initialUsd } },
-    { fields: { ...base, [HF.concepto]: concept(month, casa, `Saldo inicial Bs Ref | ${ownerName}`), [HF.monto]: calculation.initialBs } },
-    { fields: { ...base, [HF.concepto]: concept(month, casa, `Cargos USD | ${ownerName}`), [HF.monto]: calculation.chargesUsd } },
-    { fields: { ...base, [HF.concepto]: concept(month, casa, `Cargos Bs Ref | ${ownerName}`), [HF.monto]: calculation.chargesBs } },
-    { fields: { ...base, [HF.concepto]: concept(month, casa, `Pagos USD | ${ownerName}`), [HF.monto]: -Math.abs(calculation.paidUsd) } },
-    { fields: { ...base, [HF.concepto]: concept(month, casa, `Pagos Bs Ref | ${ownerName}`), [HF.monto]: -Math.abs(calculation.paidBs) } },
-    { fields: { ...base, [HF.concepto]: concept(month, casa, `Saldo final USD | ${ownerName}`), [HF.monto]: calculation.finalUsd } },
-    { fields: { ...base, [HF.concepto]: concept(month, casa, `Saldo final Bs Ref | ${ownerName}`), [HF.monto]: calculation.finalBs } },
-    { fields: { ...base, [HF.concepto]: concept(month, casa, `Saldo final total (${status(calculation.total)}) | ${ownerName}`), [HF.monto]: calculation.total } },
-    { fields: { ...base, [HF.concepto]: concept(month, casa, `Modo de cálculo ${transitionMode ? 'transición legacy' : 'doble moneda'} | ${ownerName}`), [HF.monto]: 0 } }
-  ];
+  return updated;
 }
 
 function auditQuery(month) {
   return `?filterByFormula=${encodeURIComponent(`FIND('AUDITORIA|${month}|', {Concepto})`)}`;
 }
 
+function doneQuery(month) {
+  return `?filterByFormula=${encodeURIComponent(`FIND('MONTHLY_CLOSE|${month}|DONE|', {Key})`)}`;
+}
+
+function expectedRows(plan, date) {
+  return expectedSnapshotEntries(plan).map(entry => ({
+    entry,
+    fields:{
+      [HF.propietario]:[entry.ownerId],
+      [HF.fecha]:date,
+      [HF.concepto]:entry.concept,
+      [HF.monto]:entry.amount
+    }
+  }));
+}
+
+function repairPlan(existing, rows, check) {
+  const byConcept = new Map();
+  for (const record of existing || []) {
+    const key = String(record?.fields?.[HF.concepto] || '');
+    if (!byConcept.has(key)) byConcept.set(key,record);
+  }
+  const mismatch = new Set((check.mismatched || []).map(item => item.concept));
+  const creates = [];
+  const updates = [];
+  for (const row of rows) {
+    const current = byConcept.get(row.entry.concept);
+    if (!current) creates.push({ fields:row.fields });
+    else if (mismatch.has(row.entry.concept)) updates.push({ id:current.id, fields:row.fields });
+  }
+  return { creates, updates };
+}
+
+function snapshotRecordFingerprint(records) {
+  return hashJson((records || []).map(record => ({
+    id:String(record?.id || ''),
+    createdTime:String(record?.createdTime || ''),
+    concepto:String(record?.fields?.[HF.concepto] || ''),
+    monto:Number(record?.fields?.[HF.monto] || 0),
+    propietario:Array.isArray(record?.fields?.[HF.propietario]) ? [...record.fields[HF.propietario]].sort() : []
+  })).sort((a,b)=>a.id.localeCompare(b.id)));
+}
+
 const handler = async function(event) {
   const auth = requireAdmin(event);
   if (!auth.ok) return auth.response;
-  if (event.httpMethod !== 'POST') return json(405, { message: 'Method Not Allowed' }, { calls: 0 });
+  if (event.httpMethod !== 'POST') return json(405,{ message:'Method Not Allowed' },{ calls:0 });
 
   const { AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID } = process.env;
-  const counter = { calls: 0 };
-  if (!AIRTABLE_API_TOKEN || !AIRTABLE_BASE_ID) return json(500, { message: 'Airtable no está configurado.' }, counter);
+  const counter = { calls:0 };
+  if (!AIRTABLE_API_TOKEN || !AIRTABLE_BASE_ID) return json(500,{ message:'Airtable no está configurado.' },counter);
 
   let guard = null;
   let guardKey = '';
   try {
-    const body = JSON.parse(event.body || '{}');
-    const month = normalizeMonth(body.month);
-    const date = String(body.date || todayCaracasISO()).slice(0, 10);
+    let body = {};
+    try { body = JSON.parse(event.body || '{}'); }
+    catch (_) { return json(400,{ success:false, message:'Solicitud JSON inválida.' },counter); }
 
-    const [rawOwners, gastos, pagos, existing, officialRecords,configRecords] = await Promise.all([
-      getAll(TABLES.propietarios, '', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter),
-      getAll(TABLES.gastos, '', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter),
-      getAll(TABLES.pagos, '', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter),
-      getAll(TABLES.historial, auditQuery(month), AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter),
+    const month = String(body.month || '').trim();
+    if (!isValidMonth(month)) return json(400,{ success:false, protected:true, invalidMonth:true, message:'Debe indicar un mes válido con formato YYYY-MM.' },counter);
+
+    const window = closeWindowForMonth(month);
+    if (!window.ok) {
+      return json(409,{
+        success:false,
+        protected:true,
+        outsideCloseWindow:true,
+        month,
+        closeWindow:window,
+        message:'El snapshot contable definitivo solo puede generarse o repararse dentro de la ventana real de cierre.'
+      },counter);
+    }
+
+    const completed = await getAll(TABLES.control, doneQuery(month), AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
+    if (completed.length) {
+      const immutableRows = await getAll(TABLES.historial, auditQuery(month), AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
+      return json(200,{
+        success:true,
+        skipped:true,
+        immutable:true,
+        month,
+        existingCount:immutableRows.length,
+        message:`El cierre ${month} ya fue completado. Su snapshot queda inmutable y no se modifica.`
+      },counter);
+    }
+
+    const [rawOwners, gastos, pagos, existing, officialRecords, configRecords] = await Promise.all([
+      getAll(TABLES.propietarios,'',AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID,counter),
+      getAll(TABLES.gastos,'',AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID,counter),
+      getAll(TABLES.pagos,'',AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID,counter),
+      getAll(TABLES.historial,auditQuery(month),AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID,counter),
       getAll(TABLES.control,officialControlQuery(),AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID,counter),
       getAll(TABLES.config,'?maxRecords=1',AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID,counter)
     ]);
 
-    const owners=attachOfficialBalances(rawOwners,officialRecords,month),rules=mergeConfig(configRecords[0]||{});
-    const closingGastos=filterClosingExpenses(gastos,month),paymentScope=splitPaymentsForClose(pagos,month);
-    if(paymentScope.invalid.length){
+    const owners = attachOfficialBalances(rawOwners,officialRecords,month);
+    const rules = mergeConfig(configRecords[0] || {});
+    const closingGastos = filterClosingExpenses(gastos,month);
+    const paymentScope = splitPaymentsForClose(pagos,month);
+    if (paymentScope.invalid.length) {
       return json(409,{
-        success:false,protected:true,month,
+        success:false,
+        protected:true,
+        month,
         invalidPaymentDatesCount:paymentScope.invalid.length,
         invalidPaymentIds:paymentScope.invalid.map(record=>record.id),
         message:'Existen pagos sin una fecha válida. El corte se detuvo sin modificar datos.'
       },counter);
     }
-    const transitionMode = hasLegacyIndividualCharges(closingGastos);
-    const expectedRows = owners.flatMap(owner => rows(owner, compute(owner, closingGastos, paymentScope.eligible, transitionMode, month,rules), month, date, transitionMode));
-    const existingConcepts = new Set(existing.map(record => String(record.fields?.Concepto || '')));
-    let missingRows = expectedRows.filter(row => !existingConcepts.has(String(row.fields?.Concepto || '')));
-    const expectedCount = owners.length * ROWS_PER_OWNER;
-
-    if (!missingRows.length) {
-      return json(200, {
-        success: true,
-        skipped: true,
-        complete: existing.length >= expectedCount,
+    const plan = buildPlan({ owners, expenses:closingGastos, payments:pagos, month, dueDay:rules.payment.dueDay, surchargeRate:rules.payment.surchargeRate });
+    if (plan.validation?.closeScopeReady === false) {
+      return json(409,{
+        success:false,
+        protected:true,
         month,
-        owners: owners.length,
-        expectedCount,
-        existingCount: existing.length,
-        createdCount: 0,
-        transitionMode,
-        message: `El corte ${month} ya contiene todas las filas esperadas.`
-      }, counter);
+        invalidPaymentDatesCount:plan.validation.invalidPaymentDatesCount,
+        invalidPaymentIds:plan.validation.invalidPaymentIds,
+        message:'Existen pagos sin una fecha válida. El corte se detuvo sin modificar datos.'
+      },counter);
     }
 
-    guardKey = `${month}|${hashJson(missingRows.map(row => row.fields[HF.concepto]).sort())}`;
-    const guardResult = await begin('AUDIT_SNAPSHOT', guardKey, { event });
+    const date = todayCaracasISO();
+    const rows = expectedRows(plan,date);
+    const initialCheck = validateSnapshotRecords(existing,plan);
+    if (initialCheck.complete) {
+      return json(200,{
+        success:true,
+        skipped:true,
+        complete:true,
+        month,
+        owners:owners.length,
+        expectedCount:initialCheck.expected,
+        existingCount:initialCheck.count,
+        createdCount:0,
+        updatedCount:0,
+        snapshotHash:initialCheck.expectedHash,
+        planHash:plan.planHash,
+        message:`El corte ${month} coincide exactamente con el plan vigente.`
+      },counter);
+    }
+
+    if (initialCheck.duplicates.length || initialCheck.unexpected.length) {
+      return json(409,{
+        success:false,
+        protected:true,
+        month,
+        snapshotConflict:true,
+        duplicates:initialCheck.duplicates,
+        unexpected:initialCheck.unexpected,
+        message:'El snapshot contiene filas duplicadas o inesperadas. Se detuvo sin borrar historial.'
+      },counter);
+    }
+
+    let changes = repairPlan(existing,rows,initialCheck);
+    guardKey = `${month}|${plan.planHash}|${initialCheck.expectedHash}|${initialCheck.actualHash}|${snapshotRecordFingerprint(existing)}|${hashJson([...changes.creates.map(item=>item.fields[HF.concepto]),...changes.updates.map(item=>item.fields[HF.concepto])].sort())}`;
+    const guardResult = await begin('AUDIT_SNAPSHOT',guardKey,{ event });
     if (!guardResult.ok) {
-      return json(guardResult.reason === 'done' ? 200 : 409, {
-        success: guardResult.reason === 'done',
-        protected: true,
-        reason: guardResult.reason,
-        message: guardResult.reason === 'running'
-          ? 'El corte de auditoría ya está siendo generado. Espere y vuelva a revisar.'
-          : guardResult.reason === 'done'
-            ? 'Estas filas del corte ya fueron generadas.'
-            : 'El corte requiere revisión antes de continuar.'
-      }, counter);
+      if (guardResult.reason === 'done') {
+        const afterDone = await getAll(TABLES.historial,auditQuery(month),AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID,counter);
+        const afterDoneCheck = validateSnapshotRecords(afterDone,plan);
+        if (afterDoneCheck.complete) {
+          return json(200,{
+            success:true,
+            skipped:true,
+            complete:true,
+            protected:true,
+            reason:'done',
+            month,
+            finalCount:afterDoneCheck.count,
+            expectedCount:afterDoneCheck.expected,
+            snapshotHash:afterDoneCheck.actualHash,
+            planHash:plan.planHash,
+            message:'Este plan de snapshot ya fue procesado y continúa íntegro.'
+          },counter);
+        }
+        return json(409,{
+          success:false,
+          protected:true,
+          reason:'snapshot-diverged-after-done',
+          month,
+          snapshot:afterDoneCheck,
+          message:'Un snapshot previamente procesado volvió a divergir. Se bloqueó el cierre para revisión, sin borrar ni duplicar historial.'
+        },counter);
+      }
+      return json(409,{
+        success:false,
+        protected:true,
+        reason:guardResult.reason,
+        message:guardResult.reason === 'running'
+          ? 'El snapshot ya está siendo generado o reparado.'
+          : 'El snapshot requiere revisión antes de continuar.'
+      },counter);
     }
     guard = guardResult.marker;
 
-    const reread = await getAll(TABLES.historial, auditQuery(month), AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
-    const rereadConcepts = new Set(reread.map(record => String(record.fields?.Concepto || '')));
-    missingRows = expectedRows.filter(row => !rereadConcepts.has(String(row.fields?.Concepto || '')));
-    const created = await createRecords(TABLES.historial, missingRows, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
+    const reread = await getAll(TABLES.historial,auditQuery(month),AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID,counter);
+    const rereadCheck = validateSnapshotRecords(reread,plan);
+    if (rereadCheck.duplicates.length || rereadCheck.unexpected.length) throw new Error('El snapshot cambió durante la reparación y contiene filas conflictivas.');
+    changes = repairPlan(reread,rows,rereadCheck);
 
-    const finalRows = await getAll(TABLES.historial, auditQuery(month), AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
-    const finalConcepts = new Set(finalRows.map(record => String(record.fields?.Concepto || '')));
-    const stillMissing = expectedRows.filter(row => !finalConcepts.has(String(row.fields?.Concepto || '')));
-    if (stillMissing.length) throw new Error(`El corte quedó incompleto: faltan ${stillMissing.length} filas esperadas.`);
+    const created = await createRecords(TABLES.historial,changes.creates,AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID,counter);
+    const updated = await updateRecords(TABLES.historial,changes.updates,AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID,counter);
 
-    await setState(guard, 'AUDIT_SNAPSHOT', guardKey, 'DONE', month);
-    return json(200, {
-      success: true,
-      skipped: false,
-      complete: true,
+    const finalRows = await getAll(TABLES.historial,auditQuery(month),AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID,counter);
+    const finalCheck = validateSnapshotRecords(finalRows,plan);
+    if (!finalCheck.complete) throw new Error(`El snapshot quedó fuera del plan: ${finalCheck.count}/${finalCheck.expected}, faltantes=${finalCheck.missing.length}, diferentes=${finalCheck.mismatched.length}.`);
+
+    await setState(guard,'AUDIT_SNAPSHOT',guardKey,'DONE',month);
+    return json(200,{
+      success:true,
+      skipped:false,
+      complete:true,
       month,
-      owners: owners.length,
-      expectedCount,
-      existingBefore: existing.length,
-      createdCount: created.length,
-      finalCount: finalRows.length,
-      transitionMode,
-      message: created.length
-        ? `Corte ${month} completado o reparado correctamente. Se crearon ${created.length} filas faltantes.`
-        : `Corte ${month} verificado correctamente.`
-    }, counter);
+      owners:owners.length,
+      expectedCount:finalCheck.expected,
+      existingBefore:existing.length,
+      createdCount:created.length,
+      updatedCount:updated.length,
+      finalCount:finalCheck.count,
+      snapshotHash:finalCheck.actualHash,
+      planHash:plan.planHash,
+      message:`Snapshot ${month} certificado ${finalCheck.count}/${finalCheck.expected} contra el plan vigente.`
+    },counter);
   } catch (error) {
-    if (guard) await setState(guard, 'AUDIT_SNAPSHOT', guardKey, 'ERROR').catch(() => null);
-    return json(500, {
-      success: false,
-      protected: true,
-      message: 'Error generando o reparando el corte de auditoría.',
-      detail: safeDisplayText(error.message, 1000)
-    }, counter);
+    if (guard) await setState(guard,'AUDIT_SNAPSHOT',guardKey,'ERROR').catch(() => null);
+    return json(500,{
+      success:false,
+      protected:true,
+      message:'Error generando o reparando el corte de auditoría.',
+      detail:safeDisplayText(error.message,1000)
+    },counter);
   }
 };
 
-exports.handler = withAirtableUsage('audit-snapshot', handler);
+exports.handler = withAirtableUsage('audit-snapshot',handler);

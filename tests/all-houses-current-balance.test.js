@@ -72,22 +72,25 @@ pay(10,100,'2026-07-10','USD');
 pay(12,42.8,'2026-07-09','Bs BCV');
 pay(14,202.12,'2026-07-05',null,'1'); pay(14,85,'2026-07-08',null,'2'); pay(14,50,'2026-07-08','USD','3');
 
+// Regresión del motor moderno. Los gastos especiales permanecen en chargesBs/chargesUsd
+// y, si quedan impagos al cierre, pasan íntegros a deuda anterior. El beneficio del 10%
+// se calcula únicamente sobre Gasto Común en Bs.
 const expected = {
   1:{chargesBs:232.33,chargesUsd:85,recargo:0,usd:85,bs:0,total:85,expired:0},
   2:{chargesBs:145.83,chargesUsd:0,recargo:0,usd:0,bs:0,total:0,expired:0},
-  3:{chargesBs:142.79,chargesUsd:0,recargo:14.28,usd:0,bs:157.07,total:157.07,expired:0},
-  4:{chargesBs:201.97,chargesUsd:85,recargo:20.20,usd:85,bs:222.17,total:307.17,expired:0},
+  3:{chargesBs:142.79,chargesUsd:0,recargo:9.28,usd:0,bs:152.07,total:152.07,expired:0},
+  4:{chargesBs:201.97,chargesUsd:85,recargo:10.10,usd:85,bs:212.07,total:297.07,expired:0},
   5:{chargesBs:210.49,chargesUsd:85,recargo:0,usd:85,bs:-0.15,total:84.85,expired:0},
   6:{chargesBs:208.39,chargesUsd:85,recargo:0,usd:0,bs:0,total:0,expired:0},
   7:{chargesBs:193.79,chargesUsd:85,recargo:0,usd:85,bs:0,total:85,expired:0},
   8:{chargesBs:193.79,chargesUsd:85,recargo:0,usd:85,bs:0,total:85,expired:0},
   9:{chargesBs:193.79,chargesUsd:85,recargo:0,usd:-10,bs:-10,total:-20,expired:0},
-  10:{chargesBs:193.79,chargesUsd:85,recargo:19.38,usd:85,bs:213.17,total:298.17,expired:0},
+  10:{chargesBs:193.79,chargesUsd:85,recargo:9.28,usd:85,bs:203.07,total:288.07,expired:0},
   11:{chargesBs:142.79,chargesUsd:0,recargo:0,usd:0,bs:-378.89,total:-378.89,expired:0},
-  12:{chargesBs:142.79,chargesUsd:0,recargo:14.28,usd:0,bs:114.27,total:114.27,expired:0},
-  13:{chargesBs:193.79,chargesUsd:85,recargo:19.38,usd:85,bs:213.17,total:298.17,expired:0},
+  12:{chargesBs:142.79,chargesUsd:0,recargo:9.28,usd:0,bs:109.27,total:109.27,expired:0},
+  13:{chargesBs:193.79,chargesUsd:85,recargo:9.28,usd:85,bs:203.07,total:288.07,expired:0},
   14:{chargesBs:193.79,chargesUsd:85,recargo:0,usd:-50,bs:0,total:-50,expired:0},
-  15:{chargesBs:169.91,chargesUsd:0,recargo:16.99,usd:0,bs:186.90,total:186.90,expired:0}
+  15:{chargesBs:169.91,chargesUsd:0,recargo:11.99,usd:0,bs:181.90,total:181.90,expired:0}
 };
 
 const results = calculateAllOwners(owners, expenses, payments, {month:'2026-07',day:11});
@@ -99,7 +102,7 @@ for (let house=1; house<=15; house += 1) {
   assert(result,`Falta resultado Casa ${house}`);
   assert.strictEqual(result.chargesBsRef,exp.chargesBs,`Casa ${house}: cargos Bs`);
   assert.strictEqual(result.chargesUsd,exp.chargesUsd,`Casa ${house}: cargos USD`);
-  assert.strictEqual(result.recargoBsRef,exp.recargo,`Casa ${house}: recargo`);
+  assert.strictEqual(result.recargoBsRef,exp.recargo,`Casa ${house}: beneficio vencido`);
   assert.strictEqual(result.usd,exp.usd,`Casa ${house}: saldo USD`);
   assert.strictEqual(result.bsRef,exp.bs,`Casa ${house}: saldo Bs ref`);
   assert.strictEqual(result.totalRef,exp.total,`Casa ${house}: total`);
@@ -107,17 +110,19 @@ for (let house=1; house<=15; house += 1) {
   assert.strictEqual(money(result.usd + result.bsRef),result.totalRef,`Casa ${house}: suma por moneda`);
   assert.strictEqual(money(result.expiredTotalRef + result.currentTotalRef),result.totalRef,`Casa ${house}: vencida + corriente`);
   if (result.recargoBsRef > 0) {
-    assert.strictEqual(result.recargoBsRef,money(result.chargesBsRef*0.10),`Casa ${house}: el recargo solo puede ser 10% del mes Bs`);
+    assert.strictEqual(result.recargoBsRef,money(result.promptPaymentEligibleBsRef*0.10),`Casa ${house}: el 10% solo puede salir del gasto común elegible`);
   }
 }
 
 // La Casa 4 pagó exactamente la deuda anterior antes del día 10, pero no el mes corriente.
-// Por tanto debe recibir el recargo corriente y no un segundo recargo sobre los 275,21 viejos.
+// El beneficio perdido es solo el 10% de la cuota común; PINTURA y PLANTA siguen cobradas,
+// pero no participan en esa base.
 const house4=results.get('h4');
 assert.strictEqual(house4.timelyPaidBsRef,0);
-assert.strictEqual(house4.recargoBsRef,20.20);
+assert.strictEqual(house4.promptPaymentEligibleBsRef,100.97);
+assert.strictEqual(house4.recargoBsRef,10.10);
 assert.strictEqual(house4.expiredTotalRef,0);
-assert.strictEqual(house4.currentTotalRef,307.17);
+assert.strictEqual(house4.currentTotalRef,297.07);
 
 // La Casa 14 valida la reconciliación de migración: total histórico 8,33,
 // compuesto realmente por crédito USD -50 y deuda Bs 58,33.

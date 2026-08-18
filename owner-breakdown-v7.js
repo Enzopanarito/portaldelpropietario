@@ -7,20 +7,22 @@
   'use strict';
 
   const VERSION='owner-breakdown-v7';
+  const ALLOCATION=Object.freeze({ALIQUOT:'ALIQUOT',EQUAL_SHARE:'EQUAL_SHARE',NONE:'NONE'});
   function money(value){const number=Number(value);return Number.isFinite(number)?Math.round((number+Number.EPSILON)*100)/100:0}
   function fields(record){return record&&record.fields&&typeof record.fields==='object'?record.fields:(record||{})}
   function linked(value){return Array.isArray(value)?value.map(item=>typeof item==='string'?item:item&&item.id).filter(Boolean):[]}
   function selected(value){return value&&typeof value==='object'&&value.name?String(value.name):String(value||'')}
   function escapeHtml(value){return String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]))}
+  function expenseAllocation(expense){const type=selected(fields(expense)['Tipo de Gasto']);if(type==='Gasto Común'||type==='Gasto Comun')return ALLOCATION.ALIQUOT;if(type==='Gasto Especial')return ALLOCATION.EQUAL_SHARE;return ALLOCATION.NONE}
 
   function ownerShare(expense,owner){
-    const data=fields(expense),amount=Number(data.Monto||0),owners=linked(data.Propietarios),type=selected(data['Tipo de Gasto']),ownerId=String(owner&&owner.id||'');
+    const data=fields(expense),amount=Number(data.Monto||0),owners=linked(data.Propietarios),allocation=expenseAllocation(expense),ownerId=String(owner&&owner.id||'');
     let aliquota=Number(owner&&owner.Alicuota||0);if(aliquota>1)aliquota/=100;
-    if(type==='Gasto Común'||type==='Gasto Comun'){
+    if(allocation===ALLOCATION.ALIQUOT){
       if(owners.length&&!owners.includes(ownerId))return 0;
       return money(amount*aliquota);
     }
-    if(type==='Gasto Especial'&&owners.includes(ownerId))return money(amount/(owners.length||1));
+    if(allocation===ALLOCATION.EQUAL_SHARE&&owners.includes(ownerId))return money(amount/(owners.length||1));
     return 0;
   }
 
@@ -38,9 +40,9 @@
     let promptBase=0;
     for(const expense of data.gastos||[]){
       const share=ownerShare(expense,owner);if(Math.abs(share)<=.005)continue;
-      const item=fields(expense),mode=selected(item['Forma de Pago']||'Bs BCV');
-      rows.push({kind:'expense',concept:String(item.Concepto||'Gasto').toUpperCase(),total:money(item.Monto||0),amount:share,mode});
-      if(mode!=='USD')promptBase+=share;
+      const item=fields(expense),mode=selected(item['Forma de Pago']||'Bs BCV'),allocation=expenseAllocation(expense);
+      rows.push({kind:'expense',concept:String(item.Concepto||'Gasto').toUpperCase(),total:money(item.Monto||0),amount:share,mode,allocationMethod:allocation});
+      if(mode!=='USD'&&allocation===ALLOCATION.ALIQUOT)promptBase+=share;
     }
     const paid=activePaymentTotal(data.pagos,owner.id),benefit=Number(day)<=Number(dueDay)?money(promptBase*Number(surchargeRate||0)):0;
     return{ownerId:String(owner.id||owner.Casa||''),rows,paid,benefit};
@@ -60,5 +62,5 @@
     return true;
   }
 
-  return Object.freeze({VERSION,money,ownerShare,activePaymentTotal,rowsModel,render});
+  return Object.freeze({VERSION,ALLOCATION,money,expenseAllocation,ownerShare,activePaymentTotal,rowsModel,render});
 });

@@ -1,6 +1,7 @@
 'use strict';
 
 const base = require('./_balance_engine');
+const closeSafe = require('./_balance_engine_close_safe');
 const { money, fieldsOf, selectName, ownerShare, paymentEquivalentUsd, isAppliedPayment } = base;
 
 const OFFICIAL_FIELDS = {
@@ -77,14 +78,14 @@ function applyPositivePayment(balance, amount) {
   return { balance: money(balance - used), remaining: money(amount - used) };
 }
 
-function calculateOfficialBalance(owner, expenses, payments, clock, snapshot,options={}) {
+function calculateOfficialBalance(owner, expenses, payments, clock, snapshot, options = {}) {
   const ownerId = String(owner && owner.id || '');
   const newExpenses = (expenses || []).filter(record => recordCreatedAt(record) > snapshot.cutoffMs);
   const chargesAfterCutoff = chargeLines(owner, newExpenses);
   let usd = money(snapshot.usd + chargesAfterCutoff.usd);
   let bsRef = money(snapshot.bsRef + chargesAfterCutoff.bsRef);
-  const dueDay=Math.max(1,Math.min(28,Number(options.dueDay||10)));
-  const surchargeRate=Math.max(0,Math.min(1,Number(options.surchargeRate??0.10)));
+  const dueDay = Math.max(1, Math.min(28, Number(options.dueDay || 10)));
+  const surchargeRate = Math.max(0, Math.min(1, Number(options.surchargeRate ?? 0.10)));
   const recargoBsRef = clock.day > dueDay && snapshot.surchargeBaseBsRef > base.TOLERANCE
     ? money(snapshot.surchargeBaseBsRef * surchargeRate)
     : 0;
@@ -136,10 +137,10 @@ function calculateOfficialBalance(owner, expenses, payments, clock, snapshot,opt
     ...chargesAfterCutoff.expenseLinesBs
   ];
 
-  // Este corte oficial representa el saldo corriente del mes. Aunque haya
-  // terminado el pronto pago, no se convierte en deuda vencida hasta que el
-  // cierre lo traslade a los campos de deuda anterior.
-  const expiredUsd=0,expiredBsRef=0,currentUsd=usd,currentBsRef=bsRef;
+  const expiredUsd = 0;
+  const expiredBsRef = 0;
+  const currentUsd = usd;
+  const currentBsRef = bsRef;
   return {
     ownerId,
     month: clock.month,
@@ -165,10 +166,10 @@ function calculateOfficialBalance(owner, expenses, payments, clock, snapshot,opt
     totalRef: money(usd + bsRef),
     expiredUsd,
     expiredBsRef,
-    expiredTotalRef: money(expiredUsd+expiredBsRef),
+    expiredTotalRef: money(expiredUsd + expiredBsRef),
     currentUsd,
     currentBsRef,
-    currentTotalRef: money(currentUsd+currentBsRef),
+    currentTotalRef: money(currentUsd + currentBsRef),
     activePayments,
     expenseLinesUsd,
     expenseLinesBs
@@ -180,8 +181,8 @@ function calculateOwnerBalance(owner, expenses = [], payments = [], options = {}
     ? { month:String(options.month), day:Number(options.day || 31) }
     : base.caracasClock(options.now || new Date());
   const snapshot = officialSnapshot(owner, clock.month);
-  if (snapshot) return calculateOfficialBalance(owner, expenses, payments, clock, snapshot,options);
-  const result = base.calculateOwnerBalance(owner, expenses, payments, options);
+  if (snapshot) return calculateOfficialBalance(owner, expenses, payments, clock, snapshot, options);
+  const result = closeSafe.calculateOwnerBalance(owner, expenses, payments, options);
   return Object.assign({}, result, { officialSnapshotActive:false, officialCutoff:'' });
 }
 
