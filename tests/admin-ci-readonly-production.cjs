@@ -47,10 +47,7 @@ function classifyMkj(mkj){
       identityIssues,
       stateIssues,
       otherIssues,
-      ...(identityProblem?{
-        storedMkjUserId:String(row.mkjUserIdAirtable||''),
-        resolvedMkjUserId:String(row.mkjResolvedUserId||'')
-      }:{}),
+      ...(identityProblem?{storedMkjUserId:String(row.mkjUserIdAirtable||''),resolvedMkjUserId:String(row.mkjResolvedUserId||'')}:{}),
       exception:Boolean(row.excepcionAdministrativa),
       expected:String(row.estadoFisicoEsperado||''),
       airtable:String(row.estadoAirtable||''),
@@ -61,12 +58,24 @@ function classifyMkj(mkj){
   const stateRows=details.filter(row=>row.stateIssues.length);
   return{details,identityRows,stateRows};
 }
+function assertCloseDryRun(close){
+  if(close.success!==true||close.dryRun!==true)throw new Error('El cierre mensual no confirmó modo DRY RUN.');
+  if(!close.validation||!close.planHash||!close.sourceHash)throw new Error('El cierre mensual DRY RUN no devolvió validation, planHash y sourceHash.');
+  if(!/^[a-f0-9]{64}$/.test(String(close.planHash)))throw new Error('planHash de cierre inválido.');
+  if(!/^[a-f0-9]{64}$/.test(String(close.sourceHash)))throw new Error('sourceHash de cierre inválido.');
+  if(Number(close.validation.ownerCount)!==15)throw new Error(`DRY RUN devolvió ${Number(close.validation.ownerCount)||0}/15 propietarios.`);
+  if(!Array.isArray(close.ownerPlan)||close.ownerPlan.length!==15)throw new Error(`DRY RUN no devolvió plan detallado 15/15: ${Array.isArray(close.ownerPlan)?close.ownerPlan.length:0}/15.`);
+  const houses=close.ownerPlan.map(row=>Number(row.casa)).sort((a,b)=>a-b);
+  if(houses.some((house,index)=>house!==index+1))throw new Error('DRY RUN no contiene la secuencia canónica de casas 1..15.');
+  const snapshot=close.snapshot||{};
+  if(Number(snapshot.expected)!==150)throw new Error(`Snapshot esperaba ${Number(snapshot.expected)||0}/150 filas.`);
+  if(!close.closeWindow||typeof close.closeWindow.ok!=='boolean')throw new Error('DRY RUN no devolvió el estado de ventana de cierre.');
+  if(close.validation.closeScopeReady===false)throw new Error(`DRY RUN bloqueado por ${Number(close.validation.invalidPaymentDatesCount)||0} pago(s) sin fecha válida.`);
+}
 
 (async()=>{
   const exchange=await request(`${target}/.netlify/functions/admin-ci-readonly-session`,{
-    method:'POST',
-    headers:{'Content-Type':'application/json','Cache-Control':'no-cache'},
-    body:JSON.stringify({oidcToken})
+    method:'POST',headers:{'Content-Type':'application/json','Cache-Control':'no-cache'},body:JSON.stringify({oidcToken})
   },'admin-ci-readonly-session');
   const session=await jsonResponse(exchange,'admin-ci-readonly-session');
   if(session.success!==true||session.role!=='admin-ci-readonly'||session.source!=='github-oidc'||!session.token)throw new Error('Producción no emitió la sesión OIDC read-only esperada.');
@@ -90,10 +99,11 @@ function classifyMkj(mkj){
   const mkjClassification=classifyMkj(mkj);
 
   const close=await adminFetch(token,'/.netlify/functions/monthly-close',{method:'POST',body:JSON.stringify({dryRun:true})});
-  if(!close.validation||!close.planHash)throw new Error('El cierre mensual DRY RUN no devolvió validation y planHash.');
+  assertCloseDryRun(close);
 
   const evidence={
     target,
+    capturedAt:new Date().toISOString(),
     authMode:'github-oidc-readonly',
     loginHttpStatus:exchange.status,
     loginSource:session.source,
@@ -103,28 +113,35 @@ function classifyMkj(mkj){
     health:health.status,
     healthErrors:activeErrors.length,
     accessMode:mode.mode,
-    mkj:{
-      readOnly:mkj.readOnly,
-      total:Number(mkj.total),
-      reconciled:Number(mkj.reconciled),
-      coherent:Number(mkj.coherent||0),
-      discrepancies:Number(mkj.discrepancyCount||0),
-      identityIssueRows:mkjClassification.identityRows.length,
-      stateDivergenceRows:mkjClassification.stateRows.length,
-      manualStateDivergences:mode.mode==='Manual'?mkjClassification.stateRows.length:0,
-      discrepancyDetails:mkjClassification.details
-    },
-    closeDryRun:true
+    mkj:{readOnly:mkj.readOnly,total:Number(mkj.total),reconciled:Number(mkj.reconciled),coherent:Number(mkj.coherent||0),discrepancies:Number(mkj.discrepancyCount||0),identityIssueRows:mkjClassification.identityRows.length,stateDivergenceRows:mkjClassification.stateRows.length,manualStateDivergences:mode.mode==='Manual'?mkjClassification.stateRows.length:0,discrepancyDetails:mkjClassification.details},
+    closeDryRun:{
+      success:true,
+      month:String(close.month||''),
+      monthDefaulted:Boolean(close.monthDefaulted),
+      planHash:String(close.planHash),
+      sourceHash:String(close.sourceHash),
+      ownerCount:Number(close.validation.ownerCount),
+      paymentCutoff:String(close.validation.paymentCutoff||''),
+      pendingPaymentsCount:Number(close.validation.pendingPaymentsCount||0),
+      invalidPaymentDatesCount:Number(close.validation.invalidPaymentDatesCount||0),
+      futurePaymentsExcludedCount:Number(close.validation.futurePaymentsExcludedCount||0),
+      totalUsd:Number(close.validation.totalUsd||0),
+      totalBsRef:Number(close.validation.totalBsRef||0),
+      totalRef:Number(close.validation.totalRef||0),
+      creditBalanceCount:Number(close.validation.creditBalanceCount||0),
+      currencyCreditComponentCount:Number(close.validation.currencyCreditComponentCount||0),
+      snapshot:close.snapshot,
+      closeWindow:close.closeWindow,
+      closeStatus:String(close.closeStatus||''),
+      canExecute:Boolean(close.canExecute),
+      ownerPlan:close.ownerPlan
+    }
   };
   fs.writeFileSync('admin-authenticated-readonly-result.json',JSON.stringify(evidence,null,2));
   console.log(JSON.stringify(evidence,null,2));
 
-  if(mkjClassification.identityRows.length){
-    throw new Error(`MKJ tiene ${mkjClassification.identityRows.length} casa(s) con problemas de identidad/lectura: ${mkjClassification.identityRows.map(row=>`Casa ${row.casa} [${[...row.identityIssues,...row.otherIssues].join(',')}] stored=${row.storedMkjUserId||'none'} resolved=${row.resolvedMkjUserId||'none'}`).join('; ')}`);
-  }
-  if(mode.mode==='Automático'&&mkjClassification.stateRows.length){
-    throw new Error(`MKJ automático tiene ${mkjClassification.stateRows.length} discrepancia(s) de estado.`);
-  }
+  if(mkjClassification.identityRows.length)throw new Error(`MKJ tiene ${mkjClassification.identityRows.length} casa(s) con problemas de identidad/lectura: ${mkjClassification.identityRows.map(row=>`Casa ${row.casa} [${[...row.identityIssues,...row.otherIssues].join(',')}] stored=${row.storedMkjUserId||'none'} resolved=${row.resolvedMkjUserId||'none'}`).join('; ')}`);
+  if(mode.mode==='Automático'&&mkjClassification.stateRows.length)throw new Error(`MKJ automático tiene ${mkjClassification.stateRows.length} discrepancia(s) de estado.`);
 })().catch(error=>{
   fs.writeFileSync('admin-authenticated-readonly-error.txt',String(error.stack||error));
   console.error(error.stack||error);
