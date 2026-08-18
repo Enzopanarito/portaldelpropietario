@@ -63,8 +63,15 @@ jobs:
           exit 1
 
       - name: Install Playwright Chromium
+        shell: bash
         run: |
+          set -euo pipefail
           npm ci --ignore-scripts --no-audit --no-fund
+          for source in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
+            [ -f "$source" ] || continue
+            sudo sed -i -E 's#https?://azure\.archive\.ubuntu\.com/ubuntu#https://archive.ubuntu.com/ubuntu#g' "$source"
+          done
+          printf '%s\n' 'Acquire::Retries "3";' 'Acquire::http::Timeout "20";' 'Acquire::https::Timeout "20";' | sudo tee /etc/apt/apt.conf.d/99vla-ci-network >/dev/null
           npx playwright install --with-deps chromium
 
       - name: Verify breakdown and all 15 visible balances
