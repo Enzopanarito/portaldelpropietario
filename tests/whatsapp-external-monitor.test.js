@@ -86,19 +86,16 @@ test('relay fails closed when monitor credentials are not configured', async () 
   );
 });
 
-test('first failure is observed without alert noise', () => {
+test('12h policy raises alert on first failed review', () => {
   const health = monitor.unreachableHealth();
-  const transition = monitor.planTransition(monitor.defaultState(), health, Date.parse('2026-08-18T01:00:00Z'));
-  assert.equal(transition.action, 'none');
+  const transition = monitor.planTransition(
+    monitor.defaultState(),
+    health,
+    Date.parse('2026-08-18T00:00:00Z'),
+    { failuresBeforeAlert: 1, reminderMs: 12 * 60 * 60 * 1000 }
+  );
+  assert.equal(transition.action, 'alert');
   assert.equal(transition.next.consecutiveFailures, 1);
-});
-
-test('second consecutive failure raises alert', () => {
-  const health = monitor.unreachableHealth();
-  const first = monitor.planTransition(monitor.defaultState(), health, Date.parse('2026-08-18T01:00:00Z'));
-  const second = monitor.planTransition(first.next, health, Date.parse('2026-08-18T01:05:00Z'));
-  assert.equal(second.action, 'alert');
-  assert.equal(second.next.consecutiveFailures, 2);
 });
 
 test('active incident does not spam before 12 hours', () => {
@@ -106,11 +103,11 @@ test('active incident does not spam before 12 hours', () => {
   const state = {
     ...monitor.defaultState(),
     alertActive: true,
-    consecutiveFailures: 2,
-    alertSentAt: '2026-08-18T01:05:00.000Z',
-    lastReminderAt: '2026-08-18T01:05:00.000Z'
+    consecutiveFailures: 1,
+    alertSentAt: '2026-08-18T00:00:00.000Z',
+    lastReminderAt: '2026-08-18T00:00:00.000Z'
   };
-  const transition = monitor.planTransition(state, health, Date.parse('2026-08-18T02:00:00Z'));
+  const transition = monitor.planTransition(state, health, Date.parse('2026-08-18T01:00:00Z'));
   assert.equal(transition.action, 'none');
 });
 
@@ -119,11 +116,11 @@ test('active incident emits reminder after 12 hours', () => {
   const state = {
     ...monitor.defaultState(),
     alertActive: true,
-    consecutiveFailures: 2,
-    alertSentAt: '2026-08-18T01:05:00.000Z',
-    lastReminderAt: '2026-08-18T01:05:00.000Z'
+    consecutiveFailures: 1,
+    alertSentAt: '2026-08-18T00:00:00.000Z',
+    lastReminderAt: '2026-08-18T00:00:00.000Z'
   };
-  const transition = monitor.planTransition(state, health, Date.parse('2026-08-18T13:06:00Z'));
+  const transition = monitor.planTransition(state, health, Date.parse('2026-08-18T12:01:00Z'));
   assert.equal(transition.action, 'reminder');
 });
 
@@ -131,10 +128,10 @@ test('healthy state after alert emits a single recovery action', () => {
   const state = {
     ...monitor.defaultState(),
     alertActive: true,
-    consecutiveFailures: 3,
-    alertSentAt: '2026-08-18T01:05:00.000Z'
+    consecutiveFailures: 1,
+    alertSentAt: '2026-08-18T00:00:00.000Z'
   };
-  const transition = monitor.planTransition(state, { healthy: true }, Date.parse('2026-08-18T01:20:00Z'));
+  const transition = monitor.planTransition(state, { healthy: true }, Date.parse('2026-08-18T12:00:00Z'));
   assert.equal(transition.action, 'recovery');
   assert.equal(transition.next.consecutiveFailures, 0);
 });
@@ -149,10 +146,15 @@ test('monitor source never invokes mutating WhatsApp actions', () => {
   assert.match(shared, /action:\s*'status'/);
 });
 
-test('scheduled monitor runs every five minutes and public health is blob-only', () => {
+test('scheduled monitor runs twice daily and public health is blob-only', () => {
   const scheduled = fs.readFileSync(path.join(ROOT, 'netlify/functions/whatsapp-external-monitor.mjs'), 'utf8');
   const health = fs.readFileSync(path.join(ROOT, 'netlify/functions/whatsapp-external-health.mjs'), 'utf8');
-  assert.match(scheduled, /schedule:\s*'\*\/5 \* \* \* \*'/);
+  const workflow = fs.readFileSync(path.join(ROOT, '.github/workflows/monitor-whatsapp-external.yml'), 'utf8');
+  assert.match(scheduled, /schedule:\s*'0 0,12 \* \* \*'/);
+  assert.match(scheduled, /failuresBeforeAlert:\s*1/);
+  assert.match(health, /FAILURES_BEFORE_ALERT = 1/);
+  assert.match(health, /12 \* 60 \+ 30/);
+  assert.match(workflow, /cron:\s*'35 0,12 \* \* \*'/);
   assert.match(health, /getStore\(STORE_NAME/);
   assert.doesNotMatch(health, /VLA_WHATSAPP_CONTROL_SECRET|relayStatus|X-VLA-Control-Secret/);
 });
