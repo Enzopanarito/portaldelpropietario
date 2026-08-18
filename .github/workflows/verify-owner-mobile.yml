@@ -22,10 +22,10 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
-      - name: Use Node.js 22
+      - name: Use Node.js 24
         uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version: '24'
           package-manager-cache: false
 
       - name: Validate static mobile recovery

@@ -12,10 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Use Node.js 22
+      - name: Use Node.js 24
         uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version: '24'
           package-manager-cache: false
 
       - name: Capture current production canonical financial fields
