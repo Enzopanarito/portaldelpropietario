@@ -23,14 +23,25 @@ test('el puente moderno conserva solicitud, cuerpo y contexto Blobs',async()=>{
  assert.equal(response.status,201);assert.equal(response.headers.get('x-result'),'ok');assert.equal(await response.text(),'creado');
 });
 
-test('todos los wrappers modernos usan el puente propio y no aws-lambda-compat',()=>{
- const wrappers=fs.readdirSync(functionsDir).filter(name=>name.endsWith('.mjs'));
- assert(wrappers.length>=10);
- for(const name of wrappers){
+test('wrappers legacy y funciones modernas nativas conservan contratos separados',()=>{
+ const modern=fs.readdirSync(functionsDir).filter(name=>name.endsWith('.mjs'));
+ assert(modern.length>=12);
+ const wrappers=[];
+ const native=[];
+ for(const name of modern){
   const source=fs.readFileSync(path.join(functionsDir,name),'utf8');
-  assert.match(source,/legacy-function-bridge\.mjs/,`${name} debe importar el puente moderno.`);
+  assert.doesNotMatch(source,/withLambda|@netlify\/aws-lambda-compat/,`${name} no puede depender de aws-lambda-compat.`);
+  if(/legacy-function-bridge\.mjs/.test(source)) wrappers.push({name,source});
+  else native.push({name,source});
+ }
+ assert(wrappers.length>=10);
+ for(const {name,source} of wrappers){
   assert.match(source,/invokeLegacy\(/,`${name} debe conservar el contrato legacy.`);
-  assert.doesNotMatch(source,/withLambda|@netlify\/aws-lambda-compat/,`${name} no puede perder event.blobs.`);
+ }
+ assert.deepEqual(native.map(item=>item.name).sort(),['whatsapp-external-health.mjs','whatsapp-external-monitor.mjs']);
+ for(const {name,source} of native){
+  assert.match(source,/export\s+default/,`${name} debe usar el contrato moderno nativo.`);
+  assert.doesNotMatch(source,/invokeLegacy\(/,`${name} no debe simular ser wrapper legacy.`);
  }
  const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
  assert.equal(pkg.dependencies?.['@netlify/aws-lambda-compat'],undefined);
