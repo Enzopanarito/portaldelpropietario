@@ -7,7 +7,6 @@
     if(login)login.classList.remove('hidden');if(app)app.classList.add('hidden');
     if(error){error.textContent='Tu sesión venció. Ingresa nuevamente la contraseña.';error.classList.remove('hidden')}
     if(password)setTimeout(()=>password.focus(),0);
-    document.documentElement.dataset.vlaAdminReady='1';
   }
   function expire(){
     if(expiring)return;expiring=true;clear();
