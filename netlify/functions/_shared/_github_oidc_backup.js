@@ -9,7 +9,7 @@ const REPOSITORY_OWNER = 'Enzopanarito';
 const WORKFLOW = 'Backup VLA Production';
 const WORKFLOW_REF = 'Enzopanarito/portaldelpropietario/.github/workflows/backup-vla-production.yml@refs/heads/main';
 const REF = 'refs/heads/main';
-const ALLOWED_EVENTS = new Set(['schedule', 'workflow_dispatch']);
+const ALLOWED_EVENTS = new Set(['push', 'schedule', 'workflow_dispatch']);
 const CLOCK_SKEW_SECONDS = 90;
 const CACHE_TTL_MS = 10 * 60 * 1000;
 
