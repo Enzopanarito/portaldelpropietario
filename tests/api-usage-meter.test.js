@@ -8,6 +8,7 @@ const originalFetch = global.fetch;
 const originalToken = process.env.AIRTABLE_API_TOKEN;
 const originalBase = process.env.AIRTABLE_BASE_ID;
 const calls = [];
+const DIRECT_READ_ONLY_EXCEPTIONS = new Set(['airtable-backup-ci.js']);
 
 global.fetch = async (input, init = {}) => {
   const url = typeof input === 'string' ? input : input.url;
@@ -32,7 +33,15 @@ function validateEntrypointCoverage() {
     const source = fs.readFileSync(path.join(directory, filename), 'utf8');
     const callsAirtableDirectly = source.includes('https://api.airtable.com/v0/');
     const exposesHandler = source.includes('exports.handler');
-    if (callsAirtableDirectly && exposesHandler && !source.includes('withAirtableUsage(')) missing.push(filename);
+    if (!callsAirtableDirectly || !exposesHandler || source.includes('withAirtableUsage(')) continue;
+
+    if (DIRECT_READ_ONLY_EXCEPTIONS.has(filename)) {
+      assert(source.includes("method: 'GET'"), `${filename} debe declarar GET explícito para Airtable.`);
+      assert(!/method:\s*['"](?:POST|PATCH|PUT|DELETE)['"]/i.test(source), `${filename} dejó de ser read-only.`);
+      assert(!source.includes('_airtable_meter'), `${filename} no debe usar el medidor que persiste contadores.`);
+      continue;
+    }
+    missing.push(filename);
   }
   assert.deepStrictEqual(missing, [], `Funciones con acceso directo a Airtable sin medidor: ${missing.join(', ')}`);
 }
