@@ -72,9 +72,13 @@ async function bootDiagnostic(page){
   const errors=[];
   page.on('pageerror',error=>errors.push(String(error.stack||error)));
   page.on('console',message=>{if(message.type()==='error'){const url=String(message.location().url||'');if(/cdn\.tailwindcss|fonts\.googleapis|fonts\.gstatic/i.test(url))return;errors.push(message.text())}});
-  await page.goto(`http://127.0.0.1:${PORT}/admin.html`,{waitUntil:'domcontentloaded'});
+  await page.goto(`http://127.0.0.1:${PORT}/admin.html?session=expired`,{waitUntil:'domcontentloaded'});
   await page.locator('#password').waitFor({state:'visible'});
   await page.waitForFunction(()=>typeof window.showApp==='function'&&typeof document.getElementById('login-form')?.onsubmit==='function');
+  const recoveryState=await page.evaluate(()=>({path:location.pathname,query:location.search,ready:document.documentElement.dataset.vlaAdminReady||'',shell:Boolean(document.getElementById('vla-premium-shell')),message:document.getElementById('login-error')?.textContent||''}));
+  if(recoveryState.query)throw new Error(`La recuperación de sesión no limpió la URL: ${JSON.stringify(recoveryState)}`);
+  if(!/sesión venció/i.test(recoveryState.message))throw new Error(`No se activó la recuperación de sesión vencida: ${JSON.stringify(recoveryState)}`);
+  if(recoveryState.ready==='1'&&!recoveryState.shell)throw new Error('La sesión vencida declaró listo el administrador antes de construir el shell premium.');
   await page.evaluate(()=>{window.__samples=[];window.__sampleTimer=setInterval(()=>{const app=document.getElementById('app'),login=document.getElementById('login'),shell=document.getElementById('vla-premium-shell'),loader=document.getElementById('vla-admin-loader'),a=app&&getComputedStyle(app),l=loader&&getComputedStyle(loader);window.__samples.push({loginHidden:Boolean(login&&getComputedStyle(login).display==='none'),appVisible:Boolean(app&&a.display!=='none'&&a.visibility!=='hidden'&&Number(a.opacity||1)>.01),shell:Boolean(shell),loaderVisible:Boolean(loader&&l.display!=='none'&&l.visibility!=='hidden')})},16)});
   await page.locator('#password').fill('Prueba segura');
   await page.locator('#login-form button').click();
@@ -88,7 +92,7 @@ async function bootDiagnostic(page){
     await page.waitForFunction(()=>document.getElementById('kpi-api')?.dataset.vlaFittedSize&&document.getElementById('vla-porton-value')?.dataset.vlaFittedSize,null,{timeout:10000});
   }catch(error){throw new Error(`${error.message}\nDiagnóstico: ${JSON.stringify(await bootDiagnostic(page))}`)}
   const samples=await page.evaluate(()=>{clearInterval(window.__sampleTimer);return window.__samples});
-  if(samples.some(s=>s.loginHidden&&s.appVisible&&!s.shell))throw new Error('Se detectó un fotograma del diseño heredado.');
+  if(samples.some(s=>s.loginHidden&&s.appVisible&&!s.shell))throw new Error('Se detectó un fotograma del diseño heredado durante recuperación de sesión vencida.');
   if(!samples.some(s=>s.loaderVisible))throw new Error('La conexión lenta no mostró la carga VLA.');
   const logo=page.locator('#vla-premium-sidebar .vla-brand-logo');
   await logo.waitFor({state:'visible'});
@@ -120,6 +124,6 @@ async function bootDiagnostic(page){
     results.push({name:viewport.name,...metrics});
   }
   if(errors.length)throw new Error('Errores del navegador: '+errors.join(' | '));
-  fs.writeFileSync('admin-responsive-result.json',JSON.stringify({noLegacyFlash:true,loader:true,officialLogo:true,dashboardCaptured:true,cardFit:true,viewports:results},null,2));
+  fs.writeFileSync('admin-responsive-result.json',JSON.stringify({noLegacyFlash:true,expiredSessionRecovery:true,loader:true,officialLogo:true,dashboardCaptured:true,cardFit:true,viewports:results},null,2));
   await browser.close();server.close();console.log('ADMIN_RESPONSIVE_FOUC_BROWSER_OK');
 })().catch(error=>{fs.writeFileSync('admin-responsive-error.txt',String(error.stack||error));console.error(error);server.close();process.exit(1)});
