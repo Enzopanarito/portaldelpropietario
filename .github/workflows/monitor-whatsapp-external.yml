@@ -1,0 +1,68 @@
+name: Monitor VLA WhatsApp External
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: vla-whatsapp-external-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      MONITOR_URL: https://villalosapamates.netlify.app/.netlify/functions/whatsapp-external-health
+      ALERT_TITLE: '🚨 VLA WhatsApp monitor externo: atención requerida'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check external health
+        id: health
+        shell: bash
+        run: |
+          set -u
+          healthy=false
+          status=000
+          for attempt in 1 2 3; do
+            status="$(curl -sS --connect-timeout 10 --max-time 20 -o /tmp/vla-monitor.json -w '%{http_code}' "$MONITOR_URL" || printf '000')"
+            if [ "$status" = "200" ]; then
+              healthy=true
+              break
+            fi
+            if [ "$attempt" -lt 3 ]; then sleep 15; fi
+          done
+          echo "healthy=$healthy" >> "$GITHUB_OUTPUT"
+          echo "http_status=$status" >> "$GITHUB_OUTPUT"
+          echo "External monitor HTTP: $status healthy=$healthy"
+
+      - name: Open incident issue once
+        if: steps.health.outputs.healthy != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --json number,title | jq -r --arg title "$ALERT_TITLE" '.[] | select(.title == $title) | .number' | head -1)"
+          if [ -z "$existing" ]; then
+            body="El monitor externo de VLA no obtuvo estado saludable del endpoint de WhatsApp después de tres intentos.\n\n- HTTP: ${{ steps.health.outputs.http_status }}\n- Detectado: $(date -u +'%Y-%m-%dT%H:%M:%SZ')\n- Endpoint: $MONITOR_URL\n\nEste watchdog es de solo lectura. No ejecutó envíos de WhatsApp, no cambió el Controller y no modificó datos financieros."
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$ALERT_TITLE" --body "$body"
+          else
+            echo "Incident issue #$existing already open; no duplicate created."
+          fi
+
+      - name: Close incident issue on recovery
+        if: steps.health.outputs.healthy == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --json number,title | jq -r --arg title "$ALERT_TITLE" '.[] | select(.title == $title) | .number' | head -1)"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "✅ El monitor externo confirmó recuperación el $(date -u +'%Y-%m-%dT%H:%M:%SZ'). El endpoint volvió a HTTP 200."
+            gh issue close "$existing" --repo "$GITHUB_REPOSITORY" --reason completed
+          else
+            echo 'No open incident issue to close.'
+          fi
