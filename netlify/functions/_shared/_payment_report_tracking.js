@@ -2,6 +2,7 @@
 
 const crypto=require('crypto');
 const {resolveEncryptionKey}=require('./_payment_proof_store');
+const {derivePaymentFinalOutcome,finalOutcomeLabel}=require('./_payment_final_outcome');
 
 const TOKEN_DOMAIN='vla/payment-report/tracking/v1';
 const TOKEN_PATTERN=/^[A-Za-z0-9_-]{43}$/;
@@ -25,9 +26,9 @@ function verifyTrackingToken(token,expectedHash){
 }
 function ownerMatches(fields,ownerId){const links=fields?.['Propietario que Reporta'];return Array.isArray(links)&&links.length===1&&links[0]===ownerId}
 function statusFromFields(fields={}){
- const legacy=selectName(fields.Estado).toLowerCase(),processing=selectName(fields['Estado de Procesamiento']).toLowerCase();
- if(legacy==='confirmado'||processing==='aprobado'||processing==='cerrado')return'APPROVED';
- if(legacy==='rechazado'||processing==='rechazado')return'REJECTED';
+ const final=derivePaymentFinalOutcome(fields),processing=selectName(fields['Estado de Procesamiento']).toLowerCase();
+ if(final.outcome==='APPROVED')return'APPROVED';
+ if(final.outcome==='REJECTED')return'REJECTED';
  if(processing==='información solicitada'||processing==='informacion solicitada')return'INFORMATION_REQUESTED';
  if(!processing||processing==='recibido')return'RECEIVED';
  return'IN_REVIEW';
@@ -37,9 +38,10 @@ function referenceEnding(value){const normalized=clean(value,160).replace(/\s+/g
 function dateOrNull(value){const text=clean(value,80);return /^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(text)?text:null}
 function reviewDeadline(createdAt){const timestamp=Date.parse(createdAt||'');return Number.isFinite(timestamp)?new Date(timestamp+72*60*60*1000).toISOString():null}
 function sanitizeReport(record){
- const fields=record?.fields||{},status=statusFromFields(fields),createdAt=dateOrNull(fields['Fecha y Hora del Reporte'])||dateOrNull(record?.createdTime)||dateOrNull(fields['Fecha del Reporte']);
+ const fields=record?.fields||{},final=derivePaymentFinalOutcome(fields),status=statusFromFields(fields),createdAt=dateOrNull(fields['Fecha y Hora del Reporte'])||dateOrNull(record?.createdTime)||dateOrNull(fields['Fecha del Reporte']);
  return{
   reportId:clean(record?.id,40),status,statusLabel:statusLabel(status),createdAt,
+  finalOutcome:final.outcome,finalOutcomeLabel:finalOutcomeLabel(final.outcome),finalOutcomeConflict:final.conflict,finalOutcomeSource:final.source,
   reviewDeadline:status==='RECEIVED'||status==='IN_REVIEW'||status==='INFORMATION_REQUESTED'?reviewDeadline(createdAt):null,
   mode:selectName(fields['Forma de Pago Reportada'])||null,
   enteredCurrency:selectName(fields['Moneda Ingresada'])||null,
