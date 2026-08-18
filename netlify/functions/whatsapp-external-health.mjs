@@ -3,6 +3,7 @@ import { getStore } from '@netlify/blobs';
 const STORE_NAME = 'vla-whatsapp-monitor-v1';
 const STATE_KEY = 'state';
 const MAX_AGE_MS = 12 * 60 * 1000;
+const FAILURES_BEFORE_ALERT = 2;
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -48,18 +49,29 @@ export default async (req) => {
     }, 503);
   }
 
+  const failures = Math.max(0, Number(state.consecutiveFailures || 0));
   const healthy = state.lastHealthStatus === 'operational'
     && state.alertActive !== true
-    && Number(state.consecutiveFailures || 0) === 0;
+    && failures === 0;
 
-  if (!healthy) {
-    return json({
-      ok: false,
-      status: state.lastHealthStatus || 'attention',
-      reasons: safeReasons(state.lastReasons),
-      checkedAt: state.lastCheckedAt
-    }, 503);
+  if (healthy) {
+    return json({ ok: true, status: 'operational', checkedAt: state.lastCheckedAt }, 200);
   }
 
-  return json({ ok: true, status: 'operational', checkedAt: state.lastCheckedAt }, 200);
+  if (state.alertActive !== true && failures < FAILURES_BEFORE_ALERT) {
+    return json({
+      ok: true,
+      status: 'degraded',
+      consecutiveFailures: failures,
+      checkedAt: state.lastCheckedAt
+    }, 200);
+  }
+
+  return json({
+    ok: false,
+    status: state.lastHealthStatus || 'attention',
+    reasons: safeReasons(state.lastReasons),
+    consecutiveFailures: failures,
+    checkedAt: state.lastCheckedAt
+  }, 503);
 };
