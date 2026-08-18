@@ -12,7 +12,7 @@
   function fields(record){return record&&record.fields&&typeof record.fields==='object'?record.fields:(record||{})}
   function linked(value){return Array.isArray(value)?value.map(item=>typeof item==='string'?item:item&&item.id).filter(Boolean):[]}
   function selected(value){return value&&typeof value==='object'&&value.name?String(value.name):String(value||'')}
-  function escapeHtml(value){return String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'}[char]))}
+  function escapeHtml(value){return String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]))}
   function expenseAllocation(expense){const type=selected(fields(expense)['Tipo de Gasto']);if(type==='Gasto Común'||type==='Gasto Comun')return ALLOCATION.ALIQUOT;if(type==='Gasto Especial')return ALLOCATION.EQUAL_SHARE;return ALLOCATION.NONE}
 
   function ownerShare(expense,owner){
