@@ -57,7 +57,7 @@ function emailPayload(action, health, state, nowIso) {
   const heading = isRecovery ? 'WhatsApp volvió a estar operativo' : 'El sistema WhatsApp requiere atención';
   const intro = isRecovery
     ? 'El monitor externo confirmó nuevamente el estado saludable del sistema.'
-    : 'El monitor externo detectó fallas consecutivas. No se ejecutó ningún envío ni acción correctiva automática.';
+    : 'La revisión externa programada detectó una falla. No se ejecutó ningún envío ni acción correctiva automática.';
   const firstFailure = state?.firstFailureAt ? `<p><b>Primer fallo:</b> ${htmlEscape(state.firstFailureAt)}</p>` : '';
   const detail = isRecovery ? '' : `<h3>Motivos detectados</h3><ul>${list}</ul>${firstFailure}`;
   return {
@@ -110,7 +110,10 @@ export default async () => {
     health = unreachableHealth(error?.code === 'MONITOR_CONFIG_MISSING' ? 'MONITOR_CONFIG_MISSING' : 'MAC_OR_GATEWAY_UNREACHABLE');
   }
 
-  const transition = planTransition(previous, health, nowMs);
+  const transition = planTransition(previous, health, nowMs, {
+    failuresBeforeAlert: 1,
+    reminderMs: 12 * 60 * 60 * 1000
+  });
   const next = { ...transition.next, lastCheckedAt: nowIso, lastHealthStatus: health.status };
 
   if (transition.action !== 'none') {
@@ -144,5 +147,5 @@ export default async () => {
 };
 
 export const config = {
-  schedule: '*/5 * * * *'
+  schedule: '0 0,12 * * *'
 };
