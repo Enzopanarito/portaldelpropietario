@@ -70,7 +70,11 @@ function calculateCharges(owner, expenses) {
     const owners = linkedIds(fields.Propietarios);
     const concept = String(fields.Concepto || 'Gasto');
     const amount = Number(fields.Monto || 0);
-    const promptPaymentExcluded = isGasoilExpense(expense);
+    // La clasificación vigente manda: solo Gasto Común participa del beneficio
+    // de pronto pago. Todo Gasto Especial se cobra y se arrastra al cierre, pero
+    // nunca forma parte de la base del 10 %. GASOIL conserva además un fail-safe
+    // por concepto para evitar incluirlo si algún registro quedara mal clasificado.
+    const promptPaymentExcluded = type !== 'Gasto Común' || isGasoilExpense(expense);
 
     if (type === 'Gasto Común') {
       if (owners.length && !owners.includes(ownerId)) continue;
