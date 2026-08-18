@@ -38,9 +38,9 @@
     let promptBase=0;
     for(const expense of data.gastos||[]){
       const share=ownerShare(expense,owner);if(Math.abs(share)<=.005)continue;
-      const item=fields(expense),mode=selected(item['Forma de Pago']||'Bs BCV');
+      const item=fields(expense),mode=selected(item['Forma de Pago']||'Bs BCV'),type=selected(item['Tipo de Gasto']);
       rows.push({kind:'expense',concept:String(item.Concepto||'Gasto').toUpperCase(),total:money(item.Monto||0),amount:share,mode});
-      if(mode!=='USD')promptBase+=share;
+      if(mode!=='USD'&&(type==='Gasto Común'||type==='Gasto Comun'))promptBase+=share;
     }
     const paid=activePaymentTotal(data.pagos,owner.id),benefit=Number(day)<=Number(dueDay)?money(promptBase*Number(surchargeRate||0)):0;
     return{ownerId:String(owner.id||owner.Casa||''),rows,paid,benefit};
