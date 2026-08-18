@@ -83,7 +83,7 @@ test('25-35: determinismo, stale plan, snapshot exacto, fecha inválida y locks'
 test('36-42: 429/500, timeout, crash, retry y recovery desembocan en restauración o estado parcial explícito',()=>{
   const executor=source('netlify/functions/_shared/_monthly_close_execute.js'),verifier=source('netlify/functions/_shared/_monthly_close_verify.js'),repair=source('netlify/functions/_shared/_monthly_close_repair.js'),pilot=source('netlify/functions/condo-autopilot-background.js');
   assert.match(executor,/restorePlan/);assert.match(executor,/ERROR_PARTIAL/);assert.match(executor,/ERROR_SAFE/);assert.match(executor,/dataCompleted/);assert.match(executor,/retryable:true/);
-  assert.match(verifier,/verifyPlan\(plan, 'before'/);assert.match(repair,/restorePlan/);assert.match(pilot,/rotationRetry/);assert.match(pilot,/finalDry\.planHash\s*!==\s*dry\.planHash/);
+  assert.match(verifier,/verifyPlan\(plan, 'before'/);assert.match(repair,/restorePlan/);assert.match(pilot,/rotationRetry/);assert.match(pilot,/finalDry\.planHash\s*!==\s*dryRun\.planHash/);
 });
 
 test('43: diciembre → enero usa diciembre como período de cierre',()=>{
