@@ -1,0 +1,151 @@
+name: Backup VLA Production
+
+on:
+  schedule:
+    - cron: '15 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+concurrency:
+  group: vla-production-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      TARGET_URL: https://villalosapamates.netlify.app
+      VLA_BACKUP_ENCRYPTION_KEY: ${{ secrets.VLA_BACKUP_ENCRYPTION_KEY }}
+      ALERT_TITLE: '🚨 VLA Backup automático: atención requerida'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Verify dedicated encryption key
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$VLA_BACKUP_ENCRYPTION_KEY" | grep -Eq '^[A-Fa-f0-9]{64}$'; then
+            echo 'VLA_BACKUP_ENCRYPTION_KEY no está configurada como clave dedicada de 32 bytes.'
+            exit 1
+          fi
+          echo '✅ Clave dedicada de backup disponible (valor oculto).'
+
+      - name: Request short-lived GitHub OIDC identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=vla-backup-production-readonly")"
+          token="$(printf '%s' "$response" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);process.stdout.write(String(j.value||''))})")"
+          test -n "$token"
+          echo "::add-mask::$token"
+          echo "VLA_BACKUP_OIDC_TOKEN=$token" >> "$GITHUB_ENV"
+
+      - name: Export 12-table production backup through OIDC read-only endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e "require('fs').writeFileSync('/tmp/backup-request.json',JSON.stringify({oidcToken:process.env.VLA_BACKUP_OIDC_TOKEN}))"
+          code="$(curl --silent --show-error --location \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --data-binary @/tmp/backup-request.json \
+            --output /tmp/vla-airtable-backup.json \
+            --write-out '%{http_code}' \
+            --max-time 120 \
+            "${TARGET_URL}/.netlify/functions/airtable-backup-ci")"
+          rm -f /tmp/backup-request.json
+          if [ "$code" != '200' ]; then
+            echo "El exportador de backup devolvió HTTP $code."
+            cat /tmp/vla-airtable-backup.json 2>/dev/null || true
+            exit 1
+          fi
+          test -s /tmp/vla-airtable-backup.json
+
+      - name: Verify 12/12 tables and all integrity hashes
+        run: node scripts/vla-backup-verify.mjs /tmp/vla-airtable-backup.json vla-backup-manifest.json
+
+      - name: Encrypt backup with AES-256-GCM
+        run: node scripts/vla-backup-crypto.mjs encrypt /tmp/vla-airtable-backup.json vla-airtable-backup.enc.json
+
+      - name: Destroy plaintext and perform restore rehearsal from encrypted artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f /tmp/vla-airtable-backup.json
+          node scripts/vla-backup-crypto.mjs decrypt vla-airtable-backup.enc.json /tmp/vla-restored-backup.json
+          node scripts/vla-backup-verify.mjs /tmp/vla-restored-backup.json /tmp/vla-restored-manifest.json
+          node - <<'NODE'
+          const fs=require('fs');
+          const a=JSON.parse(fs.readFileSync('vla-backup-manifest.json','utf8'));
+          const b=JSON.parse(fs.readFileSync('/tmp/vla-restored-manifest.json','utf8'));
+          for (const key of ['manifestHash','fileContentHash','rawFileSha256']) {
+            if (a.integrity[key] !== b.integrity[key]) throw new Error(`RESTORE_${key}_MISMATCH`);
+          }
+          if (a.tableCount !== 12 || b.tableCount !== 12 || a.totalRecords !== b.totalRecords) throw new Error('RESTORE_COUNTS_MISMATCH');
+          console.log(`VLA_BACKUP_RESTORE_REHEARSAL_OK tables=${b.tableCount}/12 records=${b.totalRecords}`);
+          NODE
+          rm -f /tmp/vla-restored-backup.json /tmp/vla-restored-manifest.json
+
+      - name: Add encrypted artifact hash to public-safe manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          encrypted_sha="$(sha256sum vla-airtable-backup.enc.json | awk '{print $1}')"
+          ENCRYPTED_SHA="$encrypted_sha" node - <<'NODE'
+          const fs=require('fs');
+          const p='vla-backup-manifest.json';
+          const m=JSON.parse(fs.readFileSync(p,'utf8'));
+          m.encryptedArtifact={algorithm:'SHA-256',sha256:process.env.ENCRYPTED_SHA,format:'AES-256-GCM-v1'};
+          m.retentionDays=90;
+          m.restoreRehearsal='PASS';
+          fs.writeFileSync(p,JSON.stringify(m,null,2));
+          NODE
+
+      - name: Upload encrypted external backup
+        uses: actions/upload-artifact@v7
+        with:
+          name: vla-airtable-backup-${{ github.run_id }}
+          path: |
+            vla-airtable-backup.enc.json
+            vla-backup-manifest.json
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 6
+
+      - name: Close backup incident after successful recovery
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --json number,title | jq -r --arg title "$ALERT_TITLE" '.[] | select(.title == $title) | .number' | head -1)"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "✅ Backup automático y ensayo de restauración volvieron a PASS el $(date -u +'%Y-%m-%dT%H:%M:%SZ')."
+            gh issue close "$existing" --repo "$GITHUB_REPOSITORY" --reason completed
+          fi
+
+      - name: Open one backup incident on failure
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --json number,title | jq -r --arg title "$ALERT_TITLE" '.[] | select(.title == $title) | .number' | head -1)"
+          if [ -z "$existing" ]; then
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$ALERT_TITLE" --body "El backup automático externo de VLA o su ensayo de restauración falló.\n\n- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\n- Detectado: $(date -u +'%Y-%m-%dT%H:%M:%SZ')\n\nEl proceso es de solo lectura sobre Airtable. No se modificaron saldos, pagos, cierres ni MKJ."
+          else
+            echo "El incidente #$existing ya está abierto; no se duplica."
+          fi
