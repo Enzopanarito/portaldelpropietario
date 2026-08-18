@@ -5,7 +5,7 @@ const { requireAdmin } = require('./_shared/_auth');
 const { begin, setState } = require('./_shared/_operation_guard');
 const { safeDisplayText } = require('./_shared/_security_utils');
 const { hashJson } = require('./_shared/_audit_cleanup');
-const { buildPlan } = require('./_shared/_monthly_close_core_v4');
+const { buildPlan, splitPaymentsForClose } = require('./_shared/_monthly_close_core_v4');
 const { filterClosingExpenses } = require('./_shared/_expense_lifecycle');
 const { attachOfficialBalances, officialControlQuery } = require('./_shared/_official_balances');
 const { mergeConfig } = require('./_shared/_automation_rules');
@@ -136,6 +136,16 @@ function repairPlan(existing, rows, check) {
   return { creates, updates };
 }
 
+function snapshotRecordFingerprint(records) {
+  return hashJson((records || []).map(record => ({
+    id:String(record?.id || ''),
+    createdTime:String(record?.createdTime || ''),
+    concepto:String(record?.fields?.[HF.concepto] || ''),
+    monto:Number(record?.fields?.[HF.monto] || 0),
+    propietario:Array.isArray(record?.fields?.[HF.propietario]) ? [...record.fields[HF.propietario]].sort() : []
+  })).sort((a,b)=>a.id.localeCompare(b.id)));
+}
+
 const handler = async function(event) {
   const auth = requireAdmin(event);
   if (!auth.ok) return auth.response;
@@ -192,6 +202,17 @@ const handler = async function(event) {
     const owners = attachOfficialBalances(rawOwners,officialRecords,month);
     const rules = mergeConfig(configRecords[0] || {});
     const closingGastos = filterClosingExpenses(gastos,month);
+    const paymentScope = splitPaymentsForClose(pagos,month);
+    if (paymentScope.invalid.length) {
+      return json(409,{
+        success:false,
+        protected:true,
+        month,
+        invalidPaymentDatesCount:paymentScope.invalid.length,
+        invalidPaymentIds:paymentScope.invalid.map(record=>record.id),
+        message:'Existen pagos sin una fecha válida. El corte se detuvo sin modificar datos.'
+      },counter);
+    }
     const plan = buildPlan({ owners, expenses:closingGastos, payments:pagos, month, dueDay:rules.payment.dueDay, surchargeRate:rules.payment.surchargeRate });
     if (plan.validation?.closeScopeReady === false) {
       return json(409,{
@@ -237,18 +258,43 @@ const handler = async function(event) {
     }
 
     let changes = repairPlan(existing,rows,initialCheck);
-    guardKey = `${month}|${plan.planHash}|${initialCheck.expectedHash}|${hashJson([...changes.creates.map(item=>item.fields[HF.concepto]),...changes.updates.map(item=>item.fields[HF.concepto])].sort())}`;
+    guardKey = `${month}|${plan.planHash}|${initialCheck.expectedHash}|${initialCheck.actualHash}|${snapshotRecordFingerprint(existing)}|${hashJson([...changes.creates.map(item=>item.fields[HF.concepto]),...changes.updates.map(item=>item.fields[HF.concepto])].sort())}`;
     const guardResult = await begin('AUDIT_SNAPSHOT',guardKey,{ event });
     if (!guardResult.ok) {
-      return json(guardResult.reason === 'done' ? 200 : 409,{
-        success:guardResult.reason === 'done',
+      if (guardResult.reason === 'done') {
+        const afterDone = await getAll(TABLES.historial,auditQuery(month),AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID,counter);
+        const afterDoneCheck = validateSnapshotRecords(afterDone,plan);
+        if (afterDoneCheck.complete) {
+          return json(200,{
+            success:true,
+            skipped:true,
+            complete:true,
+            protected:true,
+            reason:'done',
+            month,
+            finalCount:afterDoneCheck.count,
+            expectedCount:afterDoneCheck.expected,
+            snapshotHash:afterDoneCheck.actualHash,
+            planHash:plan.planHash,
+            message:'Este plan de snapshot ya fue procesado y continúa íntegro.'
+          },counter);
+        }
+        return json(409,{
+          success:false,
+          protected:true,
+          reason:'snapshot-diverged-after-done',
+          month,
+          snapshot:afterDoneCheck,
+          message:'Un snapshot previamente procesado volvió a divergir. Se bloqueó el cierre para revisión, sin borrar ni duplicar historial.'
+        },counter);
+      }
+      return json(409,{
+        success:false,
         protected:true,
         reason:guardResult.reason,
         message:guardResult.reason === 'running'
           ? 'El snapshot ya está siendo generado o reparado.'
-          : guardResult.reason === 'done'
-            ? 'Este plan de snapshot ya fue procesado.'
-            : 'El snapshot requiere revisión antes de continuar.'
+          : 'El snapshot requiere revisión antes de continuar.'
       },counter);
     }
     guard = guardResult.marker;
