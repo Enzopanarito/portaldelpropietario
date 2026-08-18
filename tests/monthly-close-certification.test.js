@@ -49,13 +49,27 @@ test('16-19: gastos fijos/variables aprobados entran; programados/anulados no',(
   assert.deepEqual(lifecycle.filterClosingExpenses(rows,'2026-08').map(row=>row.id).sort(),['approved','fixed']);
 });
 
-test('19-21: GASOIL queda fuera del 10% y la frontera día 10/11 es exacta',()=>{
-  const o=owner('o1',1),regular=expense('regular','VIGILANCIA',100,'Bs BCV','Activo','2026-08',['o1']),gasoil=expense('gasoil','GASOIL',50,'Bs BCV','Activo','2026-08',['o1']);
-  const d31=balance.calculateOwnerBalance(o,[regular,gasoil],[],{month:'2026-08',day:31,dueDay:10,surchargeRate:.1});
-  assert.equal(d31.chargesBsRef,150);assert.equal(d31.promptPaymentEligibleBsRef,100);assert.equal(d31.promptPaymentExcludedBsRef,50);assert.equal(d31.recargoBsRef,10);assert.equal(d31.totalRef,160);
-  const only=balance.calculateOwnerBalance(o,[gasoil],[],{month:'2026-08',day:31,dueDay:10,surchargeRate:.1});assert.equal(only.recargoBsRef,0);assert.equal(only.totalRef,50);
+test('19-21: beneficio 10% solo sobre gastos comunes; especiales sobreviven al cierre y frontera día 10/11 exacta',()=>{
+  const o=owner('o1',1);
+  const regular=expense('regular','VIGILANCIA',100,'Bs BCV','Activo','2026-08',['o1'],'Gasto Común');
+  const gasoil=expense('gasoil','GASOIL',50,'Bs BCV','Activo','2026-08',['o1'],'Gasto Común');
+  const planta=expense('planta','SERVICIO TECNICO DE PLANTA ELECTRICA',50,'Bs BCV','Activo','2026-08',['o1'],'Gasto Especial');
+  const especial=expense('especial','CUOTA ESPECIAL MOTOR PORTON',25,'Bs BCV','Activo','2026-08',['o1'],'Gasto Especial');
+  const d31=balance.calculateOwnerBalance(o,[regular,gasoil,planta,especial],[],{month:'2026-08',day:31,dueDay:10,surchargeRate:.1});
+  assert.equal(d31.chargesBsRef,225);
+  assert.equal(d31.promptPaymentEligibleBsRef,100);
+  assert.equal(d31.promptPaymentExcludedBsRef,125);
+  assert.equal(d31.recargoBsRef,10);
+  assert.equal(d31.totalRef,235);
+  for(const specialOnly of [gasoil,planta,especial]){
+    const result=balance.calculateOwnerBalance(o,[specialOnly],[],{month:'2026-08',day:31,dueDay:10,surchargeRate:.1});
+    assert.equal(result.recargoBsRef,0);
+    assert.equal(result.totalRef,specialOnly.fields.Monto);
+  }
   assert.equal(balance.calculateOwnerBalance(o,[regular],[],{month:'2026-08',day:10,dueDay:10,surchargeRate:.1}).recargoBsRef,0);
   assert.equal(balance.calculateOwnerBalance(o,[regular],[],{month:'2026-08',day:11,dueDay:10,surchargeRate:.1}).recargoBsRef,10);
+  const rolled=planFor({owners:[o],expenses:[planta]}).ownerUpdates[0].target;
+  assert.deepEqual(rolled,{deudaAnteriorUsd:0,deudaAnteriorBsRef:50,deudaAnterior:50});
 });
 
 test('22-24: MKJ usa deuda vencida, respeta excepción y corre después del DONE',()=>{
