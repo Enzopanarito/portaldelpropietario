@@ -1,0 +1,142 @@
+name: VLA Production Auto Rollback
+
+on:
+  workflow_run:
+    workflows: ["Deploy Netlify Production"]
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: vla-production-auto-rollback
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    if: github.event.workflow_run.conclusion != 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NETLIFY_AUTH_TOKEN_PRIMARY: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_AUTH_TOKEN_FALLBACK: ${{ secrets.NETLIFY_TOKEN }}
+      NETLIFY_SITE_ID_PRIMARY: ${{ secrets.NETLIFY_SITE_ID }}
+      NETLIFY_SITE_ID_FALLBACK: ${{ secrets.NETLIFY_SITE_ID_VILLALOSAPAMATES }}
+      FAILED_COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+      FAILED_WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+      FAILED_RUN_ID: ${{ github.event.workflow_run.id }}
+      ALERT_TITLE: '🚨 VLA rollback automático: atención requerida'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout failed production commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Resolve Netlify credentials without exposing them
+        shell: bash
+        run: |
+          set -euo pipefail
+          AUTH_TOKEN="${NETLIFY_AUTH_TOKEN_PRIMARY:-${NETLIFY_AUTH_TOKEN_FALLBACK:-}}"
+          SITE_ID="${NETLIFY_SITE_ID_PRIMARY:-${NETLIFY_SITE_ID_FALLBACK:-}}"
+          [ -n "$AUTH_TOKEN" ] && echo "::add-mask::$AUTH_TOKEN"
+          [ -n "$SITE_ID" ] && echo "::add-mask::$SITE_ID"
+          [ -n "$AUTH_TOKEN" ] && [ -n "$SITE_ID" ] || { echo 'Faltan credenciales Netlify; rollback bloqueado.'; exit 1; }
+          echo "NETLIFY_AUTH_TOKEN=$AUTH_TOKEN" >> "$GITHUB_ENV"
+          echo "NETLIFY_SITE_ID=$SITE_ID" >> "$GITHUB_ENV"
+
+      - name: Restore previous production deploy only if failed commit is currently live
+        id: rollback
+        shell: bash
+        env:
+          VLA_ROLLBACK_RESULT_PATH: ${{ runner.temp }}/vla-auto-rollback-result.json
+        run: |
+          set -euo pipefail
+          node scripts/vla-netlify-auto-rollback.mjs
+          node - "$VLA_ROLLBACK_RESULT_PATH" "$GITHUB_OUTPUT" <<'NODE'
+          const fs=require('fs');
+          const data=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+          for(const key of ['action','reason','failedDeployId','restoredDeployId','restoredCommit','restoredDeployUrl']){
+            const value=String(data[key]||'').replace(/[\r\n]/g,' ');
+            fs.appendFileSync(process.argv[3],`${key}=${value}\n`);
+          }
+          NODE
+
+      - name: Verify restored release and 150 financial fields against restored deploy permalink
+        if: steps.rollback.outputs.action == 'restored'
+        shell: bash
+        env:
+          RESTORED_DEPLOY_URL: ${{ steps.rollback.outputs.restoredDeployUrl }}
+        run: |
+          set -euo pipefail
+          [ -n "$RESTORED_DEPLOY_URL" ] || { echo 'El deploy restaurado no expuso deploy URL.'; exit 1; }
+          canonical="${RUNNER_TEMP}/rollback-canonical-release.json"
+          live="${RUNNER_TEMP}/rollback-live-release.json"
+          canonical_fin="${RUNNER_TEMP}/rollback-canonical-finance.json"
+          live_fin="${RUNNER_TEMP}/rollback-live-finance.json"
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent --show-error --location --max-time 30 "$RESTORED_DEPLOY_URL/release.json?rollback=$FAILED_RUN_ID-$attempt" --output "$canonical" \
+              && curl --fail --silent --show-error --location --max-time 30 "https://villalosapamates.netlify.app/release.json?rollback=$FAILED_RUN_ID-$attempt" --output "$live" \
+              && node - "$canonical" "$live" <<'NODE'
+          const fs=require('fs');
+          const [a,b]=process.argv.slice(2).map(p=>JSON.parse(fs.readFileSync(p,'utf8')));
+          if(JSON.stringify(a)!==JSON.stringify(b)) process.exit(1);
+          NODE
+            then break; fi
+            [ "$attempt" -lt 20 ] || { echo 'ROLLBACK_RELEASE_MISMATCH'; exit 1; }
+            sleep 3
+          done
+          curl --fail-with-body --silent --show-error --location --max-time 60 "$RESTORED_DEPLOY_URL/api/vla/public-data?force=1&rollback=$FAILED_RUN_ID" --output "$canonical_fin"
+          curl --fail-with-body --silent --show-error --location --max-time 60 "https://villalosapamates.netlify.app/api/vla/public-data?force=1&rollback=$FAILED_RUN_ID" --output "$live_fin"
+          node - "$canonical_fin" "$live_fin" <<'NODE'
+          const fs=require('fs');
+          const fields=['saldoUsd','saldoBsRef','totalPagadero','saldoNetoReferencial','saldoFavorUsd','saldoFavorBs','deudaVencidaUsd','deudaVencidaBs','mesCorrienteUsd','mesCorrienteBs'];
+          const money=v=>Math.round((Number(v)||0)*100);
+          const load=p=>{const d=JSON.parse(fs.readFileSync(p,'utf8'));const rows=Array.isArray(d.propietarios)?d.propietarios:[];if(rows.length!==15)throw new Error(`${p}: ${rows.length}/15`);return new Map(rows.map(r=>[Number(r.Casa),r]));};
+          const a=load(process.argv[2]),b=load(process.argv[3]);let absolute=0;const diffs=[];
+          for(let casa=1;casa<=15;casa++){const x=a.get(casa),y=b.get(casa);if(!x||!y)throw new Error(`Casa ${casa} ausente`);for(const f of fields){const d=money(y[f])-money(x[f]);absolute+=Math.abs(d);if(d)diffs.push({casa,field:f,diff:d/100});}}
+          if(diffs.length)throw new Error(`ROLLBACK_FINANCIAL_MISMATCH ${JSON.stringify(diffs)}`);
+          console.log(`ROLLBACK_FINANCIAL_BASELINE_OK 15/15 houses · 150/150 fields · $${(absolute/100).toFixed(2)}`);
+          NODE
+
+      - name: Close rollback incident when recovery is verified
+        if: steps.rollback.outputs.action == 'restored' && success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --json number,title | jq -r --arg title "$ALERT_TITLE" '.[] | select(.title == $title) | .number' | head -1)"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "✅ Rollback verificado: producción volvió al deploy ${{ steps.rollback.outputs.restoredDeployId }} después del fallo del run ${FAILED_RUN_ID}."
+            gh issue close "$existing" --repo "$GITHUB_REPOSITORY" --reason completed
+          fi
+
+      - name: Open one incident if rollback mechanism fails
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --json number,title | jq -r --arg title "$ALERT_TITLE" '.[] | select(.title == $title) | .number' | head -1)"
+          if [ -z "$existing" ]; then
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$ALERT_TITLE" --body "El watchdog de rollback no pudo completar o verificar la recuperación.\n\n- Workflow fallido: ${FAILED_WORKFLOW_NAME}\n- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${FAILED_RUN_ID}\n- Commit: ${FAILED_COMMIT_SHA}\n\nNo se modificaron saldos deliberadamente. Revisar producción antes de cualquier nuevo deploy."
+          fi
+
+      - name: Summarize rollback decision
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### VLA Production Auto Rollback'
+            echo
+            echo "Workflow fallido: \`${FAILED_WORKFLOW_NAME}\`"
+            echo "Commit evaluado: \`${FAILED_COMMIT_SHA}\`"
+            echo "Acción: \`${{ steps.rollback.outputs.action || 'error' }}\`"
+            echo "Razón: \`${{ steps.rollback.outputs.reason || 'rollback-step-failed' }}\`"
+            echo "Deploy restaurado: \`${{ steps.rollback.outputs.restoredDeployId || 'none' }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
