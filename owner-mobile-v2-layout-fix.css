@@ -1,5 +1,5 @@
-/* Ajuste de jerarquía del encabezado móvil.
-   La fila principal conserva grid aunque el HTML heredado incluya la clase flex. */
+/* Ajustes quirúrgicos del portal propietario móvil.
+   Conserva la jerarquía del encabezado y retira visualmente el dock inferior heredado. */
 @media(max-width:767px){
   html body .app-content>header>div.flex{
     display:grid!important;
@@ -13,5 +13,30 @@
     width:100%!important;
     min-width:0!important;
     gap:8px!important;
+  }
+
+  /* El dock heredado duplicaba accesos y el módulo de pagos añadía un quinto
+     botón sobre una cuadrícula de cuatro columnas. Se conserva el nodo para
+     compatibilidad con JS existente, pero desaparece por completo de la UI,
+     del foco y de la interacción móvil. */
+  html body .mobile-bottom{
+    visibility:hidden!important;
+    pointer-events:none!important;
+    opacity:0!important;
+    height:0!important;
+    min-height:0!important;
+    max-height:0!important;
+    padding:0!important;
+    border:0!important;
+    box-shadow:none!important;
+    overflow:hidden!important;
+  }
+
+  /* Recupera el espacio que antes se reservaba para el dock fijo. */
+  html body .app-content>main{
+    padding-bottom:calc(20px + env(safe-area-inset-bottom))!important;
+  }
+  html body .vla-digital-signature-footer{
+    padding-bottom:calc(24px + env(safe-area-inset-bottom))!important;
   }
 }
