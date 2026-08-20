@@ -12,6 +12,7 @@ const TRUSTED_DATE_SOURCES=new Set(['PROOF_EXTRACTED','ADMIN_CORRECTED']);
 
 function clean(value){return String(value??'').trim()}
 function money(value){const number=Number(value);return Number.isFinite(number)?Math.round((number+Number.EPSILON)*100)/100:0}
+function preciseNumber(value){const number=Number(value);return Number.isFinite(number)?number:0}
 function selectName(value){return value&&typeof value==='object'&&value.name?clean(value.name):clean(value)}
 function bounded(value,max=500){return clean(value).slice(0,max)}
 function parseJson(value,fallback={}){try{return JSON.parse(clean(value)||'{}')}catch(_){return fallback}}
@@ -25,7 +26,8 @@ function normalizeCorrections(value={}){
  if(clean(source.method))result.method=clean(source.method).toUpperCase();
  if(clean(source.mode))result.mode=clean(source.mode);
  if(clean(source.receivedCurrency))result.receivedCurrency=clean(source.receivedCurrency).toUpperCase();
- for(const key of ['amountUsd','amountBs','receivedAmount','rate'])if(source[key]!==undefined&&source[key]!==null&&source[key]!=='')result[key]=money(source[key]);
+ for(const key of ['amountUsd','amountBs','receivedAmount'])if(source[key]!==undefined&&source[key]!==null&&source[key]!=='')result[key]=money(source[key]);
+ if(source.rate!==undefined&&source.rate!==null&&source.rate!=='')result.rate=preciseNumber(source.rate);
  return result;
 }
 function validateDecisionInput(body={}){
@@ -61,7 +63,7 @@ function normalApprovalBlockers(fields={},{automatic=false}={}){
 }
 function effectivePayment(fields={},corrections={}){
  const mode=corrections.mode||selectName(fields['Forma de Pago Reportada']||'Bs BCV');
- const rate=corrections.rate||money(fields['Tasa BCV Reporte']);
+ const rate=corrections.rate||preciseNumber(fields['Tasa BCV Reporte']);
  const amountUsd=corrections.amountUsd||money(fields['Equivalente USD Reportado']||fields['Monto Reportado']);
  const amountBs=mode==='Bs BCV'?(corrections.amountBs||money(fields['Monto Reportado Bs'])||money(amountUsd*rate)):0;
  const receivedCurrency=corrections.receivedCurrency||selectName(fields['Moneda Ingresada'])||(mode==='USD'?'USD':'VES');
@@ -75,7 +77,11 @@ function effectivePayment(fields={},corrections={}){
  if(!validDate(transactionDate))return{ok:false,message:'Debe corregir o verificar la fecha de la operación antes de aprobar.'};
  if(!reference)return{ok:false,message:'Debe corregir o verificar la referencia antes de aprobar.'};
  if(!CURRENCIES.has(receivedCurrency)||!(receivedAmount>0))return{ok:false,message:'La moneda o monto recibido no es válido.'};
- if(mode==='Bs BCV'&&(!(rate>0)||!(amountBs>0)||Math.abs(amountBs-money(amountUsd*rate))>0.02))return{ok:false,message:'El monto Bs, el equivalente USD y la tasa BCV no son coherentes.'};
+ if(mode==='Bs BCV'){
+  if(!(rate>0)||!(amountBs>0))return{ok:false,message:'El monto Bs, el equivalente USD y la tasa BCV no son coherentes.'};
+  const impliedUsd=money(amountBs/rate);
+  if(Math.abs(impliedUsd-amountUsd)>0.001)return{ok:false,message:'El monto Bs, el equivalente USD y la tasa BCV no son coherentes.'};
+ }
  return{ok:true,mode,rate,amountUsd,amountBs,receivedCurrency,receivedAmount,transactionDate,reference,bank,method};
 }
 function correctionPatch(fields,corrections,effective,reason){
@@ -90,4 +96,4 @@ function appendAudit(existing,{action,adminId,reason='',corrections={},result=''
  return[clean(existing),JSON.stringify(entry)].filter(Boolean).join('\n').slice(-90000);
 }
 
-module.exports={APPROVAL_ACTIONS,TERMINAL_ACTIONS,ALL_ACTIONS,MODES,CURRENCIES,METHODS,TRUSTED_DATE_SOURCES,clean,money,selectName,bounded,parseJson,validDate,normalizeCorrections,validateDecisionInput,normalApprovalBlockers,effectivePayment,correctionPatch,appendAudit};
+module.exports={APPROVAL_ACTIONS,TERMINAL_ACTIONS,ALL_ACTIONS,MODES,CURRENCIES,METHODS,TRUSTED_DATE_SOURCES,clean,money,preciseNumber,selectName,bounded,parseJson,validDate,normalizeCorrections,validateDecisionInput,normalApprovalBlockers,effectivePayment,correctionPatch,appendAudit};
