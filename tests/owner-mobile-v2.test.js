@@ -35,5 +35,10 @@ assert(css.includes('@media(display-mode:standalone)'),'Falta adaptación al acc
 assert(layoutFix.includes('html body .app-content>header>div.flex'),'El encabezado heredado puede volver a flex en móvil.');
 assert(layoutFix.includes('display:grid!important'),'El contenedor principal del encabezado debe ser grid.');
 assert(layoutFix.includes('html body .app-content>header>div>div.flex'),'La fila del selector debe conservar flex dentro del grid.');
+assert(layoutFix.includes('html body .mobile-bottom'),'El override móvil debe controlar explícitamente el dock heredado.');
+assert(layoutFix.includes('visibility:hidden!important'),'El dock inferior debe permanecer invisible en móvil.');
+assert(layoutFix.includes('pointer-events:none!important'),'El dock inferior oculto no debe interceptar gestos o pulsaciones.');
+assert(layoutFix.includes('height:0!important'),'El dock inferior no debe reservar altura visible.');
+assert(layoutFix.includes('padding-bottom:calc(20px + env(safe-area-inset-bottom))!important'),'El contenido móvil debe recuperar el espacio que reservaba el dock.');
 
 console.log('OWNER_MOBILE_V2_STATIC_OK');
