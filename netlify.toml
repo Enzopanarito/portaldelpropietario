@@ -57,6 +57,12 @@ status = 200
 force = true
 
 [[redirects]]
+from = "/api/vla/payment-reports/session"
+to = "/.netlify/functions/public-owner-report-session"
+status = 200
+force = true
+
+[[redirects]]
 from = "/api/vla/payment-reports/supplement"
 to = "/.netlify/functions/public-payment-report-supplement"
 status = 200
