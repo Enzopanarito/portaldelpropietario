@@ -45,6 +45,7 @@ test('portal acepta solo recuperación transitoria y exige estado financiero fin
   assert(owner.includes("breakdownVersion!=='owner-breakdown-v7'"));
   assert(owner.includes("response.status()===401")&&owner.includes("response.request().method()==='GET'")&&owner.includes('/api\\/vla\\/plant(?:\\?|$)'));
   assert(owner.includes('privateChallengeVisible&&privateChallenges.length===privatePlantResponses'));
+  assert(owner.includes(".vla-plant-verify, .vla-plant-status, .vla-plant-alert"));
 });
 
 test('auditor de pagos evita navegación frágil y exige ambas cuentas donde ambas deudas existen',()=>{
