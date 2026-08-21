@@ -152,6 +152,10 @@ test('workflow diario cifra, restaura y conserva solo el artefacto cifrado', () 
   assert.match(source, /airtable-backup-ci/);
   assert.match(source, /vla-backup-crypto\.mjs encrypt/);
   assert.match(source, /vla-backup-crypto\.mjs decrypt/);
+  assert.match(source, /Export 17-table production backup/);
+  assert.match(source, /a\.tableCount !== 17 \|\| b\.tableCount !== 17/);
+  assert.match(source, /tables=\$\{b\.tableCount\}\/17/);
+  assert.doesNotMatch(source, /tableCount !== 12|tableCount\}\/12|Export 12-table/);
   assert.match(source, /retention-days:\s*90/);
   const artifactBlock = source.split('Upload encrypted external backup')[1] || '';
   assert.match(artifactBlock, /vla-airtable-backup\.enc\.json/);
