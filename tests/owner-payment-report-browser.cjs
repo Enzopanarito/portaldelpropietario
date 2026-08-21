@@ -4,7 +4,9 @@ const path=require('path');
 const fs=require('fs');
 
 const ignored=/favicon|permissions policy|app\.netlify\.com/i;
-function watch(page){const errors=[];page.on('pageerror',e=>errors.push(String(e.stack||e)));page.on('console',m=>{if(m.type()==='error'&&!ignored.test(m.text()))errors.push(m.text())});return errors}
+const privatePlant401=/Failed to load resource: the server responded with a status of 401/i;
+function watch(page){const errors=[];errors.privatePlantResponses=0;page.on('response',response=>{if(response.status()===401&&/\/api\/vla\/plant\/public(?:\?|$)/.test(response.url()))errors.privatePlantResponses++});page.on('pageerror',e=>errors.push(String(e.stack||e)));page.on('console',m=>{if(m.type()==='error'&&!ignored.test(m.text()))errors.push(m.text())});return errors}
+function unexpectedLiveErrors(errors,target,privateChallengeVisible){const challenges=errors.filter(message=>privatePlant401.test(message)),others=errors.filter(message=>!privatePlant401.test(message)),production=/^https:\/\/villalosapamates\.netlify\.app\/?$/i.test(String(target||''));if(!challenges.length)return others;if(production&&privateChallengeVisible&&challenges.length===errors.privatePlantResponses)return others;return errors}
 function assert(ok,message){if(!ok)throw new Error(message)}
 async function paymentResolution(page,expectedUsd){return page.evaluate(({expectedUsd})=>{const amount=window.VLAPaymentIntelligence.parseAmountInput(document.getElementById('payAmount').value);return window.VLAPaymentIntelligence.analyzePayment({amount,rate:Number(window.rate()),expectedUsd,forcedCurrency:document.getElementById('payCurrency').value})},{expectedUsd})}
 async function chooseChannel(page,label,id){await page.getByText(label,{exact:true}).click();assert(await page.locator(id).isChecked(),`No se activó ${label}.`)}
@@ -80,7 +82,8 @@ async function live(browser,target){
   await page.selectOption('#payCurrency','BS');const cashMode=await page.locator('#payMode').inputValue();assert(cashMode==='Bs BCV',`El efectivo en Bs no se asignó a la cuenta Bs: ${cashMode}.`);await page.fill('#payAmount',String(Math.round(85*metrics.rate*100)/100));await page.locator('#payAmount').blur();
   const detection=await paymentResolution(page,85);assert(detection.enteredCurrency==='BS'&&Math.abs(detection.amountUsdRef-85)<.01,`Conversión incorrecta: ${JSON.stringify(detection)}`);
   await page.screenshot({path:'owner-payment-report-live-casa4.png'});await page.click('#cancelModal');
-  assert(!errors.length,`Errores live: ${errors.join(' | ')}`);await page.close();return{metrics,detection,cashMode,bothAccountsVerified:true,accountModes,errors}
+  const privateChallengeVisible=await page.locator('.vla-plant-verify').isVisible().catch(()=>false),unexpectedErrors=unexpectedLiveErrors(errors,target,privateChallengeVisible);
+  assert(!unexpectedErrors.length,`Errores live: ${unexpectedErrors.join(' | ')}`);await page.close();return{metrics,detection,cashMode,bothAccountsVerified:true,accountModes,errors:unexpectedErrors,privatePlantAuthChallenges:errors.privatePlantResponses}
 }
 
 async function fixture(browser){
