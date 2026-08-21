@@ -23,6 +23,7 @@
     var cards = [['Reparaciones', summary.repairs], ['Mantenimiento', summary.maintenance], ['Gasoil residencial', summary.residentialFuel], ['Beneficio común', summary.commonBenefit], ['Servicio activo', summary.residentialServiceActive], ['Acuerdos especiales', summary.specialAgreements]];
     return '<div id="plant-automatic-counts" class="plant-admin-panel plant-auto-summary"><div class="plant-panel-title"><div><h3>Conteo automático de participación</h3><p>El sistema lee el perfil vigente de cada casa. Administración solo verifica y confirma cuando necesita un cambio.</p></div><span class="plant-live-badge">Actualizado ahora</span></div><div class="plant-count-grid">' + cards.map(function (item) { return '<div><span>' + esc(item[0]) + '</span><b>' + Number(item[1] || 0) + '<small>/' + total + '</small></b></div>'; }).join('') + '</div><div class="plant-state-counts">' + statesHtml + '</div></div>';
   }
+  function premiumUiExpected() { return Boolean(document.querySelector('meta[name="vla-admin-ui"][content="premium-v1"], #vla-admin-premium-v1')); }
   function ensureUi() {
     if (document.getElementById('plant-management')) return true;
     var premiumNav = document.querySelector('#vla-premium-sidebar .vla-nav');
@@ -208,6 +209,13 @@
       notice(result.message); form.reset(); document.querySelectorAll('#owners-list input').forEach(function (input) { input.checked = true; }); document.getElementById('expense-domain').value = 'AUTO'; document.getElementById('expense-plant-category').hidden = true; document.getElementById('expense-plant-retroactive').hidden = true; await loadAll(true); plantData = null;
     } finally { window.vlaPlantExpenseBusy = false; submit.disabled = false; submit.textContent = original; }
   }
-  function boot() { if (!ensureUi()) return setTimeout(boot, 80); enhanceExpenseForm(); document.documentElement.dataset.vlaAdminPlant = 'v1'; }
+  function boot() {
+    if (premiumUiExpected() && !document.getElementById('vla-premium-sidebar')) {
+      document.documentElement.dataset.vlaAdminPlantWaited = 'premium-shell';
+      return setTimeout(boot, 80);
+    }
+    if (!ensureUi()) return setTimeout(boot, 80);
+    enhanceExpenseForm(); document.documentElement.dataset.vlaAdminPlant = 'v1';
+  }
   (function wait() { if (window.ready === true) boot(); else setTimeout(wait, 60); })();
 })();
