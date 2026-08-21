@@ -63,7 +63,7 @@ jobs:
           echo "::add-mask::$token"
           echo "VLA_BACKUP_OIDC_TOKEN=$token" >> "$GITHUB_ENV"
 
-      - name: Export 12-table production backup through OIDC read-only endpoint
+      - name: Export 17-table production backup through OIDC read-only endpoint
         shell: bash
         run: |
           set -euo pipefail
@@ -104,8 +104,8 @@ jobs:
           for (const key of ['manifestHash','fileContentHash','rawFileSha256']) {
             if (a.integrity[key] !== b.integrity[key]) throw new Error(`RESTORE_${key}_MISMATCH`);
           }
-          if (a.tableCount !== 12 || b.tableCount !== 12 || a.totalRecords !== b.totalRecords) throw new Error('RESTORE_COUNTS_MISMATCH');
-          console.log(`VLA_BACKUP_RESTORE_REHEARSAL_OK tables=${b.tableCount}/12 records=${b.totalRecords}`);
+          if (a.tableCount !== 17 || b.tableCount !== 17 || a.totalRecords !== b.totalRecords) throw new Error('RESTORE_COUNTS_MISMATCH');
+          console.log(`VLA_BACKUP_RESTORE_REHEARSAL_OK tables=${b.tableCount}/17 records=${b.totalRecords}`);
           NODE
           rm -f /tmp/vla-restored-backup.json /tmp/vla-restored-manifest.json
 
