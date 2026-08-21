@@ -68,6 +68,8 @@ test('Admin incorpora vista espejo, conteo automático y control manual notifica
   const source = read('admin-plant-v1.js');
   for (const marker of ['Ver como propietario', 'Vista espejo canónica', 'exactamente lo que ve el propietario', 'Conteo automático de participación', 'Control manual', 'Confirmar cambio y notificar']) assert(source.includes(marker));
   assert(source.includes('#vla-premium-sidebar .vla-nav'));
+  assert(source.includes('premiumUiExpected()'));
+  assert(source.includes("vlaAdminPlantWaited = 'premium-shell'"));
   assert(source.includes("button.dataset.vlaTarget = 'plant-management'"));
   assert(source.includes("title.textContent = 'Planta eléctrica'"));
   assert(source.includes("vlaAdminPlantMenu = premiumNav ? 'premium-sidebar' : 'legacy-nav'"));
