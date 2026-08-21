@@ -38,7 +38,20 @@ test('API privada de planta reutiliza la sesión firmada de la casa', () => {
   assert(source.includes('sessionFromEvent'));
   assert(source.includes('OWNER_VERIFICATION_REQUIRED'));
   assert(source.includes("begin('PLANT_OWNER_REQUEST'"));
-  assert(source.indexOf('sessionFromEvent') < source.indexOf('const data = await context()'));
+  assert(source.includes("Netlify.env.get('CONTEXT')"));
+  assert(source.includes("/^deploy-preview-\\d+--/"));
+  assert(source.indexOf('sessionFromEvent') < source.indexOf('const data = await context(fixture)'));
+});
+
+test('preview propietario y Admin fuerzan fixture por contexto o hostname', () => {
+  const owner = read('netlify/functions/public-plant.mjs');
+  const admin = read('netlify/functions/_shared/_plant_admin_handler.js');
+  for (const source of [owner, admin]) {
+    assert(source.includes('deploy-preview'));
+    assert(source.includes('branch-deploy'));
+    assert(source.includes('preview-fixture') || source.includes('createPlantFixture'));
+  }
+  assert(admin.includes('fixtureEnvironment(env, event)'));
 });
 
 test('el panel Admin confirma el snapshot antes de crear un gasto automático', () => {

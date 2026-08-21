@@ -5,12 +5,19 @@ import http from './_shared/_plant_http.js';
 import ownerSession from './_shared/_owner_report_session.js';
 import operationGuard from './_shared/_operation_guard.js';
 
-function environment() { return String(Netlify.env.get('VLA_DATA_ENVIRONMENT') || '').trim().toLowerCase(); }
-function isFixture() { return ['staging', 'local', 'preview', 'deploy-preview', 'branch-deploy'].includes(environment()); }
+function environment() {
+  const context = String(Netlify.env.get('CONTEXT') || '').trim().toLowerCase();
+  if (['deploy-preview', 'branch-deploy', 'dev', 'local'].includes(context)) return context;
+  return String(Netlify.env.get('VLA_DATA_ENVIRONMENT') || context || '').trim().toLowerCase();
+}
+function isFixture(request) {
+  const host = String(request?.headers?.get?.('host') || '').trim().toLowerCase();
+  return ['staging', 'local', 'preview', 'deploy-preview', 'branch-deploy', 'dev'].includes(environment()) || /^deploy-preview-\d+--/.test(host);
+}
 function configuredStore() {
   return storeModule.createPlantStore({ token: Netlify.env.get('AIRTABLE_API_TOKEN'), baseId: Netlify.env.get('AIRTABLE_BASE_ID') });
 }
-async function context() { return isFixture() ? fixtureModule.createPlantFixture(new Date()) : storeModule.loadPlantContext(configuredStore()); }
+async function context(fixture) { return fixture ? fixtureModule.createPlantFixture(new Date()) : storeModule.loadPlantContext(configuredStore()); }
 
 const REQUEST_TYPES = new Set(['SUSPENSION', 'REINCORPORACION', 'CAMBIO_MODALIDAD', 'RENUNCIA', 'CAMBIO_PROPIETARIO']);
 function caracasDay(date = new Date()) {
@@ -27,6 +34,7 @@ function sessionEvent(request) {
 
 export default async function handler(request) {
   if (!['GET', 'POST'].includes(request.method)) return http.json(405, { message: 'Method Not Allowed' });
+  const fixture = isFixture(request);
   const url = new URL(request.url);
   let body = {};
   if (request.method === 'POST') {
@@ -35,7 +43,7 @@ export default async function handler(request) {
   }
   const ownerId = String(request.method === 'GET' ? url.searchParams.get('ownerId') : body.ownerId || '').trim();
   if (!storeModule.validRecordId(ownerId)) return http.json(400, { message: 'Debe indicar un propietario válido.' });
-  if (!isFixture() && !ownerSession.sessionFromEvent(sessionEvent(request), ownerId)) {
+  if (!fixture && !ownerSession.sessionFromEvent(sessionEvent(request), ownerId)) {
     return http.json(401, {
       success: false,
       code: 'OWNER_VERIFICATION_REQUIRED',
@@ -45,7 +53,7 @@ export default async function handler(request) {
   }
   let requestOperation = null, requestCreated = false, requestId = '', requestGuardKey = '';
   try {
-    const data = await context();
+    const data = await context(fixture);
     const owner = data.owners.find(item => item.id === ownerId);
     if (!owner) return http.json(404, { message: 'Propietario no encontrado.' });
     const view = engine.ownerPlantView({ ownerId, profiles: data.profiles, interventions: data.interventions, recognizedPayments: data.recognizedPayments, at: new Date() });
@@ -61,7 +69,7 @@ export default async function handler(request) {
       const prior = (data.requests || []).find(item => item.idempotencyKey === idempotencyKey);
       if (prior) return http.json(200, { success: true, idempotent: true, requestId: prior.requestId, state: prior.state, message: 'Esta solicitud ya fue recibida. No se duplicó.' });
       requestId = `PLS-${owner.house}-${today.replaceAll('-', '')}-${idempotencyKey.slice(0, 10).toUpperCase()}`;
-      if (!isFixture()) {
+      if (!fixture) {
         const guard = await operationGuard.begin('PLANT_OWNER_REQUEST', idempotencyKey);
         if (!guard.ok) {
           if (guard.reason === 'done') return http.json(200, { success: true, idempotent: true, requestId: guard.marker?.resultId || requestId, state: 'RECIBIDA', message: 'Esta solicitud ya fue recibida. No se duplicó.' });
@@ -75,17 +83,17 @@ export default async function handler(request) {
         calculation: view.reinstatement, reason, conditions: 'Sin efecto financiero directo. Sujeto a revisión y confirmación administrativa.',
         idempotencyKey
       });
-      if (!isFixture()) {
+      if (!fixture) {
         await configuredStore().createRecords(storeModule.TABLES.requests, [fields]);
         requestCreated = true;
         await operationGuard.setState(requestOperation, 'PLANT_OWNER_REQUEST', idempotencyKey, 'DONE', requestId);
       }
       return http.json(201, {
-        success: true, requestId, state: 'RECIBIDA', previewOnly: isFixture(), estimatedRetroactive: view.reinstatement.total,
+        success: true, requestId, state: 'RECIBIDA', previewOnly: fixture, estimatedRetroactive: view.reinstatement.total,
         message: 'Solicitud recibida. No cambia saldos ni servicio hasta la revisión administrativa.'
-      }, isFixture() ? { 'X-Preview-Isolated': 'true' } : {});
+      }, fixture ? { 'X-Preview-Isolated': 'true' } : {});
     }
-    return http.json(200, { success: true, dataEnvironment: isFixture() ? 'preview-fixture' : 'production', ...view }, isFixture() ? { 'X-Preview-Isolated': 'true' } : {});
+    return http.json(200, { success: true, dataEnvironment: fixture ? 'preview-fixture' : 'production', ...view }, fixture ? { 'X-Preview-Isolated': 'true' } : {});
   } catch (error) {
     if (requestOperation) await operationGuard.setState(requestOperation, 'PLANT_OWNER_REQUEST', requestGuardKey, requestCreated ? 'PARTIAL' : 'ERROR', requestId).catch(() => null);
     const notReady = /NOT_FOUND|UNKNOWN_FIELD|UNKNOWN_TABLE|PLANT_PROFILE_MISSING/i.test(http.safeError(error));

@@ -7,10 +7,14 @@ const fixtureModule = require('./_plant_fixture');
 const { safeDisplayText } = require('./_security_utils');
 
 function json(statusCode, body) { return { statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }, body: JSON.stringify(body) }; }
-function fixtureEnvironment(env = process.env) { return ['staging', 'local', 'preview', 'deploy-preview', 'branch-deploy'].includes(String(env.VLA_DATA_ENVIRONMENT || '').trim().toLowerCase()); }
+function fixtureEnvironment(env = process.env, event = null) {
+  const values = [env.CONTEXT, env.VLA_DATA_ENVIRONMENT].map(value => String(value || '').trim().toLowerCase());
+  const headers = event?.headers || {}, host = String(headers.host || headers.Host || '').trim().toLowerCase();
+  return values.some(value => ['staging', 'local', 'preview', 'deploy-preview', 'branch-deploy', 'dev'].includes(value)) || /^deploy-preview-\d+--/.test(host);
+}
 function previousDay(value) { const date = new Date(`${engine.isoDay(value)}T12:00:00.000Z`); date.setUTCDate(date.getUTCDate() - 1); return date.toISOString().slice(0, 10); }
-function createContextLoader(env = process.env) {
-  if (fixtureEnvironment(env)) return async () => fixtureModule.createPlantFixture(new Date());
+function createContextLoader(env = process.env, fixture = fixtureEnvironment(env)) {
+  if (fixture) return async () => fixtureModule.createPlantFixture(new Date());
   const store = storeModule.createPlantStore({ token: env.AIRTABLE_API_TOKEN, baseId: env.AIRTABLE_BASE_ID });
   return () => storeModule.loadPlantContext(store);
 }
@@ -20,8 +24,8 @@ function createHandler(deps = {}) {
   return async function handler(event) {
     const auth = (deps.requireAdmin || requireAdmin)(event); if (!auth.ok) return auth.response;
     try {
-      const env = deps.env || process.env, fixture = fixtureEnvironment(env);
-      const load = injectedLoad || createContextLoader(env);
+      const env = deps.env || process.env, fixture = fixtureEnvironment(env, event);
+      const load = injectedLoad || createContextLoader(env, fixture);
       const context = await load();
       if (event.httpMethod === 'GET') {
         const simulations = context.owners.map(owner => ({
