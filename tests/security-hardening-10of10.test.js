@@ -124,8 +124,8 @@ test('Health exige PAYMENT_PROOF_ENCRYPTION_KEY dedicada', () => {
 
 test('el respaldo operativo usa el mismo inventario canónico que Health', () => {
   assert.equal(backup.TABLES, inventory.TABLES);
-  assert.equal(inventory.TABLES.length, 12);
-  assert.equal(new Set(inventory.TABLES).size, 12);
+  assert.equal(inventory.TABLES.length, 17);
+  assert.equal(new Set(inventory.TABLES).size, 17);
   assert.equal(inventory.TABLES.includes('Cuentas de Cobro Autorizadas'), true);
   const healthSource = fs.readFileSync(path.join(__dirname, '..', 'netlify', 'functions', 'system-health-advanced.js'), 'utf8');
   assert.match(healthSource, /BACKUP_TABLES\.length/);

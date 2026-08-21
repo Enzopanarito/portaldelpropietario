@@ -3,6 +3,8 @@
 const {begin,setState}=require('./_operation_guard');
 const {getAll,patchBatches,TABLES}=require('./_monthly_close_store');
 const {buildPreloadPlan,buildRotationPlan,FIELDS,STATUS}=require('./_expense_lifecycle');
+const plantEngine=require('./_plant_engine');
+const {TABLES:PLANT_TABLES,EXPENSE_FIELDS:PLANT_FIELDS,profileFromRecord}=require('./_plant_store');
 
 async function request(url,options,counter){
  counter.calls+=1;
@@ -20,6 +22,31 @@ async function createBatches(records,token,baseId,counter){
  }
  return created;
 }
+async function hydratePlantPreloads(plan,{token,baseId,counter}){
+ const plantRows=(plan.creates||[]).filter(item=>String(item.fields?.[PLANT_FIELDS.domain]||'').toUpperCase()==='PLANTA');
+ if(!plantRows.length)return plan;
+ const [ownerRecords,profileRecords]=await Promise.all([
+  getAll(TABLES.owners,'',token,baseId,counter),
+  getAll(PLANT_TABLES.profiles,'',token,baseId,counter)
+ ]);
+ const owners=ownerRecords.map(record=>({id:record.id,house:Number(record.fields?.Casa),alicuota:Number(record.fields?.Alicuota||0)})),profiles=profileRecords.map(profileFromRecord);
+ for(const item of plantRows){
+  const fields=item.fields,classification=plantEngine.inferPlantExpense(fields.Concepto),snapshot=plantEngine.buildExpenseSnapshot({
+   owners,profiles,effectiveDate:`${plan.targetMonth}-01`,classification,
+   explicitCategory:String(fields[PLANT_FIELDS.category]||'')||undefined,
+   explicitRetroactive:fields[PLANT_FIELDS.retroactive]===true,
+   expense:{concept:fields.Concepto,amount:fields.Monto,type:fields['Tipo de Gasto'],mode:fields['Forma de Pago']}
+  });
+  const eventId=`PLANT-${plan.targetMonth}-${snapshot.snapshotHash.slice(0,16).toUpperCase()}`;
+  Object.assign(fields,{
+   Propietarios:snapshot.participants.filter(participant=>participant.included).map(participant=>participant.ownerId),
+   [PLANT_FIELDS.snapshot]:JSON.stringify(snapshot),[PLANT_FIELDS.snapshotHash]:snapshot.snapshotHash,
+   [PLANT_FIELDS.effectiveDate]:snapshot.effectiveDate,[PLANT_FIELDS.classificationSource]:snapshot.classification.source,
+   [PLANT_FIELDS.classificationConfidence]:snapshot.classification.confidence,[PLANT_FIELDS.eventId]:eventId,[PLANT_FIELDS.historicalOnly]:false
+  });
+ }
+ return plan;
+}
 async function preloadExpenses({closingMonth,targetMonth,token,baseId,counter={calls:0},now=new Date()}){
  const key=`${closingMonth}|${targetMonth}`,guard=await begin('EXPENSE_PRELOAD',key);
  if(!guard.ok){
@@ -29,6 +56,7 @@ async function preloadExpenses({closingMonth,targetMonth,token,baseId,counter={c
  let created=[];
  try{
   const records=await getAll(TABLES.expenses,'',token,baseId,counter),plan=buildPreloadPlan(records,{closingMonth,targetMonth,now});
+  await hydratePlantPreloads(plan,{token,baseId,counter});
   created=await createBatches(plan.creates,token,baseId,counter);
   const verified=await getAll(TABLES.expenses,'',token,baseId,counter),keys=new Set(verified.map(record=>String(record?.fields?.[FIELDS.templateKey]||'')));
   const missing=plan.creates.filter(item=>!keys.has(item.key));
@@ -50,4 +78,4 @@ async function rotateExpenses({closingMonth,targetMonth,token,baseId,counter={ca
  return{success:true,closingMonth,targetMonth,closedCount:plan.closeCount,activatedCount:plan.activateCount,verified:true,message:`Gastos ${closingMonth} cerrados y ${targetMonth} activados.`};
 }
 
-module.exports={request,tableUrl,createBatches,preloadExpenses,rotateExpenses};
+module.exports={request,tableUrl,createBatches,hydratePlantPreloads,preloadExpenses,rotateExpenses};

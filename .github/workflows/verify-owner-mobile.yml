@@ -51,7 +51,7 @@ jobs:
             echo "url=https://villalosapamates.netlify.app" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Wait for mobile, payment, dark and current-month assets
+      - name: Wait for mobile, payment, plant, dark and current-month assets
         env:
           TARGET_URL: ${{ steps.target.outputs.url }}
         shell: bash
@@ -65,17 +65,21 @@ jobs:
             payment_code="$(curl --silent --show-error --location --output /tmp/owner-payment.js --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/owner-payment-report-v3.js?v=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
             current_css_code="$(curl --silent --show-error --location --output /tmp/owner-current-month.css --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/owner-current-month-v1.css?v=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
             current_js_code="$(curl --silent --show-error --location --output /tmp/owner-current-month.js --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/owner-current-month-v1.js?v=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
-            if [ "$html_code" = "200" ] && [ "$mobile_code" = "200" ] && [ "$layout_code" = "200" ] && [ "$dark_code" = "200" ] && [ "$payment_code" = "200" ] && [ "$current_css_code" = "200" ] && [ "$current_js_code" = "200" ] \
-              && [ -s /tmp/owner-mobile.css ] && [ -s /tmp/owner-layout.css ] && [ -s /tmp/owner-payment.js ] && [ -s /tmp/owner-current-month.css ] && [ -s /tmp/owner-current-month.js ] \
+            plant_css_code="$(curl --silent --show-error --location --output /tmp/owner-plant.css --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/owner-plant-v1.css?v=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            plant_js_code="$(curl --silent --show-error --location --output /tmp/owner-plant.js --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/owner-plant-v1.js?v=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            if [ "$html_code" = "200" ] && [ "$mobile_code" = "200" ] && [ "$layout_code" = "200" ] && [ "$dark_code" = "200" ] && [ "$payment_code" = "200" ] && [ "$current_css_code" = "200" ] && [ "$current_js_code" = "200" ] && [ "$plant_css_code" = "200" ] && [ "$plant_js_code" = "200" ] \
+              && [ -s /tmp/owner-mobile.css ] && [ -s /tmp/owner-layout.css ] && [ -s /tmp/owner-payment.js ] && [ -s /tmp/owner-current-month.css ] && [ -s /tmp/owner-current-month.js ] && [ -s /tmp/owner-plant.css ] && [ -s /tmp/owner-plant.js ] \
               && grep -q 'data-vla-owner-mobile="fluid-v2"' /tmp/owner.html \
               && grep -q 'data-vla-owner-payment-cash="currency-mapped-v1"' /tmp/owner.html \
               && grep -q 'vla-owner-current-month-v1' /tmp/owner.html \
+              && grep -q 'vla-owner-plant-v1' /tmp/owner.html \
               && grep -q 'owner-current-month-v1' /tmp/owner-current-month.js \
+              && grep -q 'SOLICITAR_CAMBIO_PLANTA' /tmp/owner-plant.js \
               && grep -q 'Contraste integral modo oscuro wcag-v1' /tmp/owner-dark.css; then
-              echo "Assets móviles, pago, contraste y cuota corriente disponibles en $TARGET_URL"
+              echo "Assets móviles, pago, planta, contraste y cuota corriente disponibles en $TARGET_URL"
               exit 0
             fi
-            echo "Attempt $attempt: html=${html_code:-missing} mobile=${mobile_code:-missing} layout=${layout_code:-missing} dark=${dark_code:-missing} payment=${payment_code:-missing} current_css=${current_css_code:-missing} current_js=${current_js_code:-missing}"
+            echo "Attempt $attempt: html=${html_code:-missing} mobile=${mobile_code:-missing} layout=${layout_code:-missing} dark=${dark_code:-missing} payment=${payment_code:-missing} current_css=${current_css_code:-missing} current_js=${current_js_code:-missing} plant_css=${plant_css_code:-missing} plant_js=${plant_js_code:-missing}"
             sleep 10
           done
           echo "Los assets del portal propietario no estuvieron disponibles de forma consistente."

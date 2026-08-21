@@ -70,6 +70,9 @@ jobs:
       - name: Run owner gate indicator browser test
         run: node tests/admin-owner-access-browser.cjs
 
+      - name: Run plant owner and admin responsive browser tests
+        run: node --test tests/plant-browser.cjs
+
       - name: Upload visual and technical evidence
         if: always()
         uses: actions/upload-artifact@v4

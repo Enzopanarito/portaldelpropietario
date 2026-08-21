@@ -84,7 +84,7 @@ jobs:
           fi
           test -s /tmp/vla-airtable-backup.json
 
-      - name: Verify 12/12 tables and all integrity hashes
+      - name: Verify 17/17 tables and all integrity hashes
         run: node scripts/vla-backup-verify.mjs /tmp/vla-airtable-backup.json vla-backup-manifest.json
 
       - name: Encrypt backup with AES-256-GCM

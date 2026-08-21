@@ -39,3 +39,12 @@ test('rotación cierra el mes y activa la precarga siguiente',()=>{
  assert.equal(plan.activateCount,1);
  assert.equal(plan.ready,true);
 });
+
+test('precarga conserva la identidad de planta para regenerar un snapshot nuevo',()=>{
+ const current=expense('plant',{Concepto:'Mantenimiento preventivo de planta eléctrica','Dominio del Gasto':'PLANTA','Categoría Planta':'MANTENIMIENTO_PREVENTIVO','Genera Retroactivo Planta':true,[lifecycle.FIELDS.month]:'2026-07',[lifecycle.FIELDS.status]:'Activo'});
+ const plan=lifecycle.buildPreloadPlan([current],{closingMonth:'2026-07',targetMonth:'2026-08'});
+ assert.equal(plan.createCount,1);
+ assert.equal(plan.creates[0].fields['Dominio del Gasto'],'PLANTA');
+ assert.equal(plan.creates[0].fields['Categoría Planta'],'MANTENIMIENTO_PREVENTIVO');
+ assert.equal(plan.creates[0].fields['Snapshot Planta JSON'],undefined,'El snapshot anterior jamás se copia al mes nuevo.');
+});
