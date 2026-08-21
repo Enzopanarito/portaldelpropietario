@@ -4,8 +4,11 @@ const { requireAdmin } = require('./_auth');
 const engine = require('./_plant_engine');
 const storeModule = require('./_plant_store');
 const fixtureModule = require('./_plant_fixture');
-const notificationModule = require('./_plant_notifications');
 const { safeDisplayText } = require('./_security_utils');
+
+function defaultNotifyOwner(payload) {
+  return require('./_plant_notifications').sendPlantProfileChange(payload);
+}
 
 function json(statusCode, body) { return { statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }, body: JSON.stringify(body) }; }
 function fixtureEnvironment(env = process.env, event = null) {
@@ -25,7 +28,7 @@ function createContextLoader(env = process.env, fixture = fixtureEnvironment(env
 
 function createHandler(deps = {}) {
   const injectedLoad = deps.loadContext || null;
-  const notifyOwner = deps.notifyOwner || notificationModule.sendPlantProfileChange;
+  const notifyOwner = deps.notifyOwner || defaultNotifyOwner;
   return async function handler(event) {
     const auth = (deps.requireAdmin || requireAdmin)(event); if (!auth.ok) return auth.response;
     try {

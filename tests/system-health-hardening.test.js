@@ -10,7 +10,7 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
 
 test('el despliegue conserva PDFKit completo con sus fuentes AFM',()=>{
  const toml=read('netlify.toml');
- assert.match(toml,/external_node_modules\s*=\s*\["pdfkit"\]/);
+ assert.match(toml,/external_node_modules\s*=\s*\[[^\]]*"pdfkit"[^\]]*\]/);
  const modern=read('netlify/functions/receipt-recovery-modern-background.mjs');
  assert.match(modern,/import 'pdfkit'/);
 });

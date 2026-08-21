@@ -33,7 +33,7 @@ jobs:
         run: |
           set -euo pipefail
           TARGET_URL="https://villalosapamates.netlify.app"
-          assets=(admin-premium.css admin-premium-polish.css admin-premium-10.css admin-premium-preflight.js admin-premium.js admin-premium-controls.js admin-premium-10.js admin-feature-parity.js admin-session-bridge.js)
+          assets=(admin-premium.css admin-premium-polish.css admin-premium-10.css admin-premium-preflight.js admin-premium.js admin-premium-controls.js admin-premium-10.js admin-feature-parity.js admin-session-bridge.js admin-plant-v1.js)
           for attempt in $(seq 1 60); do
             ready=1
             headers="$(curl --silent --show-error --location --dump-header - --output /tmp/admin.html --max-time 20 "${TARGET_URL}/admin.html?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
@@ -52,12 +52,14 @@ jobs:
             done
             protected="$(curl --silent --show-error --location --output /tmp/protected.json --write-out '%{http_code}' --max-time 20 "${TARGET_URL}/.netlify/functions/admin-data" 2>/dev/null || true)"
             [ "$protected" = "401" ] || ready=0
+            plant_protected="$(curl --silent --show-error --location --output /tmp/admin-plant.json --write-out '%{http_code}' --max-time 20 "${TARGET_URL}/api/vla/admin/plant?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            [ "$plant_protected" = "401" ] || ready=0
             if [ "$ready" = "1" ]; then
               printf '{"assetsVerified":true,"protectedAdminData":true,"ui":"%s","session":"%s","quality":"%s"}\n' "$ui" "$session" "$quality" > admin-production-preflight.json
               echo "Admin quality 10 y protección disponibles."
               exit 0
             fi
-            echo "Intento ${attempt}: ui=${ui:-missing} session=${session:-missing} quality=${quality:-missing} protected=${protected:-missing}"
+            echo "Intento ${attempt}: ui=${ui:-missing} session=${session:-missing} quality=${quality:-missing} protected=${protected:-missing} plant=${plant_protected:-missing}"
             sleep 5
           done
           echo "Admin quality 10 no estuvo disponible."

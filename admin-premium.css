@@ -15,7 +15,7 @@ html[data-vla-admin-premium="1"] #login button{height:46px!important;border-radi
 .vla-nav button,.vla-nav a,.vla-side-bottom button,.vla-side-bottom a{width:100%;display:flex;align-items:center;gap:11px;border:0;background:transparent;color:#c9d6e5;padding:11px 12px;border-radius:10px;text-decoration:none;font-size:13px;font-weight:650;text-align:left;transition:.16s}
 .vla-nav button:hover,.vla-nav a:hover,.vla-side-bottom button:hover,.vla-side-bottom a:hover{background:rgba(255,255,255,.07);color:#fff}
 .vla-nav button.active{background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;box-shadow:0 10px 24px rgba(37,99,235,.28)}
-.vla-nav .ico{width:20px;text-align:center;font-size:16px}.vla-badge{margin-left:auto;background:#ef4444;color:#fff;border-radius:999px;min-width:20px;height:20px;padding:0 6px;display:grid;place-items:center;font-size:10px;font-weight:900}
+.vla-nav .ico{width:20px;text-align:center;font-size:16px}.vla-nav .vla-health-ico{color:#ef4444!important;font-weight:900}.vla-badge{margin-left:auto;background:#ef4444;color:#fff;border-radius:999px;min-width:20px;height:20px;padding:0 6px;display:grid;place-items:center;font-size:10px;font-weight:900}
 .vla-side-bottom{margin-top:auto;padding-top:15px;border-top:1px solid rgba(255,255,255,.08)}
 #vla-premium-main{min-width:0}
 #vla-premium-topbar{height:80px;background:rgba(255,255,255,.96);backdrop-filter:blur(14px);border-bottom:1px solid var(--vla-line);display:flex;align-items:center;justify-content:space-between;padding:0 26px;position:sticky;top:0;z-index:40}

@@ -14,7 +14,7 @@
         <button data-vla-target="owners"><span class="ico">⌂</span>Propietarios</button>
         <button data-vla-target="reports"><span class="ico">＄</span>Pagos <span id="vla-side-badge" class="vla-badge hidden">0</span></button>
         <button data-vla-target="expenses"><span class="ico">▤</span>Gastos</button>
-        <button data-vla-target="health"><span class="ico">⌁</span>Salud del sistema</button>
+        <button data-vla-target="health"><span class="ico vla-health-ico" aria-hidden="true">✚</span>Salud del sistema</button>
         <a href="/porton.html"><span class="ico">▥</span>Portón</a>
         <a href="/auditoria.html"><span class="ico">◎</span>Auditoría</a>
         <a href="/whatsapp.html"><span class="ico">✉</span>Comunicaciones</a>

@@ -44,11 +44,13 @@ jobs:
             [ "$quality" = "10" ] || ready=0
             grep -q 'admin-premium-10.css' /tmp/admin.html 2>/dev/null || ready=0
             grep -q 'vla-admin-quality' /tmp/admin.html 2>/dev/null || ready=0
-            for asset in admin-premium.css admin-premium-polish.css admin-premium-10.css admin-premium-preflight.js admin-premium.js admin-premium-controls.js admin-premium-10.js admin-feature-parity.js admin-session-bridge.js; do
+            for asset in admin-premium.css admin-premium-polish.css admin-premium-10.css admin-premium-preflight.js admin-premium.js admin-premium-controls.js admin-premium-10.js admin-feature-parity.js admin-session-bridge.js admin-plant-v1.js; do
               code="$(curl --silent --show-error --location --output "/tmp/${asset}" --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/${asset}?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
               [ "$code" = "200" ] || ready=0
               [ -s "/tmp/${asset}" ] || ready=0
             done
+            plant_protected="$(curl --silent --show-error --location --output /tmp/admin-plant.json --write-out '%{http_code}' --max-time 30 "${TARGET_URL}/api/vla/admin/plant?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
+            [ "$plant_protected" = "401" ] || ready=0
             porton="$(curl --silent --show-error --location --max-time 30 "${TARGET_URL}/mkj-access.html?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
             seguridad="$(curl --silent --show-error --location --max-time 30 "${TARGET_URL}/seguridad.html?verify=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)"
             printf '%s' "$porton" | grep -q 'admin-session-bridge.js' || ready=0
@@ -57,7 +59,7 @@ jobs:
               echo "CLI preview exacta disponible en ${TARGET_URL}"
               exit 0
             fi
-            echo "Intento ${attempt}: ui=${ui:-missing}, session=${session:-missing}, quality=${quality:-missing}, ready=${ready}"
+            echo "Intento ${attempt}: ui=${ui:-missing}, session=${session:-missing}, quality=${quality:-missing}, plant=${plant_protected:-missing}, ready=${ready}"
             sleep 10
           done
           echo "La vista previa CLI exacta no estuvo disponible."
