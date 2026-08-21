@@ -5,6 +5,7 @@ const css=fs.readFileSync('owner-payment-report-v3.css','utf8');
 const edge=fs.readFileSync('netlify/edge-functions/owner-mobile-assets.js','utf8');
 const signature=fs.readFileSync('netlify/edge-functions/owner-signature.js','utf8');
 const server=fs.readFileSync('netlify/functions/public-report-payment.js','utf8');
+const browserGate=fs.readFileSync('tests/owner-payment-report-browser.cjs','utf8');
 
 for(const marker of ['¿Cómo realizaste el pago?','Pago digital','Efectivo','Sube tu comprobante','Tomar foto / Elegir comprobante','Pago detectado','Confirmar pago','Solo falta confirmar esto','¿Algo está incorrecto? Editar','Completar manualmente','Binance'])assert(ui.includes(marker),`Falta ${marker}`);
 assert(ui.includes("byId('payChannelDigital').checked=true"),'El flujo debe abrir directamente en comprobante digital y conservar efectivo como alternativa.');
@@ -51,4 +52,6 @@ assert(server.includes("paymentChannel==='DIGITAL'?decodeAttachment(body.attachm
 assert(server.includes("'Archivo Obligatorio':paymentChannel==='DIGITAL'")&&server.includes('reserveIdentity'),'Debe conservar comprobante condicional y deduplicación.');
 assert(server.includes('connectLambdaEvent(event)')&&server.includes('POST_CREATE_TIMEOUT_MS'),'El guardado Blobs y las tareas posteriores deben estar protegidos.');
 assert(!server.includes('ACCEPTED_TRANSACTION_STATUSES'),'El cliente no decide si una transacción está completada.');
+assert(browserGate.includes('privatePlantResponses')&&browserGate.includes("response.status()===401")&&browserGate.includes('/api\\/vla\\/plant\\/public'),'El navegador debe correlacionar el 401 con el endpoint privado de planta.');
+assert(browserGate.includes('challenges.length===errors.privatePlantResponses')&&browserGate.includes('privateChallengeVisible'),'Solo el desafío OTP visible y exactamente correlacionado puede excluirse del error móvil.');
 console.log('owner-payment-report-proof-first-v9: OK');
