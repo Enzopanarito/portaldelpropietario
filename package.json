@@ -1,13 +1,13 @@
 {
-  "name": "portal-villa-los-apamates",
-  "private": true,
+  "name": "vla-portal",
   "version": "1.0.0",
+  "private": true,
   "engines": {
     "node": ">=22 <25"
   },
   "scripts": {
     "build": "npm run test:release && npm run build:public",
-    "build:public": "node scripts/build-production.js",
+    "build:public": "node scripts/build-production.js && node scripts/generate-social-card.js",
     "test:release": "npm test",
     "test": "node --test tests/*.test.js",
     "test:browser": "node --test tests/*.cjs",
@@ -24,6 +24,6 @@
     "nanoid": "3.3.18"
   },
   "devDependencies": {
-    "playwright": "1.55.1"
+    "@playwright/test": "1.55.1"
   }
 }

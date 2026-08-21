@@ -22,6 +22,7 @@ const RECOVERY_EMAIL = process.env.ADMIN_RECOVERY_EMAIL || 'enzopanarito@gmail.c
 const FALLBACK_PUBLIC_URL = 'https://villalosapamates.netlify.app';
 const RESET_REQUEST_WINDOW_MS = 60 * 60 * 1000;
 const RESET_USE_WINDOW_MS = 15 * 60 * 1000;
+const GENERIC_RESET_MESSAGE = 'Si el correo está autorizado, recibirá instrucciones para restablecer la contraseña.';
 
 function json(statusCode, body, extraHeaders = {}) {
   return {
@@ -53,6 +54,10 @@ async function rate(scope, identity, max, windowMs) {
     console.warn('Límite persistente no disponible:', error.message);
     return { allowed: true, retryAfter: Math.ceil(windowMs / 1000) };
   }
+}
+function resetIdentity(ip, email) {
+  const emailDigest = crypto.createHash('sha256').update(String(email || '').trim().toLowerCase()).digest('hex').slice(0, 24);
+  return `${ip}|${emailDigest}`;
 }
 
 const handler = async function(event) {
@@ -98,16 +103,15 @@ const handler = async function(event) {
 
     if (action === 'requestReset') {
       const email = String(body.email || '').trim().toLowerCase();
-      const limit = await rate('ADMIN_RESET_REQUEST', `${ip}|${email}`, 3, RESET_REQUEST_WINDOW_MS);
-      if (!limit.allowed) return json(429, { success: false, message: 'Se alcanzó el límite temporal de solicitudes de recuperación.' }, { 'Retry-After': String(limit.retryAfter) });
-      if (email !== RECOVERY_EMAIL.toLowerCase()) return json(200, { success: true, message: 'Si el correo está autorizado, recibirá instrucciones.' });
+      const limit = await rate('ADMIN_RESET_REQUEST', resetIdentity(ip, email), 3, RESET_REQUEST_WINDOW_MS);
+      if (!limit.allowed) return json(200, { success: true, message: GENERIC_RESET_MESSAGE });
+      if (!email || email !== RECOVERY_EMAIL.toLowerCase()) return json(200, { success: true, message: GENERIC_RESET_MESSAGE });
 
       const { record, config } = await loadConfigRecord({ force: true });
       const token = makeToken();
       const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
       const nextConfig = {
         ...(config || {}),
-        version: Math.max(1, Number(config?.version || 0) + 1),
         recoveryEmail: RECOVERY_EMAIL,
         resetHash: tokenHash(token),
         resetExpires: expires,
@@ -116,13 +120,13 @@ const handler = async function(event) {
       };
       await saveConfig(nextConfig, record?.id);
       const link = `${trustedPublicOrigin()}/seguridad.html?reset=${encodeURIComponent(token)}`;
-      const sent = await sendRecoveryEmail(link);
-      return json(200, {
-        success: true,
-        emailSent: Boolean(sent.sent),
-        message: sent.sent ? 'Correo de recuperación enviado.' : 'La solicitud fue preparada, pero el proveedor de correo no pudo enviar el mensaje.',
-        detail: sent.detail
-      });
+      try {
+        const sent = await sendRecoveryEmail(link);
+        if (!sent?.sent) console.warn('Recuperación admin: el proveedor no confirmó el envío.');
+      } catch (mailError) {
+        console.warn('Recuperación admin: error de envío registrado sin exponerlo al cliente:', String(mailError?.message || '').slice(0, 200));
+      }
+      return json(200, { success: true, message: GENERIC_RESET_MESSAGE });
     }
 
     if (action === 'resetPassword') {
@@ -159,7 +163,9 @@ const handler = async function(event) {
 
     return json(400, { message: 'Acción no reconocida.' });
   } catch (error) {
-    return json(500, { message: 'Error en seguridad admin.', detail: String(error.message || '').slice(0, 500) });
+    console.error('Error en seguridad admin:', action || 'unknown', String(error?.message || '').slice(0, 300));
+    if (action === 'requestReset') return json(200, { success: true, message: GENERIC_RESET_MESSAGE });
+    return json(500, { message: 'Error en seguridad admin.' });
   }
 };
 

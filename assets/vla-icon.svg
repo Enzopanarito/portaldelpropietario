@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Villa Los Apamates">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#f6efe4"/></linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#174b2d"/><stop offset="1" stop-color="#082d1a"/></linearGradient>
+  </defs>
+  <rect x="18" y="18" width="476" height="476" rx="94" fill="url(#bg)"/>
+  <path d="M256 354 C248 278 250 232 256 164" fill="none" stroke="url(#green)" stroke-width="35" stroke-linecap="round"/>
+  <path d="M256 250 C214 206 181 181 134 174" fill="none" stroke="url(#green)" stroke-width="18" stroke-linecap="round"/>
+  <path d="M256 242 C303 197 337 174 386 165" fill="none" stroke="url(#green)" stroke-width="18" stroke-linecap="round"/>
+  <path d="M254 203 C226 160 212 135 203 105" fill="none" stroke="url(#green)" stroke-width="15" stroke-linecap="round"/>
+  <path d="M258 201 C282 154 298 126 316 96" fill="none" stroke="url(#green)" stroke-width="15" stroke-linecap="round"/>
+  <path d="M76 392 C170 356 337 356 436 392" fill="none" stroke="url(#green)" stroke-width="18" stroke-linecap="round"/>
+  <path d="M94 340 L158 276 L222 340 L222 384 L94 384 Z" fill="#fffaf0" stroke="url(#green)" stroke-width="17" stroke-linejoin="round"/>
+  <path d="M286 338 L366 258 L446 338 L430 338 L430 384 L286 384 Z" fill="#fffaf0" stroke="url(#green)" stroke-width="17" stroke-linejoin="round"/>
+  <g fill="#f45f85">
+    <circle cx="153" cy="145" r="20"/><circle cx="198" cy="112" r="23"/><circle cx="250" cy="92" r="25"/><circle cx="306" cy="112" r="23"/><circle cx="358" cy="145" r="20"/>
+    <circle cx="120" cy="205" r="17"/><circle cx="167" cy="202" r="23"/><circle cx="226" cy="185" r="20"/><circle cx="283" cy="185" r="20"/><circle cx="344" cy="202" r="23"/><circle cx="393" cy="205" r="17"/>
+  </g>
+  <text x="256" y="462" text-anchor="middle" font-size="31" letter-spacing="8" fill="#c5ac8d" font-family="Georgia, serif">VLA</text>
+</svg>
