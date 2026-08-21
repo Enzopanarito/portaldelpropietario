@@ -92,9 +92,9 @@ test('crear versión de perfil en preview no escribe y prohíbe exclusiones retr
     participaReparaciones: true, participaMantenimiento: false, participaGasoilResidencial: false,
     participaBeneficioComun: true, servicioResidencialActivo: false, specialAgreement: false, observations: ''
   };
-  const rejected = await handler({ httpMethod: 'POST', body: JSON.stringify({ action: 'create-profile-version', ownerId: owners[0].id, effectiveFrom: '2020-01-01', reason: 'Cambio solicitado', profile }) });
+  const rejected = await handler({ httpMethod: 'POST', body: JSON.stringify({ action: 'create-profile-version', confirmation: 'CONFIRMAR_CAMBIO_PLANTA', ownerId: owners[0].id, effectiveFrom: '2020-01-01', reason: 'Cambio solicitado', profile }) });
   assert.equal(rejected.statusCode, 400);
-  const accepted = await handler({ httpMethod: 'POST', body: JSON.stringify({ action: 'create-profile-version', ownerId: owners[0].id, effectiveFrom: '2099-01-01', reason: 'Cambio solicitado', profile }) });
+  const accepted = await handler({ httpMethod: 'POST', body: JSON.stringify({ action: 'create-profile-version', confirmation: 'CONFIRMAR_CAMBIO_PLANTA', ownerId: owners[0].id, effectiveFrom: '2099-01-01', reason: 'Cambio solicitado', profile }) });
   assert.equal(accepted.statusCode, 201);
   assert.equal(JSON.parse(accepted.body).previewOnly, true);
   assert.equal(writes.length, 0);
@@ -106,11 +106,11 @@ test('reincorporación no activa servicio sin pago definitivo exacto', async () 
   const profile = { state: engine.PROFILE_STATE.ACTIVE, reinstatementMode: engine.REINSTATEMENT_MODE.ALLOWED, participaReparaciones: true, participaMantenimiento: true, participaGasoilResidencial: true, participaBeneficioComun: true, servicioResidencialActivo: true, specialAgreement: false, observations: '' };
   const base = { env: { VLA_DATA_ENVIRONMENT: 'staging' }, requireAdmin: () => ({ ok: true, claims: { jti: 'test-admin' } }) };
   const blocked = admin.createHandler({ ...base, loadContext: async () => ({ owners: [owner], profiles: [inactive], interventions: [], recognizedPayments: [], requests: [], payments: [], assets: [] }) });
-  const event = { httpMethod: 'POST', body: JSON.stringify({ action: 'create-profile-version', ownerId: owner.id, effectiveFrom: '2099-01-01', reason: 'Reincorporación aprobada', profile }) };
+  const event = { httpMethod: 'POST', body: JSON.stringify({ action: 'create-profile-version', confirmation: 'CONFIRMAR_CAMBIO_PLANTA', ownerId: owner.id, effectiveFrom: '2099-01-01', reason: 'Reincorporación aprobada', profile }) };
   assert.equal((await blocked(event)).statusCode, 409);
   const fulfilled = { requestId: 'PLS-3', ownerId: owner.id, type: 'REINCORPORACION', state: 'CUMPLIDA', paymentComplete: true, definitivePaymentId: 'recPayment0000001' };
   const allowed = admin.createHandler({ ...base, loadContext: async () => ({ owners: [owner], profiles: [inactive], interventions: [], recognizedPayments: [], requests: [fulfilled], payments: [], assets: [] }) });
-  event.body = JSON.stringify({ action: 'create-profile-version', ownerId: owner.id, effectiveFrom: '2099-01-01', reason: 'Reincorporación aprobada', reinstatementRequestId: 'PLS-3', profile });
+  event.body = JSON.stringify({ action: 'create-profile-version', confirmation: 'CONFIRMAR_CAMBIO_PLANTA', ownerId: owner.id, effectiveFrom: '2099-01-01', reason: 'Reincorporación aprobada', reinstatementRequestId: 'PLS-3', profile });
   assert.equal((await allowed(event)).statusCode, 201);
 });
 
@@ -124,4 +124,77 @@ test('vincular pago de reincorporación exige propietario e importe exactos', as
   context.payments[0].amount = 199;
   const mismatch = await handler({ httpMethod: 'POST', body: JSON.stringify({ action: 'confirm-reinstatement-payment', requestId: 'PLS-3', paymentId: 'PAY-1' }) });
   assert.equal(mismatch.statusCode, 409);
+});
+
+test('GET Admin devuelve la vista canónica de propietario y los conteos automáticos sin exponer el correo', async () => {
+  const owner = { id: 'rec12345678901234', house: 1, alicuota: 1, name: 'Propietario Prueba', email: 'propietario@example.com' };
+  const profile = engine.initialProfileForHouse({ ownerId: owner.id, house: 1, effectiveFrom: '2026-08-01' });
+  const snapshot = engine.buildExpenseSnapshot({ owners: [owner], profiles: [profile], effectiveDate: '2026-08-10', expense: { concept: 'Reparación planta eléctrica', amount: 100, type: 'Gasto Especial' } });
+  const context = { owners: [owner], profiles: [profile], interventions: [{ interventionId: 'PLANT-GET-1', date: '2026-08-10', description: 'Reparación planta eléctrica', snapshot }], recognizedPayments: [], requests: [], payments: [], assets: [] };
+  const handler = admin.createHandler({ requireAdmin: () => ({ ok: true, claims: { jti: 'test-admin' } }), loadContext: async () => context });
+  const response = await handler({ httpMethod: 'GET' }), body = JSON.parse(response.body), house = body.houses[0];
+  assert.equal(response.statusCode, 200);
+  assert.equal(body.ownerViewContract, 'plant-owner-view-v1');
+  assert.equal(body.participationSummary.repairs, 1);
+  assert.equal(body.participationSummary.residentialFuel, 1);
+  assert.equal(house.ownerName, owner.name);
+  assert.equal(house.hasEmail, true);
+  assert.equal(house.email, undefined);
+  assert.deepEqual(house.ownerView.current, engine.ownerPlantView({ ownerId: owner.id, profiles: context.profiles, interventions: context.interventions, recognizedPayments: [], at: new Date() }).current);
+  assert.deepEqual(house.ownerView.history, engine.ownerPlantView({ ownerId: owner.id, profiles: context.profiles, interventions: context.interventions, recognizedPayments: [], at: new Date() }).history);
+  assert.equal(house.ownerView.history[0].amount, 100);
+});
+
+test('control manual exige consulta explícita, admite hoy y notifica después de guardar', async () => {
+  const owner = { id: 'rec12345678901234', house: 1, alicuota: 1, name: 'Propietario Prueba', email: 'propietario@example.com' };
+  const current = { ...engine.initialProfileForHouse({ ownerId: owner.id, house: 1, effectiveFrom: '2026-08-01' }), recordId: 'recProfile0000001' };
+  const writes = [], notifications = [];
+  const fakeStore = {
+    createRecords: async (table, rows) => { writes.push({ operation: 'create', table, rows }); return []; },
+    patchRecords: async (table, rows) => { writes.push({ operation: 'patch', table, rows }); return []; }
+  };
+  const context = { owners: [owner], profiles: [current], interventions: [], recognizedPayments: [], requests: [], payments: [], assets: [] };
+  const handler = admin.createHandler({
+    env: { CONTEXT: 'production', VLA_DATA_ENVIRONMENT: 'production', URL: 'https://villalosapamates.netlify.app/' },
+    requireAdmin: () => ({ ok: true, claims: { jti: 'test-admin' } }), loadContext: async () => context, store: fakeStore,
+    notifyOwner: async payload => { notifications.push(payload); return { sent: true, status: 'Enviado', recipientConfigured: true }; }
+  });
+  const effectiveFrom = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const profile = { state: engine.PROFILE_STATE.PARTIAL, reinstatementMode: engine.REINSTATEMENT_MODE.ALLOWED, participaReparaciones: true, participaMantenimiento: false, participaGasoilResidencial: false, participaBeneficioComun: true, servicioResidencialActivo: false, specialAgreement: false, observations: 'Confirmado por Administración' };
+  const withoutConfirmation = await handler({ httpMethod: 'POST', body: JSON.stringify({ action: 'create-profile-version', ownerId: owner.id, effectiveFrom, reason: 'Cambio confirmado', profile }) });
+  assert.equal(withoutConfirmation.statusCode, 400);
+  assert.equal(writes.length, 0);
+  const response = await handler({ httpMethod: 'POST', body: JSON.stringify({ action: 'create-profile-version', confirmation: 'CONFIRMAR_CAMBIO_PLANTA', ownerId: owner.id, effectiveFrom, reason: 'Cambio confirmado', profile }) });
+  const body = JSON.parse(response.body);
+  assert.equal(response.statusCode, 201);
+  assert.equal(body.notification.sent, true);
+  assert.match(body.message, /notificado por correo/i);
+  assert.equal(notifications.length, 1);
+  assert.equal(notifications[0].owner.email, owner.email);
+  assert.equal(notifications[0].profile.effectiveFrom, effectiveFrom);
+  assert(writes.some(write => write.table === store.TABLES.profiles));
+  assert.equal(writes.filter(write => write.table === store.TABLES.audit).length, 2);
+  assert.equal(writes.some(write => [store.TABLES.expenses, store.TABLES.payments, store.TABLES.owners].includes(write.table)), false);
+});
+
+test('fallo de correo no revierte el cambio manual y queda auditado como pendiente', async () => {
+  const owner = { id: 'rec12345678901234', house: 1, alicuota: 1, name: 'Propietario Prueba', email: 'propietario@example.com' };
+  const current = engine.initialProfileForHouse({ ownerId: owner.id, house: 1, effectiveFrom: '2026-08-01' });
+  const writes = [];
+  const handler = admin.createHandler({
+    env: { CONTEXT: 'production', VLA_DATA_ENVIRONMENT: 'production' }, requireAdmin: () => ({ ok: true, claims: { jti: 'test-admin' } }),
+    loadContext: async () => ({ owners: [owner], profiles: [current], interventions: [], recognizedPayments: [], requests: [], payments: [], assets: [] }),
+    store: { createRecords: async (table, rows) => { writes.push({ table, rows }); }, patchRecords: async () => {} },
+    notifyOwner: async () => { throw new Error('SMTP temporalmente no disponible'); }
+  });
+  const profile = { state: engine.PROFILE_STATE.PARTIAL, reinstatementMode: engine.REINSTATEMENT_MODE.ALLOWED, participaReparaciones: true, participaMantenimiento: false, participaGasoilResidencial: false, participaBeneficioComun: true, servicioResidencialActivo: false, specialAgreement: false, observations: '' };
+  const response = await handler({ httpMethod: 'POST', body: JSON.stringify({ action: 'create-profile-version', confirmation: 'CONFIRMAR_CAMBIO_PLANTA', ownerId: owner.id, effectiveFrom: '2099-01-01', reason: 'Cambio confirmado', profile }) });
+  const body = JSON.parse(response.body);
+  assert.equal(response.statusCode, 201);
+  assert.equal(body.notification.sent, false);
+  assert.equal(body.notification.status, 'Error de envío');
+  assert.match(body.message, /correo pendiente/i);
+  const auditActions = writes.filter(write => write.table === store.TABLES.audit).flatMap(write => write.rows.map(row => row['Acción']));
+  assert(auditActions.includes('CREAR_VERSION'));
+  assert(auditActions.includes('NOTIFICACION_PENDIENTE'));
 });

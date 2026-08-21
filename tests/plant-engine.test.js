@@ -106,6 +106,24 @@ test('vista del propietario contiene solo su participación y el simulador no mu
   assert.equal(JSON.stringify(snapshot), frozen);
 });
 
+test('conteo automático usa exclusivamente el perfil vigente de cada propietario', () => {
+  const owners = Array.from({ length: 4 }, (_, index) => ({ id: `count-owner-${index + 1}`, house: index + 1 }));
+  const profiles = owners.map(owner => engine.initialProfileForHouse({ ownerId: owner.id, house: owner.house, effectiveFrom: '2026-08-01' }));
+  const summary = engine.participationSummary({ owners, profiles, at: '2026-08-21' });
+  assert.deepEqual(summary, {
+    totalOwners: 4,
+    configuredOwners: 4,
+    repairs: 3,
+    maintenance: 2,
+    residentialFuel: 2,
+    commonBenefit: 4,
+    residentialServiceActive: 2,
+    specialAgreements: 0,
+    missingProfiles: 0,
+    byState: { ACTIVO: 2, SUSPENDIDO_PARCIAL: 1, RENUNCIA: 1 }
+  });
+});
+
 test('historial técnico informativo aparece sin crear deuda ni exponer otras casas', () => {
   const view = engine.ownerPlantView({
     ownerId: 'owner-3', profiles,

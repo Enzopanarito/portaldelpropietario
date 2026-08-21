@@ -5,7 +5,13 @@ const engine = require('./_plant_engine');
 
 function createPlantFixture(now = new Date()) {
   const payload = preview.createPayload(now);
-  const owners = payload.propietarios.map(owner => ({ id: owner.id, house: Number(owner.Casa), alicuota: Number(owner.Alicuota || 0) }));
+  const owners = payload.propietarios.map(owner => ({
+    id: owner.id,
+    house: Number(owner.Casa),
+    alicuota: Number(owner.Alicuota || 0),
+    name: owner.Propietario,
+    email: `preview-casa-${Number(owner.Casa)}@example.invalid`
+  }));
   const profiles = owners.map(owner => engine.initialProfileForHouse({ ownerId: owner.id, house: owner.house, effectiveFrom: '2026-08-01', approvedBy: 'STAGING_FIXTURE' }));
   const samples = [
     { id: 'PLANT-FIXTURE-REPAIR', date: '2026-08-05', concept: 'Reparación de tarjeta AVR de planta eléctrica', amount: 1200 },

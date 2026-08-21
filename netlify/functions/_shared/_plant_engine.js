@@ -343,9 +343,38 @@ function ownerPlantView({ ownerId, profiles, interventions, recognizedPayments =
   };
 }
 
+function participationSummary({ owners, profiles, at = new Date() }) {
+  const summary = {
+    totalOwners: (owners || []).length,
+    configuredOwners: 0,
+    repairs: 0,
+    maintenance: 0,
+    residentialFuel: 0,
+    commonBenefit: 0,
+    residentialServiceActive: 0,
+    specialAgreements: 0,
+    missingProfiles: 0,
+    byState: {}
+  };
+  for (const owner of owners || []) {
+    const ownerId = clean(owner.id || owner.ownerId);
+    const profile = profileAt(profiles, ownerId, at);
+    if (!profile) { summary.missingProfiles += 1; continue; }
+    summary.configuredOwners += 1;
+    if (profile.participaReparaciones) summary.repairs += 1;
+    if (profile.participaMantenimiento) summary.maintenance += 1;
+    if (profile.participaGasoilResidencial) summary.residentialFuel += 1;
+    if (profile.participaBeneficioComun) summary.commonBenefit += 1;
+    if (profile.servicioResidencialActivo) summary.residentialServiceActive += 1;
+    if (profile.specialAgreement) summary.specialAgreements += 1;
+    summary.byState[profile.state] = Number(summary.byState[profile.state] || 0) + 1;
+  }
+  return summary;
+}
+
 module.exports = {
   PROFILE_STATE, REINSTATEMENT_MODE, CATEGORY, PROFILE_FLAG_BY_CATEGORY, DEFAULT_RETROACTIVE,
   clean, money, normalize, isoDay, stable, hash, requestIdempotencyKey, initialProfileForHouse, validateProfile, profileAt, inactiveEpisodeStart,
   inferPlantExpense, participantFlag, allocateEqual, buildExpenseSnapshot, verifySnapshot, parseSnapshot,
-  calculateReinstatement, ownerPlantView
+  calculateReinstatement, ownerPlantView, participationSummary
 };
