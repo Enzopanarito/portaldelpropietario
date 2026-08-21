@@ -130,6 +130,8 @@ async function loadPortal(page){
       }
     }
 
+    await page.locator('.vla-plant-verify, .vla-plant-status, .vla-plant-alert').first().waitFor({state:'visible',timeout:10000});
+
     const finalState=await page.evaluate(()=>({failClosed:window.__vlaFinancialFailClosed===true,breakdownVersion:window.VLABreakdown?.VERSION||null}));
     if(finalState.failClosed)throw new Error('El portal entró en fail-closed al finalizar la auditoría.');
     if(finalState.breakdownVersion!=='owner-breakdown-v7')throw new Error(`Versión de desglose inesperada: ${finalState.breakdownVersion}.`);
