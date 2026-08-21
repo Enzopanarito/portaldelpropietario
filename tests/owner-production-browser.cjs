@@ -5,6 +5,7 @@ const fs=require('fs');
 const {ownerVisibleBalance}=require('../scripts/owner-visible-balance');
 
 const target=String(process.env.TARGET_URL||'https://villalosapamates.netlify.app').replace(/\/$/,'');
+const privatePlant401=/Failed to load resource: the server responded with a status of 401/i;
 
 function parseMoney(text){
   const raw=String(text||'').trim();
@@ -65,6 +66,10 @@ async function loadPortal(page){
   const pageErrors=[];
   const consoleErrors=[];
   const recoveredFinancialFetches=[];
+  let privatePlantResponses=0;
+  page.on('response',response=>{
+    if(response.status()===401&&response.request().method()==='GET'&&/\/api\/vla\/plant(?:\?|$)/.test(response.url()))privatePlantResponses++;
+  });
   page.on('pageerror',error=>pageErrors.push(String(error.stack||error.message||error)));
   page.on('console',message=>{
     if(message.type()!=='error')return;
@@ -129,7 +134,11 @@ async function loadPortal(page){
     if(finalState.failClosed)throw new Error('El portal entró en fail-closed al finalizar la auditoría.');
     if(finalState.breakdownVersion!=='owner-breakdown-v7')throw new Error(`Versión de desglose inesperada: ${finalState.breakdownVersion}.`);
     if(pageErrors.length)throw new Error(`Errores JavaScript: ${pageErrors.join(' | ')}`);
-    if(consoleErrors.length)throw new Error(`Errores de consola: ${consoleErrors.join(' | ')}`);
+    const privateChallengeVisible=await page.locator('.vla-plant-verify').isVisible().catch(()=>false);
+    const privateChallenges=consoleErrors.filter(message=>privatePlant401.test(message));
+    const unexpectedConsoleErrors=consoleErrors.filter(message=>!privatePlant401.test(message));
+    if(privateChallenges.length&&!(privateChallengeVisible&&privateChallenges.length===privatePlantResponses))unexpectedConsoleErrors.push(...privateChallenges);
+    if(unexpectedConsoleErrors.length)throw new Error(`Errores de consola: ${unexpectedConsoleErrors.join(' | ')}`);
 
     const result={
       target,
@@ -146,7 +155,8 @@ async function loadPortal(page){
       balances,
       recoveredTransientFetches:recoveredFinancialFetches.length,
       pageErrors,
-      consoleErrors
+      consoleErrors:unexpectedConsoleErrors,
+      privatePlantAuthChallenges:privatePlantResponses
     };
     fs.writeFileSync('owner-production-result.json',JSON.stringify(result,null,2));
     await page.screenshot({path:'owner-production.png',fullPage:true});
