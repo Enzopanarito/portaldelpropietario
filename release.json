@@ -1,5 +1,5 @@
 {
-  "release": "2026-08-21-v14",
+  "release": "2026-08-21-v15",
   "canonicalMonth": "2026-07",
   "expectedHouses": 15,
   "balanceEngine": 7,
@@ -8,7 +8,7 @@
   "balanceSource": "canonical-july-2026",
   "breakdownPresentation": "owner-breakdown-v7",
   "paymentReport": "progressive-v13",
-  "plantModule": "intelligent-history-v1",
+  "plantModule": "reinstatement-accumulator-v2",
   "plantSchema": 1,
   "financialFailClosed": "canonical-v7-required",
   "paymentDatePolicy": "report-date-fallback-v3",

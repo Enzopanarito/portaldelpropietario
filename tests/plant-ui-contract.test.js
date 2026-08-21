@@ -24,7 +24,8 @@ test('los portales cargan el módulo de planta versionado y el build lo publica'
 test('el portal propietario consulta solo la casa seleccionada y las solicitudes no cambian saldos', () => {
   const source = read('owner-plant-v1.js');
   assert.match(source, /ownerId=' \+ encodeURIComponent\(id\)/);
-  assert(source.includes('No modifica su deuda'));
+  assert(source.includes('Acumulado para reincorporarse'));
+  assert(source.includes('ACUMULA_REINCORPORACION'));
   assert(source.includes('SOLICITAR_CAMBIO_PLANTA'));
   assert(source.includes('payment-reports/session'));
   assert(source.includes('Verifica esta casa'));
@@ -66,7 +67,7 @@ test('el panel Admin confirma el snapshot antes de crear un gasto automático', 
 
 test('Admin incorpora vista espejo, conteo automático y control manual notificado', () => {
   const source = read('admin-plant-v1.js');
-  for (const marker of ['Ver como propietario', 'Vista espejo canónica', 'exactamente lo que ve el propietario', 'Conteo automático de participación', 'Control manual', 'Confirmar cambio y notificar']) assert(source.includes(marker));
+  for (const marker of ['Ver como propietario', 'Vista espejo canónica', 'exactamente lo que ve el propietario', 'Conteo automático de participación', 'Control manual', 'Confirmar cambio y notificar', 'Acumulado para entrar', 'ACUMULA_REINCORPORACION']) assert(source.includes(marker));
   assert(source.includes('#vla-premium-sidebar .vla-nav'));
   assert(source.includes('premiumUiExpected()'));
   assert(source.includes("vlaAdminPlantWaited = 'premium-shell'"));
