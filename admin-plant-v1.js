@@ -24,20 +24,38 @@
     return '<div id="plant-automatic-counts" class="plant-admin-panel plant-auto-summary"><div class="plant-panel-title"><div><h3>Conteo automático de participación</h3><p>El sistema lee el perfil vigente de cada casa. Administración solo verifica y confirma cuando necesita un cambio.</p></div><span class="plant-live-badge">Actualizado ahora</span></div><div class="plant-count-grid">' + cards.map(function (item) { return '<div><span>' + esc(item[0]) + '</span><b>' + Number(item[1] || 0) + '<small>/' + total + '</small></b></div>'; }).join('') + '</div><div class="plant-state-counts">' + statesHtml + '</div></div>';
   }
   function ensureUi() {
-    if (document.getElementById('plant-management')) return;
-    var nav = document.querySelector('#app nav');
+    if (document.getElementById('plant-management')) return true;
+    var premiumNav = document.querySelector('#vla-premium-sidebar .vla-nav');
+    var nav = premiumNav || document.querySelector('#app > .container > nav, #app nav');
+    if (!nav) return false;
     var button = document.createElement('button');
-    button.className = 'nav bg-white text-slate-700 px-4 py-2 rounded-full shadow font-semibold';
-    button.dataset.target = 'plant-management'; button.innerHTML = '⚡ Planta'; nav.appendChild(button);
+    if (premiumNav) {
+      button.dataset.vlaTarget = 'plant-management';
+      button.innerHTML = '<span class="ico">⚡</span>Planta';
+      var expensesButton = premiumNav.querySelector('[data-vla-target="expenses"]');
+      if (expensesButton) premiumNav.insertBefore(button, expensesButton.nextSibling);
+      else premiumNav.appendChild(button);
+    } else {
+      button.className = 'nav bg-white text-slate-700 px-4 py-2 rounded-full shadow font-semibold';
+      button.dataset.target = 'plant-management'; button.innerHTML = '⚡ Planta'; nav.appendChild(button);
+    }
     var section = document.createElement('section'); section.id = 'plant-management'; section.className = 'section';
     section.innerHTML = '<div class="vla-admin-plant-shell"><div class="vla-admin-plant-head"><div><p>Motor automático</p><h2>Gestión de la planta eléctrica</h2><span>Perfiles temporales, snapshots inmutables y cero recálculo histórico.</span></div><button id="plant-refresh">Actualizar</button></div><div id="plant-module-body" aria-live="polite"><div class="vla-admin-plant-loading">Abra esta sección para consultar el módulo.</div></div></div>';
-    var footer = document.querySelector('#app footer'), container = footer && footer.parentNode;
+    var premiumContent = document.getElementById('vla-premium-content');
+    var footer = document.querySelector('#app footer'), container = premiumContent || (footer && footer.parentNode);
     if (container) container.insertBefore(section, footer); else document.querySelector('#app').appendChild(section);
     button.addEventListener('click', function () {
-      document.querySelectorAll('.nav,.section').forEach(function (item) { item.classList.remove('active'); });
+      document.querySelectorAll('.section').forEach(function (item) { item.classList.remove('active'); });
+      if (premiumNav) {
+        premiumNav.querySelectorAll('[data-vla-target]').forEach(function (item) { item.classList.remove('active'); });
+        var title = document.getElementById('vla-current-title'); if (title) title.textContent = 'Planta eléctrica';
+        var sidebar = document.getElementById('vla-premium-sidebar'); if (sidebar) sidebar.classList.remove('open');
+      } else document.querySelectorAll('.nav').forEach(function (item) { item.classList.remove('active'); });
       button.classList.add('active'); section.classList.add('active'); loadPlant(true);
     });
     document.getElementById('plant-refresh').addEventListener('click', function () { loadPlant(true); });
+    document.documentElement.dataset.vlaAdminPlantMenu = premiumNav ? 'premium-sidebar' : 'legacy-nav';
+    return true;
   }
   function houseRows(houses) {
     return houses.map(function (item) {
@@ -190,6 +208,6 @@
       notice(result.message); form.reset(); document.querySelectorAll('#owners-list input').forEach(function (input) { input.checked = true; }); document.getElementById('expense-domain').value = 'AUTO'; document.getElementById('expense-plant-category').hidden = true; document.getElementById('expense-plant-retroactive').hidden = true; await loadAll(true); plantData = null;
     } finally { window.vlaPlantExpenseBusy = false; submit.disabled = false; submit.textContent = original; }
   }
-  function boot() { ensureUi(); enhanceExpenseForm(); document.documentElement.dataset.vlaAdminPlant = 'v1'; }
+  function boot() { if (!ensureUi()) return setTimeout(boot, 80); enhanceExpenseForm(); document.documentElement.dataset.vlaAdminPlant = 'v1'; }
   (function wait() { if (window.ready === true) boot(); else setTimeout(wait, 60); })();
 })();
