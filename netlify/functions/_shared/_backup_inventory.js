@@ -15,7 +15,12 @@ const TABLES = Object.freeze([
   'ControlVersiones',
   'WhatsApp Jobs',
   'WhatsApp Programaciones',
-  'Cuentas de Cobro Autorizadas'
+  'Cuentas de Cobro Autorizadas',
+  'Activos Planta',
+  'Perfiles Planta',
+  'Intervenciones Planta',
+  'Solicitudes Planta',
+  'Auditoría Planta'
 ]);
 
 module.exports = { TABLES };

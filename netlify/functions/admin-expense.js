@@ -8,6 +8,8 @@ const { ensureFinancialWritesAllowed } = require('./_shared/_financial_write_loc
 const { begin, setState } = require('./_shared/_operation_guard');
 const { cleanPlainText, deepEscapeStrings, safeDisplayText } = require('./_shared/_security_utils');
 const { currentMonthCaracas, nextMonth, newExpenseLifecycleFields, compactTemplate, templateKey, FIELDS, ORIGIN } = require('./_shared/_expense_lifecycle');
+const plantEngine = require('./_shared/_plant_engine');
+const { TABLES:PLANT_TABLES, EXPENSE_FIELDS:PLANT_FIELDS, profileFromRecord } = require('./_shared/_plant_store');
 
 const TABLE_GASTOS = 'Gastos del Mes';
 const TABLE_OWNERS = 'Propietarios';
@@ -26,14 +28,26 @@ async function request(table, options = {}, suffix = '') {
   return data;
 }
 async function existingOwnerIds() {
-  let ids = new Set(), offset = null;
+  let records = [], offset = null;
   do {
-    const query = `?pageSize=100${offset ? `&offset=${encodeURIComponent(offset)}` : ''}`;
+    const params = new URLSearchParams({ pageSize:'100' });
+    for (const field of ['Casa','Alicuota']) params.append('fields[]',field);
+    if (offset) params.set('offset',offset);
+    const query = `?${params.toString()}`;
     const data = await request(TABLE_OWNERS, {}, query);
-    for (const record of data.records || []) ids.add(record.id);
+    records.push(...(data.records || []));
     offset = data.offset;
   } while (offset);
-  return ids;
+  return records.map(record=>({id:record.id,house:Number(record.fields?.Casa),alicuota:Number(record.fields?.Alicuota||0)})).sort((a,b)=>a.house-b.house);
+}
+async function plantProfiles() {
+  let records=[],offset=null;
+  do{
+    const query=`?pageSize=100${offset?`&offset=${encodeURIComponent(offset)}`:''}`;
+    const data=await request(PLANT_TABLES.profiles,{},query);
+    records.push(...(data.records||[]));offset=data.offset;
+  }while(offset);
+  return records.map(profileFromRecord);
 }
 function businessKey({ concept, amount, type, mode, frequency, ownerIds, month }) {
   const window = Math.floor(Date.now() / 300000);
@@ -53,17 +67,41 @@ const handler = async function(event) {
     const concept = cleanPlainText(body.concept, 160), amount = money(body.amount), type = String(body.type || ''), mode = String(body.mode || ''), frequency = String(body.frequency || 'Eventual');
     const currentMonth=currentMonthCaracas(),allowedMonths=new Set([currentMonth,nextMonth(currentMonth)]);
     const month=/^\d{4}-(0[1-9]|1[0-2])$/.test(String(body.month||''))?String(body.month):currentMonth;
-    const ownerIds = [...new Set((Array.isArray(body.ownerIds) ? body.ownerIds : []).map(value => String(value || '').trim()).filter(validRecordId))];
+    let ownerIds = [...new Set((Array.isArray(body.ownerIds) ? body.ownerIds : []).map(value => String(value || '').trim()).filter(validRecordId))];
     if (!concept) return json(400, { message:'El concepto es obligatorio.' });
     if (!(amount > 0) || amount > 1000000) return json(400, { message:'El monto del gasto no es válido.' });
     if (!ALLOWED_TYPES.has(type)) return json(400, { message:'Tipo de gasto inválido.' });
     if (!ALLOWED_MODES.has(mode)) return json(400, { message:'Forma de pago inválida.' });
     if (!ALLOWED_FREQUENCIES.has(frequency)) return json(400, { message:'Frecuencia inválida.' });
     if (!allowedMonths.has(month)) return json(400, { message:'Solo puede registrar el mes actual o precargar el mes siguiente.' });
-    if (!ownerIds.length) return json(400, { message:'Debe seleccionar al menos un propietario.' });
+    const owners = await existingOwnerIds(),ownerIdSet=new Set(owners.map(owner=>owner.id));
+    if (ownerIds.some(id => !ownerIdSet.has(id))) return json(400, { message:'La selección contiene un propietario inválido.' });
 
-    const owners = await existingOwnerIds();
-    if (ownerIds.some(id => !owners.has(id))) return json(400, { message:'La selección contiene un propietario inválido.' });
+    const inferredPlant=plantEngine.inferPlantExpense(concept),expenseDomain=String(body.expenseDomain||'AUTO').toUpperCase();
+    const isPlant=expenseDomain==='PLANTA'||(expenseDomain!=='GENERAL'&&inferredPlant.isPlant);
+    if (!isPlant && !ownerIds.length) return json(400, { message:'Debe seleccionar al menos un propietario.' });
+    if (isPlant && type === 'Gasto Común') return json(400, { message:'Los gastos de planta deben registrarse como Gasto Especial para mantenerlos excluidos del pronto pago. El factor común aún no está aprobado.' });
+    let plantSnapshot=null;
+    if(isPlant){
+      const profiles=await plantProfiles();
+      plantSnapshot=plantEngine.buildExpenseSnapshot({
+        owners,profiles,effectiveDate:body.effectiveDate||`${month}-01`,classification:inferredPlant,
+        explicitCategory:body.plantCategory||undefined,
+        explicitRetroactive:typeof body.generatesRetroactive==='boolean'?body.generatesRetroactive:undefined,
+        expense:{concept,amount,type,mode}
+      });
+      if(body.confirmPlantSnapshot!==true||String(body.plantSnapshotHash||'')!==plantSnapshot.snapshotHash){
+        return json(409,deepEscapeStrings({
+          success:false,protected:true,plantPreviewRequired:true,
+          message:'Confirme la distribución inteligente de este gasto de planta antes de crearlo.',
+          classification:inferredPlant,snapshotHash:plantSnapshot.snapshotHash,category:plantSnapshot.category,
+          generatesRetroactive:plantSnapshot.generatesRetroactive,
+          included:plantSnapshot.participants.filter(item=>item.included).map(item=>({house:item.house,amount:item.amount,profileState:item.profileState})),
+          excluded:plantSnapshot.participants.filter(item=>!item.included).map(item=>({house:item.house,reason:item.reason,theoreticalRetroactiveAmount:item.theoreticalRetroactiveAmount,profileState:item.profileState}))
+        }));
+      }
+      ownerIds=plantSnapshot.participants.filter(item=>item.included).map(item=>item.ownerId);
+    }
     key = businessKey({ concept, amount, type, mode, frequency, ownerIds, month });
     const guard = await begin('EXPENSE_CREATE', key, { event });
     if (!guard.ok) {
@@ -73,11 +111,22 @@ const handler = async function(event) {
     }
     operation = guard.marker;
     const fields = { Concepto:concept, Monto:amount, 'Tipo de Gasto':type, Frecuencia:frequency, Propietarios:ownerIds, 'Forma de Pago':mode, ...newExpenseLifecycleFields({month,origin:month===currentMonth?ORIGIN.MANUAL:ORIGIN.PRELOAD}) };
+    if(plantSnapshot){
+      const eventId=`PLANT-${month}-${plantSnapshot.snapshotHash.slice(0,16).toUpperCase()}`;
+      Object.assign(fields,{
+        [PLANT_FIELDS.domain]:'PLANTA',[PLANT_FIELDS.category]:plantSnapshot.category,
+        [PLANT_FIELDS.retroactive]:plantSnapshot.generatesRetroactive,
+        [PLANT_FIELDS.snapshot]:JSON.stringify(plantSnapshot),[PLANT_FIELDS.snapshotHash]:plantSnapshot.snapshotHash,
+        [PLANT_FIELDS.effectiveDate]:plantSnapshot.effectiveDate,[PLANT_FIELDS.classificationSource]:plantSnapshot.classification.source,
+        [PLANT_FIELDS.classificationConfidence]:plantSnapshot.classification.confidence,[PLANT_FIELDS.eventId]:eventId,
+        [PLANT_FIELDS.historicalOnly]:false
+      });
+    }
     if(month!==currentMonth)fields[FIELDS.templateKey]=templateKey(compactTemplate({fields},month));
     const data = await request(TABLE_GASTOS, { method:'POST', body:JSON.stringify({ records:[{ fields }], typecast:true }) });
     const record = data.records?.[0] || null; recordId = record?.id || '';
     await setState(operation, 'EXPENSE_CREATE', key, 'DONE', recordId);
-    return json(200, deepEscapeStrings({ success:true,record,month,scheduled:month!==currentMonthCaracas(),message:month!==currentMonthCaracas()?`Gasto precargado para ${month}; se activará con el cierre.`:type==='Gasto Especial'?`Gasto especial creado entre ${ownerIds.length} propietario(s).`:'Gasto común creado correctamente.' }));
+    return json(200, deepEscapeStrings({ success:true,record,month,plant:isPlant,plantSnapshotHash:plantSnapshot?.snapshotHash||null,scheduled:month!==currentMonthCaracas(),message:plantSnapshot?`Gasto de planta creado y distribuido automáticamente entre ${ownerIds.length} casa(s); el snapshot histórico quedó sellado.`:month!==currentMonthCaracas()?`Gasto precargado para ${month}; se activará con el cierre.`:type==='Gasto Especial'?`Gasto especial creado entre ${ownerIds.length} propietario(s).`:'Gasto común creado correctamente.' }));
   } catch (error) {
     if (operation) await setState(operation, 'EXPENSE_CREATE', key, recordId ? 'PARTIAL' : 'ERROR', recordId).catch(() => null);
     return json(500, { success:false,protected:true,partial:Boolean(recordId),recordId:recordId||null,message:recordId?'El gasto pudo haberse creado antes del error. Revise la tabla antes de repetir.':'No se pudo crear el gasto.',detail:safeDisplayText(error.message,500) });

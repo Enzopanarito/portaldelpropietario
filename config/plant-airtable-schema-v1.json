@@ -1,0 +1,150 @@
+{
+  "schemaVersion": 1,
+  "existingTableFields": {
+    "Gastos del Mes": [
+      { "name": "Dominio del Gasto", "type": "singleSelect", "choices": ["GENERAL", "PLANTA"] },
+      { "name": "Categoría Planta", "type": "singleSelect", "choices": ["REPARACION", "MANTENIMIENTO_PREVENTIVO", "MANTENIMIENTO_CORRECTIVO", "REPUESTO", "MEJORA", "COMBUSTIBLE_RESIDENCIAL", "OPERACION_COMUN", "INSPECCION", "OTRO"] },
+      { "name": "Genera Retroactivo Planta", "type": "checkbox" },
+      { "name": "Snapshot Planta JSON", "type": "multilineText" },
+      { "name": "Snapshot Planta Hash", "type": "singleLineText" },
+      { "name": "Fecha Efectiva Planta", "type": "date" },
+      { "name": "Clasificación Planta Fuente", "type": "singleSelect", "choices": ["REGLAS_V1", "ADMIN", "MIGRACION_HISTORICA"] },
+      { "name": "Clasificación Planta Confianza", "type": "number", "precision": 4 },
+      { "name": "Evento Planta ID", "type": "singleLineText" },
+      { "name": "Solo Historial Planta", "type": "checkbox" }
+    ]
+  },
+  "newTables": [
+    {
+      "name": "Activos Planta",
+      "description": "Ficha técnica versionada del activo. El factor de consumo común permanece vacío hasta disponer de una medición aprobada.",
+      "fields": [
+        { "name": "Activo ID", "type": "singleLineText", "primary": true },
+        { "name": "Nombre", "type": "singleLineText" },
+        { "name": "Tipo", "type": "singleSelect", "choices": ["GENERADOR_ELECTRICO"] },
+        { "name": "Potencia", "type": "singleLineText" },
+        { "name": "Marca", "type": "singleLineText" },
+        { "name": "Modelo", "type": "singleLineText" },
+        { "name": "Serial", "type": "singleLineText" },
+        { "name": "Fecha Adquisición", "type": "date" },
+        { "name": "Fecha Instalación", "type": "date" },
+        { "name": "Horómetro Actual", "type": "number", "precision": 1 },
+        { "name": "Último Mantenimiento", "type": "date" },
+        { "name": "Próximo Mantenimiento", "type": "date" },
+        { "name": "Próximo Mantenimiento Horas", "type": "number", "precision": 1 },
+        { "name": "Observaciones Generales", "type": "multilineText" },
+        { "name": "Estado Técnico", "type": "singleSelect", "choices": ["PENDIENTE_FICHA", "OPERATIVA", "MANTENIMIENTO_REQUERIDO", "FUERA_DE_SERVICIO"] },
+        { "name": "Factor Consumo Común", "type": "number", "precision": 4 },
+        { "name": "Factor Consumo Común Aprobado", "type": "checkbox" },
+        { "name": "Actualizado En", "type": "dateTime" },
+        { "name": "Actualizado Por", "type": "singleLineText" },
+        { "name": "Versión", "type": "number", "precision": 0 }
+      ]
+    },
+    {
+      "name": "Perfiles Planta",
+      "description": "Versiones temporales de la modalidad de cada casa respecto a la planta. No sobrescribir versiones anteriores.",
+      "fields": [
+        { "name": "Perfil ID", "type": "singleLineText", "primary": true },
+        { "name": "Propietario", "type": "multipleRecordLinks", "linkTo": "Propietarios" },
+        { "name": "Casa", "type": "number", "precision": 0 },
+        { "name": "Estado Planta", "type": "singleSelect", "choices": ["ACTIVO", "SUSPENDIDO_PARCIAL", "RENUNCIA", "RESERVA_POR_VENTA", "REINCORPORACION_PENDIENTE", "PENDIENTE_NUEVO_PROPIETARIO"] },
+        { "name": "Participa Reparaciones", "type": "checkbox" },
+        { "name": "Participa Mantenimiento", "type": "checkbox" },
+        { "name": "Participa Gasoil Residencial", "type": "checkbox" },
+        { "name": "Participa Beneficio Común", "type": "checkbox" },
+        { "name": "Servicio Residencial Activo", "type": "checkbox" },
+        { "name": "Modalidad Reincorporación", "type": "singleSelect", "choices": ["PERMITIDA", "CON_RETROACTIVOS_Y_APROBACION", "CONDICIONADA_A_CAMBIO_DE_PROPIETARIO_O_ACUERDO", "NO_PERMITIDA"] },
+        { "name": "Fecha Inicio Estado", "type": "date" },
+        { "name": "Fecha Fin Estado", "type": "date" },
+        { "name": "Motivo", "type": "multilineText" },
+        { "name": "Aprobado Por", "type": "singleLineText" },
+        { "name": "Fecha Aprobación", "type": "dateTime" },
+        { "name": "Observaciones", "type": "multilineText" },
+        { "name": "Acuerdo Especial", "type": "checkbox" },
+        { "name": "Activo", "type": "checkbox" },
+        { "name": "Versión", "type": "number", "precision": 0 },
+        { "name": "Reemplaza Perfil ID", "type": "singleLineText" },
+        { "name": "Solicitud Reincorporación ID", "type": "singleLineText" },
+        { "name": "Creado En", "type": "dateTime" }
+      ]
+    },
+    {
+      "name": "Intervenciones Planta",
+      "description": "Expediente técnico y económico permanente de la planta; correcciones mediante nuevas versiones o anulación auditada.",
+      "fields": [
+        { "name": "Intervención ID", "type": "singleLineText", "primary": true },
+        { "name": "Gasto ID", "type": "singleLineText" },
+        { "name": "Fecha", "type": "date" },
+        { "name": "Tipo", "type": "singleSelect", "choices": ["REPARACION", "MANTENIMIENTO_PREVENTIVO", "MANTENIMIENTO_CORRECTIVO", "REPUESTO", "MEJORA", "COMBUSTIBLE", "OPERACION_COMUN", "INSPECCION", "OTRO"] },
+        { "name": "Categoría", "type": "singleSelect", "choices": ["REPARACION", "MANTENIMIENTO_PREVENTIVO", "MANTENIMIENTO_CORRECTIVO", "REPUESTO", "MEJORA", "COMBUSTIBLE_RESIDENCIAL", "OPERACION_COMUN", "INSPECCION", "OTRO"] },
+        { "name": "Descripción", "type": "multilineText" },
+        { "name": "Diagnóstico", "type": "multilineText" },
+        { "name": "Trabajo Realizado", "type": "multilineText" },
+        { "name": "Repuestos", "type": "multilineText" },
+        { "name": "Proveedor/Técnico", "type": "singleLineText" },
+        { "name": "Monto USD", "type": "currency", "precision": 2 },
+        { "name": "Monto Bs", "type": "currency", "precision": 2 },
+        { "name": "Tasa BCV", "type": "number", "precision": 4 },
+        { "name": "Horómetro", "type": "number", "precision": 1 },
+        { "name": "Documentos", "type": "multipleAttachments" },
+        { "name": "Documento Público URL", "type": "url" },
+        { "name": "Observaciones", "type": "multilineText" },
+        { "name": "Creado En", "type": "dateTime" },
+        { "name": "Registrado Por", "type": "singleLineText" },
+        { "name": "Regla Distribución", "type": "singleSelect", "choices": ["PARTES_IGUALES", "ALICUOTA", "SOLO_INFORMATIVO"] },
+        { "name": "Snapshot JSON", "type": "multilineText" },
+        { "name": "Snapshot Hash", "type": "singleLineText" },
+        { "name": "Genera Retroactivo", "type": "checkbox" },
+        { "name": "Solo Historial", "type": "checkbox" },
+        { "name": "Estado", "type": "singleSelect", "choices": ["ACTIVO", "ANULADO", "CORREGIDO"] },
+        { "name": "Origen", "type": "singleSelect", "choices": ["GASTO_AUTOMATICO", "HISTORICO_PREVIO", "ADMIN"] }
+      ]
+    },
+    {
+      "name": "Solicitudes Planta",
+      "description": "Solicitudes sin efecto financiero directo; toda reincorporación exige revisión, pago definitivo y confirmación administrativa.",
+      "fields": [
+        { "name": "Solicitud ID", "type": "singleLineText", "primary": true },
+        { "name": "Propietario", "type": "multipleRecordLinks", "linkTo": "Propietarios" },
+        { "name": "Casa", "type": "number", "precision": 0 },
+        { "name": "Tipo", "type": "singleSelect", "choices": ["SUSPENSION", "REINCORPORACION", "CAMBIO_MODALIDAD", "RENUNCIA", "CAMBIO_PROPIETARIO"] },
+        { "name": "Estado", "type": "singleSelect", "choices": ["RECIBIDA", "EN_REVISION", "APROBADA_CONDICIONADA", "PAGO_PENDIENTE", "CUMPLIDA", "RECHAZADA", "CANCELADA"] },
+        { "name": "Fecha Solicitud", "type": "dateTime" },
+        { "name": "Fecha Efectiva Propuesta", "type": "date" },
+        { "name": "Perfil Actual JSON", "type": "multilineText" },
+        { "name": "Condiciones", "type": "multilineText" },
+        { "name": "Retroactivo Estimado", "type": "currency", "precision": 2 },
+        { "name": "Retroactivo Oficial", "type": "currency", "precision": 2 },
+        { "name": "Cálculo JSON", "type": "multilineText" },
+        { "name": "Pago Definitivo ID", "type": "singleLineText" },
+        { "name": "Pago Cumplido", "type": "checkbox" },
+        { "name": "Intervención Reconocida ID", "type": "singleLineText" },
+        { "name": "Monto Reconocido", "type": "currency", "precision": 2 },
+        { "name": "Revisado Por", "type": "singleLineText" },
+        { "name": "Fecha Revisión", "type": "dateTime" },
+        { "name": "Motivo", "type": "multilineText" },
+        { "name": "Creado En", "type": "dateTime" },
+        { "name": "Actualizado En", "type": "dateTime" },
+        { "name": "Clave Idempotencia", "type": "singleLineText" }
+      ]
+    },
+    {
+      "name": "Auditoría Planta",
+      "description": "Bitácora append-only de todo cambio del módulo de planta.",
+      "fields": [
+        { "name": "Evento ID", "type": "singleLineText", "primary": true },
+        { "name": "Entidad", "type": "singleSelect", "choices": ["ACTIVO", "PERFIL", "INTERVENCION", "SOLICITUD", "REINCORPORACION", "GASTO"] },
+        { "name": "Entidad ID", "type": "singleLineText" },
+        { "name": "Acción", "type": "singleLineText" },
+        { "name": "Antes JSON", "type": "multilineText" },
+        { "name": "Después JSON", "type": "multilineText" },
+        { "name": "Actor", "type": "singleLineText" },
+        { "name": "Fecha/Hora", "type": "dateTime" },
+        { "name": "Motivo", "type": "multilineText" },
+        { "name": "Request ID", "type": "singleLineText" },
+        { "name": "Hash", "type": "singleLineText" }
+      ]
+    }
+  ]
+}

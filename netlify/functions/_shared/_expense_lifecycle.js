@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto=require('crypto');
+const {EXPENSE_FIELDS:PLANT_FIELDS}=require('./_plant_store');
 
 const FIELDS=Object.freeze({
  month:'Mes de Aplicación',
@@ -44,13 +45,13 @@ function isClosingExpense(record,month){
 function filterClosingExpenses(records,month){return(records||[]).filter(record=>isClosingExpense(record,month))}
 function compactTemplate(record,targetMonth){
  const fields=fieldsOf(record),owners=Array.isArray(fields.Propietarios)?[...fields.Propietarios].sort():[];
- return{sourceId:clean(record&&record.id),targetMonth,concept:clean(fields.Concepto),amount:Number(fields.Monto||0),type:choice(fields['Tipo de Gasto']),mode:choice(fields['Forma de Pago']||'Bs BCV'),frequency:choice(fields.Frecuencia||'Eventual'),owners};
+ return{sourceId:clean(record&&record.id),targetMonth,concept:clean(fields.Concepto),amount:Number(fields.Monto||0),type:choice(fields['Tipo de Gasto']),mode:choice(fields['Forma de Pago']||'Bs BCV'),frequency:choice(fields.Frecuencia||'Eventual'),owners,plant:{domain:choice(fields[PLANT_FIELDS.domain]),category:choice(fields[PLANT_FIELDS.category]),retroactive:fields[PLANT_FIELDS.retroactive]===true}};
 }
 function templateKey(template){
- return crypto.createHash('sha256').update(JSON.stringify({month:template.targetMonth,concept:template.concept,amount:template.amount,type:template.type,mode:template.mode,owners:template.owners})).digest('hex');
+ return crypto.createHash('sha256').update(JSON.stringify({month:template.targetMonth,concept:template.concept,amount:template.amount,type:template.type,mode:template.mode,owners:template.owners,plant:template.plant})).digest('hex');
 }
 function templateIdentity(template){
- return crypto.createHash('sha256').update(JSON.stringify({month:template.targetMonth,concept:template.concept,type:template.type,mode:template.mode,owners:template.owners})).digest('hex');
+ return crypto.createHash('sha256').update(JSON.stringify({month:template.targetMonth,concept:template.concept,type:template.type,mode:template.mode,owners:template.owners,plant:template.plant})).digest('hex');
 }
 function buildPreloadPlan(records,{closingMonth=currentMonthCaracas(),targetMonth=nextMonth(closingMonth),now=new Date()}={}){
  const all=records||[],targetRecords=all.filter(record=>monthOf(record)===targetMonth&&statusOf(record)!==STATUS.VOID),existingKeys=new Set(targetRecords.map(record=>templateKey(compactTemplate(record,targetMonth)))),existingIdentities=new Set(targetRecords.map(record=>templateIdentity(compactTemplate(record,targetMonth))));
@@ -60,7 +61,7 @@ function buildPreloadPlan(records,{closingMonth=currentMonthCaracas(),targetMont
   const template=compactTemplate(record,targetMonth),key=templateKey(template),identity=templateIdentity(template);
   if(existingKeys.has(key)||existingIdentities.has(identity))continue;
   existingKeys.add(key);existingIdentities.add(identity);
-  creates.push({sourceId:template.sourceId,key,fields:{Concepto:template.concept,Monto:template.amount,'Tipo de Gasto':template.type,'Forma de Pago':template.mode,Frecuencia:template.frequency,Propietarios:template.owners,[FIELDS.month]:targetMonth,[FIELDS.status]:STATUS.SCHEDULED,[FIELDS.origin]:ORIGIN.RECURRING,[FIELDS.templateKey]:key,[FIELDS.preparedAt]:now.toISOString()}});
+  creates.push({sourceId:template.sourceId,key,fields:{Concepto:template.concept,Monto:template.amount,'Tipo de Gasto':template.type,'Forma de Pago':template.mode,Frecuencia:template.frequency,Propietarios:template.owners,[FIELDS.month]:targetMonth,[FIELDS.status]:STATUS.SCHEDULED,[FIELDS.origin]:ORIGIN.RECURRING,[FIELDS.templateKey]:key,[FIELDS.preparedAt]:now.toISOString(),...(template.plant.domain?{[PLANT_FIELDS.domain]:template.plant.domain,[PLANT_FIELDS.category]:template.plant.category,[PLANT_FIELDS.retroactive]:template.plant.retroactive}:{})}});
  }
  return{schemaVersion:1,closingMonth,targetMonth,sourceCount:fixed.length,createCount:creates.length,creates};
 }

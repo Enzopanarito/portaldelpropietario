@@ -27,7 +27,7 @@ if (!backup?.integrity || backup.integrity.algorithm !== 'SHA-256') fail('Integr
 
 const actualNames = Object.keys(backup.tables).sort();
 const expectedNames = [...TABLES].sort();
-if (JSON.stringify(actualNames) !== JSON.stringify(expectedNames)) fail('Inventario de tablas no coincide con el canónico 12/12.');
+if (JSON.stringify(actualNames) !== JSON.stringify(expectedNames)) fail(`Inventario de tablas no coincide con el canónico ${TABLES.length}/${TABLES.length}.`);
 
 const tableCounts = {};
 const tableHashes = {};

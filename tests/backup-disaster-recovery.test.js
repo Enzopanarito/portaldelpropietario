@@ -52,12 +52,13 @@ function sampleBackup() {
   return backup;
 }
 
-test('inventario canónico sigue cubriendo 12 tablas', () => {
-  assert.equal(TABLES.length, 12);
-  assert.equal(new Set(TABLES).size, 12);
+test('inventario canónico cubre las 17 tablas, incluida la ficha y el expediente de planta', () => {
+  assert.equal(TABLES.length, 17);
+  assert.equal(new Set(TABLES).size, 17);
+  for (const table of ['Activos Planta', 'Perfiles Planta', 'Intervenciones Planta', 'Solicitudes Planta', 'Auditoría Planta']) assert.equal(TABLES.includes(table), true);
 });
 
-test('verificador acepta un backup íntegro 12/12', () => {
+test('verificador acepta un backup íntegro 17/17', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vla-backup-'));
   const file = path.join(dir, 'backup.json');
   const manifest = path.join(dir, 'manifest.json');
@@ -66,8 +67,8 @@ test('verificador acepta un backup íntegro 12/12', () => {
   assert.equal(run.status, 0, run.stderr);
   const out = JSON.parse(fs.readFileSync(manifest, 'utf8'));
   assert.equal(out.verification.result, 'PASS');
-  assert.equal(out.tableCount, 12);
-  assert.equal(out.verification.inventory, '12/12');
+  assert.equal(out.tableCount, 17);
+  assert.equal(out.verification.inventory, '17/17');
 });
 
 test('verificador rechaza manipulación de un registro', () => {
