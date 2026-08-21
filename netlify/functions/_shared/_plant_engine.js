@@ -92,8 +92,8 @@ function initialProfileForHouse({ ownerId, house, effectiveFrom, approvedBy = 'M
   else if (number === 11) policy = {
     state: PROFILE_STATE.SALE_RESERVE, participaReparaciones: false, participaMantenimiento: false,
     participaGasoilResidencial: false, participaBeneficioComun: false, servicioResidencialActivo: false,
-    reinstatementMode: REINSTATEMENT_MODE.OWNER_CHANGE_OR_AGREEMENT, specialAgreement: true,
-    reason: 'Acuerdo especial histórico por venta de la vivienda'
+    reinstatementMode: REINSTATEMENT_MODE.NOT_ALLOWED, specialAgreement: true,
+    reason: 'Exención total por acuerdo especial inicial'
   };
   else policy = {
     state: PROFILE_STATE.ACTIVE, participaReparaciones: true, participaMantenimiento: true,
@@ -172,13 +172,8 @@ function canAccrueRetroactive(profile) { return profile.reinstatementMode !== RE
 
 function allocateEqual(amount, participants) {
   const ordered = [...participants].sort((a, b) => Number(a.house) - Number(b.house) || clean(a.ownerId).localeCompare(clean(b.ownerId)));
-  const cents = Math.round(Number(amount || 0) * 100);
-  const base = Math.floor(cents / Math.max(1, ordered.length));
-  let remainder = cents - base * ordered.length;
-  return new Map(ordered.map(item => {
-    const share = base + (remainder-- > 0 ? 1 : 0);
-    return [item.ownerId, share / 100];
-  }));
+  const share = money(Number(amount || 0) / Math.max(1, ordered.length));
+  return new Map(ordered.map(item => [item.ownerId, share]));
 }
 
 function buildExpenseSnapshot({ owners, profiles, expense, effectiveDate = new Date(), classification, explicitOwnerIds, explicitCategory, explicitRetroactive }) {
@@ -237,6 +232,69 @@ function buildExpenseSnapshot({ owners, profiles, expense, effectiveDate = new D
       includedCount: participants.filter(item => item.included).length,
       excludedCount: participants.filter(item => !item.included).length,
       assignedAmount: money(participants.reduce((sum, item) => sum + item.amount, 0)),
+      roundingDifference: money(amount - participants.reduce((sum, item) => sum + item.amount, 0)),
+      theoreticalRetroactiveAmount: money(participants.reduce((sum, item) => sum + item.theoreticalRetroactiveAmount, 0))
+    }
+  };
+  payload.snapshotHash = hash(payload);
+  return payload;
+}
+
+function buildConfirmedHistoricalSnapshot({ owners, profiles, event, paidShares, confirmedAt = new Date(), confirmedBy = 'ADMIN' }) {
+  const date = isoDay(event?.date);
+  const concept = clean(event?.concept);
+  const category = clean(event?.category);
+  const amount = money(event?.amount);
+  if (!concept || !(amount > 0) || !DEFAULT_RETROACTIVE.has(category)) throw new Error('PLANT_HISTORICAL_EVENT_INVALID');
+  const shareEntries = paidShares instanceof Map ? [...paidShares.entries()] : Object.entries(paidShares || {});
+  const shares = new Map(shareEntries.map(([ownerId, value]) => [clean(ownerId), money(value)]).filter(([ownerId, value]) => ownerId && value > 0));
+  if (!shares.size) throw new Error('PLANT_HISTORICAL_PARTICIPANTS_REQUIRED');
+  const assignedAmount = money([...shares.values()].reduce((sum, value) => sum + value, 0));
+  const roundingDifference = money(amount - assignedAmount);
+  if (Math.abs(roundingDifference) > money(0.01 * shares.size)) throw new Error('PLANT_HISTORICAL_AMOUNT_MISMATCH');
+  const currentDay = isoDay(confirmedAt);
+  const flag = participantFlag(category);
+  const orderedShares = [...shares.values()].sort((left, right) => left - right);
+  if (orderedShares[orderedShares.length - 1] - orderedShares[0] > 0.01) throw new Error('PLANT_HISTORICAL_SHARE_MISMATCH');
+  const referenceShare = money(orderedShares[Math.floor(orderedShares.length / 2)]);
+  const rows = (owners || []).map(owner => {
+    const ownerId = clean(owner.id || owner.ownerId);
+    const profile = profileAt(profiles, ownerId, currentDay);
+    if (!profile) throw new Error(`PLANT_PROFILE_MISSING:${owner.house || owner.Casa || ownerId}`);
+    validateProfile(profile);
+    return { ownerId, house: Number(owner.house || owner.Casa || profile.house), profile };
+  }).sort((left, right) => left.house - right.house);
+  const participants = rows.map(row => {
+    const paid = money(shares.get(row.ownerId) || 0), included = paid > 0;
+    const inactiveForCategory = flag && row.profile[flag] === false && row.profile.servicioResidencialActivo === false;
+    const theoretical = !included && inactiveForCategory && canAccrueRetroactive(row.profile) ? referenceShare : 0;
+    return {
+      ownerId: row.ownerId, house: row.house, included,
+      profileId: row.profile.profileId, profileState: row.profile.state,
+      participationFlag: 'PADRON_HISTORICO_CONFIRMADO', amount: paid,
+      percentage: included ? Math.round((paid / amount) * 100000000) / 1000000 : 0,
+      theoreticalRetroactiveAmount: theoretical,
+      theoreticalRetroactivePercentage: theoretical > 0 ? Math.round((theoretical / amount) * 100000000) / 1000000 : 0,
+      reason: included ? 'PAGO_CONFIRMADO_EN_GASTO_EXISTENTE' : theoretical > 0 ? 'INACTIVO_NO_PARTICIPO_ACUMULA_REINCORPORACION' : 'NO_INCLUIDO_SIN_ACUMULADO'
+    };
+  });
+  const payload = {
+    schemaVersion: 1, effectiveDate: date, concept, category, totalAmount: amount,
+    paymentMode: clean(event?.mode || 'Bs BCV'), expenseType: 'Gasto Especial',
+    allocationRule: 'CUOTA_PAGADA_POR_PARTICIPANTES', generatesRetroactive: true,
+    accrualByConfirmedRoster: true,
+    sourceExpenseIds: Array.isArray(event?.sourceExpenseIds) ? event.sourceExpenseIds.map(clean).filter(Boolean).sort() : [],
+    classification: {
+      source: 'PADRON_HISTORICO_CONFIRMADO', confidence: 1, matchedTerms: [], requiresConfirmation: false,
+      confirmedAt: new Date(confirmedAt).toISOString(), confirmedBy: clean(confirmedBy || 'ADMIN')
+    },
+    participants,
+    totals: {
+      includedCount: participants.filter(item => item.included).length,
+      excludedCount: participants.filter(item => !item.included).length,
+      accruingCount: participants.filter(item => item.theoreticalRetroactiveAmount > 0).length,
+      assignedAmount,
+      roundingDifference,
       theoreticalRetroactiveAmount: money(participants.reduce((sum, item) => sum + item.theoreticalRetroactiveAmount, 0))
     }
   };
@@ -271,7 +329,8 @@ function calculateReinstatement({ ownerId, profiles, interventions, recognizedPa
     const interventionId = clean(intervention.interventionId || intervention.id);
     const date = isoDay(intervention.date || intervention.effectiveDate);
     const snapshot = parseSnapshot(intervention.snapshot || intervention.snapshotJson);
-    if (!interventionId || seen.has(interventionId) || date < exitDate || intervention.voided === true || !snapshot || !verifySnapshot(snapshot)) continue;
+    const confirmedHistoricalRoster = snapshot?.accrualByConfirmedRoster === true;
+    if (!interventionId || seen.has(interventionId) || (!confirmedHistoricalRoster && date < exitDate) || intervention.voided === true || !snapshot || !verifySnapshot(snapshot)) continue;
     seen.add(interventionId);
     if (!snapshot.generatesRetroactive || snapshot.category === CATEGORY.RESIDENTIAL_FUEL) continue;
     const participation = (snapshot.participants || []).find(item => clean(item.ownerId) === clean(ownerId));
@@ -283,7 +342,8 @@ function calculateReinstatement({ ownerId, profiles, interventions, recognizedPa
     const paid = money(specificPaid + generalPaid);
     lines.push({
       interventionId, date, concept: clean(snapshot.concept || intervention.description), category: snapshot.category,
-      gross, recognizedPayment: paid, amount: money(gross - paid), snapshotHash: snapshot.snapshotHash
+      gross, recognizedPayment: paid, amount: money(gross - paid), snapshotHash: snapshot.snapshotHash,
+      accrualBasis: confirmedHistoricalRoster ? 'PADRON_HISTORICO_CONFIRMADO' : 'PERFIL_VIGENTE_EN_LA_FECHA'
     });
   }
   lines.sort((a, b) => a.date.localeCompare(b.date) || a.interventionId.localeCompare(b.interventionId));
@@ -319,10 +379,12 @@ function ownerPlantView({ ownerId, profiles, interventions, recognizedPayments =
     if (!verifySnapshot(snapshot)) continue;
     const participation = (snapshot.participants || []).find(item => clean(item.ownerId) === clean(ownerId));
     if (!participation) continue;
+    const reinstatementAmount = money(participation.theoreticalRetroactiveAmount || 0);
     history.push({
       interventionId: clean(intervention.interventionId || intervention.id), date: isoDay(intervention.date || snapshot.effectiveDate),
       category: snapshot.category, description: clean(intervention.description || snapshot.concept), totalAmount: money(snapshot.totalAmount),
-      amount: money(participation.amount), status: participation.included ? 'CORRESPONDIA' : 'NO_CORRESPONDIA',
+      amount: money(participation.amount), reinstatementAmount,
+      status: participation.included ? 'CORRESPONDIA' : reinstatementAmount > 0 ? 'ACUMULA_REINCORPORACION' : 'NO_CORRESPONDIA',
       publicDocumentUrl: clean(intervention.publicDocumentUrl)
     });
   }
@@ -336,7 +398,8 @@ function ownerPlantView({ ownerId, profiles, interventions, recognizedPayments =
         residentialFuel: profile.participaGasoilResidencial, commonBenefit: profile.participaBeneficioComun
       },
       residentialServiceActive: profile.servicioResidencialActivo,
-      reinstatementMode: profile.reinstatementMode
+      reinstatementMode: profile.reinstatementMode,
+      specialAgreement: Boolean(profile.specialAgreement)
     },
     reinstatement: calculateReinstatement({ ownerId, profiles, interventions, recognizedPayments, at }),
     history
@@ -376,5 +439,6 @@ module.exports = {
   PROFILE_STATE, REINSTATEMENT_MODE, CATEGORY, PROFILE_FLAG_BY_CATEGORY, DEFAULT_RETROACTIVE,
   clean, money, normalize, isoDay, stable, hash, requestIdempotencyKey, initialProfileForHouse, validateProfile, profileAt, inactiveEpisodeStart,
   inferPlantExpense, participantFlag, allocateEqual, buildExpenseSnapshot, verifySnapshot, parseSnapshot,
+  buildConfirmedHistoricalSnapshot,
   calculateReinstatement, ownerPlantView, participationSummary
 };

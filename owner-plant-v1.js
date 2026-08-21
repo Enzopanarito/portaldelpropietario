@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var VERSION = 'owner-plant-v1-2026-08-21';
+  var VERSION = 'owner-plant-v2-2026-08-21';
   var requestSerial = 0;
   var activeChallenge = '';
   var stateLabels = {
@@ -73,15 +73,16 @@
   function render(data) {
     var current = data.current || {}, participation = current.participates || {}, reinstatement = data.reinstatement || {}, history = data.history || [];
     var rows = history.length ? history.map(function (item) {
-      var informational = item.status === 'SOLO_INFORMATIVO', corresponding = item.status === 'CORRESPONDIA';
+      var informational = item.status === 'SOLO_INFORMATIVO', corresponding = item.status === 'CORRESPONDIA', accumulating = item.status === 'ACUMULA_REINCORPORACION';
       var documentLink = /^https:\/\//i.test(item.publicDocumentUrl || '') ? '<a class="vla-plant-doc" href="' + esc(item.publicDocumentUrl) + '" target="_blank" rel="noopener">Documento</a>' : '';
-      return '<article class="vla-plant-history-row"><div><b>' + esc(item.description || label(categoryLabels, item.category)) + '</b><span>' + esc(item.date) + ' · ' + esc(label(categoryLabels, item.category)) + '</span></div><div class="vla-plant-history-result"><strong>' + (informational ? 'Informativo' : corresponding ? usd(item.amount) : 'No correspondía') + '</strong><span>' + (informational ? 'Sin cargo' : 'Total intervención: ' + usd(item.totalAmount)) + '</span>' + documentLink + '</div></article>';
+      return '<article class="vla-plant-history-row"><div><b>' + esc(item.description || label(categoryLabels, item.category)) + '</b><span>' + esc(item.date) + ' · ' + esc(label(categoryLabels, item.category)) + '</span></div><div class="vla-plant-history-result"><strong>' + (informational ? 'Informativo' : corresponding ? usd(item.amount) : accumulating ? 'Acumula ' + usd(item.reinstatementAmount) : 'No correspondía') + '</strong><span>' + (informational ? 'Sin cargo' : accumulating ? 'Se suma para una futura reincorporación' : 'Total intervención: ' + usd(item.totalAmount)) + '</span>' + documentLink + '</div></article>';
     }).join('') : '<p class="vla-plant-empty">Todavía no hay intervenciones publicadas.</p>';
     var retroLines = (reinstatement.lines || []).length ? '<details class="vla-plant-retro-detail"><summary>Ver cálculo verificable (' + reinstatement.lines.length + ')</summary>' + reinstatement.lines.map(function (line) { return '<div><span>' + esc(line.date) + ' · ' + esc(line.concept) + '</span><b>' + usd(line.amount) + '</b></div>'; }).join('') + '<p>' + esc(reinstatement.excludedFuelNotice || '') + '</p></details>' : '';
+    var reinstatementTotal = reinstatement.eligible ? usd(reinstatement.total) : current.specialAgreement ? 'Exento por acuerdo' : 'No aplica';
     ensureSection().querySelector('#vla-owner-plant-body').innerHTML =
       '<div class="vla-plant-status"><div><span>Casa ' + esc(data.house) + '</span><strong>' + esc(label(stateLabels, current.state)) + '</strong><small>Vigente desde ' + esc(current.effectiveFrom) + '</small></div><div class="vla-plant-service ' + (current.residentialServiceActive ? 'is-on' : 'is-off') + '">' + (current.residentialServiceActive ? 'Servicio activo' : 'Servicio no activo') + '</div></div>' +
       '<div class="vla-plant-rules"><div><span>Reparaciones</span>' + yes(participation.repairs) + '</div><div><span>Mantenimiento</span>' + yes(participation.maintenance) + '</div><div><span>Gasoil residencial</span>' + yes(participation.residentialFuel) + '</div><div><span>Beneficio común</span>' + yes(participation.commonBenefit) + '</div></div>' +
-      '<div class="vla-plant-retro"><div><span>Simulación de reincorporación</span><strong>' + usd(reinstatement.total) + '</strong><small>No modifica su deuda. Requiere revisión, pago definitivo y confirmación administrativa.</small></div>' + retroLines + '</div>' +
+      '<div class="vla-plant-retro"><div><span>Acumulado para reincorporarse</span><strong>' + reinstatementTotal + '</strong><small>Suma su cuota de cada reparación y mantenimiento ocurrido mientras no participaba. El gasoil no se incluye.</small></div>' + retroLines + '</div>' +
       '<div class="vla-plant-history"><h3>Historial técnico y económico</h3>' + rows + '</div>' +
       '<form id="vla-plant-request-form" class="vla-plant-request"><h3>Solicitar cambio de modalidad</h3><p>Enviar esta solicitud no cambia cargos ni activa el servicio automáticamente.</p><div class="vla-plant-request-grid"><select name="type" required><option value="REINCORPORACION">Solicitar reincorporación</option><option value="SUSPENSION">Solicitar suspensión</option><option value="CAMBIO_MODALIDAD">Cambiar modalidad</option><option value="RENUNCIA">Registrar renuncia</option><option value="CAMBIO_PROPIETARIO">Cambio de propietario</option></select><input name="proposedEffectiveDate" type="date" required></div><textarea name="reason" minlength="10" maxlength="1000" required placeholder="Explique el motivo"></textarea><input name="website" tabindex="-1" autocomplete="off" class="vla-plant-honeypot"><button type="submit">Enviar para revisión</button><div class="vla-plant-request-result" aria-live="polite"></div></form>';
     var form = document.getElementById('vla-plant-request-form');

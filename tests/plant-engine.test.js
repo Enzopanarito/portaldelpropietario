@@ -18,6 +18,8 @@ test('configuración inicial refleja los acuerdos sin convertirlos en una sola b
   assert.equal(house(15).reinstatementMode, engine.REINSTATEMENT_MODE.RETROACTIVE_APPROVAL);
   assert.equal(house(11).state, engine.PROFILE_STATE.SALE_RESERVE);
   assert.equal(house(11).participaBeneficioComun, false);
+  assert.equal(house(11).reinstatementMode, engine.REINSTATEMENT_MODE.NOT_ALLOWED);
+  assert.equal(house(11).specialAgreement, true);
   assert.equal(house(1).servicioResidencialActivo, true);
 });
 
@@ -38,7 +40,7 @@ test('reparación incluye 12 casas y guarda participación teórica sin redistri
   assert.equal(snapshot.totals.assignedAmount, 1200);
   assert.equal(snapshot.participants.find(item => item.house === 2).included, true);
   assert.equal(snapshot.participants.find(item => item.house === 3).theoreticalRetroactiveAmount, 100);
-  assert.equal(snapshot.participants.find(item => item.house === 11).theoreticalRetroactiveAmount, 100);
+  assert.equal(snapshot.participants.find(item => item.house === 11).theoreticalRetroactiveAmount, 0);
   assert.equal(engine.verifySnapshot(snapshot), true);
 });
 
@@ -82,6 +84,53 @@ test('reincorporación suma solo retroactivos válidos, resta pagos reconocidos 
   assert.equal(result.lines.some(line => line.category === engine.CATEGORY.RESIDENTIAL_FUEL), false);
 });
 
+test('padrón histórico confirmado acumula exactamente la cuota pagada por quienes sí participaron', () => {
+  const repairPayers = owners.filter(owner => ![3, 11, 15].includes(owner.house));
+  const repairShares = new Map(repairPayers.map(owner => [owner.id, 145.83]));
+  const repair = engine.buildConfirmedHistoricalSnapshot({
+    owners, profiles, confirmedAt: '2026-08-21', confirmedBy: 'ADMIN', paidShares: repairShares,
+    event: { date: '2026-08-20', concept: 'Reparación de generador y tarjeta', category: engine.CATEGORY.REPAIR, amount: 1750, sourceExpenseIds: ['repair-expense'] }
+  });
+  assert.equal(repair.totals.includedCount, 12);
+  assert.equal(repair.totals.accruingCount, 2);
+  assert.equal(repair.totals.assignedAmount, 1749.96);
+  assert.equal(repair.totals.roundingDifference, 0.04);
+  for (const house of [3, 15]) assert.equal(repair.participants.find(item => item.house === house).theoreticalRetroactiveAmount, 145.83);
+  assert.equal(repair.participants.find(item => item.house === 11).theoreticalRetroactiveAmount, 0);
+  assert.equal(engine.verifySnapshot(repair), true);
+
+  const maintenancePayers = owners.filter(owner => ![2, 3, 11, 12, 15].includes(owner.house));
+  const maintenance = engine.buildConfirmedHistoricalSnapshot({
+    owners, profiles, confirmedAt: '2026-08-21', confirmedBy: 'ADMIN',
+    paidShares: Object.fromEntries(maintenancePayers.map(owner => [owner.id, 51])),
+    event: { date: '2026-07-02', concept: 'Mantenimiento de planta eléctrica', category: engine.CATEGORY.PREVENTIVE_MAINTENANCE, amount: 510, sourceExpenseIds: maintenancePayers.map(owner => `maintenance-${owner.house}`) }
+  });
+  assert.equal(maintenance.totals.includedCount, 10);
+  assert.equal(maintenance.totals.accruingCount, 4);
+  for (const house of [2, 3, 12, 15]) assert.equal(maintenance.participants.find(item => item.house === house).theoreticalRetroactiveAmount, 51);
+  assert.equal(maintenance.participants.find(item => item.house === 11).theoreticalRetroactiveAmount, 0);
+
+  const house3 = engine.calculateReinstatement({ ownerId: 'owner-3', profiles, interventions: [
+    { interventionId: 'legacy-maintenance', date: '2026-07-02', snapshot: maintenance },
+    { interventionId: 'legacy-repair', date: '2026-08-20', snapshot: repair }
+  ], at: '2026-08-21' });
+  assert.equal(house3.interventionCount, 2);
+  assert.equal(house3.total, 196.83);
+  assert.deepEqual(house3.lines.map(line => line.accrualBasis), ['PADRON_HISTORICO_CONFIRMADO', 'PADRON_HISTORICO_CONFIRMADO']);
+  const house2 = engine.calculateReinstatement({ ownerId: 'owner-2', profiles, interventions: [
+    { interventionId: 'legacy-maintenance', date: '2026-07-02', snapshot: maintenance },
+    { interventionId: 'legacy-repair', date: '2026-08-20', snapshot: repair }
+  ], at: '2026-08-21' });
+  assert.equal(house2.total, 51);
+  const house11 = engine.calculateReinstatement({ ownerId: 'owner-11', profiles, interventions: [
+    { interventionId: 'legacy-maintenance', date: '2026-07-02', snapshot: maintenance },
+    { interventionId: 'legacy-repair', date: '2026-08-20', snapshot: repair }
+  ], at: '2026-08-21' });
+  assert.equal(house11.eligible, false);
+  assert.equal(house11.total, 0);
+  assert.equal(house11.interventionCount, 0);
+});
+
 test('un pago definitivo de reincorporación se descuenta una sola vez a través del desglose', () => {
   const first = engine.buildExpenseSnapshot({ owners, profiles, effectiveDate: '2026-09-01', expense: { concept: 'Reparación generador', amount: 1200, type: 'Gasto Especial' } });
   const second = engine.buildExpenseSnapshot({ owners, profiles, effectiveDate: '2026-10-01', expense: { concept: 'Mantenimiento preventivo planta', amount: 1000, type: 'Gasto Especial' } });
@@ -101,7 +150,8 @@ test('vista del propietario contiene solo su participación y el simulador no mu
   const view = engine.ownerPlantView({ ownerId: 'owner-3', profiles, interventions: [{ interventionId: 'repair', date: '2026-09-01', snapshot }], at: '2026-12-01' });
   assert.equal(view.ownerId, 'owner-3');
   assert.equal(view.history.length, 1);
-  assert.equal(view.history[0].status, 'NO_CORRESPONDIA');
+  assert.equal(view.history[0].status, 'ACUMULA_REINCORPORACION');
+  assert.equal(view.history[0].reinstatementAmount, 100);
   assert.equal(Object.prototype.hasOwnProperty.call(view.history[0], 'participants'), false);
   assert.equal(JSON.stringify(snapshot), frozen);
 });

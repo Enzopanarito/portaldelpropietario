@@ -132,7 +132,7 @@ const netlifyConfig = fs.readFileSync(path.join(__dirname, '../netlify.toml'), '
 assert.ok(/\[build\][\s\S]*publish\s*=\s*"dist"/.test(netlifyConfig), 'Netlify debe publicar únicamente el build público permitido');
 assert.ok(!/function = "(?:balance-fix|currency-balance-fix)"/.test(netlifyConfig), 'Los parches históricos no pueden seguir activos');
 const release = JSON.parse(fs.readFileSync(path.join(__dirname, '../release.json'), 'utf8'));
-assert.strictEqual(release.release, '2026-08-21-v14');
+assert.strictEqual(release.release, '2026-08-21-v15');
 assert.strictEqual(release.canonicalBalanceRelease, CANONICAL_CONTRACT.release);
 assert.strictEqual(release.expectedHouses, 15);
 
