@@ -85,6 +85,14 @@ test('Admin incorpora vista espejo, conteo automático y control manual notifica
   for (const field of ['Propietario', 'Email', 'MKJ Email']) assert(store.includes(field));
 });
 
+test('la lectura Admin de planta no carga SMTP y el deploy incluye nodemailer', () => {
+  const handler = read('netlify/functions/_shared/_plant_admin_handler.js');
+  const netlify = read('netlify.toml');
+  assert(!handler.includes("const notificationModule = require('./_plant_notifications')"));
+  assert(handler.includes("require('./_plant_notifications').sendPlantProfileChange"));
+  assert(netlify.includes('external_node_modules = ["pdfkit", "nodemailer"]'));
+});
+
 test('el inventario de respaldo incluye el expediente de planta completo', () => {
   const inventory = require('../netlify/functions/_shared/_backup_inventory').TABLES;
   for (const table of ['Activos Planta', 'Perfiles Planta', 'Intervenciones Planta', 'Solicitudes Planta', 'Auditoría Planta']) assert(inventory.includes(table));
