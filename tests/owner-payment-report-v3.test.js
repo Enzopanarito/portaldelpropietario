@@ -52,6 +52,6 @@ assert(server.includes("paymentChannel==='DIGITAL'?decodeAttachment(body.attachm
 assert(server.includes("'Archivo Obligatorio':paymentChannel==='DIGITAL'")&&server.includes('reserveIdentity'),'Debe conservar comprobante condicional y deduplicación.');
 assert(server.includes('connectLambdaEvent(event)')&&server.includes('POST_CREATE_TIMEOUT_MS'),'El guardado Blobs y las tareas posteriores deben estar protegidos.');
 assert(!server.includes('ACCEPTED_TRANSACTION_STATUSES'),'El cliente no decide si una transacción está completada.');
-assert(browserGate.includes('privatePlantResponses')&&browserGate.includes("response.status()===401")&&browserGate.includes('/api\\/vla\\/plant\\/public'),'El navegador debe correlacionar el 401 con el endpoint privado de planta.');
+assert(browserGate.includes('privatePlantResponses')&&browserGate.includes("response.status()===401")&&browserGate.includes("response.request().method()==='GET'")&&browserGate.includes('/api\\/vla\\/plant(?:\\?|$)'),'El navegador debe correlacionar el 401 con la lectura exacta del endpoint privado de planta.');
 assert(browserGate.includes('challenges.length===errors.privatePlantResponses')&&browserGate.includes('privateChallengeVisible'),'Solo el desafío OTP visible y exactamente correlacionado puede excluirse del error móvil.');
 console.log('owner-payment-report-proof-first-v9: OK');
