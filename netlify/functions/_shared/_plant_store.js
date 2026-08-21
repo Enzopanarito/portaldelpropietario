@@ -211,14 +211,23 @@ function auditFields(event) {
 
 async function loadPlantContext(store) {
   const [ownerRecords, paymentRecords, assetRecords, profileRecords, expenseRecords, interventionRecords, requestRecords] = await Promise.all([
-    store.listAll(TABLES.owners, ['Casa', 'Alicuota']),
+    store.listAll(TABLES.owners, ['Casa', 'Alicuota', 'Propietario', 'Email', 'MKJ Email']),
     store.listAll(TABLES.payments, ['ID de Pago', 'Propietario que Paga', 'Equivalente USD Aplicado', 'Monto Pagado', '[x] Aplicado al Cierre']),
     store.listAll(TABLES.assets),
     store.listAll(TABLES.profiles), store.listAll(TABLES.expenses, [
       'Concepto', 'Monto', 'Tipo de Gasto', 'Forma de Pago', 'Estado del Gasto', ...Object.values(EXPENSE_FIELDS)
     ]), store.listAll(TABLES.interventions), store.listAll(TABLES.requests)
   ]);
-  const owners = ownerRecords.map(record => ({ id: record.id, house: Number(fieldsOf(record).Casa), alicuota: Number(fieldsOf(record).Alicuota || 0) })).sort((a, b) => a.house - b.house);
+  const owners = ownerRecords.map(record => {
+    const fields = fieldsOf(record);
+    return {
+      id: record.id,
+      house: Number(fields.Casa),
+      alicuota: Number(fields.Alicuota || 0),
+      name: clean(fields.Propietario),
+      email: clean(fields.Email || fields['MKJ Email'])
+    };
+  }).sort((a, b) => a.house - b.house);
   const profiles = profileRecords.map(profileFromRecord);
   const interventions = [
     ...expenseRecords.map(expenseIntervention).filter(Boolean),

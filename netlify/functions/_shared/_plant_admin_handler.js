@@ -4,6 +4,7 @@ const { requireAdmin } = require('./_auth');
 const engine = require('./_plant_engine');
 const storeModule = require('./_plant_store');
 const fixtureModule = require('./_plant_fixture');
+const notificationModule = require('./_plant_notifications');
 const { safeDisplayText } = require('./_security_utils');
 
 function json(statusCode, body) { return { statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }, body: JSON.stringify(body) }; }
@@ -13,6 +14,9 @@ function fixtureEnvironment(env = process.env, event = null) {
   return values.some(value => ['staging', 'local', 'preview', 'deploy-preview', 'branch-deploy', 'dev'].includes(value)) || /^deploy-preview-\d+--/.test(host);
 }
 function previousDay(value) { const date = new Date(`${engine.isoDay(value)}T12:00:00.000Z`); date.setUTCDate(date.getUTCDate() - 1); return date.toISOString().slice(0, 10); }
+function caracasDay(value = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit' }).format(value);
+}
 function createContextLoader(env = process.env, fixture = fixtureEnvironment(env)) {
   if (fixture) return async () => fixtureModule.createPlantFixture(new Date());
   const store = storeModule.createPlantStore({ token: env.AIRTABLE_API_TOKEN, baseId: env.AIRTABLE_BASE_ID });
@@ -21,6 +25,7 @@ function createContextLoader(env = process.env, fixture = fixtureEnvironment(env
 
 function createHandler(deps = {}) {
   const injectedLoad = deps.loadContext || null;
+  const notifyOwner = deps.notifyOwner || notificationModule.sendPlantProfileChange;
   return async function handler(event) {
     const auth = (deps.requireAdmin || requireAdmin)(event); if (!auth.ok) return auth.response;
     try {
@@ -28,13 +33,18 @@ function createHandler(deps = {}) {
       const load = injectedLoad || createContextLoader(env, fixture);
       const context = await load();
       if (event.httpMethod === 'GET') {
-        const simulations = context.owners.map(owner => ({
-          house: owner.house, ownerId: owner.id,
-          profile: engine.profileAt(context.profiles, owner.id, new Date()),
-          reinstatement: engine.calculateReinstatement({ ownerId: owner.id, profiles: context.profiles, interventions: context.interventions, recognizedPayments: context.recognizedPayments, at: new Date() })
-        }));
+        const at = new Date();
+        const simulations = context.owners.map(owner => {
+          const ownerView = engine.ownerPlantView({ ownerId: owner.id, profiles: context.profiles, interventions: context.interventions, recognizedPayments: context.recognizedPayments, at });
+          return {
+            house: owner.house, ownerId: owner.id, ownerName: safeDisplayText(owner.name || `Casa ${owner.house}`, 180), hasEmail: Boolean(owner.email),
+            profile: engine.profileAt(context.profiles, owner.id, at), reinstatement: ownerView.reinstatement,
+            ownerView
+          };
+        });
         return json(200, {
-          success: true, moduleVersion: 1, readOnly: true, houses: simulations,
+          success: true, moduleVersion: 2, ownerViewContract: 'plant-owner-view-v1', readOnly: true, houses: simulations,
+          participationSummary: engine.participationSummary({ owners: context.owners, profiles: context.profiles, at }),
           asset: (context.assets || [])[0] || null,
           interventionCount: context.interventions.length,
           interventions: context.interventions.map(item => ({
@@ -76,12 +86,13 @@ function createHandler(deps = {}) {
       const store = deps.store || (fixture ? null : storeModule.createPlantStore({ token: env.AIRTABLE_API_TOKEN, baseId: env.AIRTABLE_BASE_ID }));
       const actor = safeDisplayText(auth.claims?.jti || 'ADMIN', 120), now = new Date().toISOString();
       if (body.action === 'create-profile-version') {
+        if (body.confirmation !== 'CONFIRMAR_CAMBIO_PLANTA') return json(400, { message: 'Debe confirmar explícitamente el cambio manual de condición de planta.' });
         const ownerId = String(body.ownerId || '').trim(), owner = context.owners.find(item => item.id === ownerId);
         if (!owner) return json(400, { message: 'Propietario inválido.' });
         const reason = safeDisplayText(body.reason, 500), effectiveFrom = engine.isoDay(body.effectiveFrom);
-        const today = engine.isoDay(new Date());
+        const today = caracasDay();
         if (reason.length < 5) return json(400, { message: 'Indique el motivo del cambio.' });
-        if (effectiveFrom <= today) return json(400, { message: 'Los cambios de perfil deben entrar en vigencia después de hoy; no se permiten exclusiones retroactivas.' });
+        if (effectiveFrom < today) return json(400, { message: 'La fecha no puede ser anterior a hoy; no se permiten exclusiones retroactivas.' });
         const existingVersion = context.profiles.find(item => item.ownerId === ownerId && item.effectiveFrom === effectiveFrom);
         if (existingVersion) return json(200, { success: true, idempotent: true, previewOnly: fixture, profile: existingVersion, message: 'Ya existe una versión programada para esa fecha. No se duplicó.' });
         const current = engine.profileAt(context.profiles, ownerId, effectiveFrom);
@@ -99,6 +110,8 @@ function createHandler(deps = {}) {
           observations: safeDisplayText(flags.observations, 1000), specialAgreement: Boolean(flags.specialAgreement),
           active: true, version, replacesProfileId: current.profileId
         });
+        const conditionFields = ['state', 'reinstatementMode', 'participaReparaciones', 'participaMantenimiento', 'participaGasoilResidencial', 'participaBeneficioComun', 'servicioResidencialActivo', 'specialAgreement', 'observations'];
+        if (conditionFields.every(field => profile[field] === current[field])) return json(400, { message: 'No hay ningún cambio de condición para confirmar.' });
         if (!current.servicioResidencialActivo && profile.servicioResidencialActivo) {
           const reinstatementRequestId = String(body.reinstatementRequestId || '').trim();
           const fulfilled = (context.requests || []).find(item => item.requestId === reinstatementRequestId && item.ownerId === ownerId && item.type === 'REINCORPORACION' && item.state === 'CUMPLIDA' && item.paymentComplete && item.definitivePaymentId);
@@ -107,13 +120,32 @@ function createHandler(deps = {}) {
           profile.reinstatementRequestId = fulfilled.requestId;
         }
         const previousEffectiveDay = previousDay(effectiveFrom);
+        let notification = { sent: false, status: 'Vista previa aislada', detail: 'No se envían correos desde un deploy de prueba.', recipientConfigured: Boolean(owner.email) };
         if (!fixture) {
           await store.createRecords(storeModule.TABLES.profiles, [storeModule.profileFields(profile)]);
           if (current.recordId) await store.patchRecords(storeModule.TABLES.profiles, [{ id: current.recordId, fields: { 'Fecha Fin Estado': previousEffectiveDay } }]);
           const audit = { eventId: `PLA-${engine.hash(profile).slice(0, 20).toUpperCase()}`, entity: 'PERFIL', entityId: profile.profileId, action: 'CREAR_VERSION', before: current, after: profile, actor, at: now, reason };
           audit.hash = engine.hash(audit); await store.createRecords(storeModule.TABLES.audit, [storeModule.auditFields(audit)]);
+          try {
+            notification = await notifyOwner({ owner, profile, previousProfile: current, portalUrl: env.URL || 'https://villalosapamates.netlify.app/' });
+          } catch (error) {
+            notification = { sent: false, status: 'Error de envío', detail: safeDisplayText(error?.message || 'No fue posible enviar el correo.', 300), recipientConfigured: Boolean(owner.email) };
+          }
+          const notificationState = { sent: Boolean(notification.sent), status: safeDisplayText(notification.status, 120), recipientConfigured: notification.recipientConfigured !== false };
+          const notificationAudit = {
+            eventId: `PLA-${engine.hash({ profileId: profile.profileId, notificationState }).slice(0, 20).toUpperCase()}`,
+            entity: 'PERFIL', entityId: profile.profileId, action: notification.sent ? 'NOTIFICAR_CAMBIO' : 'NOTIFICACION_PENDIENTE',
+            before: null, after: notificationState, actor, at: new Date().toISOString(), reason: notification.sent ? 'Correo de cambio enviado' : notificationState.status
+          };
+          notificationAudit.hash = engine.hash(notificationAudit);
+          try { await store.createRecords(storeModule.TABLES.audit, [storeModule.auditFields(notificationAudit)]); } catch (_) { /* El perfil ya fue confirmado; el fallo de auditoría del correo no lo revierte. */ }
         }
-        return json(201, { success: true, previewOnly: fixture, profile, message: 'Nueva versión programada sin recalcular gastos anteriores.' });
+        const message = fixture
+          ? 'Vista previa confirmada: se crearía la versión sin recalcular gastos anteriores y sin enviar correo desde el entorno de prueba.'
+          : notification.sent
+            ? 'Cambio confirmado sin recalcular gastos anteriores. El propietario fue notificado por correo.'
+            : `Cambio confirmado sin recalcular gastos anteriores. Correo pendiente: ${safeDisplayText(notification.status, 160)}.`;
+        return json(201, { success: true, previewOnly: fixture, profile, notification: { sent: Boolean(notification.sent), status: notification.status, recipientConfigured: notification.recipientConfigured !== false }, message });
       }
       if (body.action === 'review-request') {
         const request = (context.requests || []).find(item => item.requestId === String(body.requestId || '').trim());

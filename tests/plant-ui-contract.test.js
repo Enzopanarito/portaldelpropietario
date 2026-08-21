@@ -56,12 +56,27 @@ test('preview propietario y Admin fuerzan fixture por contexto o hostname', () =
 
 test('el panel Admin confirma el snapshot antes de crear un gasto automático', () => {
   const source = read('admin-plant-v1.js');
-  for (const marker of ['preview-expense', 'confirmPlantSnapshot', 'plantSnapshotHash', 'create-profile-version', 'confirm-reinstatement-payment', 'update-asset-profile', 'add-technical-history']) assert(source.includes(marker));
+  for (const marker of ['preview-expense', 'confirmPlantSnapshot', 'plantSnapshotHash', 'create-profile-version', 'CONFIRMAR_CAMBIO_PLANTA', 'confirm-reinstatement-payment', 'update-asset-profile', 'add-technical-history']) assert(source.includes(marker));
   for (const section of ['Resumen', 'Intervenciones', 'Mantenimientos', 'Reparaciones', 'Combustible', 'Participación por casa', 'Solicitudes de cambio', 'Reincorporaciones', 'Historial', 'Documentos']) assert(source.includes(section));
   assert(source.includes('plant-profile-simulate'));
   assert(source.includes('Imprimir / exportar PDF'));
   assert(source.indexOf('preview-expense') < source.indexOf('confirmPlantSnapshot'));
   new vm.Script(source, { filename: 'admin-plant-v1.js' });
+});
+
+test('Admin incorpora vista espejo, conteo automático y control manual notificado', () => {
+  const source = read('admin-plant-v1.js');
+  for (const marker of ['Ver como propietario', 'Vista espejo canónica', 'exactamente lo que ve el propietario', 'Conteo automático de participación', 'Control manual', 'Confirmar cambio y notificar']) assert(source.includes(marker));
+  assert(source.includes("window.confirm(confirmationText)"));
+  assert(source.includes("min=\"' + today()"));
+  const handler = read('netlify/functions/_shared/_plant_admin_handler.js');
+  assert(handler.includes("ownerViewContract: 'plant-owner-view-v1'"));
+  assert(handler.includes('engine.ownerPlantView'));
+  assert(handler.includes('engine.participationSummary'));
+  assert(handler.includes('NOTIFICAR_CAMBIO'));
+  assert(handler.includes('NOTIFICACION_PENDIENTE'));
+  const store = read('netlify/functions/_shared/_plant_store.js');
+  for (const field of ['Propietario', 'Email', 'MKJ Email']) assert(store.includes(field));
 });
 
 test('el inventario de respaldo incluye el expediente de planta completo', () => {

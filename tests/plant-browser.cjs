@@ -13,9 +13,10 @@ const ROOT = path.join(__dirname, '..');
 const owner = fixture.owners.find(item => item.house === 3);
 const ownerView = engine.ownerPlantView({ ownerId: owner.id, profiles: fixture.profiles, interventions: fixture.interventions, recognizedPayments: [], at: '2026-08-21' });
 const adminView = {
-  success: true, moduleVersion: 1, readOnly: true, asset: fixture.assets[0], interventionCount: fixture.interventions.length, requests: [],
+  success: true, moduleVersion: 2, ownerViewContract: 'plant-owner-view-v1', readOnly: true, asset: fixture.assets[0], interventionCount: fixture.interventions.length, requests: [],
+  participationSummary: engine.participationSummary({ owners: fixture.owners, profiles: fixture.profiles, at: '2026-08-21' }),
   interventions: fixture.interventions.map(item => ({ interventionId: item.interventionId, date: item.date, category: item.snapshot.category, description: item.description, amountUsd: item.snapshot.totalAmount, historicalOnly: false, source: item.source, voided: false })),
-  houses: fixture.owners.map(item => ({ house: item.house, ownerId: item.id, profile: engine.profileAt(fixture.profiles, item.id, '2026-08-21'), reinstatement: engine.calculateReinstatement({ ownerId: item.id, profiles: fixture.profiles, interventions: fixture.interventions, recognizedPayments: [], at: '2026-08-21' }) }))
+  houses: fixture.owners.map(item => { const view = engine.ownerPlantView({ ownerId: item.id, profiles: fixture.profiles, interventions: fixture.interventions, recognizedPayments: [], at: '2026-08-21' }); return { house: item.house, ownerId: item.id, ownerName: item.name, hasEmail: true, profile: engine.profileAt(fixture.profiles, item.id, '2026-08-21'), reinstatement: view.reinstatement, ownerView: view }; })
 };
 
 function ownerHtml() {
@@ -64,8 +65,14 @@ for (const viewport of [{ name: 'desktop', width: 1365, height: 900 }, { name: '
   test(`panel Admin planta funciona en ${viewport.name}`, async () => {
     const page = await browser.newPage({ viewport }); await page.goto(`${baseUrl}/admin`);
     await page.click('[data-target="plant-management"]'); await page.waitForSelector('#plant-management .plant-table-wrap tbody tr');
-    const result = await page.evaluate(() => ({ houses: document.querySelectorAll('#plant-management .plant-table-wrap tbody tr').length, sections: document.querySelectorAll('.plant-subnav a').length, asset: Boolean(document.querySelector('#plant-asset-form')), expenseIntelligence: Boolean(document.querySelector('#expense-domain')), factor: document.querySelector('[name="commonConsumptionFactor"]').value, overflow: document.documentElement.scrollWidth - innerWidth }));
-    assert.equal(result.houses, 15); assert.equal(result.sections, 10); assert.equal(result.asset, true); assert.equal(result.expenseIntelligence, true); assert.equal(result.factor, ''); assert(result.overflow <= 1);
+    const result = await page.evaluate(() => ({ houses: document.querySelectorAll('#plant-management .plant-table-wrap tbody tr').length, sections: document.querySelectorAll('.plant-subnav a').length, counts: document.querySelectorAll('.plant-count-grid>div').length, asset: Boolean(document.querySelector('#plant-asset-form')), expenseIntelligence: Boolean(document.querySelector('#expense-domain')), factor: document.querySelector('[name="commonConsumptionFactor"]').value, overflow: document.documentElement.scrollWidth - innerWidth }));
+    assert.equal(result.houses, 15); assert.equal(result.sections, 10); assert.equal(result.counts, 6); assert.equal(result.asset, true); assert.equal(result.expenseIntelligence, true); assert.equal(result.factor, ''); assert(result.overflow <= 1);
+    await page.click('.plant-owner-view'); await page.waitForSelector('.plant-owner-mirror .plant-mirror-banner');
+    assert.match(await page.textContent('.plant-owner-mirror'), /exactamente lo que ve el propietario/i);
+    await page.click('.plant-owner-mirror .plant-modal-x');
+    await page.click('.plant-profile-edit'); await page.waitForSelector('.plant-manual-control #plant-projected-counts');
+    assert.match(await page.textContent('.plant-manual-control'), /Confirmar cambio y notificar/i);
+    await page.click('.plant-manual-control .plant-modal-x');
     await page.click('.plant-profile-simulate'); await page.waitForSelector('.plant-simulation-total');
     await page.screenshot({ path: `/tmp/vla-plant-admin-${viewport.name}.png`, fullPage: true }); await page.close();
   });
