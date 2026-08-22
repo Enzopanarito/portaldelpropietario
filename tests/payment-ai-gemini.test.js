@@ -12,13 +12,16 @@ const gemini=require('../netlify/functions/_shared/_payment_ai_gemini');
   apiKey:'test-secret',
   fetchFn:async(url,options)=>{calls.push({url,options});return{ok:true,status:200,json:async()=>({candidates:[{content:{parts:[{text:'{"method":"ZELLE"}'}]}}]})}}
  });
- const raw=await runner({model:'gemini-2.5-flash',proof:{content:Buffer.from('proof'),contentType:'image/png'},report:{fields:{'Forma de Pago Reportada':'USD'}},promptVersion:'PROMPT'});
+ const raw=await runner({model:'gemini-2.5-flash',proof:{content:Buffer.from('proof'),contentType:'image/png'},report:{fields:{'Forma de Pago Reportada':'USD'}},promptVersion:'PROMPT',timeoutMs:45000});
  assert.strictEqual(raw,'{"method":"ZELLE"}');
  assert(!calls[0].url.includes('test-secret'));
  assert.strictEqual(calls[0].options.headers['x-goog-api-key'],'test-secret');
  const body=JSON.parse(calls[0].options.body);
  assert.strictEqual(body.contents[0].parts[1].inlineData.mimeType,'image/png');
  assert.strictEqual(body.generationConfig.responseMimeType,'application/json');
+ assert(body.generationConfig.responseJsonSchema,'Gemini debe recibir un schema JSON estructurado');
+ assert.deepStrictEqual(body.generationConfig.responseJsonSchema.required,gemini.REQUIRED);
+ assert.strictEqual(body.generationConfig.temperature,undefined,'No usar sampling temperature deprecado en modelos actuales');
  const prompt=body.contents[0].parts[0].text;
  assert.match(prompt,/segunda revisión enfocada en la fecha/i);
  assert.match(prompt,/No confundas.*barra del teléfono/i);
