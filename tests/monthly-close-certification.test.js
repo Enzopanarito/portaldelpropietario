@@ -79,7 +79,7 @@ test('22-24: MKJ usa deuda vencida, respeta excepción y corre después del DONE
   assert.match(access,/Excepción Acceso/);assert.match(access,/deuda vencida/i);
 });
 
-test('25-35: determinismo, stale plan, snapshot exacto, fecha inválida y locks',()=>{
+test('25-35: determinismo, stale plan, snapshot exacto, fecha inválida y locks fail-closed',()=>{
   const owners=[owner('b',2),owner('a',1)],expenses=[expense('e2','B',20,'USD','Activo','2026-08',['a','b']),expense('e1','A',100,'Bs BCV','Activo','2026-08',['a','b'])],payments=[payment('p2','b',10,'USD','2026-08-20'),payment('p1','a',10,'Bs BCV','2026-08-05')];
   const first=planFor({owners,expenses,payments}),second=planFor({owners:[...owners].reverse(),expenses:[...expenses].reverse(),payments:[...payments].reverse()});
   assert.equal(first.planHash,second.planHash);assert.equal(first.sourceHash,second.sourceHash);
@@ -91,8 +91,14 @@ test('25-35: determinismo, stale plan, snapshot exacto, fecha inválida y locks'
   assert.equal(snapshot.validateSnapshotRecords(records.slice(1),first).complete,false);
   const altered=structuredClone(records);altered[0].fields['Monto Cargado']+=1;assert.equal(snapshot.validateSnapshotRecords(altered,first).complete,false);
   assert.equal(snapshot.validateSnapshotRecords([...records,structuredClone(records[0])],first).complete,false);
-  const store=source('netlify/functions/_shared/_monthly_close_store.js');assert.match(store,/ACTIVE_LOCK_TTL_MS = 24 \* 60 \* 60 \* 1000/);assert.match(store,/doneDuringRace/);assert.match(store,/active\[0\]\.id !== own\.id/);
-  const endpoint=source('netlify/functions/monthly-close-v4.js');assert.match(endpoint,/closeWindowForMonth/);assert.match(endpoint,/validateSnapshotRecords/);assert.match(endpoint,/plan\.planHash !== submittedPlanHash/);
+  const store=source('netlify/functions/_shared/_monthly_close_store.js');
+  assert.match(store,/ACTIVE_LOCK_TTL_MS = 24 \* 60 \* 60 \* 1000/);
+  assert.match(store,/doneDuringRace/);
+  assert.match(store,/oldestLocked\(existing\)/);
+  assert.match(store,/winner\.id !== own\.id/);
+  assert.match(store,/requiresRecovery/);
+  assert.doesNotMatch(store,/marker\.createdAt >= cutoff/);
+  const endpoint=source('netlify/functions/monthly-close-v4.js');assert.match(endpoint,/closeWindowForMonth/);assert.match(endpoint,/validateSnapshotRecords/);assert.match(endpoint,/plan\.planHash !== submittedPlanHash/);assert.match(endpoint,/staleLock/);assert.match(endpoint,/requiresRecovery/);
 });
 
 test('36-42: 429/500, timeout, crash, retry y recovery desembocan en restauración o estado parcial explícito',()=>{
