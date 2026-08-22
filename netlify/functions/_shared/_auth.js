@@ -6,6 +6,7 @@
 const crypto = require('crypto');
 const TOKEN_TTL_MS = 6 * 60 * 60 * 1000;
 const CI_READONLY_TOKEN_TTL_MS = 20 * 60 * 1000;
+const FRESH_ADMIN_WINDOW_MS = 15 * 60 * 1000;
 const CLOCK_SKEW_MS = 60 * 1000;
 const ISSUER = 'villa-los-apamates';
 const AUDIENCE = 'vla-admin';
@@ -234,11 +235,34 @@ function requireAdmin(event) {
     }
   };
 }
+function requireFreshAdmin(event, maxAgeMs = FRESH_ADMIN_WINDOW_MS) {
+  const auth = requireAdmin(event);
+  if (!auth.ok) return auth;
+  if (auth.claims?.role !== 'admin') return { ok: false, response: forbiddenReadOnlyResponse() };
+  const now = Date.now();
+  const issuedAt = Number(auth.claims.iat || 0);
+  const allowedAge = Math.max(60 * 1000, Number(maxAgeMs) || FRESH_ADMIN_WINDOW_MS);
+  const fresh = Number.isFinite(issuedAt) && issuedAt > 0 && issuedAt <= now + CLOCK_SKEW_MS && (now - issuedAt) <= allowedAge;
+  if (fresh) return auth;
+  return {
+    ok: false,
+    response: {
+      statusCode: 403,
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+      body: JSON.stringify({
+        message: 'Esta acción crítica requiere una autenticación administrativa reciente. Inicie sesión nuevamente antes de continuar.',
+        stepUpRequired: true,
+        maxAgeMinutes: Math.round(allowedAge / 60000)
+      })
+    }
+  };
+}
 
 module.exports = {
   SESSION_KEY_DOMAIN,
   CI_READONLY_ROLE,
   CI_SAFE_GET_PATHS,
+  FRESH_ADMIN_WINDOW_MS,
   strong,
   isProductionEnvironment,
   deriveSessionSecret,
@@ -249,5 +273,6 @@ module.exports = {
   verifyAdminToken,
   decodeAndVerifyAdminToken,
   ciReadOnlyAllowed,
-  requireAdmin
+  requireAdmin,
+  requireFreshAdmin
 };
