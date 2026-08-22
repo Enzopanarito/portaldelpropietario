@@ -12,6 +12,8 @@ const TABLES = {
   control: 'ControlVersiones'
 };
 const CLOSE_PREFIX = 'MONTHLY_CLOSE|';
+// Umbral de diagnóstico, NO vencimiento del lock. Un LOCKED sin resolución
+// permanece bloqueante indefinidamente hasta transición explícita de estado.
 const ACTIVE_LOCK_TTL_MS = 24 * 60 * 60 * 1000;
 const SNAPSHOT_ROWS_PER_OWNER = 10;
 
@@ -83,19 +85,23 @@ async function patchBatches(tableName, records, token, baseId, counter, onBatch 
 function closePrefix(month) { return `${CLOSE_PREFIX}${month}|`; }
 function closeKey(month, status, opId) { return `${closePrefix(month)}${status}|${opId}`; }
 
-function parseCloseMarker(record, month) {
+function parseCloseMarker(record, month, now = Date.now()) {
   const key = String(record?.fields?.Key || '');
   const prefix = closePrefix(month);
   if (!key.startsWith(prefix)) return null;
   const rest = key.slice(prefix.length);
   const separator = rest.indexOf('|');
   if (separator < 0) return null;
+  const createdAt = Date.parse(record.createdTime || '');
+  const ageMs = Number.isFinite(createdAt) ? Math.max(0, now - createdAt) : null;
   return {
     record,
     id: record.id,
     status: rest.slice(0, separator),
     operationId: rest.slice(separator + 1),
-    createdAt: Date.parse(record.createdTime || '')
+    createdAt,
+    ageMs,
+    stale: ageMs === null || ageMs >= ACTIVE_LOCK_TTL_MS
   };
 }
 
@@ -103,7 +109,8 @@ async function listCloseMarkers(month, token, baseId, counter) {
   const prefix = closePrefix(month);
   const formula = encodeURIComponent(`LEFT({Key}, ${prefix.length})='${prefix}'`);
   const records = await getAll(TABLES.control, `?filterByFormula=${formula}`, token, baseId, counter);
-  return records.map(record => parseCloseMarker(record, month)).filter(Boolean);
+  const now = Date.now();
+  return records.map(record => parseCloseMarker(record, month, now)).filter(Boolean);
 }
 
 async function setCloseMarker(marker, month, status, token, baseId, counter) {
@@ -115,12 +122,37 @@ async function setCloseMarker(marker, month, status, token, baseId, counter) {
   }, token, baseId, counter);
 }
 
+function oldestLocked(markers) {
+  return (markers || [])
+    .filter(marker => marker.status === 'LOCKED')
+    .sort((a, b) => {
+      // Fecha inválida se trata como la más antigua y, por tanto, la más
+      // conservadora. Nunca se usa una fecha dañada para saltar un lock.
+      const left = Number.isFinite(a.createdAt) ? a.createdAt : Number.MIN_SAFE_INTEGER;
+      const right = Number.isFinite(b.createdAt) ? b.createdAt : Number.MIN_SAFE_INTEGER;
+      return left - right || String(a.id).localeCompare(String(b.id));
+    })[0] || null;
+}
+
 async function acquireCloseLock(month, token, baseId, counter) {
   const existing = await listCloseMarkers(month, token, baseId, counter);
   const done = existing.find(marker => marker.status === 'DONE');
   if (done) return { ok: false, status: 'already-closed', marker: done };
   const partial = existing.find(marker => marker.status === 'ERROR_PARTIAL');
   if (partial) return { ok: false, status: 'partial-error', marker: partial };
+
+  // Fail closed frente a procesos huérfanos: ningún LOCKED deja de importar por
+  // edad. Si tiene más de 24h se etiqueta stale y exige recuperación explícita.
+  const unresolved = oldestLocked(existing);
+  if (unresolved) {
+    return {
+      ok: false,
+      status: 'in-progress',
+      marker: unresolved,
+      stale: unresolved.stale === true,
+      requiresRecovery: unresolved.stale === true
+    };
+  }
 
   const opId = `${Date.now().toString(36)}-${crypto.randomBytes(6).toString('hex')}`;
   const created = await createRecord(TABLES.control, { Key: closeKey(month, 'LOCKED', opId), Version: 1 }, token, baseId, counter);
@@ -135,17 +167,18 @@ async function acquireCloseLock(month, token, baseId, counter) {
     return { ok: false, status: doneDuringRace ? 'already-closed' : 'partial-error', marker: doneDuringRace || partialDuringRace };
   }
 
-  const cutoff = Date.now() - ACTIVE_LOCK_TTL_MS;
-  const active = reread.filter(marker => marker.status === 'LOCKED')
-    .filter(marker => marker.id === own.id || !Number.isFinite(marker.createdAt) || marker.createdAt >= cutoff)
-    .sort((a, b) => {
-      const left = Number.isFinite(a.createdAt) ? a.createdAt : Number.MAX_SAFE_INTEGER;
-      const right = Number.isFinite(b.createdAt) ? b.createdAt : Number.MAX_SAFE_INTEGER;
-      return left - right || String(a.id).localeCompare(String(b.id));
-    });
-  if (!active[0] || active[0].id !== own.id) {
+  // La carrera se resuelve por el LOCKED más antiguo entre TODOS los no resueltos,
+  // sin filtrar por TTL. El perdedor se marca ABORTED y no ejecuta finanzas.
+  const winner = oldestLocked(reread);
+  if (!winner || winner.id !== own.id) {
     await setCloseMarker(own, month, 'ABORTED', token, baseId, counter).catch(() => null);
-    return { ok: false, status: 'in-progress', marker: active[0] || null };
+    return {
+      ok: false,
+      status: 'in-progress',
+      marker: winner || null,
+      stale: winner?.stale === true,
+      requiresRecovery: winner?.stale === true
+    };
   }
   return { ok: true, marker: own };
 }
@@ -219,8 +252,10 @@ module.exports = {
   patchRecord,
   patchBatches,
   closeKey,
+  parseCloseMarker,
   listCloseMarkers,
   setCloseMarker,
+  oldestLocked,
   acquireCloseLock,
   operationName,
   createOperationLog,

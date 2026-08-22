@@ -1,7 +1,7 @@
 'use strict';
 
 const { withAirtableUsage } = require('./_shared/_airtable_meter');
-const { requireAdmin } = require('./_shared/_auth');
+const { requireAdmin, requireFreshAdmin } = require('./_shared/_auth');
 const { ensureFinancialWritesAllowed } = require('./_shared/_financial_write_lock');
 const { airtableGetRecord, airtablePatchRecord, syncOwnerAccess, TABLES, json } = require('./_shared/_access_control');
 const { safeDisplayText, deepEscapeStrings } = require('./_shared/_security_utils');
@@ -166,12 +166,13 @@ async function finalizeRecoveredReversal(report,{who,reason,paymentId,at}){
 }
 
 const handler=async function(event){
-  const auth=requireAdmin(event);if(!auth.ok)return auth.response;
-  if(event.httpMethod==='GET'){
+  const method=String(event.httpMethod||'GET').toUpperCase();
+  const auth=method==='POST'?requireFreshAdmin(event):requireAdmin(event);if(!auth.ok)return auth.response;
+  if(method==='GET'){
     try{return{statusCode:200,headers:NO_STORE,body:JSON.stringify(deepEscapeStrings(await loadHistory()))};}
     catch(error){return{statusCode:500,headers:NO_STORE,body:JSON.stringify({message:'No se pudo cargar el historial de autopagos.',detail:safeDisplayText(error.message,500)})};}
   }
-  if(event.httpMethod!=='POST')return{statusCode:405,headers:NO_STORE,body:JSON.stringify({message:'Method Not Allowed'})};
+  if(method!=='POST')return{statusCode:405,headers:NO_STORE,body:JSON.stringify({message:'Method Not Allowed'})};
   let body={};try{body=JSON.parse(event.body||'{}');}catch(_){body={};}
   const reportId=clean(body.reportId),requestedPaymentId=clean(body.paymentId),reason=safeDisplayText(body.reason||'',500);
   if(!validRecordId(reportId)||!validRecordId(requestedPaymentId))return{statusCode:400,headers:NO_STORE,body:JSON.stringify({message:'Reporte o pago inválido.'})};

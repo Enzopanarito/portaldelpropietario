@@ -22,14 +22,15 @@ jobs:
       NETLIFY_SITE_ID_PRIMARY: ${{ secrets.NETLIFY_SITE_ID }}
       NETLIFY_SITE_ID_FALLBACK: ${{ secrets.NETLIFY_SITE_ID_VILLALOSAPAMATES }}
       PREVIEW_ALIAS: deploy-preview-${{ github.event.pull_request.number }}
+      NETLIFY_CLI_VERSION: '27.1.2'
     steps:
       - name: Checkout exact PR head
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Use Node.js 24
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
           package-manager-cache: false
@@ -69,7 +70,7 @@ jobs:
         run: |
           set -euo pipefail
           output="${RUNNER_TEMP}/netlify-cli-preview.json"
-          npx --yes netlify-cli@latest deploy \
+          npx --yes "netlify-cli@${NETLIFY_CLI_VERSION}" deploy \
             --no-build \
             --dir=dist \
             --functions=netlify/functions \
@@ -133,6 +134,7 @@ jobs:
             echo "Preview: \`https://${PREVIEW_ALIAS}--villalosapamates.netlify.app\`"
             echo "Deploy: \`${{ steps.deploy.outputs.deploy_id }}\`"
             echo "PR head: \`${{ github.event.pull_request.head.sha }}\`"
+            echo "Netlify CLI: \`${NETLIFY_CLI_VERSION}\`"
             echo
-            echo 'El artefacto se construyó en GitHub y se subió con Netlify CLI; no consume un hosted build de Netlify.'
+            echo 'El artefacto se construyó en GitHub y se subió con Netlify CLI fijado; no consume un hosted build de Netlify.'
           } >> "$GITHUB_STEP_SUMMARY"

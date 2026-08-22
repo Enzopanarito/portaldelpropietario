@@ -1,7 +1,7 @@
 'use strict';
 
 const {withAirtableUsage}=require('./_shared/_airtable_meter');
-const {requireAdmin}=require('./_shared/_auth');
+const {requireAdmin,requireFreshAdmin}=require('./_shared/_auth');
 const {getAccessMode,getAutomationRules,airtablePatchRecord}=require('./_shared/_access_control');
 const {FIELD_NAMES,mergeConfig,validateRules,cycleStatus}=require('./_shared/_automation_rules');
 const {deepEscapeStrings,safeDisplayText}=require('./_shared/_security_utils');
@@ -32,11 +32,12 @@ const INPUT_MAP=Object.freeze({
 function json(statusCode,body){return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'},body:JSON.stringify(body)}}
 function payload(info,configFields={}){return deepEscapeStrings({success:true,configured:info.configured,rules:info.rules,validation:info.validation,activationPreflight:checkAutomationActivation({rules:info.rules}),paymentPreflight:checkPaymentAutomation({rules:info.rules,configFields}),cycle:cycleStatus(info.rules),recordId:info.recordId,ai:{enabled:configFields['AI Enabled']===true,primaryModel:configFields['AI Primary Model']||'',secondaryModel:configFields['AI Secondary Model']||'',secondaryEnabled:configFields['AI Secondary Enabled']===true,minimumConfidence:Number(configFields['AI Minimum Confidence']||0.85)}})}
 const handler=async function(event){
- const auth=requireAdmin(event);if(!auth.ok)return auth.response;
+ const method=String(event.httpMethod||'GET').toUpperCase();
+ const auth=method==='POST'?requireFreshAdmin(event):requireAdmin(event);if(!auth.ok)return auth.response;
  try{
   const mode=await getAccessMode(),current=await getAutomationRules(mode);
-  if(event.httpMethod==='GET')return json(200,payload(current,mode.record?.fields||{}));
-  if(event.httpMethod!=='POST')return json(405,{message:'Method Not Allowed'});
+  if(method==='GET')return json(200,payload(current,mode.record?.fields||{}));
+  if(method!=='POST')return json(405,{message:'Method Not Allowed'});
   if(!mode.recordId)return json(409,{message:'No existe el registro principal de Configuración.'});
   const body=JSON.parse(event.body||'{}'),patch={};
   for(const[input,field]of Object.entries(INPUT_MAP))if(Object.prototype.hasOwnProperty.call(body,input))patch[field]=body[input];

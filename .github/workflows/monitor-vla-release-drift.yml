@@ -1,0 +1,113 @@
+name: Monitor VLA Release Drift
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: vla-release-drift-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PRODUCTION_URL: https://villalosapamates.netlify.app
+      FAILOVER_URL: https://vla-failover.vercel.app
+      ALERT_TITLE: '🚨 VLA drift producción/failover: atención requerida'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout canonical main commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Verify production release and failover parity
+        id: drift
+        shell: bash
+        run: |
+          set -u
+          healthy=false
+          reason='UNKNOWN'
+          production_release="${RUNNER_TEMP}/production-release.json"
+          failover_health="${RUNNER_TEMP}/failover-health.json"
+
+          prod_code="$(curl --silent --show-error --location --max-time 30 \
+            --output "$production_release" --write-out '%{http_code}' \
+            "${PRODUCTION_URL}/release.json?drift=${GITHUB_RUN_ID}" 2>/dev/null || printf '000')"
+          failover_code="$(curl --silent --show-error --location --max-time 30 \
+            --output "$failover_health" --write-out '%{http_code}' \
+            "${FAILOVER_URL}/api/failover-health?drift=${GITHUB_RUN_ID}" 2>/dev/null || printf '000')"
+
+          if [ "$prod_code" != '200' ]; then
+            reason="PRODUCTION_RELEASE_HTTP_${prod_code}"
+          elif [ "$failover_code" != '200' ]; then
+            reason="FAILOVER_HEALTH_HTTP_${failover_code}"
+          elif EXPECTED_COMMIT="$GITHUB_SHA" node - "$production_release" "$failover_health" <<'NODE'
+          const fs=require('fs');
+          const expected=require('./release.json');
+          const production=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+          const failover=JSON.parse(fs.readFileSync(process.argv[3],'utf8'));
+          const problems=[];
+          const sameRelease=JSON.stringify(production)===JSON.stringify(expected);
+          if(!sameRelease) problems.push('PRODUCTION_RELEASE_MISMATCH');
+          if(failover?.ok!==true||failover?.status!=='operational') problems.push('FAILOVER_NOT_OPERATIONAL');
+          if(String(failover?.sourceCommit||'')!==String(process.env.EXPECTED_COMMIT||'')) problems.push('FAILOVER_COMMIT_DRIFT');
+          if(String(failover?.sourceRelease||'')!==String(expected.release||'')) problems.push('FAILOVER_RELEASE_DRIFT');
+          if(String(failover?.dataEnvironment||'').toLowerCase()!=='staging') problems.push('FAILOVER_DATA_ENV_NOT_STAGING');
+          if(String(failover?.writeMode||'').toLowerCase()!=='disabled'||failover?.writeActive===true) problems.push('FAILOVER_WRITES_NOT_DISABLED');
+          if(String(failover?.monthlyClose||'').toLowerCase()!=='blocked') problems.push('FAILOVER_CLOSE_NOT_BLOCKED');
+          if(problems.length){console.error(problems.join(','));process.exit(1)}
+          console.log(`VLA_RELEASE_DRIFT_OK commit=${process.env.EXPECTED_COMMIT} release=${expected.release}`);
+          NODE
+          then
+            healthy=true
+            reason='MATCH'
+          else
+            reason='CONTRACT_DRIFT'
+          fi
+
+          echo "healthy=$healthy" >> "$GITHUB_OUTPUT"
+          echo "reason=$reason" >> "$GITHUB_OUTPUT"
+          echo "production_http=$prod_code" >> "$GITHUB_OUTPUT"
+          echo "failover_http=$failover_code" >> "$GITHUB_OUTPUT"
+          echo "VLA drift monitor: healthy=$healthy reason=$reason production=$prod_code failover=$failover_code"
+
+      - name: Open one drift incident
+        if: steps.drift.outputs.healthy != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --json number,title | jq -r --arg title "$ALERT_TITLE" '.[] | select(.title == $title) | .number' | head -1)"
+          if [ -z "$existing" ]; then
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$ALERT_TITLE" --body "El monitor horario detectó divergencia entre el release canónico de GitHub, Netlify producción o el failover Vercel.\n\n- Motivo: ${{ steps.drift.outputs.reason }}\n- Producción HTTP: ${{ steps.drift.outputs.production_http }}\n- Failover HTTP: ${{ steps.drift.outputs.failover_http }}\n- Main esperado: ${GITHUB_SHA}\n- Detectado: $(date -u +'%Y-%m-%dT%H:%M:%SZ')\n- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\n\nEste watchdog es estrictamente de solo lectura. No activa el failover, no modifica Airtable, no cambia credenciales y no ejecuta cierres ni WhatsApp."
+          else
+            echo "Incident issue #$existing already open; no duplicate created."
+          fi
+
+      - name: Close drift incident after recovery
+        if: steps.drift.outputs.healthy == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --json number,title | jq -r --arg title "$ALERT_TITLE" '.[] | select(.title == $title) | .number' | head -1)"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "✅ Producción y failover volvieron a coincidir con main el $(date -u +'%Y-%m-%dT%H:%M:%SZ')."
+            gh issue close "$existing" --repo "$GITHUB_REPOSITORY" --reason completed
+          fi
+
+      - name: Summarize drift status
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### VLA Release Drift Monitor'
+            echo
+            echo "Estado: \`${{ steps.drift.outputs.healthy || 'false' }}\`"
+            echo "Motivo: \`${{ steps.drift.outputs.reason || 'unknown' }}\`"
+            echo "Main: \`${GITHUB_SHA}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
