@@ -11,6 +11,7 @@ const PUBLIC_FILES=[
   'index.html','admin.html','audit.html','auditoria.html','cierre-auditoria.html',
   'mkj-access.html','seguridad.html','verificar-respaldo.html','whatsapp.html',
   'admin-autopilot.css','admin-autopilot.js','admin-feature-parity.js',
+  'admin-autopay-supervision.css','admin-autopay-supervision.js',
   'admin-plant-v1.css','admin-plant-v1.js',
   'admin-owner-access-v1.js','admin-premium-10.css','admin-premium-10.js',
   'admin-payment-review-v10.css','admin-payment-review-v10.js',
@@ -49,6 +50,7 @@ const OWNER_SOCIAL_HEAD=`
 <link rel="apple-touch-icon" sizes="180x180" href="/assets/vla-icon-180.png">`;
 
 const ADMIN_FORGOT_PASSWORD=`<p id='vla-admin-forgot-password' class='text-center mt-4'><a href='/seguridad.html?recover=1' class='text-sm font-semibold text-sky-700 hover:text-sky-900 underline underline-offset-4'>¿Olvidaste tu contraseña?</a></p>`;
+const ADMIN_AUTOPAY_ASSETS=`<link rel="stylesheet" href="/admin-autopay-supervision.css"><script defer src="/admin-autopay-supervision.js"></script>`;
 
 function transformHtml(name,text){
   let html=text.replace(TAILWIND_CDN,'<link rel="stylesheet" href="/tailwind.generated.css">');
@@ -59,6 +61,10 @@ function transformHtml(name,text){
     const marker="<p id='login-error'";
     if(!html.includes(marker))throw new Error('No se encontró el punto seguro para insertar recuperación de contraseña en admin.html.');
     html=html.replace(marker,ADMIN_FORGOT_PASSWORD+marker);
+  }
+  if(name==='admin.html'&&!html.includes('/admin-autopay-supervision.js')){
+    if(!html.includes('</head>'))throw new Error('No se encontró </head> para insertar supervisión de autopagos en admin.html.');
+    html=html.replace('</head>',ADMIN_AUTOPAY_ASSETS+'\n</head>');
   }
   return html;
 }
