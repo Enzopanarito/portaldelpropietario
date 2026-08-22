@@ -59,6 +59,12 @@ function normalApprovalBlockers(fields={},{automatic=false}={}){
  const validation=selectName(fields['Resultado Validación']);
  const allowed=automatic?['Coincidencia exacta verificada']:['Coincide preliminarmente','Coincidencia exacta verificada'];
  if(!allowed.includes(validation))blockers.push('VALIDATION_NOT_GREEN');
+ if(automatic){
+  const rules=parseJson(fields['Rules Evaluation JSON']),consensus=rules?.aiConsensus||{};
+  if(consensus.passed!==true)blockers.push('AI_CONSENSUS_NOT_VERIFIED');
+  if(Number(consensus.minimumConfidence||0)<0.97||Number(consensus.primaryConfidence||0)<0.97||Number(consensus.secondaryConfidence||0)<0.97)blockers.push('AI_CONSENSUS_CONFIDENCE_TOO_LOW');
+  if(!Array.isArray(consensus.sharedRecipientEvidence)||consensus.sharedRecipientEvidence.length<1)blockers.push('AI_CONSENSUS_RECIPIENT_MISSING');
+ }
  return[...new Set(blockers)];
 }
 function effectivePayment(fields={},corrections={}){
