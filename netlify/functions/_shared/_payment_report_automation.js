@@ -51,76 +51,78 @@ function proofDescriptor(report){
  return{sha256:clean(fields['Hash SHA-256']),visualHash:clean(fields['Hash Perceptual']),blobKey:clean(fields['Comprobante Blob Key']),contentType:clean(fields['Comprobante MIME']),filename:clean(fields['Comprobante Nombre Original']||'comprobante')};
 }
 function resultFields(result,report=null){
- const analysis=result?.analysis?.normalized||{},snapshot=result?.snapshot||{},decision=result?.decision||{},audit=result?.analysis?.audit||[],primaryAudit=audit.find(item=>item?.secondary!==true)||{},secondaryAudit=audit.find(item=>item?.secondary===true)||{},lastAudit=audit[audit.length-1]||{},reportFields=fieldsOf(report),priorDate=clean(reportFields['Fecha Operación Detectada']),priorDateSource=clean(select(reportFields['Fuente Fecha Operación']))||'UNDETERMINED',priorDateEvidence=clean(reportFields['Evidencia Fecha Operación']),resolvedDate=clean(analysis.transaction_date)||priorDate,dateVerified=Boolean(clean(analysis.transaction_date));
+ const analysis=result?.analysis?.normalized||null,snapshot=result?.snapshot||{},decision=result?.decision||{},audit=result?.analysis?.audit||[],primaryAudit=audit.find(item=>item?.secondary!==true)||{},secondaryAudit=audit.find(item=>item?.secondary===true)||{},lastAudit=audit[audit.length-1]||{},reportFields=fieldsOf(report),priorDate=clean(reportFields['Fecha Operación Detectada']),priorDateSource=clean(select(reportFields['Fuente Fecha Operación']))||'UNDETERMINED',priorDateEvidence=clean(reportFields['Evidencia Fecha Operación']),resolvedDate=clean(analysis?.transaction_date)||priorDate,dateVerified=Boolean(clean(analysis?.transaction_date)),hasAnalysis=Boolean(analysis&&typeof analysis==='object'),hasDecision=Boolean(decision&&Object.keys(decision).length),failureReason=clean(result?.analysis?.failureReason||result?.reason),failureDetail=clean(result?.detail),failureText=[failureReason,failureDetail].filter(Boolean).join(': ').slice(0,600),priorAnalysis=clean(reportFields['Normalized Analysis JSON']),priorConfidence=Number(reportFields['AI Confidence']||0),ruleEnvelope=hasDecision?decision:failureReason?{automaticApproval:false,requiresAdminDecision:true,reason:failureReason,detail:failureDetail||undefined,processingAttempts:Number(result?.processingAttempts||0)}:{};
  const fields={
   'Estado de Procesamiento':clean(result?.processingState||'Revisión manual urgente'),
   'Resultado Validación':clean(result?.resultValidation||'Revisión manual urgente'),
-  'Rules Evaluation JSON':compactJson(decision),
-  'Detalle de Inconsistencias':compactJson(decision.reasons||[]),
-  'Normalized Analysis JSON':compactJson(analysis),
+  'Rules Evaluation JSON':compactJson(ruleEnvelope),
+  'Detalle de Inconsistencias':compactJson(hasDecision?(decision.reasons||[]):failureReason?[failureReason]:[]),
+  'Normalized Analysis JSON':hasAnalysis?compactJson(analysis):(priorAnalysis||undefined),
   'AI Primary Raw JSON':clean(result?.analysis?.rawPrimary).slice(0,90000),
   'AI Secondary Raw JSON':clean(result?.analysis?.rawSecondary).slice(0,90000),
-  'AI Confidence':Number(analysis.confidence||0),
-  'AI Failure Reason':clean(result?.analysis?.failureReason),
-  'AI Provider Principal':clean(primaryAudit.provider||lastAudit.provider),
-  'AI Model Principal':clean(primaryAudit.model),
+  'AI Confidence':hasAnalysis?Number(analysis.confidence||0):(priorConfidence||undefined),
+  'AI Failure Reason':failureReason||'',
+  'Último Error de Procesamiento':failureText||'',
+  'Intentos de Procesamiento':Number(result?.processingAttempts||0)||undefined,
+  'AI Provider Principal':clean(primaryAudit.provider||lastAudit.provider)||(hasAnalysis?'':clean(reportFields['AI Provider Principal'])),
+  'AI Model Principal':clean(primaryAudit.model)||(hasAnalysis?'':clean(reportFields['AI Model Principal'])),
   'AI Model Secundario':clean(secondaryAudit.model),
   'Prompt Version':clean(primaryAudit.promptVersion||secondaryAudit.promptVersion),
-  'Parser Version':'vla-payment-parser-v3',
+  'Parser Version':'vla-payment-parser-v4',
   'AI Analysis Started At':primaryAudit.startedAt||secondaryAudit.startedAt||null,
   'AI Analysis Completed At':lastAudit.completedAt||null,
   'AI Fallback Used':Boolean(secondaryAudit.model||audit.filter(item=>item?.secondary!==true).length>1),
   'AI Segunda Lectura Fecha':result?.analysis?.dateSecondaryUsed===true,
-  'Método Detectado':clean(analysis.method),
-  'Banco o Plataforma Detectada':clean(analysis.bank_or_platform),
-  'Moneda Detectada':clean(analysis.currency),
-  'Monto Detectado':Number(analysis.amount||0),
+  'Método Detectado':clean(analysis?.method),
+  'Banco o Plataforma Detectada':clean(analysis?.bank_or_platform),
+  'Moneda Detectada':clean(analysis?.currency),
+  'Monto Detectado':hasAnalysis?Number(analysis?.amount||0):undefined,
   'Fecha Operación Detectada':resolvedDate||null,
   'Fuente Fecha Operación':dateVerified?'PROOF_EXTRACTED':priorDateSource,
-  'Confianza Fecha Operación':dateVerified?'HIGH':'LOW',
-  'Fecha Requiere Revisión':!dateVerified,
-  'Evidencia Fecha Operación':dateVerified?'Fecha visible extraída durante el análisis autenticado del comprobante.':priorDate?`${priorDateEvidence||'Fecha provisional del reporte.'} El análisis posterior no confirmó una fecha visible; se conserva para revisión administrativa.`:'No se encontró una fecha visible confiable; requiere revisión administrativa.',
-  'Hora Detectada':clean(analysis.transaction_time),
-  'Referencia Detectada':clean(analysis.reference),
-  'Estado Transacción Detectado':clean(analysis.transaction_status),
-  'Receptor Detectado':clean(analysis.recipient_name),
-  'Teléfono Receptor Detectado':clean(analysis.recipient_phone),
-  'Correo Receptor Detectado':clean(analysis.recipient_email),
-  'Cuenta Receptora Visible':clean(analysis.recipient_account_visible),
-  'Últimos 4 Receptor Detectados':clean(analysis.recipient_account_last4),
-  'Documento Receptor Detectado':clean(analysis.recipient_document),
-  'Binance ID Receptor Detectado':clean(analysis.recipient_binance_id),
-  'Emisor Detectado':clean(analysis.sender_name),
-  'Cuenta Emisora Visible':clean(analysis.sender_account_visible),
-  'Clasificación Receptor':clean(decision?.receiver?.classification||'NOT_VISIBLE'),
-  'Coincidencia Receptor':clean(decision?.receiver?.matchType),
-  'Evidencia Receptor':compactJson(decision?.receiver?.evidence||[]),
-  'Cuenta Autorizada Coincidente':clean(decision?.receiver?.accountId),
-  'Receptor Esperado':clean(decision?.receiver?.expected),
+  'Confianza Fecha Operación':dateVerified?'HIGH':clean(select(reportFields['Confianza Fecha Operación']))||'LOW',
+  'Fecha Requiere Revisión':dateVerified?false:(reportFields['Fecha Requiere Revisión']!==undefined?reportFields['Fecha Requiere Revisión']:true),
+  'Evidencia Fecha Operación':dateVerified?'Fecha visible extraída durante el análisis autenticado del comprobante.':priorDateEvidence||'No se encontró una fecha visible confiable; requiere revisión administrativa.',
+  'Hora Detectada':clean(analysis?.transaction_time),
+  'Referencia Detectada':clean(analysis?.reference),
+  'Estado Transacción Detectado':clean(analysis?.transaction_status),
+  'Receptor Detectado':clean(analysis?.recipient_name),
+  'Teléfono Receptor Detectado':clean(analysis?.recipient_phone),
+  'Correo Receptor Detectado':clean(analysis?.recipient_email),
+  'Cuenta Receptora Visible':clean(analysis?.recipient_account_visible),
+  'Últimos 4 Receptor Detectados':clean(analysis?.recipient_account_last4),
+  'Documento Receptor Detectado':clean(analysis?.recipient_document),
+  'Binance ID Receptor Detectado':clean(analysis?.recipient_binance_id),
+  'Emisor Detectado':clean(analysis?.sender_name),
+  'Cuenta Emisora Visible':clean(analysis?.sender_account_visible),
+  'Clasificación Receptor':hasDecision?clean(decision?.receiver?.classification):undefined,
+  'Coincidencia Receptor':hasDecision?clean(decision?.receiver?.matchType):undefined,
+  'Evidencia Receptor':hasDecision?compactJson(decision?.receiver?.evidence||[]):undefined,
+  'Cuenta Autorizada Coincidente':hasDecision?clean(decision?.receiver?.accountId):undefined,
+  'Receptor Esperado':hasDecision?clean(decision?.receiver?.expected):undefined,
   'Huella Financiera':clean(result?.financialFingerprint),
   'Hash Perceptual':clean(result?.proof?.visualHash),
-  'Posible Duplicado':result?.duplicate?.possibleDuplicate===true||result?.duplicate?.isDuplicate===true,
-  'Tipo de Coincidencia':clean(result?.duplicate?.type),
-  'Nivel de Duplicado':clean(result?.duplicate?.level||'none'),
-  'Puntaje de Duplicado':Number(result?.duplicate?.score||0),
-  'Evidencia de Duplicado':compactJson(result?.duplicate?.evidence||[]),
-  'Detalle de Coincidencia':compactJson(result?.duplicate?.matches||[]),
+  'Posible Duplicado':result?.duplicate?result?.duplicate?.possibleDuplicate===true||result?.duplicate?.isDuplicate===true:undefined,
+  'Tipo de Coincidencia':result?.duplicate?clean(result?.duplicate?.type):undefined,
+  'Nivel de Duplicado':result?.duplicate?clean(result?.duplicate?.level||'none'):undefined,
+  'Puntaje de Duplicado':result?.duplicate?Number(result?.duplicate?.score||0):undefined,
+  'Evidencia de Duplicado':result?.duplicate?compactJson(result?.duplicate?.evidence||[]):undefined,
+  'Detalle de Coincidencia':result?.duplicate?compactJson(result?.duplicate?.matches||[]):undefined,
   'Balance Snapshot ID':clean(snapshot.snapshotId),
-  'Deuda Snapshot USD':Number(snapshot.expiredUsd||0),
-  'Deuda Snapshot Bs':Number(snapshot.expiredBsRef||0),
-  'Recargo Snapshot':Number(snapshot.surchargeSnapshot||0),
-  'Tasa BCV Snapshot':Number(snapshot.bcvRate||0),
-  'Monto Requerido Habilitación USD':Number(snapshot.requiredUsdAccount||0),
-  'Monto Requerido Habilitación Bs':Number(snapshot.requiredBsAccount||0),
+  'Deuda Snapshot USD':snapshot.snapshotId?Number(snapshot.expiredUsd||0):undefined,
+  'Deuda Snapshot Bs':snapshot.snapshotId?Number(snapshot.expiredBsRef||0):undefined,
+  'Recargo Snapshot':snapshot.snapshotId?Number(snapshot.surchargeSnapshot||0):undefined,
+  'Tasa BCV Snapshot':snapshot.snapshotId?Number(snapshot.bcvRate||0):undefined,
+  'Monto Requerido Habilitación USD':snapshot.snapshotId?Number(snapshot.requiredUsdAccount||0):undefined,
+  'Monto Requerido Habilitación Bs':snapshot.snapshotId?Number(snapshot.requiredBsAccount||0):undefined,
   'Balance Cutoff':snapshot.cutoff||null,
   'Fuente del Snapshot':clean(snapshot.source),
-  'Versión del Snapshot':Number(snapshot.schemaVersion||0)
+  'Versión del Snapshot':snapshot.snapshotId?Number(snapshot.schemaVersion||0):undefined
  };
- if(result?.automaticApproval===true){
-  fields['Decisión Administrativa']='Aprobación automática';
-  fields['Validación Realizada Por']='Motor determinístico';
- }
- return Object.fromEntries(Object.entries(fields).filter(([,value])=>value!==null&&value!==undefined&&value!==''));
+ if(result?.automaticApproval===true){fields['Decisión Administrativa']='Aprobación automática';fields['Validación Realizada Por']='Motor determinístico'}
+ const filtered=Object.fromEntries(Object.entries(fields).filter(([,value])=>value!==null&&value!==undefined&&value!==''));
+ // Estos dos campos se limpian explícitamente al recuperarse un análisis que antes falló.
+ if(!failureReason){filtered['AI Failure Reason']='';filtered['Último Error de Procesamiento']=''}
+ return filtered;
 }
 async function defaultLoadBundle(reportId){
  const report=await getRecord(TABLES.reports,reportId),ownerId=linked(fieldsOf(report)['Propietario que Reporta'])[0];
@@ -136,7 +138,13 @@ async function defaultLoadBundle(reportId){
   require('./_bcv_store').loadLastGood({force:true})
  ]);
  const configRecord=configRecords[0]||{fields:{}},rules=mergeConfig(configRecord),proof=proofDescriptor(report),configuredAi=aiConfig(configRecord,rules);
- try{const discovery=await require('./_payment_ai_model_discovery').discoverCompatibleModel(),models=discovery.models||[discovery.model];if(models[0])configuredAi.primaryModel=models[0];const fallback=models.find(model=>model&&model!==configuredAi.primaryModel)||configuredAi.secondaryModel;if(fallback&&fallback!==configuredAi.primaryModel){configuredAi.secondaryModel=fallback;configuredAi.secondaryEnabled=true}}catch(error){if(Number(error?.status)===401||Number(error?.status)===403)configuredAi.aiEnabled=false}
+ // La configuración explícita es autoridad. Discovery solo rellena un hueco,
+ // nunca sustituye silenciosamente un modelo financiero configurado ni activa fallback.
+ if(!configuredAi.primaryModel||(configuredAi.secondaryEnabled&&!configuredAi.secondaryModel))try{
+  const discovery=await require('./_payment_ai_model_discovery').discoverCompatibleModel(),models=discovery.models||[discovery.model];
+  if(!configuredAi.primaryModel&&models[0])configuredAi.primaryModel=models[0];
+  if(configuredAi.secondaryEnabled&&!configuredAi.secondaryModel){const fallback=models.find(model=>model&&model!==configuredAi.primaryModel);if(fallback)configuredAi.secondaryModel=fallback}
+ }catch(_){}
  if(!/^[a-f0-9]{64}$/.test(proof.sha256)||!proof.contentType)throw new Error('El reporte no tiene un comprobante cifrado disponible.');
  const proofStore=require('./_payment_proof_store').createProofStore(),stored=proof.blobKey?await proofStore.getByKey({key:proof.blobKey,attachmentSha:proof.sha256,contentType:proof.contentType}):await proofStore.get({reportId,attachmentSha:proof.sha256,contentType:proof.contentType});
  if(!stored)throw new Error('No se encontró el comprobante cifrado.');
@@ -145,7 +153,7 @@ async function defaultLoadBundle(reportId){
 }
 async function defaultExecuteApproval({reportId,result}){
  const {issueAdminToken}=require('./_auth'),handler=require('../process-payment-report').handler,token=issueAdminToken({authVersion:0});
- const event={httpMethod:'POST',headers:{authorization:`Bearer ${token}`},body:JSON.stringify({reportId,decision:'approve',decisionSource:'automatic',automationEvidence:{snapshotId:result?.snapshot?.snapshotId||'',fingerprint:result?.financialFingerprint||'',confidence:result?.analysis?.normalized?.confidence||0}})};
+ const event={httpMethod:'POST',headers:{authorization:`Bearer ${token}`},body:JSON.stringify({reportId,decision:'approve',decisionSource:'automatic',automationEvidence:{snapshotId:result?.snapshot?.snapshotId||'',fingerprint:result?.financialFingerprint||'',confidence:result?.analysis?.normalized?.confidence||0,consensus:result?.aiConsensus?.passed===true,secondaryConfidence:Number(result?.aiConsensus?.secondaryConfidence||0),minimumConfidence:Number(result?.aiConsensus?.minimumConfidence||0.97)}})};
  const response=await handler(event),body=JSON.parse(response.body||'{}');
  if(response.statusCode<200||response.statusCode>=300||body.success===false)throw new Error(body.message||'No se pudo materializar la aprobación automática.');
  return body;
