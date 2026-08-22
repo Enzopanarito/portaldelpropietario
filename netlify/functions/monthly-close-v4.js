@@ -1,7 +1,7 @@
 'use strict';
 
 const { withAirtableUsage } = require('./_shared/_airtable_meter');
-const { requireAdmin } = require('./_shared/_auth');
+const { requireAdmin, requireFreshAdmin } = require('./_shared/_auth');
 const { buildPlan } = require('./_shared/_monthly_close_core_v4');
 const { loadContext, listCloseMarkers, oldestLocked, acquireCloseLock, setCloseMarker } = require('./_shared/_monthly_close_store_v5');
 const { repairOperation } = require('./_shared/_monthly_close_repair');
@@ -55,6 +55,10 @@ const handler = async function(event) {
   catch (_) { return json(400, { success:false, message:'Solicitud JSON inválida.' }, counter); }
 
   const dryRun = body.dryRun === true;
+  if (!dryRun || body.action === 'repair') {
+    const fresh = requireFreshAdmin(event);
+    if (!fresh.ok) return fresh.response;
+  }
   const monthResult = resolveMonth(body.month, { allowDefault:dryRun });
   if (!monthResult.ok) {
     return json(400, { success:false, protected:true, invalidMonth:true, message:'Debe indicar un mes válido con formato YYYY-MM.' }, counter);
