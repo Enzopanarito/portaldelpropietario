@@ -1,7 +1,7 @@
 {
-  "name": "vla-portal",
-  "version": "1.0.0",
+  "name": "portal-villa-los-apamates",
   "private": true,
+  "version": "1.0.0",
   "engines": {
     "node": ">=22 <25"
   },
@@ -24,6 +24,6 @@
     "nanoid": "3.3.18"
   },
   "devDependencies": {
-    "@playwright/test": "1.55.1"
+    "playwright": "1.55.1"
   }
 }
