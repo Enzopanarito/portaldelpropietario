@@ -19,12 +19,13 @@ jobs:
       NETLIFY_SITE_ID_FALLBACK: ${{ secrets.NETLIFY_SITE_ID_VILLALOSAPAMATES }}
       AIRTABLE_API_TOKEN_GITHUB: ${{ secrets.AIRTABLE_API_TOKEN }}
       AWS_LAMBDA_JS_RUNTIME: nodejs24.x
+      NETLIFY_CLI_VERSION: '27.1.2'
     steps:
       - name: Checkout exact production commit
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Use Node.js 24
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
           package-manager-cache: false
@@ -191,7 +192,7 @@ jobs:
         run: |
           set -euo pipefail
           output="${RUNNER_TEMP}/netlify-cli-production.json"
-          npx --yes netlify-cli@latest deploy \
+          npx --yes "netlify-cli@${NETLIFY_CLI_VERSION}" deploy \
             --prod \
             --no-build \
             --dir="${{ steps.release.outputs.publish_dir }}" \
@@ -296,7 +297,7 @@ jobs:
         run: |
           if [ "$VERIFY_OUTCOME" = "success" ] && [ "$FINANCE_OUTCOME" = "success" ]; then
             title="Producción publicada y certificada ✅"
-            detail="Artefacto construido en GitHub, configuración segura, commit exacto, Functions Node 24, release canónico verificado y BEFORE/AFTER financiero = $0.00."
+            detail="Artefacto construido en GitHub, configuración segura, commit exacto, Functions Node 24, Netlify CLI fijado, release canónico verificado y BEFORE/AFTER financiero = $0.00."
           else
             title="Producción no certificada ⚠️"
             detail="La configuración, el despliegue, runtime, contrato canónico o comparación financiera no concluyeron correctamente."
@@ -306,5 +307,5 @@ jobs:
             echo
             echo "$detail"
             echo
-            echo "Rama: \`${PRODUCTION_BRANCH:-unknown}\` · Deploy: \`${DEPLOY_ID:-not-returned}\` · Commit: \`$GITHUB_SHA\`"
+            echo "Rama: \`${PRODUCTION_BRANCH:-unknown}\` · Deploy: \`${DEPLOY_ID:-not-returned}\` · Commit: \`$GITHUB_SHA\` · Netlify CLI: \`${NETLIFY_CLI_VERSION}\`"
           } >> "$GITHUB_STEP_SUMMARY"
