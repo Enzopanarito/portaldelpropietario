@@ -7,7 +7,7 @@
   },
   "scripts": {
     "build": "npm run test:release && npm run build:public",
-    "build:public": "node scripts/build-production.js",
+    "build:public": "node scripts/build-production.js && node scripts/generate-social-card.js",
     "test:release": "npm test",
     "test": "node --test tests/*.test.js",
     "test:browser": "node --test tests/*.cjs",

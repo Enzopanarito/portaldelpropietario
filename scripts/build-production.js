@@ -26,12 +26,49 @@ const PUBLIC_FILES=[
 ];
 const TAILWIND_CDN=/<script\s+src=["']https:\/\/cdn\.tailwindcss\.com["']><\/script>/gi;
 
+const OWNER_SOCIAL_HEAD=`
+<meta name="description" content="Portal del Propietario de Villa Los Apamates. Consulta tu estado de cuenta, pagos y servicios de la urbanización.">
+<link rel="canonical" href="https://villalosapamates.netlify.app/">
+<meta property="og:site_name" content="Villa Los Apamates">
+<meta property="og:title" content="Villa Los Apamates">
+<meta property="og:description" content="Portal del Propietario de Villa Los Apamates. Consulta tu estado de cuenta, pagos y servicios de la urbanización.">
+<meta property="og:image" content="https://villalosapamates.netlify.app/assets/vla-social-card.png">
+<meta property="og:image:secure_url" content="https://villalosapamates.netlify.app/assets/vla-social-card.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Villa Los Apamates · Portal del Propietario">
+<meta property="og:url" content="https://villalosapamates.netlify.app/">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Villa Los Apamates">
+<meta name="twitter:description" content="Portal del Propietario de Villa Los Apamates. Consulta tu estado de cuenta, pagos y servicios de la urbanización.">
+<meta name="twitter:image" content="https://villalosapamates.netlify.app/assets/vla-social-card.png">
+<meta name="twitter:image:alt" content="Villa Los Apamates · Portal del Propietario">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/vla-icon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/assets/vla-icon-180.png">`;
+
+const ADMIN_FORGOT_PASSWORD=`<p id='vla-admin-forgot-password' class='text-center mt-4'><a href='/seguridad.html?recover=1' class='text-sm font-semibold text-sky-700 hover:text-sky-900 underline underline-offset-4'>¿Olvidaste tu contraseña?</a></p>`;
+
+function transformHtml(name,text){
+  let html=text.replace(TAILWIND_CDN,'<link rel="stylesheet" href="/tailwind.generated.css">');
+  if(name==='index.html'&&!html.includes('property="og:title"')){
+    html=html.includes('</head>')?html.replace('</head>',OWNER_SOCIAL_HEAD+'\n</head>'):OWNER_SOCIAL_HEAD+html;
+  }
+  if(name==='admin.html'&&!html.includes("id='vla-admin-forgot-password'")){
+    const marker="<p id='login-error'";
+    if(!html.includes(marker))throw new Error('No se encontró el punto seguro para insertar recuperación de contraseña en admin.html.');
+    html=html.replace(marker,ADMIN_FORGOT_PASSWORD+marker);
+  }
+  return html;
+}
+
 function copyPublicFile(name){
   const source=path.join(ROOT,name),target=path.join(DIST,name);
   if(!fs.existsSync(source))throw new Error(`Falta el archivo público requerido: ${name}`);
   let content=fs.readFileSync(source);
   if(name.endsWith('.html')){
-    const text=content.toString('utf8').replace(TAILWIND_CDN,'<link rel="stylesheet" href="/tailwind.generated.css">');
+    const text=transformHtml(name,content.toString('utf8'));
     if(/cdn\.tailwindcss\.com/i.test(text))throw new Error(`No se pudo retirar Tailwind CDN de ${name}.`);
     content=Buffer.from(text);
   }

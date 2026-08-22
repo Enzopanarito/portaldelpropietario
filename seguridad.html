@@ -14,7 +14,7 @@
       <a href="/whatsapp.html" class="bg-green-600 text-white px-4 py-2 rounded-full font-semibold">📲 WhatsApp</a>
     </div>
     <h1 class="text-3xl font-extrabold text-slate-900 mb-2">🔐 Seguridad del Admin</h1>
-    <p class="text-slate-600 mb-6">La sesión iniciada en el portal autoriza esta pantalla. Correo autorizado: <b>enzopanarito@gmail.com</b></p>
+    <p class="text-slate-600 mb-6">La recuperación protege la identidad del correo autorizado y nunca muestra públicamente qué cuenta está configurada.</p>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <section id="change-section" class="bg-white rounded-2xl shadow p-6">
@@ -22,25 +22,31 @@
         <h2 class="text-xl font-bold mb-4">Cambiar contraseña</h2>
         <p class="text-sm text-slate-500 mb-4">Puedes abrir esta pantalla sin volver a iniciar sesión. Por seguridad, para cambiar la contraseña debes confirmar la contraseña actual. La nueva debe tener mínimo 12 caracteres, mayúscula, minúscula, número y símbolo.</p>
         <form id="change-form" class="space-y-3">
+          <label class="block text-sm font-semibold" for="current-password">Contraseña actual</label>
           <input id="current-password" type="password" class="w-full p-3 border rounded-lg" placeholder="Contraseña actual" autocomplete="current-password">
+          <label class="block text-sm font-semibold" for="new-password">Nueva contraseña</label>
           <input id="new-password" type="password" class="w-full p-3 border rounded-lg" placeholder="Nueva contraseña segura" autocomplete="new-password">
+          <label class="block text-sm font-semibold" for="new-password2">Repetir nueva contraseña</label>
           <input id="new-password2" type="password" class="w-full p-3 border rounded-lg" placeholder="Repetir nueva contraseña" autocomplete="new-password">
           <button class="w-full bg-sky-600 text-white py-3 rounded-lg font-bold">Actualizar contraseña</button>
         </form>
       </section>
 
-      <section class="bg-white rounded-2xl shadow p-6">
+      <section id="recover-section" class="bg-white rounded-2xl shadow p-6">
         <h2 class="text-xl font-bold mb-4">Recuperar contraseña</h2>
-        <p class="text-sm text-slate-500 mb-4">El enlace temporal siempre apunta al dominio oficial, expira en 15 minutos y queda inutilizado después de usarlo.</p>
+        <p class="text-sm text-slate-500 mb-4">Escribe el correo administrativo. La respuesta será siempre genérica: el sistema no confirma públicamente si una dirección está registrada. Si corresponde, recibirás un enlace de un solo uso que expira en 15 minutos.</p>
         <form id="recover-form" class="space-y-3">
-          <input id="recover-email" type="email" value="enzopanarito@gmail.com" class="w-full p-3 border rounded-lg" placeholder="Correo de recuperación" autocomplete="email">
+          <label class="block text-sm font-semibold" for="recover-email">Correo administrativo</label>
+          <input id="recover-email" type="email" class="w-full p-3 border rounded-lg" placeholder="Correo administrativo" autocomplete="email" required>
           <button class="w-full bg-amber-600 text-white py-3 rounded-lg font-bold">Enviar enlace de recuperación</button>
         </form>
         <div id="reset-box" class="hidden mt-6 border-t pt-5">
           <h3 class="font-bold mb-3">Crear nueva contraseña</h3>
           <form id="reset-form" class="space-y-3">
-            <input id="reset-token" class="w-full p-3 border rounded-lg" placeholder="Token de recuperación">
+            <input id="reset-token" type="hidden">
+            <label class="block text-sm font-semibold" for="reset-password">Nueva contraseña</label>
             <input id="reset-password" type="password" class="w-full p-3 border rounded-lg" placeholder="Nueva contraseña segura" autocomplete="new-password">
+            <label class="block text-sm font-semibold" for="reset-password2">Repetir nueva contraseña</label>
             <input id="reset-password2" type="password" class="w-full p-3 border rounded-lg" placeholder="Repetir nueva contraseña" autocomplete="new-password">
             <button class="w-full bg-green-600 text-white py-3 rounded-lg font-bold">Restablecer contraseña</button>
           </form>
@@ -55,6 +61,7 @@
         <li>Después de cinco intentos fallidos, el login se bloquea durante 15 minutos.</li>
         <li>Los límites de login y recuperación quedan registrados de forma persistente.</li>
         <li>Los enlaces de recuperación usan el dominio oficial, expiran en 15 minutos y son de un solo uso.</li>
+        <li>Solicitar un enlace no invalida una sesión administrativa activa; la invalidación ocurre al cambiar efectivamente la contraseña.</li>
         <li>Los tokens administrativos tienen audiencia, emisor, identificador único y vencimiento de 6 horas.</li>
       </ul>
     </section>
@@ -66,12 +73,12 @@
 function token(){return localStorage.getItem('vla-admin-token')||sessionStorage.getItem('vla-admin-token')||''}
 function authHeaders(){return {'Content-Type':'application/json','Authorization':'Bearer '+token()}}
 function toast(m,err=false){const t=document.getElementById('toast');t.textContent=m;t.className='fixed bottom-5 right-5 toast text-white px-5 py-3 rounded-lg shadow-lg '+(err?'bg-red-600':'bg-green-600');t.classList.remove('opacity-0','translate-y-6');setTimeout(()=>t.classList.add('opacity-0','translate-y-6'),5000)}
-async function post(body,auth=true){const r=await fetch('/.netlify/functions/admin-security',{method:'POST',headers:auth?authHeaders():{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json().catch(()=>({}));if(r.status===401&&auth){localStorage.removeItem('vla-admin-token');localStorage.removeItem('vla-admin-auth');sessionStorage.removeItem('vla-admin-token');sessionStorage.removeItem('vla-admin-auth');location.href='/admin.html';throw new Error('Sesión vencida.')}if(!r.ok)throw new Error(d.detail||d.message||'Error');if(d.token){localStorage.setItem('vla-admin-token',d.token);localStorage.setItem('vla-admin-auth','true');sessionStorage.setItem('vla-admin-token',d.token);sessionStorage.setItem('vla-admin-auth','true')}return d}
+async function post(body,auth=true){const r=await fetch('/.netlify/functions/admin-security',{method:'POST',headers:auth?authHeaders():{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json().catch(()=>({}));if(r.status===401&&auth){localStorage.removeItem('vla-admin-token');localStorage.removeItem('vla-admin-auth');sessionStorage.removeItem('vla-admin-token');sessionStorage.removeItem('vla-admin-auth');location.href='/admin.html';throw new Error('Sesión vencida.')}if(!r.ok)throw new Error(d.message||'Error');if(d.token){localStorage.setItem('vla-admin-token',d.token);localStorage.setItem('vla-admin-auth','true');sessionStorage.setItem('vla-admin-token',d.token);sessionStorage.setItem('vla-admin-auth','true')}return d}
 function validatePassword(value){const v=String(value||'');if(v.length<12)throw new Error('La nueva contraseña debe tener al menos 12 caracteres.');if(!/[a-záéíóúñ]/.test(v))throw new Error('Debe incluir una letra minúscula.');if(!/[A-ZÁÉÍÓÚÑ]/.test(v))throw new Error('Debe incluir una letra mayúscula.');if(!/\d/.test(v))throw new Error('Debe incluir un número.');if(!/[^A-Za-zÁÉÍÓÚáéíóúÑñ0-9\s]/.test(v))throw new Error('Debe incluir un símbolo.')}
 document.getElementById('change-form').onsubmit=async e=>{e.preventDefault();const btn=e.currentTarget.querySelector('button');try{btn.disabled=true;btn.textContent='Actualizando...';const a=document.getElementById('new-password').value,b=document.getElementById('new-password2').value;if(a!==b)throw new Error('Las contraseñas nuevas no coinciden.');validatePassword(a);const d=await post({action:'changePassword',currentPassword:document.getElementById('current-password').value,newPassword:a});toast(d.message||'Contraseña actualizada.');e.target.reset()}catch(err){toast(err.message,true)}finally{btn.disabled=false;btn.textContent='Actualizar contraseña'}}
-document.getElementById('recover-form').onsubmit=async e=>{e.preventDefault();const btn=e.currentTarget.querySelector('button');try{btn.disabled=true;btn.textContent='Enviando...';const d=await post({action:'requestReset',email:document.getElementById('recover-email').value},false);toast(d.message||'Solicitud enviada.',!d.emailSent);if(!d.emailSent&&d.detail)console.warn(d.detail)}catch(err){toast(err.message,true)}finally{btn.disabled=false;btn.textContent='Enviar enlace de recuperación'}}
+document.getElementById('recover-form').onsubmit=async e=>{e.preventDefault();const btn=e.currentTarget.querySelector('button');try{btn.disabled=true;btn.textContent='Enviando...';const d=await post({action:'requestReset',email:document.getElementById('recover-email').value},false);toast(d.message||'Si el correo está autorizado, recibirá instrucciones.');e.target.reset()}catch(err){toast('No fue posible procesar la solicitud en este momento.',true)}finally{btn.disabled=false;btn.textContent='Enviar enlace de recuperación'}}
 document.getElementById('reset-form').onsubmit=async e=>{e.preventDefault();const btn=e.currentTarget.querySelector('button');try{btn.disabled=true;btn.textContent='Restableciendo...';const a=document.getElementById('reset-password').value,b=document.getElementById('reset-password2').value;if(a!==b)throw new Error('Las contraseñas nuevas no coinciden.');validatePassword(a);const d=await post({action:'resetPassword',token:document.getElementById('reset-token').value,newPassword:a},false);toast(d.message||'Contraseña restablecida.');e.target.reset();history.replaceState({},document.title,'/seguridad.html')}catch(err){toast(err.message,true)}finally{btn.disabled=false;btn.textContent='Restablecer contraseña'}}
-const params=new URLSearchParams(location.search);const reset=params.get('reset');if(reset){document.getElementById('reset-box').classList.remove('hidden');document.getElementById('reset-token').value=reset;document.getElementById('change-section').classList.add('hidden')}else if(!token()){location.href='/admin.html'}
+const params=new URLSearchParams(location.search);const reset=params.get('reset');const recover=params.get('recover')==='1';if(reset){document.getElementById('reset-box').classList.remove('hidden');document.getElementById('reset-token').value=reset;document.getElementById('change-section').classList.add('hidden');document.getElementById('recover-form').classList.add('hidden')}else if(recover){document.getElementById('change-section').classList.add('hidden')}else if(!token()){location.href='/admin.html'}
 </script>
 </body>
 </html>
