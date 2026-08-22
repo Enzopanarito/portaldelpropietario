@@ -6,18 +6,22 @@ const fs=require('node:fs');
 const path=require('node:path');
 const supervision=require('../netlify/functions/admin-autopay-history');
 
-function autoAudit(paymentId='recPAYMENT1234567'){
+const REPORT_ID='recREPORT12345678';
+const PAYMENT_ID='recPAYMENT1234567';
+const OWNER_ID='recOWNER123456789';
+
+function autoAudit(paymentId=PAYMENT_ID){
   return JSON.stringify({version:1,at:'2026-08-22T01:00:00.000Z',action:'approve',adminId:'AUTOPILOT',reason:'',corrections:{},result:'payment-created',paymentId});
 }
 function report(overrides={}){
-  return {id:'recREPORT1234567',fields:{
-    'Propietario que Reporta':['recOWNER12345678'],
+  return {id:REPORT_ID,fields:{
+    'Propietario que Reporta':[OWNER_ID],
     'Casa al Reportar':8,
     'Decisión Administrativa':'Aprobación automática',
     'Validación Realizada Por':'Motor determinístico',
     'Fecha Revisión':'2026-08-22T01:00:00.000Z',
     'Pago Definitivo Creado':true,
-    'Pago Definitivo Relacionado':['recPAYMENT1234567'],
+    'Pago Definitivo Relacionado':[PAYMENT_ID],
     'Equivalente USD Reportado':120,
     'Referencia Detectada':'839271',
     'Fecha Operación Detectada':'2026-08-21',
@@ -30,20 +34,20 @@ function report(overrides={}){
   }};
 }
 function payment(overrides={}){
-  return {id:'recPAYMENT1234567',fields:{
-    'Propietario que Paga':['recOWNER12345678'],
+  return {id:PAYMENT_ID,fields:{
+    'Propietario que Paga':[OWNER_ID],
     'Monto Pagado':120,
     'Equivalente USD Aplicado':120,
     'Fecha de Pago':'2026-08-21',
     'Forma de Pago':'USD',
     'Fuente de Validación':'Automática',
-    'Reporte de Pago Origen':['recREPORT1234567'],
+    'Reporte de Pago Origen':[REPORT_ID],
     'Referencia':'839271',
     '[x] Aplicado al Cierre':false,
     ...overrides
   }};
 }
-const owners=new Map([['recOWNER12345678',{Casa:8,Propietario:'Propietario Prueba'}]]);
+const owners=new Map([[OWNER_ID,{Casa:8,Propietario:'Propietario Prueba'}]]);
 
 test('historial marca autopago activo como reversible antes del cierre',()=>{
   const item=supervision.historyItem(report(),payment(),owners);
@@ -64,7 +68,7 @@ test('historial bloquea reversión simple después del cierre',()=>{
 test('reversión conserva auditoría y retira el vínculo financiero del reporte',()=>{
   const fields=report().fields;
   const patch=supervision.reversalReportPatch(fields,{
-    who:'ADMIN-TEST',reason:'Comprobante corresponde a otra operación',paymentId:'recPAYMENT1234567',
+    who:'ADMIN-TEST',reason:'Comprobante corresponde a otra operación',paymentId:PAYMENT_ID,
     paymentSnapshot:{amountUsd:120,reference:'839271'},at:'2026-08-22T02:00:00.000Z'
   });
   assert.equal(patch.Estado,'Rechazado');
@@ -72,12 +76,12 @@ test('reversión conserva auditoría y retira el vínculo financiero del reporte
   assert.deepEqual(patch['Pago Definitivo Relacionado'],[]);
   assert.match(patch['Motivo del Rechazo'],/Reversión excepcional/);
   assert.match(patch['Log de Auditoría'],/reverse_automatic_payment/);
-  assert.match(patch['Log de Auditoría'],/recPAYMENT1234567/);
+  assert.match(patch['Log de Auditoría'],new RegExp(PAYMENT_ID));
   assert.match(patch['Log de Auditoría'],/839271/);
 });
 
 test('historial reconoce un autopago revertido aunque el pago definitivo ya no exista',()=>{
-  const reversal=JSON.stringify({version:1,at:'2026-08-22T02:00:00.000Z',action:'reverse_automatic_payment',adminId:'ADMIN-TEST',reason:'Error detectado posteriormente',corrections:{paymentSnapshot:{amountUsd:120}},result:'payment-deleted-and-reverted',paymentId:'recPAYMENT1234567'});
+  const reversal=JSON.stringify({version:1,at:'2026-08-22T02:00:00.000Z',action:'reverse_automatic_payment',adminId:'ADMIN-TEST',reason:'Error detectado posteriormente',corrections:{paymentSnapshot:{amountUsd:120}},result:'payment-deleted-and-reverted',paymentId:PAYMENT_ID});
   const item=supervision.historyItem(report({'Log de Auditoría':autoAudit()+'\n'+reversal,'Pago Definitivo Relacionado':[],'Pago Definitivo Creado':false}),null,owners);
   assert.equal(item.status,'REVERTIDO');
   assert.equal(item.canReverse,false);
