@@ -3,7 +3,7 @@
 const { withAirtableUsage } = require('./_shared/_airtable_meter');
 const { requireAdmin } = require('./_shared/_auth');
 const { buildPlan } = require('./_shared/_monthly_close_core_v4');
-const { ACTIVE_LOCK_TTL_MS, loadContext, listCloseMarkers, acquireCloseLock, setCloseMarker } = require('./_shared/_monthly_close_store_v5');
+const { loadContext, listCloseMarkers, oldestLocked, acquireCloseLock, setCloseMarker } = require('./_shared/_monthly_close_store_v5');
 const { repairOperation } = require('./_shared/_monthly_close_repair');
 const { executeClose } = require('./_shared/_monthly_close_execute');
 const { isValidMonth, defaultDryRunMonth, closeWindowForMonth } = require('./_shared/_monthly_close_window');
@@ -23,6 +23,9 @@ function resolveMonth(rawValue, { allowDefault = true } = {}) {
 }
 
 function lockMessage(result, month) {
+  if (result.status === 'in-progress' && result.stale === true) {
+    return `El cierre de ${month} conserva un bloqueo antiguo sin resolución. Por seguridad no se ejecutará otro cierre hasta una recuperación administrativa explícita.`;
+  }
   const messages = {
     'already-closed': `El mes ${month} ya fue cerrado. No se ejecutó nuevamente.`,
     'in-progress': `Ya existe un cierre de ${month} en proceso. Espere y actualice el panel.`,
@@ -74,8 +77,7 @@ const handler = async function(event) {
       const markers = await listCloseMarkers(month, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
       const done = markers.find(marker => marker.status === 'DONE');
       const partial = markers.find(marker => marker.status === 'ERROR_PARTIAL');
-      const cutoff = Date.now() - ACTIVE_LOCK_TTL_MS;
-      const running = markers.find(marker => marker.status === 'LOCKED' && (!Number.isFinite(marker.createdAt) || marker.createdAt >= cutoff));
+      const running = oldestLocked(markers);
       const paymentScopeReady = plan.validation?.closeScopeReady !== false;
       const canExecute = !done && !partial && !running && paymentScopeReady && snapshot.complete && window.ok;
       const closeStatus = done ? 'already-closed'
@@ -97,6 +99,10 @@ const handler = async function(event) {
         snapshot,
         closeWindow:window,
         closeStatus,
+        staleLock:running?.stale === true,
+        requiresRecovery:running?.stale === true,
+        lockOperationId:running?.operationId || null,
+        lockAgeMs:running?.ageMs ?? null,
         repairAvailable:!!partial,
         repairOperationId:partial?.operationId || null,
         canExecute
@@ -128,7 +134,18 @@ const handler = async function(event) {
   try {
     const lockResult = await acquireCloseLock(month, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
     if (!lockResult.ok) {
-      return json(409, { success:false, protected:true, closeStatus:lockResult.status, month, repairAvailable:lockResult.status==='partial-error', repairOperationId:lockResult.marker?.operationId||null, message:lockMessage(lockResult,month) }, counter);
+      return json(409, {
+        success:false,
+        protected:true,
+        closeStatus:lockResult.status,
+        staleLock:lockResult.stale === true,
+        requiresRecovery:lockResult.requiresRecovery === true,
+        lockAgeMs:lockResult.marker?.ageMs ?? null,
+        month,
+        repairAvailable:lockResult.status==='partial-error',
+        repairOperationId:lockResult.marker?.operationId||null,
+        message:lockMessage(lockResult,month)
+      }, counter);
     }
     closeLock = lockResult.marker;
     const context = await loadContext(month, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
