@@ -1,0 +1,47 @@
+name: Cert Live Finance 92289c
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  certify-live-finance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Compare live production against certified pre-merge baseline
+        shell: bash
+        env:
+          EXPECTED_FINANCE_SHA256: b2d812df33b6b45c2696abaedef6b3e39a737a07db883cc43df0e80500cb165b
+          EXPECTED_RELEASE: 2026-08-21-v15
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const https=require('https');
+          const crypto=require('crypto');
+          const target='https://villalosapamates.netlify.app';
+          const fields=['saldoUsd','saldoBsRef','totalPagadero','saldoNetoReferencial','saldoFavorUsd','saldoFavorBs','deudaVencidaUsd','deudaVencidaBs','mesCorrienteUsd','mesCorrienteBs'];
+          function requestJson(url){return new Promise((resolve,reject)=>{const req=https.get(url,{headers:{'Cache-Control':'no-cache','User-Agent':'VLA-Live-Finance-Cert'}},res=>{let raw='';res.setEncoding('utf8');res.on('data',chunk=>raw+=chunk);res.on('end',()=>{if(res.statusCode<200||res.statusCode>=300)return reject(new Error('HTTP '+res.statusCode+' '+url));try{resolve(JSON.parse(raw))}catch(error){reject(error)}})});req.setTimeout(30000,()=>req.destroy(new Error('timeout '+url)));req.on('error',reject)});}
+          function stable(value){if(Array.isArray(value))return '['+value.map(stable).join(',')+']';if(value&&typeof value==='object')return '{'+Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+stable(value[k])).join(',')+'}';return JSON.stringify(value);}
+          (async()=>{
+            const stamp=Date.now();
+            const [data,release]=await Promise.all([
+              requestJson(`${target}/api/vla/public-data?force=1&cert-live=${stamp}`),
+              requestJson(`${target}/release.json?cert-live=${stamp}`)
+            ]);
+            if(release?.release!==process.env.EXPECTED_RELEASE)throw new Error(`RELEASE_MISMATCH expected=${process.env.EXPECTED_RELEASE} actual=${release?.release}`);
+            const owners=Array.isArray(data.propietarios)?data.propietarios:[];
+            if(owners.length!==15)throw new Error(`HOUSE_COUNT_${owners.length}`);
+            const canonical=owners.map(owner=>{const row={Casa:Number(owner.Casa)};for(const f of fields)row[f]=Math.round((Number(owner[f])||0)*100);return row;}).sort((a,b)=>a.Casa-b.Casa);
+            for(let i=0;i<15;i++)if(canonical[i]?.Casa!==i+1)throw new Error(`HOUSE_SEQUENCE_${i+1}`);
+            const hash=crypto.createHash('sha256').update(stable(canonical)).digest('hex');
+            console.log(`LIVE_FINANCE_SHA256=${hash}`);
+            console.log(`LIVE_FINANCE_HOUSES=${canonical.length}`);
+            console.log(`LIVE_FINANCE_FIELDS=${canonical.length*fields.length}`);
+            if(hash!==process.env.EXPECTED_FINANCE_SHA256)throw new Error(`FINANCIAL_DRIFT expected=${process.env.EXPECTED_FINANCE_SHA256} actual=${hash}`);
+            console.log('LIVE_FINANCIAL_BEFORE_AFTER_OK 15/15 houses · 150/150 fields · $0.00');
+          })().catch(error=>{console.error(error.stack||error);process.exit(1)});
+          NODE
