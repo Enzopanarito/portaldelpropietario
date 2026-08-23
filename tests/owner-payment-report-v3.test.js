@@ -31,6 +31,7 @@ assert(ui.includes("if(!selectedFile)return['proof']"),'Antes del comprobante so
 assert(ui.includes("openReport=openSmartReport"),'Debe sustituir el flujo heredado.');
 assert(ui.includes("addEventListener('submit',submitSmartReport)"),'Debe existir un único manejador de envío.');
 assert(ui.includes('/api/vla/payment-proof-prefill')&&ui.includes('/api/vla/report-payment'),'Debe conservar prelectura y validación backend.');
+assert(ui.includes('PREFILL_CLIENT_TIMEOUT_MS=12000')&&ui.includes("timedOut?'La lectura está tardando'")&&ui.includes('analysisController===controller'),'La prelectura móvil debe terminar de forma acotada sin permitir que una solicitud anterior altere la pantalla actual.');
 assert(ui.includes('submissionId')&&ui.includes('readAsDataURL'),'Debe conservar idempotencia y carga segura.');
 assert(ui.includes('postPaymentReportWithRecovery')&&ui.includes('Reconectando…'),'Debe reintentar una interrupción transitoria con el mismo submissionId.');
 assert(ui.includes('La conexión se interrumpió')&&!ui.includes("message||'Load failed'"),'Nunca debe mostrar el error crudo de Safari.');

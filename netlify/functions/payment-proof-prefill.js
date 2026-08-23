@@ -4,7 +4,6 @@ const crypto=require('crypto');
 const {withAirtableUsage}=require('./_shared/_airtable_meter');
 const {decodeAttachment}=require('./_shared/_payment_report_attachment');
 const {createGeminiAnalysisRunner}=require('./_shared/_payment_ai_gemini');
-const {discoverCompatibleModel}=require('./_shared/_payment_ai_model_discovery');
 const contract=require('./_shared/_payment_ai_contract');
 const {consume}=require('./_shared/_persistent_rate_limit');
 const {safeDisplayText}=require('./_shared/_security_utils');
@@ -16,11 +15,17 @@ const {METHOD_ACCOUNT_MAP,accountActive,findAuthorizedRecipient}=require('./_sha
 const {signRecipientAttestation}=require('./_shared/_payment_recipient_attestation');
 
 const WINDOW_MS=60*60*1000;
-const CURRENT_STABLE_MODELS=Object.freeze(['gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-2.5-flash']);
-const DIRECT_TIMEOUT_MS=9000;
+const FAST_PREFILL_MODEL='gemini-2.5-flash-lite';
+const FALLBACK_PREFILL_MODEL='gemini-2.5-flash';
+const CURRENT_STABLE_MODELS=Object.freeze([FAST_PREFILL_MODEL,FALLBACK_PREFILL_MODEL]);
+const DIRECT_TIMEOUT_MS=6000;
 const PROXY_TIMEOUT_MS=12000;
+const PREFILL_TOTAL_BUDGET_MS=12000;
+const TRANSIENT_RETRY_DELAY_MS=1000;
+const MIN_DIRECT_WINDOW_MS=5000;
+const MIN_PROXY_WINDOW_MS=1000;
 const MAX_DIRECT_ATTEMPTS=4;
-const PROXY_URL=String(process.env.PAYMENT_PROOF_AI_PROXY_URL||'https://gemini-proxy-seinca.vercel.app/api/payment-proof').trim();
+const PROXY_URL=String(process.env.PAYMENT_PROOF_AI_PROXY_URL||'').trim();
 const PROXY_CLIENT='villa-los-apamates-payment-proof-v1';
 
 function json(statusCode,body,headers={}){return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store, no-cache, must-revalidate','X-Content-Type-Options':'nosniff',...headers},body:JSON.stringify(body)}}
@@ -51,13 +56,12 @@ function recipientVerification(analysis,accountState,config={},now=new Date()){
  return{classification,needsReview:classification!=='CONFIRMED'};
 }
 function unique(values){return[...new Set((values||[]).map(value=>String(value||'').trim()).filter(Boolean))]}
-function modelCandidates(config={},selection=null){
+function modelCandidates(config={}){
  return unique([
-  selection?.model,
-  ...(Array.isArray(selection?.models)?selection.models:[]),
+  FAST_PREFILL_MODEL,
   config.primaryModel,
   config.secondaryModel,
-  ...CURRENT_STABLE_MODELS
+  FALLBACK_PREFILL_MODEL
  ]).slice(0,10);
 }
 function errorCode(error){return String(error?.code||'').trim().toUpperCase()}
@@ -67,6 +71,10 @@ function canTryAnotherModel(error){
  if(['AI_MODEL_INVALID','AI_MODEL_NOT_FOUND','EMPTY_OUTPUT','INVALID_OUTPUT'].includes(code))return true;
  return status===400||status===404;
 }
+function canRetryTransient(error){const status=Number(error?.status||0),code=errorCode(error);return status>=500&&status<600&&['PROVIDER_UNAVAILABLE','AI_PROVIDER_ERROR'].includes(code)}
+function mustFailWithoutProxy(error){const code=errorCode(error);return['INVALID_ATTACHMENT','RATE_LIMIT','PROVIDER_UNAVAILABLE','TIMEOUT'].includes(code)||canRetryTransient(error)}
+function wait(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
+function budgetTimeout(){return Object.assign(new Error('La prelectura agotó su tiempo total protegido.'),{code:'TIMEOUT',status:504})}
 function localGeminiConfigured(){return Boolean(String(process.env.GEMINI_API_KEY||'').trim())}
 function validateRawForPrefill(raw){
  const parsed=contract.parseRawJson(String(raw||''));
@@ -76,11 +84,11 @@ function validateRawForPrefill(raw){
  if(fatal.length)throw Object.assign(new Error('La IA devolvió un esquema inválido.'),{code:'INVALID_OUTPUT',detail:fatal[0]});
  return String(raw).trim();
 }
-async function analyzeViaProxy({proof,promptVersion,fetchFn=global.fetch,proxyUrl=PROXY_URL}={}){
+async function analyzeViaProxy({proof,promptVersion,fetchFn=global.fetch,proxyUrl=PROXY_URL,timeoutMs=PROXY_TIMEOUT_MS}={}){
  if(!proxyUrl)throw Object.assign(new Error('No existe un lector alterno configurado.'),{code:'AI_NOT_CONFIGURED'});
  const content=Buffer.isBuffer(proof?.content)?proof.content:null,contentType=String(proof?.contentType||'').trim();
  if(!content||!content.length||!contentType)throw Object.assign(new Error('El comprobante no está disponible para análisis.'),{code:'INVALID_ATTACHMENT'});
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),PROXY_TIMEOUT_MS);
+ const timeout=Math.max(1000,Math.min(PROXY_TIMEOUT_MS,Number(timeoutMs)||PROXY_TIMEOUT_MS)),controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeout);
  try{
   const response=await fetchFn(proxyUrl,{method:'POST',headers:{'Content-Type':'application/json','X-VLA-Client':PROXY_CLIENT},signal:controller.signal,body:JSON.stringify({content:content.toString('base64'),contentType,promptVersion})});
   const payload=await response.json().catch(()=>({}));
@@ -93,37 +101,40 @@ async function analyzeViaProxy({proof,promptVersion,fetchFn=global.fetch,proxyUr
   throw error;
  }finally{clearTimeout(timer)}
 }
-async function analyzeDirect({model,proof,report,promptVersion,runnerFactory=createGeminiAnalysisRunner}={}){
- const runner=runnerFactory({timeoutMs:DIRECT_TIMEOUT_MS,maxOutputTokens:2048});
+async function analyzeDirect({model,proof,report,promptVersion,runnerFactory=createGeminiAnalysisRunner,timeoutMs=DIRECT_TIMEOUT_MS}={}){
+ const runner=runnerFactory({timeoutMs:Math.max(5000,Math.min(DIRECT_TIMEOUT_MS,Number(timeoutMs)||DIRECT_TIMEOUT_MS)),maxOutputTokens:2048});
  const raw=await runner({model,proof,report,promptVersion});
  return{raw:validateRawForPrefill(raw),model,provider:'direct'};
 }
 async function analyzeWithFallback({config,proof,report,promptVersion}={},deps={}){
- const discover=deps.discoverCompatibleModel||discoverCompatibleModel;
  const direct=deps.analyzeDirect||analyzeDirect;
  const proxy=deps.analyzeViaProxy||analyzeViaProxy;
  const hasLocal=deps.localGeminiConfigured||localGeminiConfigured;
- let selection=null,discoveryError=null,lastError=null;
+ const now=deps.now||Date.now,sleep=deps.sleep||wait,budgetMs=Math.max(5000,Number(deps.budgetMs)||PREFILL_TOTAL_BUDGET_MS),startedAt=now();
+ const remaining=()=>Math.max(0,budgetMs-(now()-startedAt));
+ const directAttempt=model=>{const available=remaining();if(available<MIN_DIRECT_WINDOW_MS)throw budgetTimeout();return direct({model,proof,report,promptVersion,timeoutMs:Math.min(DIRECT_TIMEOUT_MS,available)})};
+ let lastError=null;
 
  if(hasLocal()){
-  try{selection=await discover()}
-  catch(error){discoveryError=error;lastError=error}
-
-  const discoveryCode=errorCode(discoveryError);
-  const directAllowed=!['AI_AUTH_FAILED','AI_NOT_CONFIGURED'].includes(discoveryCode);
-  if(directAllowed){
-   const models=modelCandidates(config,selection).slice(0,MAX_DIRECT_ATTEMPTS);
-   for(const model of models){
-    try{return await direct({model,proof,report,promptVersion})}
-    catch(error){
-     lastError=error;
-     if(!canTryAnotherModel(error))break;
+  const models=modelCandidates(config).slice(0,MAX_DIRECT_ATTEMPTS);
+  for(let index=0;index<models.length;index++){
+   const model=models[index];
+   try{return await directAttempt(model)}
+   catch(error){
+    lastError=error;
+    if(index===0&&canRetryTransient(error)&&remaining()>=TRANSIENT_RETRY_DELAY_MS+MIN_DIRECT_WINDOW_MS){
+     await sleep(TRANSIENT_RETRY_DELAY_MS);
+     try{return await directAttempt(model)}catch(retryError){lastError=retryError}
     }
+    if(mustFailWithoutProxy(lastError))throw lastError;
+    if(!canTryAnotherModel(lastError))break;
    }
   }
  }
 
- try{return await proxy({proof,promptVersion})}
+ const proxyBudget=remaining();
+ if(proxyBudget<MIN_PROXY_WINDOW_MS)throw lastError||budgetTimeout();
+ try{return await proxy({proof,promptVersion,timeoutMs:Math.min(PROXY_TIMEOUT_MS,proxyBudget)})}
  catch(error){
   if(!lastError||['AI_AUTH_FAILED','AI_NOT_CONFIGURED'].includes(errorCode(lastError)))lastError=error;
  }
@@ -171,10 +182,14 @@ exports.unique=unique;
 exports.modelCandidates=modelCandidates;
 exports.errorCode=errorCode;
 exports.canTryAnotherModel=canTryAnotherModel;
+exports.canRetryTransient=canRetryTransient;
+exports.mustFailWithoutProxy=mustFailWithoutProxy;
 exports.validateRawForPrefill=validateRawForPrefill;
 exports.analyzeViaProxy=analyzeViaProxy;
 exports.analyzeDirect=analyzeDirect;
 exports.analyzeWithFallback=analyzeWithFallback;
 exports.loadAuthorizedAccounts=loadAuthorizedAccounts;
 exports.recipientVerification=recipientVerification;
+exports.FAST_PREFILL_MODEL=FAST_PREFILL_MODEL;
+exports.PREFILL_TOTAL_BUDGET_MS=PREFILL_TOTAL_BUDGET_MS;
 exports.CURRENT_STABLE_MODELS=CURRENT_STABLE_MODELS;
