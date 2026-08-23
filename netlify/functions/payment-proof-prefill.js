@@ -55,13 +55,15 @@ async function exactDuplicateStatus(attachmentSha,request=fetch,credentials={}){
  const base=String(credentials.baseId||process.env.AIRTABLE_BASE_ID||''),token=String(credentials.apiToken||process.env.AIRTABLE_API_TOKEN||'');
  if(!base||!token||!/^[a-f0-9]{64}$/i.test(String(attachmentSha||'')))return{checked:false,duplicate:false};
  const formula=`{Hash SHA-256}='${escapeFormula(String(attachmentSha).toLowerCase())}'`,headers={Authorization:`Bearer ${token}`};
- for(const table of ['Reportes de Pago','Pagos']){
+ const checks=['Reportes de Pago','Pagos'].map(async table=>{
   const params=new URLSearchParams({pageSize:'1',filterByFormula:formula});
   const response=await request(`https://api.airtable.com/v0/${base}/${encodeURIComponent(table)}?${params}`,{headers});
   const data=await response.json().catch(()=>({}));
   if(!response.ok)throw new Error(data.error?.message||data.message||'No se pudo verificar duplicidad.');
-  if(Array.isArray(data.records)&&data.records.length)return{checked:true,duplicate:true,source:table};
- }
+  return Array.isArray(data.records)&&data.records.length?table:'';
+ });
+ const sources=await Promise.all(checks),source=sources.find(Boolean)||'';
+ if(source)return{checked:true,duplicate:true,source};
  return{checked:true,duplicate:false};
 }
 function unique(values){return[...new Set((values||[]).map(value=>String(value||'').trim()).filter(Boolean))]}
@@ -154,8 +156,11 @@ const handler=async event=>{
   const [ipLimit,ownerLimit]=await Promise.all([allowed('PAYMENT_PREFILL_IP',clientIp(event),12),allowed('PAYMENT_PREFILL_OWNER',ownerId,8)]);
   if(!ipLimit.allowed||!ownerLimit.allowed){const retryAfter=Math.max(ipLimit.retryAfter||0,ownerLimit.retryAfter||0,60);return json(429,{message:'Se alcanzó el límite temporal de lecturas. Puede completar los datos manualmente.',manualAvailable:true},{'Retry-After':String(retryAfter)})}
   const attachmentSha=crypto.createHash('sha256').update(attachment.content).digest('hex');
-  const duplicate=await exactDuplicateStatus(attachmentSha).catch(error=>{console.warn('Prelectura de duplicado no disponible:',safeDisplayText(error.message,200));return{checked:false,duplicate:false}});
-  const [config,accountState]=await Promise.all([loadAiConfig(),loadAuthorizedAccounts()]);
+  const [duplicate,config,accountState]=await Promise.all([
+   exactDuplicateStatus(attachmentSha).catch(error=>{console.warn('Prelectura de duplicado no disponible:',safeDisplayText(error.message,200));return{checked:false,duplicate:false}}),
+   loadAiConfig(),
+   loadAuthorizedAccounts()
+  ]);
   if(!config.aiEnabled)return json(503,{message:'La lectura automática no está disponible. Complete los datos manualmente.',manualAvailable:true});
   const result=await analyzeWithFallback({config,proof:{content:attachment.content,contentType:attachment.contentType},report:{targetMode:''},promptVersion:config.promptVersion}),raw=result.raw;
   const parsed=contract.parseRawJson(raw);
