@@ -4,7 +4,7 @@ const automation=require('../netlify/functions/_shared/_payment_report_automatio
 
 (async()=>{
  const reportId='rec12345678901234',patched=[];
- const baseResult={ok:true,processingState:'Aprobación automática autorizada',resultValidation:'Coincidencia exacta verificada',automaticApproval:true,canCreatePayment:true,canEnableAccess:false,financialFingerprint:'f'.repeat(64),analysis:{normalized:{confidence:0.99,method:'ZELLE',amount:85,currency:'USD',reference:'REF1'}},snapshot:{snapshotId:'BALANCE_SNAPSHOT_V2|x',schemaVersion:2,requiredUsdAccount:85,requiredBsAccount:0,source:'ControlVersiones'},duplicate:{isDuplicate:false,possibleDuplicate:false,type:'Sin coincidencia'},decision:{automaticApproval:true,reasons:['DETERMINISTIC_AUTOMATIC_APPROVAL']},aiConsensus:{passed:true,minimumConfidence:0.97,primaryConfidence:0.99,secondaryConfidence:0.99,sharedRecipientEvidence:['name:ENZO PANARITO']}};
+ const baseResult={ok:true,processingState:'Aprobación automática autorizada',resultValidation:'Coincidencia exacta verificada',automaticApproval:true,canCreatePayment:true,canEnableAccess:false,financialFingerprint:'f'.repeat(64),analysis:{normalized:{confidence:0.99,method:'ZELLE',amount:85,currency:'USD',reference:'REF1'},resolutionSource:'primary',rawSecondary:''},snapshot:{snapshotId:'BALANCE_SNAPSHOT_V2|x',schemaVersion:2,requiredUsdAccount:85,requiredBsAccount:0,source:'ControlVersiones'},duplicate:{isDuplicate:false,possibleDuplicate:false,type:'Sin coincidencia'},decision:{automaticApproval:true,reasons:['DETERMINISTIC_AUTOMATIC_APPROVAL']}};
  let executions=0;
  const processor=automation.createPaymentReportAutomation({
   loadBundle:async()=>({report:{id:reportId}}),
