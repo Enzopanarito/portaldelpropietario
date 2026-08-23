@@ -84,6 +84,54 @@ test('un 503 rápido reintenta una sola vez el mismo Flash-Lite con pausa contro
  assert.equal(result.model,'gemini-2.5-flash-lite');
 });
 
+test('un fallo de transporte directo se normaliza para activar el reintento protegido',async()=>{
+ const failure=new TypeError('fetch failed');
+ failure.cause={code:'ECONNRESET',hostname:'dato-que-no-debe-salir'};
+ await assert.rejects(
+  ()=>prefill.analyzeDirect({...baseArgs,model:'gemini-2.5-flash-lite',runnerFactory:()=>async()=>{throw failure}}),
+  error=>error?.code==='AI_NETWORK_ERROR'&&error?.status===undefined&&error?.transportCode==='ECONNRESET'&&!String(error?.message||'').includes('dato-que-no-debe-salir')
+ );
+});
+
+test('un transporte crudo recorre el reintento completo y solo llama dos veces al modelo rápido',async()=>{
+ let calls=0,clock=0;
+ const result=await prefill.analyzeWithFallback(baseArgs,{
+  localGeminiConfigured:()=>true,
+  analyzeDirect:args=>prefill.analyzeDirect({...args,runnerFactory:()=>async()=>{calls+=1;if(calls===1)throw new TypeError('fetch failed');return VALID_RAW}}),
+  analyzeViaProxy:async()=>{throw new Error('El proxy no debe ejecutarse.')},
+  now:()=>clock,
+  sleep:async ms=>{clock+=ms}
+ });
+ assert.equal(calls,2);
+ assert.equal(clock,1000);
+ assert.equal(result.model,'gemini-2.5-flash-lite');
+});
+
+test('un error semántico conserva su clasificación aunque incluya una causa de transporte',()=>{
+ const failure=Object.assign(new Error('credencial rechazada'),{code:'AI_AUTH_FAILED',status:403,cause:{code:'ECONNRESET'}});
+ assert.equal(prefill.normalizeTransportError(failure),failure);
+});
+
+test('el lector alterno normaliza fallos de red sin exponer su causa',async()=>{
+ const failure=Object.assign(new Error('socket privado'),{code:'EAI_AGAIN'});
+ await assert.rejects(
+  ()=>prefill.analyzeViaProxy({proof:baseArgs.proof,promptVersion:'test',proxyUrl:'https://example.test/payment-proof',fetchFn:async()=>{throw failure}}),
+  error=>error?.code==='AI_NETWORK_ERROR'&&error?.status===undefined&&error?.transportCode==='EAI_AGAIN'&&!String(error?.message||'').includes('socket privado')
+ );
+});
+
+test('la respuesta pública solo admite códigos cerrados y estados HTTP válidos',()=>{
+ assert.deepEqual(prefill.publicFailure(Object.assign(new Error('secreto'),{code:'SECRETO-123',status:999})),{reason:'PREFILL_INTERNAL_ERROR',failureClass:'RUNTIME',providerStatus:null});
+ assert.deepEqual(prefill.publicFailure(coded('PROVIDER_UNAVAILABLE',503)),{reason:'PROVIDER_UNAVAILABLE',failureClass:'PROVIDER',providerStatus:503});
+ assert.deepEqual(prefill.publicFailure(coded('TIMEOUT',504)),{reason:'TIMEOUT',failureClass:'TIMEOUT',providerStatus:null});
+ assert.deepEqual(prefill.publicFailure(coded('TIMEOUT',408)),{reason:'TIMEOUT',failureClass:'TIMEOUT',providerStatus:408});
+});
+
+test('la huella de transporte revisa causa y error sin aceptar códigos libres',()=>{
+ assert.equal(prefill.transportCode({cause:{code:'NO_PERMITIDO'},code:'ECONNRESET'}),'ECONNRESET');
+ assert.equal(prefill.transportCode({cause:{code:'HOST-PRIVADO'},code:'TAMBIEN-PRIVADO'}),'');
+});
+
 test('un timeout directo termina acotado y nunca encadena el proxy',async()=>{
  let clock=0,proxyCalls=0;
  await assert.rejects(()=>prefill.analyzeWithFallback(baseArgs,{
