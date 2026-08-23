@@ -17,6 +17,7 @@ const MAX_HISTORY = 50;
 const REPORT_FIELDS = [
   'Propietario que Reporta','Casa al Reportar','Estado','Estado de Procesamiento','Decisión Administrativa',
   'Validación Realizada Por','Fecha Revisión','Pago Definitivo Creado','Pago Definitivo Relacionado',
+  'Fecha y Hora del Reporte','Administrador que Revisó',
   'Monto Reportado','Monto Reportado Bs','Equivalente USD Reportado','Moneda Ingresada','Monto Ingresado',
   'Forma de Pago Reportada','Referencia','Referencia Detectada','Fecha Operación Detectada','Método Detectado',
   'Banco o Plataforma Detectada','AI Confidence','Clasificación Receptor','Cuenta Autorizada Coincidente',
@@ -52,6 +53,10 @@ function reversalPrepareEntry(fields,paymentId=''){
 function automaticReport(fields){
   return selectName(fields['Decisión Administrativa'])==='Aprobación automática'||Boolean(automaticEntry(fields));
 }
+function approvalType(fields,paymentFields={}){
+  if(automaticReport(fields)||selectName(paymentFields['Fuente de Validación'])==='Automática')return'AUTOMATIC';
+  return'MANUAL';
+}
 function reportPaymentId(report){
   const fields=report?.fields||{},fromLink=linked(fields['Pago Definitivo Relacionado'])[0],fromAudit=automaticEntry(fields)?.paymentId;
   return validRecordId(fromLink)?fromLink:(validRecordId(fromAudit)?fromAudit:'');
@@ -64,7 +69,7 @@ function paymentForReport(payments,reportId,paymentId=''){
   return (payments||[]).find(payment=>linked(payment?.fields?.['Reporte de Pago Origen']).includes(reportId))||null;
 }
 function historyItem(report,payment,ownersById){
-  const fields=report.fields||{},paymentFields=payment?.fields||{},auto=automaticEntry(fields),reversal=reversalEntry(fields),ownerId=linked(fields['Propietario que Reporta'])[0]||linked(paymentFields['Propietario que Paga'])[0]||'',owner=ownersById.get(ownerId)||{},paymentId=payment?.id||auto?.paymentId||reportPaymentId(report),applied=paymentFields['[x] Aplicado al Cierre']===true,active=Boolean(payment&&selectName(paymentFields['Fuente de Validación'])==='Automática'&&!reversal),reverted=Boolean(reversal),status=reverted?'REVERTIDO':active?'ACTIVO':'REVISAR';
+  const fields=report.fields||{},paymentFields=payment?.fields||{},auto=automaticEntry(fields),reversal=reversalEntry(fields),ownerId=linked(fields['Propietario que Reporta'])[0]||linked(paymentFields['Propietario que Paga'])[0]||'',owner=ownersById.get(ownerId)||{},paymentId=payment?.id||auto?.paymentId||reportPaymentId(report),applied=paymentFields['[x] Aplicado al Cierre']===true,type=approvalType(fields,paymentFields),active=Boolean(payment&&!reversal),reverted=Boolean(reversal),status=reverted?'REVERTIDO':active?'ACTIVO':'REVISAR';
   const equivalentUsd=money(paymentFields['Equivalente USD Aplicado']||paymentFields['Monto Pagado']||fields['Equivalente USD Reportado']||fields['Monto Reportado']);
   return {
     reportId:report.id,
@@ -72,6 +77,9 @@ function historyItem(report,payment,ownersById){
     ownerId:ownerId||null,
     house:Number(owner.Casa||fields['Casa al Reportar']||0)||null,
     ownerName:clean(owner.Propietario)||'Propietario no disponible',
+    approvalType:type,
+    approvalLabel:type==='AUTOMATIC'?'Automática':'Manual',
+    reportedAt:clean(fields['Fecha y Hora del Reporte']),
     amountUsd:equivalentUsd,
     amountBs:money(paymentFields['Monto Pagado Bs']||fields['Monto Reportado Bs']),
     receivedAmount:money(paymentFields['Monto Recibido']||fields['Monto Ingresado']),
@@ -79,6 +87,8 @@ function historyItem(report,payment,ownersById){
     mode:selectName(paymentFields['Forma de Pago']||fields['Forma de Pago Reportada']),
     paymentDate:clean(paymentFields['Fecha de Pago']||fields['Fecha Operación Detectada']),
     approvedAt:clean(auto?.at||fields['Fecha Revisión']),
+    reviewedBy:type==='AUTOMATIC'?'Piloto automático':clean(fields['Administrador que Revisó']||fields['Validación Realizada Por']||'Administrador'),
+    decision:selectName(fields['Decisión Administrativa']),
     reference:clean(paymentFields.Referencia||fields['Referencia Detectada']||fields.Referencia),
     method:selectName(fields['Método Detectado']||paymentFields['Método de Pago']),
     platform:clean(fields['Banco o Plataforma Detectada']),
@@ -88,7 +98,7 @@ function historyItem(report,payment,ownersById){
     proofName:clean(fields['Comprobante Nombre Original']),
     status,
     appliedAtClose:applied,
-    canReverse:active&&!applied&&validRecordId(paymentId),
+    canReverse:type==='AUTOMATIC'&&active&&!applied&&validRecordId(paymentId),
     reversalAt:clean(reversal?.at),
     reversalReason:clean(reversal?.reason||fields['Motivo del Rechazo'])
   };
@@ -148,15 +158,16 @@ async function deletePayment(paymentId){
 }
 async function loadHistory(){
   if(!process.env.AIRTABLE_API_TOKEN||!process.env.AIRTABLE_BASE_ID)throw new Error('Airtable no está configurado.');
-  const reportFormula=`OR({Decisión Administrativa}='Aprobación automática',FIND('"adminId":"AUTOPILOT"',{Log de Auditoría})>0)`;
+  const reportFormula=`AND({Pago Definitivo Creado}=TRUE(),OR({Estado}='Confirmado',{Estado de Procesamiento}='Aprobado'))`;
   const [reports,payments,owners]=await Promise.all([
     listRecords(TABLES.reportes,{formula:reportFormula,fields:REPORT_FIELDS,maxRecords:200}),
-    listRecords(TABLES.pagos,{formula:`{Fuente de Validación}='Automática'`,fields:PAYMENT_FIELDS,maxRecords:200}),
+    listRecords(TABLES.pagos,{formula:`COUNTA({Reporte de Pago Origen})>0`,fields:PAYMENT_FIELDS,maxRecords:200}),
     listRecords(TABLES.propietarios,{fields:OWNER_FIELDS,maxRecords:100})
   ]);
   const ownersById=new Map(owners.map(record=>[record.id,record.fields||{}]));
-  const items=reports.filter(report=>automaticReport(report.fields||{})).map(report=>historyItem(report,paymentForReport(payments,report.id,reportPaymentId(report)),ownersById)).sort((a,b)=>clean(b.approvedAt).localeCompare(clean(a.approvedAt))).slice(0,MAX_HISTORY);
-  return{generatedAt:new Date().toISOString(),summary:buildSummary(items),items};
+  const items=reports.map(report=>historyItem(report,paymentForReport(payments,report.id,reportPaymentId(report)),ownersById)).sort((a,b)=>clean(b.approvedAt).localeCompare(clean(a.approvedAt))).slice(0,MAX_HISTORY);
+  const automatic=items.filter(item=>item.approvalType==='AUTOMATIC'),manual=items.filter(item=>item.approvalType==='MANUAL');
+  return{generatedAt:new Date().toISOString(),summary:{all:buildSummary(items),automatic:buildSummary(automatic),manual:buildSummary(manual)},items,automatic,manual};
 }
 async function finalizeRecoveredReversal(report,{who,reason,paymentId,at}){
   const fields=report.fields||{},prepare=reversalPrepareEntry(fields,paymentId);
@@ -228,3 +239,4 @@ exports.reversalEntry=reversalEntry;
 exports.historyItem=historyItem;
 exports.buildSummary=buildSummary;
 exports.reversalReportPatch=reversalReportPatch;
+exports.approvalType=approvalType;
