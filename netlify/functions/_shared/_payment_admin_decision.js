@@ -62,6 +62,7 @@ function normalApprovalBlockers(fields={},{automatic=false}={}){
  const allowed=automatic?['Coincidencia exacta verificada']:['Coincide preliminarmente','Coincidencia exacta verificada'];
  if(!allowed.includes(validation))blockers.push('VALIDATION_NOT_GREEN');
  if(automatic){
+  if(transactionStatus!=='COMPLETED')blockers.push('AUTOMATIC_STATUS_NOT_COMPLETED');
   const reportedReference=normalizedReference(fields.Referencia),detectedReference=normalizedReference(fields['Referencia Detectada']);
   if(!reportedReference||!detectedReference||reportedReference!==detectedReference)blockers.push('REPORTED_REFERENCE_MISMATCH');
   const mode=selectName(fields['Forma de Pago Reportada']),reportedAmount=mode==='Bs BCV'?money(fields['Monto Reportado Bs']):money(fields['Equivalente USD Reportado']||fields['Monto Reportado']),detectedAmount=money(fields['Monto Detectado']);
