@@ -20,6 +20,7 @@ function report(overrides={}){
     'Decisión Administrativa':'Aprobación automática',
     'Validación Realizada Por':'Motor determinístico',
     'Fecha Revisión':'2026-08-22T01:00:00.000Z',
+    'Fecha y Hora del Reporte':'2026-08-22T00:55:00.000Z',
     'Pago Definitivo Creado':true,
     'Pago Definitivo Relacionado':[PAYMENT_ID],
     'Equivalente USD Reportado':120,
@@ -62,6 +63,16 @@ test('historial bloquea reversión simple después del cierre',()=>{
   const item=supervision.historyItem(report(),payment({'[x] Aplicado al Cierre':true}),owners);
   assert.equal(item.status,'ACTIVO');
   assert.equal(item.appliedAtClose,true);
+  assert.equal(item.canReverse,false);
+});
+
+test('historial separa aprobación manual y conserva ambas horas',()=>{
+  const manualReport=report({'Decisión Administrativa':'Aprobado por excepción','Validación Realizada Por':'Administrador','Administrador que Revisó':'ADMIN-TEST','Log de Auditoría':JSON.stringify({action:'approve_exception',adminId:'ADMIN-TEST',paymentId:PAYMENT_ID,at:'2026-08-22T01:00:00.000Z'})});
+  const item=supervision.historyItem(manualReport,payment({'Fuente de Validación':'Manual'}),owners);
+  assert.equal(item.approvalType,'MANUAL');
+  assert.equal(item.reportedAt,'2026-08-22T00:55:00.000Z');
+  assert.equal(item.approvedAt,'2026-08-22T01:00:00.000Z');
+  assert.equal(item.reviewedBy,'ADMIN-TEST');
   assert.equal(item.canReverse,false);
 });
 
