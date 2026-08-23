@@ -12,8 +12,8 @@ const STATUSES=new Set(['COMPLETED','SENT','PROCESSED','PENDING','SCHEDULED','FA
 const REQUIRED=['method','bank_or_platform','amount','currency','transaction_date','transaction_time','reference','transaction_status','recipient_name','recipient_phone','recipient_email','recipient_account_visible','recipient_account_last4','recipient_document','recipient_binance_id','sender_name','sender_account_visible','memo','confidence','critical_fields_visible','warnings','possible_visual_modification'];
 const ALLOWED=new Set(REQUIRED);
 const FORBIDDEN_DECISION_KEYS=new Set(['approved','approval','decision','payment_created','create_payment','access_enabled','provisional_access','gate_access','saldo_actualizado']);
-const TRANSIENT_FAILURES=new Set(['TIMEOUT','PROVIDER_UNAVAILABLE','RATE_LIMIT','TEMPORARY_ERROR','GENERATION_STUCK']);
-const INVALID_OUTPUT_FAILURES=new Set(['INVALID_JSON','SCHEMA_INVALID','FORBIDDEN_DECISION_OUTPUT','LOW_CONFIDENCE','CRITICAL_FIELDS_MISSING','EMPTY_OUTPUT','OUTPUT_TOO_LARGE']);
+const TRANSIENT_FAILURES=new Set(['TIMEOUT','PROVIDER_UNAVAILABLE','RATE_LIMIT','TEMPORARY_ERROR','GENERATION_STUCK','EMPTY_OUTPUT']);
+const INVALID_OUTPUT_FAILURES=new Set(['INVALID_JSON','SCHEMA_INVALID','FORBIDDEN_DECISION_OUTPUT','LOW_CONFIDENCE','CRITICAL_FIELDS_MISSING','EMPTY_OUTPUT','OUTPUT_TOO_LARGE','AI_MODEL_NOT_FOUND']);
 
 function clean(value){return String(value??'').trim()}
 function boundedNumber(value,fallback,min,max){const number=Number(value);return Number.isFinite(number)?Math.min(max,Math.max(min,number)):fallback}

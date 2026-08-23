@@ -20,13 +20,14 @@ function score(model){
  const id=modelId(model).toLowerCase(),methods=model?.supportedGenerationMethods||[];
  if(!id.startsWith('gemini-')||!methods.includes('generateContent'))return-1;
  if(/(?:embedding|embed|aqa|tts|live|image|imagen|robotics|computer-use|deep-research)/.test(id))return-1;
- let value=0;
- if(/flash-lite/.test(id))value+=530;
- else if(/flash/.test(id))value+=500;
- else if(/pro/.test(id))value+=260;
+ // Un flujo financiero no debe adoptar automáticamente modelos preview/exp.
+ if(/(?:preview|experimental|exp)/.test(id))return-1;
+ let value=180;
+ // Para un fallback financiero priorizamos Flash estable completo sobre Lite.
+ if(/flash-lite/.test(id))value+=420;
+ else if(/flash/.test(id))value+=560;
+ else if(/pro/.test(id))value+=300;
  else value+=120;
- if(/(?:preview|experimental|exp)/.test(id))value-=160;
- else value+=180;
  value+=Math.min(parseVersion(id),399);
  return value;
 }
@@ -78,7 +79,7 @@ async function discoverCompatibleModel({apiKey=process.env.GEMINI_API_KEY,fetchF
  }
  try{
   const models=compatibleModels(await fetchCatalog({apiKey:keyText,fetchFn})).slice(0,10);
-  if(!models.length)throw codedError('Gemini no reportó modelos compatibles para leer comprobantes.','AI_MODEL_NOT_FOUND');
+  if(!models.length)throw codedError('Gemini no reportó modelos estables compatibles para leer comprobantes.','AI_MODEL_NOT_FOUND');
   const value={models,detectedAt:current,expiresAt:current+TTL_MS};
   memory.set(key,value);
   if(store)try{await store.setJSON(key,value)}catch(_){}

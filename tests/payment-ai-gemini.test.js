@@ -19,6 +19,8 @@ const gemini=require('../netlify/functions/_shared/_payment_ai_gemini');
  const body=JSON.parse(calls[0].options.body);
  assert.strictEqual(body.contents[0].parts[1].inlineData.mimeType,'image/png');
  assert.strictEqual(body.generationConfig.responseMimeType,'application/json');
+ assert(body.generationConfig.responseJsonSchema,'Gemini debe recibir un schema estructurado real.');
+ assert(!Object.prototype.hasOwnProperty.call(body.generationConfig,'temperature'),'No usar sampling obsoleto en Gemini 3.6+.');
  const prompt=body.contents[0].parts[0].text;
  assert.match(prompt,/segunda revisión enfocada en la fecha/i);
  assert.match(prompt,/No confundas.*barra del teléfono/i);

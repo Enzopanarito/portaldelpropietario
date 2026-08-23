@@ -9,6 +9,7 @@ const MODES=new Set(['USD','Bs BCV']);
 const CURRENCIES=new Set(['USD','VES']);
 const METHODS=new Set(['TRANSFER_VE','MOBILE_PAYMENT_VE','ZELLE','TRANSFER_US','BINANCE_PAY','CRYPTO_TRANSFER','OTHER','CASH']);
 const TRUSTED_DATE_SOURCES=new Set(['PROOF_EXTRACTED','ADMIN_CORRECTED']);
+const AUTO_AMOUNT_TOLERANCE=0.01;
 
 function clean(value){return String(value??'').trim()}
 function money(value){const number=Number(value);return Number.isFinite(number)?Math.round((number+Number.EPSILON)*100)/100:0}
@@ -16,6 +17,7 @@ function preciseNumber(value){const number=Number(value);return Number.isFinite(
 function selectName(value){return value&&typeof value==='object'&&value.name?clean(value.name):clean(value)}
 function bounded(value,max=500){return clean(value).slice(0,max)}
 function parseJson(value,fallback={}){try{return JSON.parse(clean(value)||'{}')}catch(_){return fallback}}
+function normalizedReference(value){return clean(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,'')}
 function validDate(value,now=new Date()){return validTransactionDate(clean(value),{now})}
 function normalizeCorrections(value={}){
  const source=value&&typeof value==='object'&&!Array.isArray(value)?value:{};
@@ -59,6 +61,12 @@ function normalApprovalBlockers(fields={},{automatic=false}={}){
  const validation=selectName(fields['Resultado Validación']);
  const allowed=automatic?['Coincidencia exacta verificada']:['Coincide preliminarmente','Coincidencia exacta verificada'];
  if(!allowed.includes(validation))blockers.push('VALIDATION_NOT_GREEN');
+ if(automatic){
+  const reportedReference=normalizedReference(fields.Referencia),detectedReference=normalizedReference(fields['Referencia Detectada']);
+  if(!reportedReference||!detectedReference||reportedReference!==detectedReference)blockers.push('REPORTED_REFERENCE_MISMATCH');
+  const mode=selectName(fields['Forma de Pago Reportada']),reportedAmount=mode==='Bs BCV'?money(fields['Monto Reportado Bs']):money(fields['Equivalente USD Reportado']||fields['Monto Reportado']),detectedAmount=money(fields['Monto Detectado']);
+  if(!(reportedAmount>0)||!(detectedAmount>0)||Math.abs(reportedAmount-detectedAmount)>AUTO_AMOUNT_TOLERANCE)blockers.push('REPORTED_AMOUNT_MISMATCH');
+ }
  return[...new Set(blockers)];
 }
 function effectivePayment(fields={},corrections={}){
@@ -96,4 +104,4 @@ function appendAudit(existing,{action,adminId,reason='',corrections={},result=''
  return[clean(existing),JSON.stringify(entry)].filter(Boolean).join('\n').slice(-90000);
 }
 
-module.exports={APPROVAL_ACTIONS,TERMINAL_ACTIONS,ALL_ACTIONS,MODES,CURRENCIES,METHODS,TRUSTED_DATE_SOURCES,clean,money,preciseNumber,selectName,bounded,parseJson,validDate,normalizeCorrections,validateDecisionInput,normalApprovalBlockers,effectivePayment,correctionPatch,appendAudit};
+module.exports={APPROVAL_ACTIONS,TERMINAL_ACTIONS,ALL_ACTIONS,MODES,CURRENCIES,METHODS,TRUSTED_DATE_SOURCES,AUTO_AMOUNT_TOLERANCE,clean,money,preciseNumber,selectName,bounded,parseJson,normalizedReference,validDate,normalizeCorrections,validateDecisionInput,normalApprovalBlockers,effectivePayment,correctionPatch,appendAudit};
