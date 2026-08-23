@@ -48,22 +48,25 @@ jobs:
           const houses=owners.map(item=>Number(item.Casa));
           if(new Set(houses).size!==15)throw new Error('La API pública contiene casas duplicadas.');
           for(let casa=1;casa<=15;casa++)if(!houses.includes(casa))throw new Error(`Falta Casa ${casa} en la API pública.`);
+          const financialFields=[
+            'saldoUsd','saldoBsRef','totalPagadero','saldoNetoReferencial',
+            'saldoFavorUsd','saldoFavorBs','deudaVencidaUsd','deudaVencidaBs',
+            'mesCorrienteUsd','mesCorrienteBs'
+          ];
+          for(const owner of owners){
+            for(const field of financialFields){
+              if(!Object.hasOwn(owner,field))throw new Error(`Casa ${owner.Casa}: falta campo canónico ${field}.`);
+              if(!Number.isFinite(owner[field]))throw new Error(`Casa ${owner.Casa}: ${field} no es numérico.`);
+            }
+          }
           const owner=owners.find(item=>Number(item.Casa)===11);
           if(!owner)throw new Error('Casa 11 no aparece en la API pública.');
-          const financialFields=['Saldo USD Actual','Saldo Bs Ref Actual','Saldo Total Actual','Mes Corriente USD','Mes Corriente Bs'];
-          for(const field of financialFields){
-            const value=Number(owner[field]);
-            if(!Number.isFinite(value))throw new Error(`Casa 11: ${field} no es numérico.`);
-          }
           const result={
             casa:Number(owner.Casa),
             propietario:String(owner.Propietario||''),
-            saldoUsd:Number(owner['Saldo USD Actual']),
-            saldoBsRef:Number(owner['Saldo Bs Ref Actual']),
-            saldoTotal:Number(owner['Saldo Total Actual']),
-            mesCorrienteUsd:Number(owner['Mes Corriente USD']),
-            mesCorrienteBs:Number(owner['Mes Corriente Bs'])
+            ...Object.fromEntries(financialFields.map(field=>[field,owner[field]]))
           };
+          console.log('PRODUCTION_FINANCIAL_CONTRACT_OK 15/15 houses 150/150 fields');
           console.log('HOUSE11_FINANCIAL_CONTRACT_OK '+JSON.stringify(result));
           NODE
 
