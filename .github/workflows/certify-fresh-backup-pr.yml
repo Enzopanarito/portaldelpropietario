@@ -5,6 +5,7 @@ on:
     branches: [main]
 
 permissions:
+  actions: write
   contents: read
 
 jobs:
@@ -13,109 +14,78 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
-      AIRTABLE_API_TOKEN: ${{ secrets.AIRTABLE_API_TOKEN }}
-      AIRTABLE_BASE_ID: app4nE4ReGRi2SuP2
-      VLA_BACKUP_ENCRYPTION_KEY: ${{ secrets.VLA_BACKUP_ENCRYPTION_KEY }}
+      GH_TOKEN: ${{ github.token }}
+      OFFICIAL_BACKUP_WORKFLOW: backup-vla-production.yml
     steps:
-      - name: Checkout exact PR head
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-
-      - name: Use Node.js 24
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: '24'
-          package-manager-cache: false
-
-      - name: Verify backup prerequisites without exposing values
+      - name: Dispatch official production backup on main
+        id: dispatch
         shell: bash
         run: |
           set -euo pipefail
-          test -n "${AIRTABLE_API_TOKEN:-}" || { echo 'Falta AIRTABLE_API_TOKEN'; exit 1; }
-          test "$AIRTABLE_BASE_ID" = 'app4nE4ReGRi2SuP2' || { echo 'Base de producción inesperada'; exit 1; }
-          printf '%s' "$VLA_BACKUP_ENCRYPTION_KEY" | grep -Eq '^[A-Fa-f0-9]{64}$' || { echo 'Clave de backup inválida'; exit 1; }
-          echo 'BACKUP_PREREQUISITES_OK values=hidden'
+          marker="$(date -u +%s)"
+          response_code="$(curl --silent --show-error --output /tmp/dispatch-response.txt --write-out '%{http_code}' \
+            --request POST \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/${OFFICIAL_BACKUP_WORKFLOW}/dispatches" \
+            --data '{"ref":"main"}')"
+          if [ "$response_code" != '204' ]; then
+            echo "No se pudo disparar el workflow oficial de backup (HTTP $response_code)."
+            cat /tmp/dispatch-response.txt 2>/dev/null || true
+            exit 1
+          fi
+          rm -f /tmp/dispatch-response.txt
+          echo "marker=$marker" >> "$GITHUB_OUTPUT"
+          echo 'OFFICIAL_BACKUP_DISPATCH_OK ref=main credentials=untouched'
 
-      - name: Export canonical 17-table production backup read-only
+      - name: Resolve dispatched official backup run
+        id: resolve
+        env:
+          MARKER: ${{ steps.dispatch.outputs.marker }}
         shell: bash
         run: |
           set -euo pipefail
-          node <<'NODE'
-          const fs=require('fs');
-          const {TABLES}=require('./netlify/functions/_shared/_backup_inventory');
-          const {sha256,sortRecords}=require('./netlify/functions/_shared/_integrity');
-          const token=process.env.AIRTABLE_API_TOKEN;
-          const baseId=process.env.AIRTABLE_BASE_ID;
-          if(TABLES.length!==17) throw new Error(`BACKUP_INVENTORY_${TABLES.length}_NOT_17`);
-          async function all(table){
-            let records=[],offset='';
-            do{
-              const suffix=offset?`?offset=${encodeURIComponent(offset)}`:'';
-              const r=await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}${suffix}`,{headers:{Authorization:`Bearer ${token}`}});
-              const data=await r.json().catch(()=>({}));
-              if(!r.ok) throw new Error(`AIRTABLE_${table}_${r.status}_${String(data?.error?.message||data?.message||'').slice(0,120)}`);
-              records=records.concat(data.records||[]);offset=String(data.offset||'');
-            }while(offset);
-            return sortRecords(records);
-          }
-          (async()=>{
-            const generatedAt=new Date().toISOString();
-            const generatedAtCaracas=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Caracas',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
-            const backup={backupType:'airtable-full-operational-backup',schemaVersion:3,generatedAt,generatedAtCaracas,baseId,source:'VLA PR Fresh Backup Certification',tableCount:TABLES.length,tables:{},integrity:{algorithm:'SHA-256',canonicalization:'sorted-object-keys-and-record-id',tableHashes:{},manifestHash:null}};
-            for(const table of TABLES){const records=await all(table);const h=sha256(records);backup.tables[table]={recordCount:records.length,sha256:h,records};backup.integrity.tableHashes[table]=h;console.log(`BACKUP_TABLE_OK ${table} records=${records.length}`)}
-            backup.totalRecords=Object.values(backup.tables).reduce((n,t)=>n+Number(t.recordCount||0),0);
-            backup.integrity.manifestHash=sha256({backupType:backup.backupType,schemaVersion:backup.schemaVersion,generatedAt:backup.generatedAt,baseId:backup.baseId,tableCount:backup.tableCount,totalRecords:backup.totalRecords,tableHashes:backup.integrity.tableHashes});
-            backup.integrity.fileContentHash=sha256({...backup,integrity:{...backup.integrity,fileContentHash:null}});
-            fs.writeFileSync('/tmp/vla-airtable-backup.json',JSON.stringify(backup));
-            console.log(`VLA_PR_BACKUP_EXPORT_OK tables=${TABLES.length}/17 records=${backup.totalRecords} generatedAt=${generatedAt}`);
-          })().catch(e=>{console.error(String(e.message||e));process.exit(1)});
-          NODE
+          run_id=''
+          for attempt in $(seq 1 24); do
+            runs="$(curl --fail-with-body --silent --show-error \
+              --header "Authorization: Bearer $GH_TOKEN" \
+              --header 'Accept: application/vnd.github+json' \
+              --header 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/${OFFICIAL_BACKUP_WORKFLOW}/runs?event=workflow_dispatch&branch=main&per_page=20")"
+            run_id="$(printf '%s' "$runs" | jq -r --argjson marker "$MARKER" '[.workflow_runs[] | select(.event=="workflow_dispatch") | select((.created_at|fromdateiso8601) >= ($marker-10))] | sort_by(.created_at) | reverse | .[0].id // empty')"
+            [ -n "$run_id" ] && break
+            sleep 5
+          done
+          [ -n "$run_id" ] || { echo 'No apareció la ejecución oficial de backup disparada.'; exit 1; }
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "OFFICIAL_BACKUP_RUN_RESOLVED id=$run_id"
 
-      - name: Verify all tables and integrity hashes
-        run: node scripts/vla-backup-verify.mjs /tmp/vla-airtable-backup.json /tmp/vla-backup-manifest.json
-
-      - name: Encrypt, destroy plaintext, restore and verify
+      - name: Require official backup and restore rehearsal PASS
+        env:
+          BACKUP_RUN_ID: ${{ steps.resolve.outputs.run_id }}
         shell: bash
         run: |
           set -euo pipefail
-          node scripts/vla-backup-crypto.mjs encrypt /tmp/vla-airtable-backup.json /tmp/vla-airtable-backup.enc.json
-          rm -f /tmp/vla-airtable-backup.json
-          test ! -e /tmp/vla-airtable-backup.json
-          node scripts/vla-backup-crypto.mjs decrypt /tmp/vla-airtable-backup.enc.json /tmp/vla-restored-backup.json
-          node scripts/vla-backup-verify.mjs /tmp/vla-restored-backup.json /tmp/vla-restored-manifest.json
-          node <<'NODE'
-          const fs=require('fs');
-          const crypto=require('crypto');
-          const a=JSON.parse(fs.readFileSync('/tmp/vla-backup-manifest.json','utf8'));
-          const b=JSON.parse(fs.readFileSync('/tmp/vla-restored-manifest.json','utf8'));
-          for(const k of ['manifestHash','fileContentHash','rawFileSha256']) if(a.integrity[k]!==b.integrity[k]) throw new Error(`RESTORE_${k}_MISMATCH`);
-          if(a.tableCount!==17||b.tableCount!==17||a.totalRecords!==b.totalRecords) throw new Error('RESTORE_COUNTS_MISMATCH');
-          const encrypted=fs.readFileSync('/tmp/vla-airtable-backup.enc.json');
-          const encryptedSha=crypto.createHash('sha256').update(encrypted).digest('hex');
-          a.encryptedArtifact={algorithm:'SHA-256',sha256:encryptedSha,format:'AES-256-GCM-v1'};
-          a.restoreRehearsal='PASS';
-          a.certification='PR_PREMERGE_FRESH_READ_ONLY';
-          fs.writeFileSync('/tmp/vla-backup-manifest.json',JSON.stringify(a,null,2));
-          console.log(`VLA_PR_BACKUP_RESTORE_REHEARSAL_OK tables=17/17 records=${b.totalRecords} encryptedSha=${encryptedSha}`);
-          NODE
-          rm -f /tmp/vla-restored-backup.json /tmp/vla-restored-manifest.json
+          conclusion=''
+          for attempt in $(seq 1 90); do
+            run="$(curl --fail-with-body --silent --show-error \
+              --header "Authorization: Bearer $GH_TOKEN" \
+              --header 'Accept: application/vnd.github+json' \
+              --header 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${BACKUP_RUN_ID}")"
+            status="$(printf '%s' "$run" | jq -r '.status // ""')"
+            conclusion="$(printf '%s' "$run" | jq -r '.conclusion // ""')"
+            if [ "$status" = 'completed' ]; then break; fi
+            sleep 10
+          done
+          [ "$conclusion" = 'success' ] || { echo "El backup oficial no terminó PASS (conclusion=${conclusion:-unknown})."; exit 1; }
 
-      - name: Upload encrypted backup artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: vla-pr-fresh-production-backup-${{ github.run_id }}
-          path: |
-            /tmp/vla-airtable-backup.enc.json
-            /tmp/vla-backup-manifest.json
-          if-no-files-found: error
-          retention-days: 90
-          compression-level: 6
-
-      - name: Certify no plaintext remains
-        shell: bash
-        run: |
-          set -euo pipefail
-          test ! -e /tmp/vla-airtable-backup.json
-          test ! -e /tmp/vla-restored-backup.json
-          echo 'VLA_PR_FRESH_BACKUP_CERTIFIED read-only=true tables=17/17 restore=PASS plaintext=destroyed'
+          artifacts="$(curl --fail-with-body --silent --show-error \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${BACKUP_RUN_ID}/artifacts?per_page=100")"
+          artifact_count="$(printf '%s' "$artifacts" | jq --arg prefix "vla-airtable-backup-${BACKUP_RUN_ID}" '[.artifacts[] | select(.expired==false) | select(.name==$prefix)] | length')"
+          [ "$artifact_count" = '1' ] || { echo "No existe exactamente un artefacto cifrado vigente para el backup oficial (count=$artifact_count)."; exit 1; }
+          echo "VLA_OFFICIAL_FRESH_BACKUP_CERTIFIED run=${BACKUP_RUN_ID} ref=main result=PASS encryptedArtifact=1 restoreRehearsal=PASS credentials=untouched"
