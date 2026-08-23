@@ -5,6 +5,7 @@ const css=fs.readFileSync('owner-payment-report-v3.css','utf8');
 const edge=fs.readFileSync('netlify/edge-functions/owner-mobile-assets.js','utf8');
 const signature=fs.readFileSync('netlify/edge-functions/owner-signature.js','utf8');
 const server=fs.readFileSync('netlify/functions/public-report-payment.js','utf8');
+const prefillServer=fs.readFileSync('netlify/functions/payment-proof-prefill.js','utf8');
 const browserGate=fs.readFileSync('tests/owner-payment-report-browser.cjs','utf8');
 
 for(const marker of ['¿Cómo realizaste el pago?','Pago digital','Efectivo','Sube tu comprobante','Tomar foto / Elegir comprobante','Pago detectado','Confirmar pago','Solo falta confirmar esto','¿Algo está incorrecto? Editar','Completar manualmente','Binance'])assert(ui.includes(marker),`Falta ${marker}`);
@@ -31,6 +32,9 @@ assert(ui.includes("if(!selectedFile)return['proof']"),'Antes del comprobante so
 assert(ui.includes("openReport=openSmartReport"),'Debe sustituir el flujo heredado.');
 assert(ui.includes("addEventListener('submit',submitSmartReport)"),'Debe existir un único manejador de envío.');
 assert(ui.includes('/api/vla/payment-proof-prefill')&&ui.includes('/api/vla/report-payment'),'Debe conservar prelectura y validación backend.');
+const clientPrefillTimeout=Number(ui.match(/PREFILL_CLIENT_TIMEOUT_MS=(\d+)/)?.[1]),serverPrefillBudget=Number(prefillServer.match(/PREFILL_TOTAL_BUDGET_MS=(\d+)/)?.[1]);
+assert(clientPrefillTimeout===15000&&serverPrefillBudget===12000&&clientPrefillTimeout>serverPrefillBudget&&ui.includes("timedOut?'La lectura está tardando'")&&ui.includes('analysisController===controller'),'La prelectura móvil debe tener margen sobre el servidor y no permitir que una solicitud anterior altere la pantalla actual.');
+assert(/function onFileSelected\(event\)\{\s*submitErrorActive=false;[^\n]*cancelAnalysis\(\);analyzing=false;/.test(ui),'Cambiar, quitar o rechazar un archivo debe cancelar inmediatamente la lectura anterior.');
 assert(ui.includes('submissionId')&&ui.includes('readAsDataURL'),'Debe conservar idempotencia y carga segura.');
 assert(ui.includes('postPaymentReportWithRecovery')&&ui.includes('Reconectando…'),'Debe reintentar una interrupción transitoria con el mismo submissionId.');
 assert(ui.includes('La conexión se interrumpió')&&!ui.includes("message||'Load failed'"),'Nunca debe mostrar el error crudo de Safari.');
