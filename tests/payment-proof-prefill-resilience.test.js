@@ -58,30 +58,51 @@ test('un modelo con HTTP 404 no bloquea el siguiente modelo compatible',async()=
    if(model!=='gemini-secondary')throw coded('AI_MODEL_NOT_FOUND',404);
    return{raw:VALID_RAW,model,provider:'direct'};
   },
+  emitAttempt:()=>{},
   analyzeViaProxy:async()=>{throw new Error('El proxy no debe ejecutarse.')}
  });
- assert.deepEqual(attempted,['gemini-2.5-flash-lite','gemini-primary','gemini-secondary']);
+ assert.deepEqual(attempted,['gemini-primary','gemini-secondary']);
  assert.equal(result.model,'gemini-secondary');
  assert.equal(result.provider,'direct');
 });
 
-test('la prelectura prioriza el Flash-Lite histórico sin consultar el catálogo',()=>{
+test('la prelectura respeta primero los modelos ya probados en la configuración',()=>{
  const models=prefill.modelCandidates({primaryModel:'gemini-3.7-flash',secondaryModel:'gemini-secondary'});
- assert.deepEqual(models,['gemini-2.5-flash-lite','gemini-3.7-flash','gemini-secondary','gemini-2.5-flash']);
+ assert.deepEqual(models,['gemini-3.7-flash','gemini-secondary','gemini-2.5-flash','gemini-2.5-flash-lite']);
 });
 
-test('un 503 rápido reintenta una sola vez el mismo Flash-Lite con pausa controlada',async()=>{
+test('un 503 rápido reintenta una sola vez el mismo modelo configurado con pausa controlada',async()=>{
  let calls=0,clock=0,slept=0;
  const result=await prefill.analyzeWithFallback(baseArgs,{
   localGeminiConfigured:()=>true,
   analyzeDirect:async({model})=>{calls+=1;if(calls===1)throw coded('PROVIDER_UNAVAILABLE',503);return{raw:VALID_RAW,model,provider:'direct'}},
   analyzeViaProxy:async()=>{throw new Error('El proxy no debe ejecutarse.')},
+  emitAttempt:()=>{},
   now:()=>clock,
   sleep:async ms=>{slept=ms;clock+=ms}
  });
  assert.equal(calls,2);
  assert.equal(slept,1000);
- assert.equal(result.model,'gemini-2.5-flash-lite');
+ assert.equal(result.model,'gemini-primary');
+});
+
+test('cada intento registra solo modelo, duración y clasificación cerrada',async()=>{
+ const attempts=[];
+ const result=await prefill.analyzeWithFallback(baseArgs,{
+  localGeminiConfigured:()=>true,
+  analyzeDirect:async({model})=>{
+   if(model==='gemini-primary')throw Object.assign(new Error('referencia-privada'),{code:'AI_MODEL_NOT_FOUND',status:404});
+   return{raw:VALID_RAW,model,provider:'direct'};
+  },
+  analyzeViaProxy:async()=>{throw new Error('El proxy no debe ejecutarse.')},
+  emitAttempt:entry=>attempts.push(entry)
+ });
+ assert.equal(result.model,'gemini-secondary');
+ assert.deepEqual(attempts.map(entry=>[entry.model,entry.outcome,entry.reason||null]),[
+  ['gemini-primary','FAILURE','AI_MODEL_NOT_FOUND'],
+  ['gemini-secondary','SUCCESS',null]
+ ]);
+ assert(!JSON.stringify(attempts).includes('referencia-privada'));
 });
 
 test('un fallo de transporte directo se normaliza para activar el reintento protegido',async()=>{
@@ -99,12 +120,13 @@ test('un transporte crudo recorre el reintento completo y solo llama dos veces a
   localGeminiConfigured:()=>true,
   analyzeDirect:args=>prefill.analyzeDirect({...args,runnerFactory:()=>async()=>{calls+=1;if(calls===1)throw new TypeError('fetch failed');return VALID_RAW}}),
   analyzeViaProxy:async()=>{throw new Error('El proxy no debe ejecutarse.')},
+  emitAttempt:()=>{},
   now:()=>clock,
   sleep:async ms=>{clock+=ms}
  });
  assert.equal(calls,2);
  assert.equal(clock,1000);
- assert.equal(result.model,'gemini-2.5-flash-lite');
+ assert.equal(result.model,'gemini-primary');
 });
 
 test('un error semántico conserva su clasificación aunque incluya una causa de transporte',()=>{
@@ -138,6 +160,7 @@ test('un timeout directo termina acotado y nunca encadena el proxy',async()=>{
   localGeminiConfigured:()=>true,
   analyzeDirect:async()=>{clock+=8000;throw coded('TIMEOUT',504)},
   analyzeViaProxy:async()=>{proxyCalls+=1;throw new Error('El proxy no debe ejecutarse.')},
+  emitAttempt:()=>{},
   now:()=>clock,
   sleep:async ms=>{clock+=ms},
   budgetMs:12000
@@ -152,6 +175,7 @@ test('dos 503 consecutivos no encadenan proxy ni más modelos',async()=>{
   localGeminiConfigured:()=>true,
   analyzeDirect:async()=>{directCalls+=1;throw coded('PROVIDER_UNAVAILABLE',503)},
   analyzeViaProxy:async()=>{proxyCalls+=1;throw new Error('El proxy no debe ejecutarse.')},
+  emitAttempt:()=>{},
   now:()=>clock,
   sleep:async ms=>{clock+=ms}
  }),error=>error?.code==='PROVIDER_UNAVAILABLE');
@@ -167,6 +191,7 @@ test('un 503 tardío respeta exactamente el presupuesto máximo de doce segundos
   localGeminiConfigured:()=>true,
   analyzeDirect:async({timeoutMs})=>{directCalls+=1;timeouts.push(timeoutMs);if(directCalls===1){clock+=6000;throw coded('PROVIDER_UNAVAILABLE',503)}clock+=timeoutMs;throw coded('TIMEOUT',504)},
   analyzeViaProxy:async()=>{throw new Error('El proxy no debe ejecutarse.')},
+  emitAttempt:()=>{},
   now:()=>clock,
   sleep:async ms=>{clock+=ms}
  }),error=>error?.code==='TIMEOUT');
@@ -180,6 +205,7 @@ test('cuando todos los modelos directos devuelven 404 se usa el lector alterno',
  const result=await prefill.analyzeWithFallback(baseArgs,{
   localGeminiConfigured:()=>true,
   analyzeDirect:async()=>{directCalls+=1;throw coded('AI_MODEL_NOT_FOUND',404)},
+  emitAttempt:()=>{},
   analyzeViaProxy:async()=>{proxyCalls+=1;return{raw:VALID_RAW,model:'proxy:gemini-2.5-flash',provider:'proxy'}}
  });
  assert.equal(directCalls,4);
@@ -192,6 +218,7 @@ test('un timeout no salta al respaldo ni prueba otros modelos directos',async()=
  await assert.rejects(()=>prefill.analyzeWithFallback(baseArgs,{
   localGeminiConfigured:()=>true,
   analyzeDirect:async()=>{directCalls+=1;throw coded('TIMEOUT',504)},
+  emitAttempt:()=>{},
   analyzeViaProxy:async()=>{proxyCalls+=1;return{raw:VALID_RAW,model:'proxy:gemini-2.5-flash',provider:'proxy'}}
  }),error=>error?.code==='TIMEOUT');
  assert.equal(directCalls,1);
@@ -203,6 +230,7 @@ test('un fallo de autenticación directo usa solamente un respaldo configurado',
  const result=await prefill.analyzeWithFallback(baseArgs,{
   localGeminiConfigured:()=>true,
   analyzeDirect:async()=>{directCalls+=1;throw coded('AI_AUTH_FAILED',403)},
+  emitAttempt:()=>{},
   analyzeViaProxy:async()=>{proxyCalls+=1;return{raw:VALID_RAW,model:'proxy:gemini',provider:'proxy'}}
  });
  assert.equal(directCalls,1);
@@ -215,6 +243,7 @@ test('sin clave local se usa el respaldo sin intentar Gemini directo',async()=>{
  const result=await prefill.analyzeWithFallback(baseArgs,{
   localGeminiConfigured:()=>false,
   analyzeDirect:async()=>{directCalls+=1;return{}},
+  emitAttempt:()=>{},
   analyzeViaProxy:async()=>({raw:VALID_RAW,model:'proxy:gemini',provider:'proxy'})
  });
  assert.equal(directCalls,0);

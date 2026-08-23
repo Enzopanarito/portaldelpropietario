@@ -17,7 +17,7 @@ const {signRecipientAttestation}=require('./_shared/_payment_recipient_attestati
 const WINDOW_MS=60*60*1000;
 const FAST_PREFILL_MODEL='gemini-2.5-flash-lite';
 const FALLBACK_PREFILL_MODEL='gemini-2.5-flash';
-const CURRENT_STABLE_MODELS=Object.freeze([FAST_PREFILL_MODEL,FALLBACK_PREFILL_MODEL]);
+const CURRENT_STABLE_MODELS=Object.freeze([FALLBACK_PREFILL_MODEL,FAST_PREFILL_MODEL]);
 const DIRECT_TIMEOUT_MS=8000;
 const PROXY_TIMEOUT_MS=12000;
 const PREFILL_TOTAL_BUDGET_MS=12000;
@@ -66,12 +66,13 @@ function recipientVerification(analysis,accountState,config={},now=new Date()){
  return{classification,needsReview:classification!=='CONFIRMED'};
 }
 function unique(values){return[...new Set((values||[]).map(value=>String(value||'').trim()).filter(Boolean))]}
+function safeModelLabel(value){const model=String(value||'').trim();return/^[A-Za-z0-9._-]{3,120}$/.test(model)?model:'INVALID_MODEL'}
 function modelCandidates(config={}){
  return unique([
-  FAST_PREFILL_MODEL,
   config.primaryModel,
   config.secondaryModel,
-  FALLBACK_PREFILL_MODEL
+  FALLBACK_PREFILL_MODEL,
+  FAST_PREFILL_MODEL
  ]).slice(0,10);
 }
 function errorCode(error){return String(error?.code||'').trim().toUpperCase()}
@@ -138,21 +139,35 @@ async function analyzeWithFallback({config,proof,report,promptVersion}={},deps={
  const direct=deps.analyzeDirect||analyzeDirect;
  const proxy=deps.analyzeViaProxy||analyzeViaProxy;
  const hasLocal=deps.localGeminiConfigured||localGeminiConfigured;
+ const emitAttempt=deps.emitAttempt||((entry)=>console.info(JSON.stringify(entry)));
+ const recordAttempt=entry=>{try{emitAttempt(entry)}catch(_){}};
  const now=deps.now||Date.now,sleep=deps.sleep||wait,budgetMs=Math.max(5000,Number(deps.budgetMs)||PREFILL_TOTAL_BUDGET_MS),startedAt=now();
  const remaining=()=>Math.max(0,budgetMs-(now()-startedAt));
  const directAttempt=model=>{const available=remaining();if(available<MIN_DIRECT_WINDOW_MS)throw budgetTimeout();return direct({model,proof,report,promptVersion,timeoutMs:Math.min(DIRECT_TIMEOUT_MS,available)})};
+ const runDirectAttempt=async(model,index,phase='initial')=>{
+  const attemptStartedAt=now();
+  try{
+   const result=await directAttempt(model);
+   recordAttempt({event:'VLA_PAYMENT_PREFILL_ATTEMPT',route:'direct',model:safeModelLabel(model),attempt:index+1,phase,outcome:'SUCCESS',elapsedMs:Math.max(0,now()-attemptStartedAt)});
+   return result;
+  }catch(error){
+   const failure=publicFailure(error);
+   recordAttempt({event:'VLA_PAYMENT_PREFILL_ATTEMPT',route:'direct',model:safeModelLabel(model),attempt:index+1,phase,outcome:'FAILURE',elapsedMs:Math.max(0,now()-attemptStartedAt),reason:failure.reason,failureClass:failure.failureClass,providerStatus:failure.providerStatus});
+   throw error;
+  }
+ };
  let lastError=null;
 
  if(hasLocal()){
   const models=modelCandidates(config).slice(0,MAX_DIRECT_ATTEMPTS);
   for(let index=0;index<models.length;index++){
    const model=models[index];
-   try{return await directAttempt(model)}
+   try{return await runDirectAttempt(model,index)}
    catch(error){
     lastError=error;
     if(index===0&&canRetryTransient(error)&&remaining()>=TRANSIENT_RETRY_DELAY_MS+MIN_DIRECT_WINDOW_MS){
      await sleep(TRANSIENT_RETRY_DELAY_MS);
-     try{return await directAttempt(model)}catch(retryError){lastError=retryError}
+     try{return await runDirectAttempt(model,index,'retry')}catch(retryError){lastError=retryError}
     }
     if(mustFailWithoutProxy(lastError))throw lastError;
     if(!canTryAnotherModel(lastError))break;
@@ -209,6 +224,7 @@ exports.missingFields=missingFields;
 exports.requiredFieldsFor=requiredFieldsFor;
 exports.methodLabel=methodLabel;
 exports.unique=unique;
+exports.safeModelLabel=safeModelLabel;
 exports.modelCandidates=modelCandidates;
 exports.errorCode=errorCode;
 exports.transportCode=transportCode;
