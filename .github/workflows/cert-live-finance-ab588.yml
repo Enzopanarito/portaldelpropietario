@@ -1,0 +1,63 @@
+name: Cert Live Finance ab588
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    if: github.head_ref == 'cert/vla-autopay-after-ab588-20260822'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Compare live 15-house financial contract to pre-deploy baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error --location --max-time 60 \
+            "https://villalosapamates.netlify.app/api/vla/public-data?force=1&after=ab588-${GITHUB_RUN_ID}" \
+            --output /tmp/live.json
+          node <<'NODE'
+          const fs=require('fs');
+          const crypto=require('crypto');
+          const fields=['saldoUsd','saldoBsRef','totalPagadero','saldoNetoReferencial','saldoFavorUsd','saldoFavorBs','deudaVencidaUsd','deudaVencidaBs','mesCorrienteUsd','mesCorrienteBs'];
+          const baseline=[
+            [1,0,0,0,0,0,0,0,0,0,0],
+            [2,0,0,0,0,0,0,0,0,0,0],
+            [3,50,100.23,150.23,150.23,0,0,0,0,50,100.23],
+            [4,50,94.9,144.9,144.9,0,0,0,0,50,94.9],
+            [5,0,145.79,145.79,145.79,0,0,0,0,0,145.79],
+            [6,0,-0.49,0,-0.49,0,0.49,0,0,0,-0.49],
+            [7,0,0,0,0,0,0,0,0,0,0],
+            [8,0,145.8,145.8,145.8,0,0,0,0,0,145.8],
+            [9,0,0,0,0,0,0,0,0,0,0],
+            [10,0,244.48,244.48,244.48,0,0,0,0,0,244.48],
+            [11,0,-294.76,0,-294.76,0,294.76,0,0,0,-294.76],
+            [12,50,246.06,296.06,296.06,0,0,0,0,50,246.06],
+            [13,0,246.06,246.06,246.06,0,0,0,0,0,246.06],
+            [14,0,0,0,0,0,0,0,0,0,0],
+            [15,50,119.59,169.59,169.59,0,0,0,0,50,119.59]
+          ].map(row=>({Casa:row[0],...Object.fromEntries(fields.map((f,i)=>[f,row[i+1]]))}));
+          const data=JSON.parse(fs.readFileSync('/tmp/live.json','utf8'));
+          const owners=Array.isArray(data.propietarios)?data.propietarios:[];
+          if(owners.length!==15)throw new Error(`LIVE_HOUSES_${owners.length}_NOT_15`);
+          const live=owners.map(owner=>{const row={Casa:Number(owner.Casa)};for(const f of fields)row[f]=Number(owner[f]||0);return row}).sort((a,b)=>a.Casa-b.Casa);
+          const cents=n=>Math.round((Number(n)||0)*100);
+          const diffs=[];
+          for(let i=0;i<15;i++){
+            if(live[i]?.Casa!==baseline[i].Casa){diffs.push(`Casa sequence ${i}: ${live[i]?.Casa} != ${baseline[i].Casa}`);continue;}
+            for(const f of fields){const before=cents(baseline[i][f]),after=cents(live[i][f]);if(before!==after)diffs.push(`Casa ${baseline[i].Casa} ${f}: ${before} != ${after}`)}
+          }
+          const canonical=rows=>rows.flatMap(r=>fields.map(f=>`${r.Casa}|${f}|${cents(r[f])}`)).join('\n');
+          const beforeHash=crypto.createHash('sha256').update(canonical(baseline)).digest('hex');
+          const afterHash=crypto.createHash('sha256').update(canonical(live)).digest('hex');
+          console.log(`LIVE_FINANCE_BEFORE_SHA256=${beforeHash}`);
+          console.log(`LIVE_FINANCE_AFTER_SHA256=${afterHash}`);
+          console.log(`LIVE_FINANCE_HOUSES=${live.length}`);
+          console.log(`LIVE_FINANCE_FIELDS=${live.length*fields.length}`);
+          if(diffs.length){for(const diff of diffs)console.error(`DIFF ${diff}`);throw new Error(`LIVE_FINANCIAL_DIFF count=${diffs.length}`)}
+          console.log('LIVE_FINANCIAL_BEFORE_AFTER_OK 15/15 houses · 150/150 fields · $0.00');
+          NODE
