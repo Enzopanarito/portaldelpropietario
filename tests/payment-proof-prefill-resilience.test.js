@@ -84,18 +84,18 @@ test('un 503 rápido reintenta una sola vez el mismo Flash-Lite con pausa contro
  assert.equal(result.model,'gemini-2.5-flash-lite');
 });
 
-test('un timeout directo termina rápido y nunca encadena el proxy',async()=>{
+test('un timeout directo termina acotado y nunca encadena el proxy',async()=>{
  let clock=0,proxyCalls=0;
  await assert.rejects(()=>prefill.analyzeWithFallback(baseArgs,{
   localGeminiConfigured:()=>true,
-  analyzeDirect:async()=>{clock+=6000;throw coded('TIMEOUT',504)},
+  analyzeDirect:async()=>{clock+=8000;throw coded('TIMEOUT',504)},
   analyzeViaProxy:async()=>{proxyCalls+=1;throw new Error('El proxy no debe ejecutarse.')},
   now:()=>clock,
   sleep:async ms=>{clock+=ms},
   budgetMs:12000
  }),error=>error?.code==='TIMEOUT');
  assert.equal(proxyCalls,0);
- assert.equal(clock,6000);
+ assert.equal(clock,8000);
 });
 
 test('dos 503 consecutivos no encadenan proxy ni más modelos',async()=>{
@@ -117,13 +117,13 @@ test('un 503 tardío respeta exactamente el presupuesto máximo de doce segundos
  const timeouts=[];
  await assert.rejects(()=>prefill.analyzeWithFallback(baseArgs,{
   localGeminiConfigured:()=>true,
-  analyzeDirect:async({timeoutMs})=>{directCalls+=1;timeouts.push(timeoutMs);clock+=timeoutMs;if(directCalls===1)throw coded('PROVIDER_UNAVAILABLE',503);throw coded('TIMEOUT',504)},
+  analyzeDirect:async({timeoutMs})=>{directCalls+=1;timeouts.push(timeoutMs);if(directCalls===1){clock+=6000;throw coded('PROVIDER_UNAVAILABLE',503)}clock+=timeoutMs;throw coded('TIMEOUT',504)},
   analyzeViaProxy:async()=>{throw new Error('El proxy no debe ejecutarse.')},
   now:()=>clock,
   sleep:async ms=>{clock+=ms}
  }),error=>error?.code==='TIMEOUT');
  assert.equal(directCalls,2);
- assert.deepEqual(timeouts,[6000,5000]);
+ assert.deepEqual(timeouts,[8000,5000]);
  assert.equal(clock,12000);
 });
 

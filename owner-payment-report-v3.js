@@ -2,7 +2,7 @@
   'use strict';
 
   const MAX_FILE_BYTES=3*1024*1024;
-  const PREFILL_CLIENT_TIMEOUT_MS=12000;
+  const PREFILL_CLIENT_TIMEOUT_MS=15000;
   let selectedFile=null,analysisController=null,analyzing=false,manualMode=false,editAll=false,dateEditVisible=false,submissionId='',submitErrorActive=false,analysisData=null,modeUserChosen=false,duplicateReviewPayload=null,uncertaintyPayload=null,trackingBusy=false;
 
   function byId(id){return document.getElementById(id)}
@@ -172,7 +172,7 @@
   }
   function enableManual(){if(!selectedFile)return;manualMode=true;editAll=true;dateEditVisible=false;cancelAnalysis();analyzing=false;scanMessage('manual','Edición manual activa','Puedes corregir los datos visibles. La fecha seguirá protegida y será verificada por el servidor.');renderProgressiveState();validateForm();byId('payCurrency').focus()}
   function onFileSelected(event){
-    submitErrorActive=false;hideDuplicateChoice();hideUncertaintyChoice();const file=event.target.files&&event.target.files[0],label=byId('vla-pay-file-label');selectedFile=file||null;analysisData=null;dateEditVisible=false;modeUserChosen=false;
+    submitErrorActive=false;hideDuplicateChoice();hideUncertaintyChoice();cancelAnalysis();analyzing=false;const file=event.target.files&&event.target.files[0],label=byId('vla-pay-file-label');selectedFile=file||null;analysisData=null;dateEditVisible=false;modeUserChosen=false;
     if(!file){label.textContent='Tomar foto / Elegir comprobante';byId('vla-pay-manual').disabled=true;scanMessage('neutral','Esperando comprobante','Al elegirlo, VLA lo analizará automáticamente.');renderProgressiveState();return validateForm()}
     if(!['image/jpeg','image/png','application/pdf'].includes(file.type)){event.target.value='';selectedFile=null;scanMessage('error','Archivo no válido','Usa JPG, PNG o PDF.');return validateForm()}
     if(file.size>MAX_FILE_BYTES){event.target.value='';selectedFile=null;scanMessage('error','Archivo demasiado grande','El máximo permitido es 3 MB.');return validateForm()}
