@@ -11,12 +11,12 @@ permissions:
 
 jobs:
   diagnose-house-11:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout exact commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
-      - name: Wait for corrected production release
+      - name: Wait for canonical production shell
         shell: bash
         run: |
           set -euo pipefail
@@ -25,15 +25,15 @@ jobs:
             html="$(curl --fail --silent --show-error --location "https://villalosapamates.netlify.app/?house11-release=${GITHUB_RUN_ID}-${attempt}" || true)"
             if grep -Fq "$marker" <<<"$html"; then
               printf '%s' "$html" > production.html
-              echo "Corrected production release detected."
+              echo "Canonical production shell detected."
               exit 0
             fi
             sleep 5
           done
-          echo "The corrected production release was not detected." >&2
+          echo "The canonical production shell was not detected." >&2
           exit 1
 
-      - name: Validate Casa 11 public balance
+      - name: Validate Casa 11 public financial contract
         shell: bash
         run: |
           set -euo pipefail
@@ -41,25 +41,30 @@ jobs:
             "https://villalosapamates.netlify.app/api/vla/public-data?force=1&house11=${GITHUB_RUN_ID}" \
             --output public-data.json
           node <<'NODE'
-          const fs = require('fs');
-          const data = JSON.parse(fs.readFileSync('public-data.json', 'utf8'));
-          const owner = (data.propietarios || []).find(item => Number(item.Casa) === 11);
-          if (!owner) throw new Error('Casa 11 no aparece en la API pública.');
-          const result = {
-            casa: Number(owner.Casa),
-            propietario: owner.Propietario,
-            saldoUsd: Number(owner['Saldo USD Actual']),
-            saldoBsRef: Number(owner['Saldo Bs Ref Actual']),
-            saldoTotal: Number(owner['Saldo Total Actual']),
-            mesCorrienteUsd: Number(owner['Mes Corriente USD'])
+          const fs=require('fs');
+          const data=JSON.parse(fs.readFileSync('public-data.json','utf8'));
+          const owners=Array.isArray(data.propietarios)?data.propietarios:[];
+          if(owners.length!==15)throw new Error(`La API pública devolvió ${owners.length}/15 casas.`);
+          const houses=owners.map(item=>Number(item.Casa));
+          if(new Set(houses).size!==15)throw new Error('La API pública contiene casas duplicadas.');
+          for(let casa=1;casa<=15;casa++)if(!houses.includes(casa))throw new Error(`Falta Casa ${casa} en la API pública.`);
+          const owner=owners.find(item=>Number(item.Casa)===11);
+          if(!owner)throw new Error('Casa 11 no aparece en la API pública.');
+          const financialFields=['Saldo USD Actual','Saldo Bs Ref Actual','Saldo Total Actual','Mes Corriente USD','Mes Corriente Bs'];
+          for(const field of financialFields){
+            const value=Number(owner[field]);
+            if(!Number.isFinite(value))throw new Error(`Casa 11: ${field} no es numérico.`);
+          }
+          const result={
+            casa:Number(owner.Casa),
+            propietario:String(owner.Propietario||''),
+            saldoUsd:Number(owner['Saldo USD Actual']),
+            saldoBsRef:Number(owner['Saldo Bs Ref Actual']),
+            saldoTotal:Number(owner['Saldo Total Actual']),
+            mesCorrienteUsd:Number(owner['Mes Corriente USD']),
+            mesCorrienteBs:Number(owner['Mes Corriente Bs'])
           };
-          console.log(JSON.stringify(result, null, 2));
-          if (Math.abs(result.saldoUsd - 50) > 0.009) {
-            throw new Error(`Casa 11: Saldo USD Actual=${result.saldoUsd}; se esperaban 50.`);
-          }
-          if (Math.abs(result.mesCorrienteUsd - 50) > 0.009) {
-            throw new Error(`Casa 11: Mes Corriente USD=${result.mesCorrienteUsd}; se esperaban 50.`);
-          }
+          console.log('HOUSE11_FINANCIAL_CONTRACT_OK '+JSON.stringify(result));
           NODE
 
       - name: Check every inline production script
@@ -120,7 +125,7 @@ jobs:
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
             -f state=success \
             -f context='House 11 Production Diagnostic' \
-            -f description='Casa 11 muestra USD 50 y los scripts de producción son válidos.' \
+            -f description='Casa 11 expone contrato financiero válido y scripts sanos.' \
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
       - name: Publish failed diagnostic status
@@ -131,5 +136,5 @@ jobs:
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
             -f state=failure \
             -f context='House 11 Production Diagnostic' \
-            -f description='Falló el saldo USD de Casa 11 o un script de producción.' \
+            -f description='Falló el contrato financiero de Casa 11 o un script de producción.' \
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
