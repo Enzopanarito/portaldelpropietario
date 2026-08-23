@@ -120,7 +120,6 @@ function resultFields(result,report=null){
  };
  if(result?.automaticApproval===true){fields['Decisión Administrativa']='Aprobación automática';fields['Validación Realizada Por']='Motor determinístico'}
  const filtered=Object.fromEntries(Object.entries(fields).filter(([,value])=>value!==null&&value!==undefined&&value!==''));
- // Estos dos campos se limpian explícitamente al recuperarse un análisis que antes falló.
  if(!failureReason){filtered['AI Failure Reason']='';filtered['Último Error de Procesamiento']=''}
  return filtered;
 }
@@ -138,8 +137,6 @@ async function defaultLoadBundle(reportId){
   require('./_bcv_store').loadLastGood({force:true})
  ]);
  const configRecord=configRecords[0]||{fields:{}},rules=mergeConfig(configRecord),proof=proofDescriptor(report),configuredAi=aiConfig(configRecord,rules);
- // La configuración explícita es autoridad. Discovery solo rellena un hueco,
- // nunca sustituye silenciosamente un modelo financiero configurado ni activa fallback.
  if(!configuredAi.primaryModel||(configuredAi.secondaryEnabled&&!configuredAi.secondaryModel))try{
   const discovery=await require('./_payment_ai_model_discovery').discoverCompatibleModel(),models=discovery.models||[discovery.model];
   if(!configuredAi.primaryModel&&models[0])configuredAi.primaryModel=models[0];
@@ -153,7 +150,7 @@ async function defaultLoadBundle(reportId){
 }
 async function defaultExecuteApproval({reportId,result}){
  const {issueAdminToken}=require('./_auth'),handler=require('../process-payment-report').handler,token=issueAdminToken({authVersion:0});
- const event={httpMethod:'POST',headers:{authorization:`Bearer ${token}`},body:JSON.stringify({reportId,decision:'approve',decisionSource:'automatic',automationEvidence:{snapshotId:result?.snapshot?.snapshotId||'',fingerprint:result?.financialFingerprint||'',confidence:result?.analysis?.normalized?.confidence||0,consensus:result?.aiConsensus?.passed===true,secondaryConfidence:Number(result?.aiConsensus?.secondaryConfidence||0),minimumConfidence:Number(result?.aiConsensus?.minimumConfidence||0.97)}})};
+ const event={httpMethod:'POST',headers:{authorization:`Bearer ${token}`},body:JSON.stringify({reportId,decision:'approve',decisionSource:'automatic',automationEvidence:{snapshotId:result?.snapshot?.snapshotId||'',fingerprint:result?.financialFingerprint||'',confidence:result?.analysis?.normalized?.confidence||0,analysisSource:clean(result?.analysis?.resolutionSource||'unknown'),fallbackUsed:Boolean(result?.analysis?.rawSecondary)}})};
  const response=await handler(event),body=JSON.parse(response.body||'{}');
  if(response.statusCode<200||response.statusCode>=300||body.success===false)throw new Error(body.message||'No se pudo materializar la aprobación automática.');
  return body;
