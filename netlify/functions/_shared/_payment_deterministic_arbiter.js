@@ -133,7 +133,9 @@ function evaluatePaymentReport({report={},owner={},attachment={},analysis=null,s
  checks.push(check('REPORTED_AMOUNT_MATCH',reportedAmountMatches,`${reportedAmount} / ${amount}`));
  const automaticConfidenceOk=Number(analysis.confidence)>=automaticConfidence;
  checks.push(check('AUTOMATIC_CONFIDENCE',automaticConfidenceOk,`Confianza ${Number(analysis.confidence)||0}; mínimo automático ${automaticConfidence}.`));
- if(automaticEnabled&&automaticConfidenceOk&&reportedAmountMatches){
+ const settlementConfirmed=clean(analysis.transaction_status)==='COMPLETED';
+ checks.push(check('AUTOMATIC_SETTLEMENT_STATUS',settlementConfirmed,analysis.transaction_status));
+ if(automaticEnabled&&automaticConfidenceOk&&reportedAmountMatches&&settlementConfirmed){
   return resultEnvelope({processingState:'Aprobación automática autorizada',resultValidation:'Coincidencia exacta verificada',preliminaryMatch:true,automaticApproval:true,reasons:['DETERMINISTIC_AUTOMATIC_APPROVAL'],checks,receiver:recipient});
  }
  return resultEnvelope({processingState:'Coincide preliminarmente',resultValidation:'Coincide preliminarmente',preliminaryMatch:true,reasons:['ADMIN_DECISION_REQUIRED'],checks,receiver:recipient});
