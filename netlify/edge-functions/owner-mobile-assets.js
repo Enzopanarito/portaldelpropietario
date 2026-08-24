@@ -1,5 +1,5 @@
 const OWNER_PATHS=['/','/index.html'];
-const MOBILE_RELEASE='owner-mobile-fluid-v2-payment-report-tracking-v13-2026-08-15-cross-device-v1-plant-v1-2026-08-21';
+const MOBILE_RELEASE='owner-mobile-fluid-v2-payment-report-tracking-v13-2026-08-15-cross-device-v1-plant-v1-2026-08-21-prefill-runtime-v1-2026-08-24';
 const CURRENT_MONTH_RELEASE='owner-current-month-v1-2026-08-09';
 const STYLE_HREF=`/owner-mobile-v2.css?v=${MOBILE_RELEASE}`;
 const LAYOUT_FIX_HREF=`/owner-mobile-v2-layout-fix.css?v=${MOBILE_RELEASE}`;
@@ -8,6 +8,7 @@ const REPORT_SYNC_STYLE_HREF=`/owner-report-sync-v1.css?v=${MOBILE_RELEASE}`;
 const DARK_STYLE_HREF=`/owner-dark-contrast-v1.css?v=${MOBILE_RELEASE}`;
 const CURRENT_MONTH_STYLE_HREF=`/owner-current-month-v1.css?v=${CURRENT_MONTH_RELEASE}`;
 const PAYMENT_LOGIC_HREF=`/payment-report-intelligence.js?v=${MOBILE_RELEASE}`;
+const PAYMENT_PREFILL_RUNTIME_HREF=`/owner-payment-prefill-runtime-v1.js?v=${MOBILE_RELEASE}`;
 const PAYMENT_UI_HREF=`/owner-payment-report-v3.js?v=${MOBILE_RELEASE}`;
 const REPORT_SYNC_UI_HREF=`/owner-report-sync-v1.js?v=${MOBILE_RELEASE}`;
 const CURRENT_MONTH_UI_HREF=`/owner-current-month-v1.js?v=${CURRENT_MONTH_RELEASE}`;
@@ -47,7 +48,7 @@ export default async (request,context)=>{
   if(!type.toLowerCase().includes('text/html'))return response;
 
   let html=await response.text();
-  const assets=`<meta name="vla-owner-mobile" content="fluid-v2"><meta name="vla-owner-payment-report" content="progressive-v13"><meta name="vla-owner-report-sync" content="cross-device-v1"><meta name="vla-owner-dark-contrast" content="wcag-v1"><meta name="vla-owner-current-month" content="assessment-v1"><meta name="vla-owner-plant" content="intelligent-v1"><link id="vla-owner-mobile-v2" rel="stylesheet" href="${STYLE_HREF}"><link id="vla-owner-mobile-v2-layout-fix" rel="stylesheet" href="${LAYOUT_FIX_HREF}"><link id="vla-owner-payment-report-v3-css" rel="stylesheet" href="${PAYMENT_STYLE_HREF}"><link id="vla-owner-report-sync-v1-css" rel="stylesheet" href="${REPORT_SYNC_STYLE_HREF}"><link id="vla-owner-dark-contrast-v1" rel="stylesheet" href="${DARK_STYLE_HREF}"><link id="vla-owner-current-month-v1-css" rel="stylesheet" href="${CURRENT_MONTH_STYLE_HREF}"><link id="vla-owner-plant-v1-css" rel="stylesheet" href="${PLANT_STYLE_HREF}"><script id="vla-payment-intelligence" defer src="${PAYMENT_LOGIC_HREF}"></script><script id="vla-owner-payment-report-v3" defer src="${PAYMENT_UI_HREF}"></script><script id="vla-owner-report-sync-v1" defer src="${REPORT_SYNC_UI_HREF}"></script><script id="vla-owner-current-month-v1" defer src="${CURRENT_MONTH_UI_HREF}"></script><script id="vla-owner-plant-v1" defer src="${PLANT_UI_HREF}"></script>${releaseGuard}`;
+  const assets=`<meta name="vla-owner-mobile" content="fluid-v2"><meta name="vla-owner-payment-report" content="progressive-v13"><meta name="vla-owner-report-sync" content="cross-device-v1"><meta name="vla-owner-dark-contrast" content="wcag-v1"><meta name="vla-owner-current-month" content="assessment-v1"><meta name="vla-owner-plant" content="intelligent-v1"><link id="vla-owner-mobile-v2" rel="stylesheet" href="${STYLE_HREF}"><link id="vla-owner-mobile-v2-layout-fix" rel="stylesheet" href="${LAYOUT_FIX_HREF}"><link id="vla-owner-payment-report-v3-css" rel="stylesheet" href="${PAYMENT_STYLE_HREF}"><link id="vla-owner-report-sync-v1-css" rel="stylesheet" href="${REPORT_SYNC_STYLE_HREF}"><link id="vla-owner-dark-contrast-v1" rel="stylesheet" href="${DARK_STYLE_HREF}"><link id="vla-owner-current-month-v1-css" rel="stylesheet" href="${CURRENT_MONTH_STYLE_HREF}"><link id="vla-owner-plant-v1-css" rel="stylesheet" href="${PLANT_STYLE_HREF}"><script id="vla-payment-intelligence" defer src="${PAYMENT_LOGIC_HREF}"></script><script id="vla-payment-prefill-runtime-v1" defer src="${PAYMENT_PREFILL_RUNTIME_HREF}"></script><script id="vla-owner-payment-report-v3" defer src="${PAYMENT_UI_HREF}"></script><script id="vla-owner-report-sync-v1" defer src="${REPORT_SYNC_UI_HREF}"></script><script id="vla-owner-current-month-v1" defer src="${CURRENT_MONTH_UI_HREF}"></script><script id="vla-owner-plant-v1" defer src="${PLANT_UI_HREF}"></script>${releaseGuard}`;
   if(!html.includes('id="vla-owner-mobile-v2"')){
     html=html.includes('</head>')?html.replace('</head>',assets+'</head>'):assets+html;
   }else{
@@ -57,6 +58,7 @@ export default async (request,context)=>{
     if(!html.includes('id="vla-owner-dark-contrast-v1"'))extras+=`<meta name="vla-owner-dark-contrast" content="wcag-v1"><link id="vla-owner-dark-contrast-v1" rel="stylesheet" href="${DARK_STYLE_HREF}">`;
     if(!html.includes('id="vla-owner-current-month-v1-css"'))extras+=`<meta name="vla-owner-current-month" content="assessment-v1"><link id="vla-owner-current-month-v1-css" rel="stylesheet" href="${CURRENT_MONTH_STYLE_HREF}">`;
     if(!html.includes('id="vla-payment-intelligence"'))extras+=`<script id="vla-payment-intelligence" defer src="${PAYMENT_LOGIC_HREF}"></script>`;
+    if(!html.includes('id="vla-payment-prefill-runtime-v1"'))extras+=`<script id="vla-payment-prefill-runtime-v1" defer src="${PAYMENT_PREFILL_RUNTIME_HREF}"></script>`;
     if(!html.includes('id="vla-owner-payment-report-v3"'))extras+=`<script id="vla-owner-payment-report-v3" defer src="${PAYMENT_UI_HREF}"></script>`;
     if(!html.includes('id="vla-owner-report-sync-v1"'))extras+=`<script id="vla-owner-report-sync-v1" defer src="${REPORT_SYNC_UI_HREF}"></script>`;
     if(!html.includes('id="vla-owner-current-month-v1"'))extras+=`<script id="vla-owner-current-month-v1" defer src="${CURRENT_MONTH_UI_HREF}"></script>`;
@@ -76,5 +78,6 @@ export default async (request,context)=>{
   headers.set('x-vla-owner-dark-contrast','wcag-v1');
   headers.set('x-vla-owner-current-month','assessment-v1');
   headers.set('x-vla-owner-plant','intelligent-v1');
+  headers.set('x-vla-payment-prefill-runtime','v1');
   return new Response(html,{status:response.status,statusText:response.statusText,headers});
 };
