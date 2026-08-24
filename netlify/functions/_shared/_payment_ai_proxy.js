@@ -62,13 +62,19 @@ async function analyzePaymentProofViaProxy({proof,promptVersion,fetchFn=global.f
  }finally{clearTimeout(timer)}
 }
 function createPaymentProxyAnalysisRunner(options={}){
- return async function run({proof,promptVersion}={}){return analyzePaymentProofViaProxy({proof,promptVersion,...options})};
+ return async function run({proof,promptVersion}={}){
+  const result=await analyzePaymentProofViaProxy({proof,promptVersion,...options});
+  return result.raw;
+ };
 }
 function createResilientPaymentAnalysisRunner({directRunner=createGeminiAnalysisRunner(),proxyRunner=createPaymentProxyAnalysisRunner()}={}){
  if(typeof directRunner!=='function'||typeof proxyRunner!=='function')throw codedError('Los proveedores de análisis no están disponibles.','AI_PROVIDER_UNAVAILABLE');
  return async function run(args={}){
   try{return await directRunner(args)}
-  catch(error){if(!fallbackEligible(error))throw error;return proxyRunner(args)}
+  catch(error){
+   if(!fallbackEligible(error))throw error;
+   return proxyRunner(args);
+  }
  };
 }
 
