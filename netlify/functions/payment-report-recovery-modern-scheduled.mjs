@@ -1,3 +1,4 @@
+import 'nodemailer';
 import legacy from './payment-report-recovery-scheduled.js';
 import {invokeLegacy} from './_shared/legacy-function-bridge.mjs';
 
