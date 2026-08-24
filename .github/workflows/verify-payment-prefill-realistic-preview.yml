@@ -20,15 +20,16 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
-      - name: Wait for exact Netlify preview
+      - name: Wait for exact Netlify preview runtime
         env:
           PREVIEW_URL: https://deploy-preview-${{ github.event.pull_request.number }}--villalosapamates.netlify.app
         run: |
           set -euo pipefail
           for attempt in $(seq 1 80); do
             if curl --silent --fail --max-time 10 -D preview-headers.txt -o /dev/null "$PREVIEW_URL/" \
-              && grep -qi '^x-vla-payment-prefill-runtime: v1' preview-headers.txt; then
-              echo "PREVIEW_READY=$PREVIEW_URL"
+              && grep -qi '^x-vla-payment-prefill-runtime: v1' preview-headers.txt \
+              && curl --silent --fail --max-time 10 "$PREVIEW_URL/owner-payment-prefill-runtime-v1.js" | grep -q 'FETCH_TIMEOUT_MS=45000'; then
+              echo "PREVIEW_RUNTIME_READY=$PREVIEW_URL"
               exit 0
             fi
             sleep 5
@@ -81,7 +82,7 @@ jobs:
               raise SystemExit(f'JPEG too large: {size}')
           content=open('realistic-payment-proof.jpeg','rb').read()
           payload={
-              'ownerId':'recSyntheticAI001',
+              'ownerId':'recREALPHOTO00001',
               'attachment':{
                   'name':'realistic-payment-proof.jpeg',
                   'type':'image/jpeg',
@@ -93,9 +94,9 @@ jobs:
           print(f'REALISTIC_JPEG_BYTES={len(content)} quality={quality}')
           PY
 
-      - name: Verify realistic JPEG through preview AI
+      - name: Verify realistic JPEG against read-only production prefill
         env:
-          TARGET_URL: https://deploy-preview-${{ github.event.pull_request.number }}--villalosapamates.netlify.app/api/vla/payment-proof-prefill
+          TARGET_URL: https://villalosapamates.netlify.app/api/vla/payment-proof-prefill
         run: |
           set -euo pipefail
           start="$(date +%s)"
@@ -129,7 +130,7 @@ jobs:
           }
           print(json.dumps(safe,indent=2,ensure_ascii=False))
           if status != 200 or payload.get('success') is not True:
-              raise SystemExit(f'Realistic preview prefill failed HTTP {status}')
+              raise SystemExit(f'Realistic production prefill failed HTTP {status}')
           if analysis.get('currency') != 'VES':
               raise SystemExit('Currency was not read from realistic JPEG')
           if abs(float(analysis.get('amount') or 0)-12345.67) > 0.01:
