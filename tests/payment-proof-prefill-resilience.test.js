@@ -40,25 +40,28 @@ const baseArgs={
  report:{targetMode:''},
  promptVersion:'test-v1'
 };
+const productionArgs={...baseArgs,config:{primaryModel:'gemini-3.6-flash',secondaryModel:'gemini-3.5-flash'}};
 
 function quiet(overrides={}){return{localGeminiConfigured:()=>true,emitAttempt:()=>{},...overrides}}
 
-test('la prelectura interactiva mantiene dos intentos directos y ninguna selección o proxy externo',()=>{
+test('la prelectura interactiva admite hasta tres intentos directos sin proxy externo',()=>{
  const source=fs.readFileSync(path.join(__dirname,'../netlify/functions/payment-proof-prefill.js'),'utf8');
  assert.doesNotMatch(source,/_payment_ai_model_discovery/);
  assert.doesNotMatch(source,/gemini-proxy-seinca|PAYMENT_PROOF_AI_PROXY_URL|analyzeViaProxy/);
- assert.match(source,/const MAX_DIRECT_ATTEMPTS=2/);
- assert.equal(prefill.PREFILL_TOTAL_BUDGET_MS,15000);
- assert.equal(prefill.PREFILL_HANDLER_BUDGET_MS,15000);
- assert.equal(prefill.DIRECT_TIMEOUT_MS,7500);
+ assert.match(source,/const MAX_DIRECT_ATTEMPTS=3/);
+ assert.equal(prefill.PREFILL_TOTAL_BUDGET_MS,28000);
+ assert.equal(prefill.PREFILL_HANDLER_BUDGET_MS,28000);
+ assert.equal(prefill.DIRECT_TIMEOUT_MS,12000);
  assert.equal(prefill.PREFILL_FAST_MODEL,'gemini-3.5-flash-lite');
  assert.match(source,/deadlineAt:requestStartedAt\+PREFILL_HANDLER_BUDGET_MS/);
+ assert.match(source,/PAYMENT_PREFILL_IP_V2/);
+ assert.match(source,/PAYMENT_PREFILL_OWNER_V2/);
 });
 
-test('preserva configuración genérica, pero en producción prioriza Flash-Lite antes del modelo pesado',()=>{
+test('preserva configuración genérica y en producción prioriza Flash-Lite con dos respaldos',()=>{
  assert.deepEqual(prefill.modelCandidates({primaryModel:'gemini-primary',secondaryModel:'gemini-secondary'}),['gemini-primary','gemini-secondary']);
- assert.deepEqual(prefill.modelCandidates({primaryModel:'gemini-3.6-flash',secondaryModel:'gemini-3.5-flash'}),['gemini-3.5-flash-lite','gemini-3.6-flash']);
- assert.deepEqual(prefill.modelCandidates({primaryModel:'gemini-3.6-flash',secondaryModel:'gemini-3.6-flash'}),['gemini-3.5-flash-lite','gemini-3.6-flash']);
+ assert.deepEqual(prefill.modelCandidates({primaryModel:'gemini-3.6-flash',secondaryModel:'gemini-3.5-flash'}),['gemini-3.5-flash-lite','gemini-3.6-flash','gemini-3.5-flash']);
+ assert.deepEqual(prefill.modelCandidates({primaryModel:'gemini-3.6-flash',secondaryModel:'gemini-3.6-flash'}),['gemini-3.5-flash-lite','gemini-3.6-flash','gemini-3.5-flash']);
 });
 
 test('una lectura correcta con configuración genérica usa solamente el modelo primario',async()=>{
@@ -77,29 +80,38 @@ test('un 503 de la primaria cambia inmediatamente a una secundaria distinta',asy
  assert.equal(result.model,'gemini-secondary');
 });
 
-test('un timeout conserva siete segundos y medio para cada intento dentro de quince segundos',async()=>{
+test('producción puede llegar al tercer modelo si los fallos previos son rápidos',async()=>{
+ const attempted=[];
+ const result=await prefill.analyzeWithFallback(productionArgs,quiet({
+  analyzeDirect:async({model})=>{attempted.push(model);if(attempted.length<3)throw coded('PROVIDER_UNAVAILABLE',503);return{raw:VALID_RAW,model,provider:'direct'}}
+ }));
+ assert.deepEqual(attempted,['gemini-3.5-flash-lite','gemini-3.6-flash','gemini-3.5-flash']);
+ assert.equal(result.model,'gemini-3.5-flash');
+});
+
+test('un comprobante lento dispone de doce segundos por intento sin la antigua barrera de 7.5 s',async()=>{
  let clock=0;
  const timeouts=[];
  await assert.rejects(()=>prefill.analyzeWithFallback(baseArgs,quiet({
   now:()=>clock,
   analyzeDirect:async({timeoutMs})=>{timeouts.push(timeoutMs);clock+=timeoutMs;throw coded('TIMEOUT',504)}
  })),error=>error?.code==='TIMEOUT');
- assert.deepEqual(timeouts,[7500,7500]);
- assert.equal(clock,15000);
+ assert.deepEqual(timeouts,[12000,12000]);
+ assert.equal(clock,24000);
 });
 
-test('el presupuesto descuenta la preparación previa hecha por el handler',async()=>{
- let clock=1000;
+test('el presupuesto descuenta preparación previa sin iniciar un intento sin ventana útil',async()=>{
+ let clock=3000;
  const timeouts=[];
- await assert.rejects(()=>prefill.analyzeWithFallback({...baseArgs,deadlineAt:15000},quiet({
+ await assert.rejects(()=>prefill.analyzeWithFallback({...baseArgs,deadlineAt:28000},quiet({
   now:()=>clock,
   analyzeDirect:async({timeoutMs})=>{timeouts.push(timeoutMs);clock+=timeoutMs;throw coded('TIMEOUT',504)}
  })),error=>error?.code==='TIMEOUT');
- assert.deepEqual(timeouts,[7500,6500]);
- assert.equal(clock,15000);
+ assert.deepEqual(timeouts,[12000,12000]);
+ assert.equal(clock,27000);
 });
 
-test('dos fallos 503 consumen como máximo dos llamadas y terminan sin encadenar otro servicio',async()=>{
+test('dos fallos 503 de configuración genérica consumen como máximo sus dos modelos',async()=>{
  const attempted=[];
  await assert.rejects(()=>prefill.analyzeWithFallback(baseArgs,quiet({
   analyzeDirect:async({model})=>{attempted.push(model);throw coded('PROVIDER_UNAVAILABLE',503)}
@@ -107,11 +119,11 @@ test('dos fallos 503 consumen como máximo dos llamadas y terminan sin encadenar
  assert.deepEqual(attempted,['gemini-primary','gemini-secondary']);
 });
 
-test('si el primer intento deja menos de cinco segundos no inicia una llamada que no puede terminar',async()=>{
+test('si un intento deja menos de seis segundos no inicia una llamada que no puede terminar',async()=>{
  let clock=0,calls=0;
- await assert.rejects(()=>prefill.analyzeWithFallback(baseArgs,quiet({
+ await assert.rejects(()=>prefill.analyzeWithFallback(productionArgs,quiet({
   now:()=>clock,
-  analyzeDirect:async()=>{calls+=1;clock+=10500;throw coded('PROVIDER_UNAVAILABLE',503)}
+  analyzeDirect:async()=>{calls+=1;clock+=23000;throw coded('PROVIDER_UNAVAILABLE',503)}
  })),error=>error?.code==='PROVIDER_UNAVAILABLE');
  assert.equal(calls,1);
 });
