@@ -46,6 +46,7 @@ const receiptRecoverySchedule=read('netlify/functions/receipt-recovery-modern-sc
 check(autopilotSchedule.includes("schedule:'0 4 * * *'"),'El cron principal debe equivaler a medianoche de Venezuela.');
 check(accessReconciliationSchedule.includes("schedule:'5 * * * *'"),'Falta la reconciliación horaria del portón.');
 check(recoverySchedule.includes("schedule:'15 * * * *'"),'Falta la recuperación horaria de comprobantes.');
+check(recoverySchedule.includes("import 'nodemailer';"),'La recuperación horaria debe empaquetar nodemailer explícitamente.');
 check(receiptRecoverySchedule.includes("schedule:'*/15 * * * *'"),'Falta la recuperación periódica de recibos.');
 
 const edge=read('netlify/edge-functions/admin-premium-assets.js');

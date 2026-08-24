@@ -55,8 +55,10 @@ test('los helpers internos no se publican como funciones invocables',()=>{
 
 test('la recuperación de IA funciona con aprobación financiera manual',()=>{
  const source=fs.readFileSync(path.join(functionsDir,'payment-report-recovery-scheduled.js'),'utf8');
+ const wrapper=fs.readFileSync(path.join(functionsDir,'payment-report-recovery-modern-scheduled.mjs'),'utf8');
  assert.doesNotMatch(source,/automaticApprovalEnabled/,'La IA no debe depender del autopago.');
  assert.match(source,/AI Analysis Completed At/);
  assert.match(source,/\{Estado\}='Pendiente'/);
  assert.match(source,/\{Estado\}='Confirmado'/);
+ assert.match(wrapper,/import 'nodemailer';/,'El wrapper debe incluir nodemailer antes de cargar access_control.');
 });
