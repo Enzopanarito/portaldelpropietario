@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - diag/payment-prefill-owner-enzo-20260824
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/diag-payment-prefill-owner-live.yml'
 
 permissions:
   contents: read
