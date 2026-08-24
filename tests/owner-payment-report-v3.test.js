@@ -31,6 +31,10 @@ assert(ui.includes("if(!selectedFile)return['proof']"),'Antes del comprobante so
 assert(ui.includes("openReport=openSmartReport"),'Debe sustituir el flujo heredado.');
 assert(ui.includes("addEventListener('submit',submitSmartReport)"),'Debe existir un único manejador de envío.');
 assert(ui.includes('/api/vla/payment-proof-prefill')&&ui.includes('/api/vla/report-payment'),'Debe conservar prelectura y validación backend.');
+assert(ui.includes('const PREFILL_CLIENT_TIMEOUT_MS=15000'),'La prelectura visible debe dejar de esperar a los quince segundos.');
+assert(ui.includes("setTimeout(()=>{timedOut=true;controller.abort()},PREFILL_CLIENT_TIMEOUT_MS)"),'El límite visible debe cancelar la solicitud realmente.');
+assert(ui.includes('if(analysisController!==controller)return'),'Una respuesta vieja nunca debe sobrescribir un comprobante nuevo.');
+assert(ui.includes("timedOut?'La lectura está tardando':'No pudimos leerlo completo'"),'Al agotar el tiempo debe permitir continuar sin dejar al propietario esperando.');
 assert(ui.includes('submissionId')&&ui.includes('readAsDataURL'),'Debe conservar idempotencia y carga segura.');
 assert(ui.includes('postPaymentReportWithRecovery')&&ui.includes('Reconectando…'),'Debe reintentar una interrupción transitoria con el mismo submissionId.');
 assert(ui.includes('La conexión se interrumpió')&&!ui.includes("message||'Load failed'"),'Nunca debe mostrar el error crudo de Safari.');
