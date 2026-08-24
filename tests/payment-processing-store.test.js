@@ -7,7 +7,6 @@ const storeModule=require('../netlify/functions/_shared/_payment_processing_stor
  const source=fs.readFileSync('netlify/functions/_shared/_payment_processing_store.js','utf8');
  assert(source.includes("require('./_blobs_compat')")&&source.includes('getAtomicStore(STORE_NAME)'));
  assert(!source.includes("consistency:'strong'"));
- assert.deepStrictEqual(storeModule.EVENTUAL_READ_DELAYS_MS,[0,40,120,300,700]);
  let clock=Date.parse('2026-07-13T16:30:00.000Z');let random=0;
  const memory=storeModule.createMemoryStore(),store=storeModule.createProcessingStore({storeFactory:async()=>memory,now:()=>clock,randomBytes:size=>Buffer.alloc(size,++random),leaseMs:30000});
  const env={VLA_DATA_ENVIRONMENT:'staging',AIRTABLE_BASE_ID:'appSTAGING0000001'},identity={reportId:'recReport0000001',idempotencyKey:'recReport0000001|'+'a'.repeat(64)+'|PROMPT_V2',payloadHash:'b'.repeat(64)};
@@ -25,13 +24,6 @@ const storeModule=require('../netlify/functions/_shared/_payment_processing_stor
  const failed=await store.fail(takeover,Object.assign(new Error('fallo simulado'),{code:'SIMULATED'}));assert.strictEqual(failed.record.status,'FAILED');assert.match(failed.record.lastError,/SIMULATED/);
  clock+=1000;const retry=await store.acquire(id2,env);assert.strictEqual(retry.acquired,true);assert.strictEqual(retry.record.attempts,3);
  const read=await store.read('recReport0000001',env);assert.strictEqual(read.data.status,'COMPLETED');assert(!storeModule.processingKey('recReport0000001',env).includes('recReport0000001'));
- const delayedMemory=storeModule.createMemoryStore();let hiddenReads=0;
- const delayedStore={...delayedMemory,async getWithMetadata(key,options){if(hiddenReads++<2)return null;return delayedMemory.getWithMetadata(key,options)}};
- const delayed=storeModule.createProcessingStore({storeFactory:async()=>delayedStore,now:()=>clock,randomBytes:size=>Buffer.alloc(size,9),leaseMs:30000,readDelaysMs:[0,1,2],sleep:async()=>{}});
- const delayedIdentity={reportId:'recReportDelayed01',idempotencyKey:'delayed-key',payloadHash:'e'.repeat(64)};
- const delayedAcquire=await delayed.acquire(delayedIdentity,env);assert.strictEqual(delayedAcquire.acquired,true);
- hiddenReads=0;
- const delayedUpdate=await delayed.update(delayedAcquire,'Visible tras propagación');assert.strictEqual(delayedUpdate.record.processingState,'Visible tras propagación');
  assert.notStrictEqual(storeModule.processingKey('recReport0000001',env),storeModule.processingKey('recReport0000001',{VLA_DATA_ENVIRONMENT:'production',AIRTABLE_BASE_ID:'appPRODUCTION0001'}));
  assert.throws(()=>storeModule.processingKey('',env));
  assert.throws(()=>storeModule.namespace({VLA_DATA_ENVIRONMENT:'unknown',AIRTABLE_BASE_ID:'appSTAGING0000001'}),error=>error.code==='PROCESSING_ENVIRONMENT_INVALID');

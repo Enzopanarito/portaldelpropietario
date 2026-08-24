@@ -7,7 +7,7 @@ const {createRuntime}=require('./_shared/_provisional_access_runtime');
 const {safeDisplayText}=require('./_shared/_security_utils');
 const {connectLambdaEvent}=require('./_shared/_blobs_compat');
 
-const RETRYABLE=new Set(['TIMEOUT','PROVIDER_UNAVAILABLE','RATE_LIMIT','TEMPORARY_ERROR','GENERATION_STUCK','EMPTY_OUTPUT','PROCESSING_BUSY','PROCESSING_NOT_FOUND','PROCESSING_CAS_CONFLICT','PROCESSING_LEASE_LOST']);
+const RETRYABLE=new Set(['TIMEOUT','PROVIDER_UNAVAILABLE','RATE_LIMIT','TEMPORARY_ERROR','GENERATION_STUCK','EMPTY_OUTPUT','PROCESSING_BUSY','PROCESSING_CAS_CONFLICT','PROCESSING_LEASE_LOST']);
 function retryable(code){const value=String(code||'').trim().toUpperCase();return RETRYABLE.has(value)||value.startsWith('BLOBS_')}
 function retryError(code,message){const error=new Error(message||'Fallo transitorio del análisis de pago.');error.code=String(code||'TEMPORARY_ERROR').trim().toUpperCase();return error}
 
