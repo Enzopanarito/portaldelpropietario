@@ -19,6 +19,14 @@ const automation=require('../netlify/functions/_shared/_payment_report_automatio
  const manualResult=await manual.process(reportId,{});assert.strictEqual(manualResult.automatic,false);
  assert.strictEqual(Object.prototype.hasOwnProperty.call(manualPatches[0].fields,'Decisión Administrativa'),false,'El análisis manual no puede sobrescribir una decisión administrativa existente.');
  assert.strictEqual(Object.prototype.hasOwnProperty.call(manualPatches[0].fields,'Validación Realizada Por'),false,'El análisis manual no puede atribuirse una aprobación.');
+ const transientPatches=[];
+ for(const code of ['PROCESSING_BUSY','PROCESSING_NOT_FOUND','PROCESSING_CAS_CONFLICT','PROCESSING_LEASE_LOST']){
+  const transient=automation.createPaymentReportAutomation({loadBundle:async()=>({report:{id:reportId}}),orchestrator:{run:async()=>({ok:false,reason:code,processingState:'Revisión manual urgente',resultValidation:'Revisión manual urgente'})},patchReport:async(id,fields)=>transientPatches.push({id,fields}),executeApproval:async()=>{throw new Error('No debe ejecutarse.')}});
+  const transientResult=await transient.process(reportId,{});assert.strictEqual(transientResult.deferred,true);assert.strictEqual(transientResult.automatic,false);
+ }
+ assert.strictEqual(transientPatches.length,0,'Una carrera de procesamiento no puede escribirse en Airtable como fallo de IA.');
+ assert.strictEqual(automation.preserveReportForResult({ok:false,reason:'PROCESSING_LEASE_LOST'}),true);
+ assert.strictEqual(automation.preserveReportForResult({ok:false,reason:'TIMEOUT'}),false);
  const fallbackFields=automation.resultFields({...baseResult,automaticApproval:false,analysis:{...baseResult.analysis,normalized:{...baseResult.analysis.normalized,transaction_date:null}}},{fields:{'Fecha Operación Detectada':'2026-08-15','Fuente Fecha Operación':'UNDETERMINED','Confianza Fecha Operación':'LOW','Fecha Requiere Revisión':true,'Evidencia Fecha Operación':'Fecha provisional del reporte.'}});
  assert.strictEqual(fallbackFields['Fecha Operación Detectada'],'2026-08-15','El análisis posterior no puede borrar la fecha provisional del reporte.');
  assert.strictEqual(fallbackFields['Fuente Fecha Operación'],'UNDETERMINED');assert.strictEqual(fallbackFields['Fecha Requiere Revisión'],true);assert.strictEqual(fallbackFields['Evidencia Fecha Operación'],'Fecha provisional del reporte.','La evidencia previa debe preservarse literalmente si el servidor no confirmó una fecha nueva.');
