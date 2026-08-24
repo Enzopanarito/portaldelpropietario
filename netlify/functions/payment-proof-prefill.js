@@ -19,8 +19,10 @@ const {signRecipientAttestation}=require('./_shared/_payment_recipient_attestati
 const WINDOW_MS=60*60*1000;
 const CURRENT_STABLE_MODELS=Object.freeze(['gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-2.5-flash']);
 const DIRECT_TIMEOUT_MS=9000;
-const PROXY_TIMEOUT_MS=12000;
+const PROXY_TIMEOUT_MS=20000;
 const MAX_DIRECT_ATTEMPTS=4;
+const PREFILL_IP_SCOPE='PAYMENT_PREFILL_IP_V3';
+const PREFILL_OWNER_SCOPE='PAYMENT_PREFILL_OWNER_V3';
 const PROXY_URL=String(process.env.PAYMENT_PROOF_AI_PROXY_URL||'https://gemini-proxy-seinca.vercel.app/api/payment-proof').trim();
 const PROXY_CLIENT='villa-los-apamates-payment-proof-v1';
 
@@ -104,7 +106,16 @@ async function analyzeWithFallback({config,proof,report,promptVersion}={},deps={
  const direct=deps.analyzeDirect||analyzeDirect;
  const proxy=deps.analyzeViaProxy||analyzeViaProxy;
  const hasLocal=deps.localGeminiConfigured||localGeminiConfigured;
- let selection=null,discoveryError=null,lastError=null;
+ const proxyFirst=deps.proxyFirst!==false;
+ let selection=null,discoveryError=null,lastError=null,firstProxyError=null;
+
+ if(proxyFirst){
+  try{return await proxy({proof,promptVersion})}
+  catch(error){
+   firstProxyError=error;lastError=error;
+   if(['INVALID_ATTACHMENT','RATE_LIMIT','TIMEOUT','PROVIDER_UNAVAILABLE'].includes(errorCode(error)))throw error;
+  }
+ }
 
  if(hasLocal()){
   try{selection=await discover()}
@@ -124,11 +135,13 @@ async function analyzeWithFallback({config,proof,report,promptVersion}={},deps={
   }
  }
 
- try{return await proxy({proof,promptVersion})}
- catch(error){
-  if(!lastError||['AI_AUTH_FAILED','AI_NOT_CONFIGURED'].includes(errorCode(lastError)))lastError=error;
+ if(!proxyFirst){
+  try{return await proxy({proof,promptVersion})}
+  catch(error){
+   if(!lastError||['AI_AUTH_FAILED','AI_NOT_CONFIGURED'].includes(errorCode(lastError)))lastError=error;
+  }
  }
- throw lastError||Object.assign(new Error('No hay un lector disponible para analizar el comprobante.'),{code:'AI_NOT_CONFIGURED'});
+ throw firstProxyError||lastError||Object.assign(new Error('No hay un lector disponible para analizar el comprobante.'),{code:'AI_NOT_CONFIGURED'});
 }
 
 const handler=async event=>{
@@ -138,11 +151,13 @@ const handler=async event=>{
   if(!validRecordId(ownerId))return json(400,{message:'Propietario inválido.'});
   const attachment=decodeAttachment(body.attachment);
   if(!attachment)return json(400,{message:'Adjunte el comprobante antes de continuar.'});
-  const [ipLimit,ownerLimit]=await Promise.all([allowed('PAYMENT_PREFILL_IP',clientIp(event),12),allowed('PAYMENT_PREFILL_OWNER',ownerId,8)]);
+  const [ipLimit,ownerLimit]=await Promise.all([allowed(PREFILL_IP_SCOPE,clientIp(event),20),allowed(PREFILL_OWNER_SCOPE,ownerId,12)]);
   if(!ipLimit.allowed||!ownerLimit.allowed){const retryAfter=Math.max(ipLimit.retryAfter||0,ownerLimit.retryAfter||0,60);return json(429,{message:'Se alcanzó el límite temporal de lecturas. Puede completar los datos manualmente.',manualAvailable:true},{'Retry-After':String(retryAfter)})}
-  const [config,accountState]=await Promise.all([loadAiConfig(),loadAuthorizedAccounts()]);
+  const accountStatePromise=loadAuthorizedAccounts();
+  const config=await loadAiConfig();
   if(!config.aiEnabled)return json(503,{message:'La lectura automática no está disponible. Complete los datos manualmente.',manualAvailable:true});
   const result=await analyzeWithFallback({config,proof:{content:attachment.content,contentType:attachment.contentType},report:{targetMode:''},promptVersion:config.promptVersion}),raw=result.raw;
+  const accountState=await accountStatePromise;
   const parsed=contract.parseRawJson(raw);
   if(!parsed.ok)return json(422,{message:'No pudimos leer el comprobante con seguridad. Complete los datos manualmente.',manualAvailable:true,reason:parsed.reason});
   const validation=contract.validateAnalysis(parsed.value,{minimumConfidence:0}),fatal=(validation.issueCodes||[]).filter(code=>!['CRITICAL_FIELDS_MISSING','LOW_CONFIDENCE'].includes(code));
@@ -179,3 +194,6 @@ exports.analyzeWithFallback=analyzeWithFallback;
 exports.loadAuthorizedAccounts=loadAuthorizedAccounts;
 exports.recipientVerification=recipientVerification;
 exports.CURRENT_STABLE_MODELS=CURRENT_STABLE_MODELS;
+exports.PROXY_TIMEOUT_MS=PROXY_TIMEOUT_MS;
+exports.PREFILL_IP_SCOPE=PREFILL_IP_SCOPE;
+exports.PREFILL_OWNER_SCOPE=PREFILL_OWNER_SCOPE;
