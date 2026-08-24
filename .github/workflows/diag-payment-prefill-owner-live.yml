@@ -1,9 +1,6 @@
 name: DIAG Payment Prefill Owner Live
 
 on:
-  push:
-    branches:
-      - diag/payment-prefill-owner-enzo-20260824
   pull_request:
     branches:
       - main
@@ -18,25 +15,30 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
-      - name: Generate synthetic receipt
+      - name: Generate realistic large JPEG receipt
         shell: bash
         run: |
           set -euo pipefail
           python3 -m pip install --quiet pillow
           python3 - <<'PY'
-          import base64, json
-          from PIL import Image, ImageDraw, ImageFont
-          image=Image.new('RGB',(1000,850),'white')
-          draw=ImageDraw.Draw(image)
-          font=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',42)
-          title=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',50)
-          lines=[('PAGO MOVIL COMPLETADO',title),('Banco de Venezuela',font),('Monto: Bs. 12.345,67',font),('Fecha: 04/08/2026',font),('Referencia: 987654321012',font),('Estado: COMPLETADO',font),('Receptor: Villa Los Apamates',font)]
-          y=80
-          for text,f in lines:
-              draw.text((70,y),text,fill='black',font=f); y+=100
-          image.save('owner-diagnostic.png',optimize=True)
-          content=open('owner-diagnostic.png','rb').read()
-          payload={'ownerId':'recgTGvQXCRHEGL1m','attachment':{'name':'owner-diagnostic.png','type':'image/png','size':len(content),'base64':base64.b64encode(content).decode('ascii')}}
+          import base64, json, os
+          from PIL import Image, ImageDraw, ImageFont, ImageFilter
+          w,h=1800,2400
+          bg=Image.effect_noise((w,h),24).convert('RGB').filter(ImageFilter.GaussianBlur(.35))
+          d=ImageDraw.Draw(bg)
+          d.rounded_rectangle((140,180,w-140,h-180),radius=44,fill=(248,248,246),outline=(210,210,205),width=5)
+          f=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',72)
+          s=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',60)
+          b=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',82)
+          lines=[('PAGO MOVIL COMPLETADO',b),('Banco de Venezuela',f),('Monto: Bs. 12.345,67',f),('Fecha: 04/08/2026',f),('Hora: 10:30 AM',s),('Referencia: 987654321012',s),('Estado: COMPLETADO',f),('Receptor: Villa Los Apamates',s),('Telefono: 0412-0000000',s)]
+          y=330
+          for text,font in lines:
+              d.text((260,y),text,fill=(20,25,30),font=font); y+=185
+          d.text((260,h-410),'Comprobante de prueba CI - NO ES UN PAGO REAL',fill=(75,75,75),font=s)
+          image=bg.rotate(.7,resample=Image.Resampling.BICUBIC,expand=False,fillcolor=(32,34,36))
+          image.save('owner-diagnostic.jpeg',quality=94,optimize=True)
+          content=open('owner-diagnostic.jpeg','rb').read()
+          payload={'ownerId':'recgTGvQXCRHEGL1m','attachment':{'name':'owner-diagnostic.jpeg','type':'image/jpeg','size':len(content),'base64':base64.b64encode(content).decode('ascii')}}
           open('request.json','w').write(json.dumps(payload))
           print('BYTES='+str(len(content)))
           PY
