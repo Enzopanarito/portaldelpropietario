@@ -4,6 +4,7 @@ const crypto=require('crypto');
 const {withAirtableUsage}=require('./_shared/_airtable_meter');
 const {decodeAttachment}=require('./_shared/_payment_report_attachment');
 const {createGeminiAnalysisRunner}=require('./_shared/_payment_ai_gemini');
+const {discoverCompatibleModel}=require('./_shared/_payment_ai_model_discovery');
 const contract=require('./_shared/_payment_ai_contract');
 const {consume}=require('./_shared/_persistent_rate_limit');
 const {safeDisplayText}=require('./_shared/_security_utils');
@@ -15,18 +16,12 @@ const {METHOD_ACCOUNT_MAP,accountActive,findAuthorizedRecipient}=require('./_sha
 const {signRecipientAttestation}=require('./_shared/_payment_recipient_attestation');
 
 const WINDOW_MS=60*60*1000;
-const PREFILL_FAST_MODEL='gemini-3.5-flash-lite';
-const CURRENT_STABLE_MODELS=Object.freeze([PREFILL_FAST_MODEL,'gemini-3.6-flash','gemini-3.5-flash']);
-const DIRECT_TIMEOUT_MS=7500;
-const PREFILL_TOTAL_BUDGET_MS=15000;
-const PREFILL_HANDLER_BUDGET_MS=15000;
-const MIN_DIRECT_WINDOW_MS=5000;
-const MAX_DIRECT_ATTEMPTS=2;
-const TRANSPORT_CODES=Object.freeze(new Set(['ENOTFOUND','EAI_AGAIN','ECONNRESET','ECONNREFUSED','ETIMEDOUT','EPIPE','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET']));
-const PUBLIC_FAILURE_CODES=Object.freeze(new Set(['PREFILL_CONFIG_UNAVAILABLE','AI_NETWORK_ERROR','PROVIDER_UNAVAILABLE','TIMEOUT','RATE_LIMIT','AI_AUTH_FAILED','AI_NOT_CONFIGURED','AI_MODEL_INVALID','AI_MODEL_NOT_FOUND','EMPTY_OUTPUT','INVALID_OUTPUT','AI_PROVIDER_ERROR','AI_PROVIDER_UNAVAILABLE']));
-const MODEL_FAILURE_CODES=Object.freeze(new Set(['AI_MODEL_INVALID','AI_MODEL_NOT_FOUND','EMPTY_OUTPUT','INVALID_OUTPUT']));
-const PROVIDER_FAILURE_CODES=Object.freeze(new Set(['PROVIDER_UNAVAILABLE','RATE_LIMIT','AI_AUTH_FAILED','AI_PROVIDER_ERROR','AI_PROVIDER_UNAVAILABLE']));
-const SECONDARY_ELIGIBLE_CODES=Object.freeze(new Set(['PROVIDER_UNAVAILABLE','TIMEOUT','AI_PROVIDER_ERROR','AI_PROVIDER_UNAVAILABLE','AI_MODEL_INVALID','AI_MODEL_NOT_FOUND','EMPTY_OUTPUT','INVALID_OUTPUT']));
+const CURRENT_STABLE_MODELS=Object.freeze(['gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-2.5-flash']);
+const DIRECT_TIMEOUT_MS=9000;
+const PROXY_TIMEOUT_MS=12000;
+const MAX_DIRECT_ATTEMPTS=4;
+const PROXY_URL=String(process.env.PAYMENT_PROOF_AI_PROXY_URL||'https://gemini-proxy-seinca.vercel.app/api/payment-proof').trim();
+const PROXY_CLIENT='villa-los-apamates-payment-proof-v1';
 
 function json(statusCode,body,headers={}){return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store, no-cache, must-revalidate','X-Content-Type-Options':'nosniff',...headers},body:JSON.stringify(body)}}
 function validRecordId(value){return /^rec[A-Za-z0-9]{14}$/.test(String(value||'').trim())}
@@ -42,13 +37,7 @@ function missingFields(analysis){
  if(required.has('method')&&!analysis?.bank_or_platform&&!methodLabel(analysis?.method))missing.push({field:'bank',label:'banco o método'});
  return missing;
 }
-async function loadAiConfig(){
- let records;
- try{records=await listAll(TABLES.config,'?maxRecords=1')}
- catch(_){throw Object.assign(new Error('La configuración de prelectura no está disponible.'),{code:'PREFILL_CONFIG_UNAVAILABLE'})}
- const record=records[0]||{fields:{}},rules=mergeConfig(record);
- return aiConfig(record,rules);
-}
+async function loadAiConfig(){const records=await listAll(TABLES.config,'?maxRecords=1'),record=records[0]||{fields:{}},rules=mergeConfig(record);return aiConfig(record,rules)}
 async function loadAuthorizedAccounts(){
  if(!TABLES.accounts)return{available:false,records:[]};
  try{return{available:true,records:await listAll(TABLES.accounts)}}
@@ -62,39 +51,22 @@ function recipientVerification(analysis,accountState,config={},now=new Date()){
  return{classification,needsReview:classification!=='CONFIRMED'};
 }
 function unique(values){return[...new Set((values||[]).map(value=>String(value||'').trim()).filter(Boolean))]}
-function safeModelLabel(value){const model=String(value||'').trim();return/^[A-Za-z0-9._-]{3,120}$/.test(model)?model:'INVALID_MODEL'}
-function modelCandidates(config={}){
- const configured=unique([config.primaryModel,config.secondaryModel]),usesKnownProductionModel=configured.some(model=>CURRENT_STABLE_MODELS.includes(model));
+function modelCandidates(config={},selection=null){
  return unique([
-  ...(usesKnownProductionModel?[PREFILL_FAST_MODEL]:[]),
-  ...configured,
+  selection?.model,
+  ...(Array.isArray(selection?.models)?selection.models:[]),
+  config.primaryModel,
+  config.secondaryModel,
   ...CURRENT_STABLE_MODELS
- ]).slice(0,MAX_DIRECT_ATTEMPTS);
+ ]).slice(0,10);
 }
 function errorCode(error){return String(error?.code||'').trim().toUpperCase()}
-function transportCode(error){
- const candidates=[error?.transportCode,error?.cause?.code,error?.code].map(value=>String(value||'').trim().toUpperCase());
- for(const candidate of candidates)if(TRANSPORT_CODES.has(candidate))return candidate;
- return error?.name==='TypeError'&&/fetch failed/i.test(String(error?.message||''))?'FETCH_FAILED':'';
-}
-function normalizeTransportError(error){
- const code=errorCode(error);
- if(PUBLIC_FAILURE_CODES.has(code)||(code&&!TRANSPORT_CODES.has(code))||!transportCode(error))return error;
- return Object.assign(new Error('La conexión con el proveedor de análisis no está disponible temporalmente.'),{code:'AI_NETWORK_ERROR',transportCode:transportCode(error)});
-}
-function publicFailure(error){
- const code=errorCode(error),reason=PUBLIC_FAILURE_CODES.has(code)?code:'PREFILL_INTERNAL_ERROR',status=Number(error?.status||0);
- const failureClass=reason==='PREFILL_CONFIG_UNAVAILABLE'?'CONFIG':reason==='AI_NETWORK_ERROR'?'NETWORK':reason==='TIMEOUT'?'TIMEOUT':MODEL_FAILURE_CODES.has(reason)?'MODEL':PROVIDER_FAILURE_CODES.has(reason)?'PROVIDER':'RUNTIME';
- const providerResponse=failureClass==='PROVIDER'||(reason==='TIMEOUT'&&status===408);
- return{reason,failureClass,providerStatus:providerResponse&&Number.isInteger(status)&&status>=100&&status<=599?status:null};
-}
-function canTrySecondary(error){
+function canTryAnotherModel(error){
  const status=Number(error?.status||0),code=errorCode(error);
- if([401,403,429].includes(status)||['INVALID_ATTACHMENT','AI_AUTH_FAILED','AI_NOT_CONFIGURED','RATE_LIMIT','AI_NETWORK_ERROR'].includes(code))return false;
- if(SECONDARY_ELIGIBLE_CODES.has(code))return true;
- return status===400||status===404||status>=500&&status<600;
+ if(['INVALID_ATTACHMENT','AI_AUTH_FAILED','AI_NOT_CONFIGURED','RATE_LIMIT','PROVIDER_UNAVAILABLE','TIMEOUT'].includes(code))return false;
+ if(['AI_MODEL_INVALID','AI_MODEL_NOT_FOUND','EMPTY_OUTPUT','INVALID_OUTPUT'].includes(code))return true;
+ return status===400||status===404;
 }
-function budgetTimeout(){return Object.assign(new Error('La prelectura agotó su tiempo total protegido.'),{code:'TIMEOUT',status:504})}
 function localGeminiConfigured(){return Boolean(String(process.env.GEMINI_API_KEY||'').trim())}
 function validateRawForPrefill(raw){
  const parsed=contract.parseRawJson(String(raw||''));
@@ -104,45 +76,61 @@ function validateRawForPrefill(raw){
  if(fatal.length)throw Object.assign(new Error('La IA devolvió un esquema inválido.'),{code:'INVALID_OUTPUT',detail:fatal[0]});
  return String(raw).trim();
 }
-async function analyzeDirect({model,proof,report,promptVersion,runnerFactory=createGeminiAnalysisRunner,timeoutMs=DIRECT_TIMEOUT_MS}={}){
- const runner=runnerFactory({timeoutMs:Math.max(MIN_DIRECT_WINDOW_MS,Math.min(DIRECT_TIMEOUT_MS,Number(timeoutMs)||DIRECT_TIMEOUT_MS)),maxOutputTokens:2048});
+async function analyzeViaProxy({proof,promptVersion,fetchFn=global.fetch,proxyUrl=PROXY_URL}={}){
+ if(!proxyUrl)throw Object.assign(new Error('No existe un lector alterno configurado.'),{code:'AI_NOT_CONFIGURED'});
+ const content=Buffer.isBuffer(proof?.content)?proof.content:null,contentType=String(proof?.contentType||'').trim();
+ if(!content||!content.length||!contentType)throw Object.assign(new Error('El comprobante no está disponible para análisis.'),{code:'INVALID_ATTACHMENT'});
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),PROXY_TIMEOUT_MS);
  try{
-  const raw=await runner({model,proof,report,promptVersion});
-  return{raw:validateRawForPrefill(raw),model,provider:'direct'};
- }catch(error){throw normalizeTransportError(error)}
-}
-async function analyzeWithFallback({config,proof,report,promptVersion,deadlineAt}={},deps={}){
- const direct=deps.analyzeDirect||analyzeDirect;
- const hasLocal=deps.localGeminiConfigured||localGeminiConfigured;
- const emitAttempt=deps.emitAttempt||((entry)=>console.info(JSON.stringify(entry)));
- const recordAttempt=entry=>{try{emitAttempt(entry)}catch(_){}};
- const now=deps.now||Date.now,budgetMs=Math.max(MIN_DIRECT_WINDOW_MS,Number(deps.budgetMs)||PREFILL_TOTAL_BUDGET_MS),startedAt=now(),requestedDeadline=Number(deadlineAt),expiresAt=Number.isFinite(requestedDeadline)&&requestedDeadline>0?Math.min(startedAt+budgetMs,requestedDeadline):startedAt+budgetMs;
- const remaining=()=>Math.max(0,expiresAt-now());
- if(!hasLocal())throw Object.assign(new Error('El proveedor de análisis no está configurado.'),{code:'AI_NOT_CONFIGURED'});
- const models=modelCandidates(config);
- if(!models.length)throw Object.assign(new Error('No hay un modelo de análisis configurado.'),{code:'AI_NOT_CONFIGURED'});
- let lastError=null;
- for(let index=0;index<models.length;index++){
-  const model=models[index],available=remaining();
-  if(available<MIN_DIRECT_WINDOW_MS)throw lastError||budgetTimeout();
-  const attemptStartedAt=now();
-  try{
-   const result=await direct({model,proof,report,promptVersion,timeoutMs:Math.min(DIRECT_TIMEOUT_MS,available)});
-   recordAttempt({event:'VLA_PAYMENT_PREFILL_ATTEMPT',route:'direct',model:safeModelLabel(model),attempt:index+1,outcome:'SUCCESS',elapsedMs:Math.max(0,now()-attemptStartedAt)});
-   return result;
-  }catch(error){
-   lastError=error;
-   const failure=publicFailure(error);
-   recordAttempt({event:'VLA_PAYMENT_PREFILL_ATTEMPT',route:'direct',model:safeModelLabel(model),attempt:index+1,outcome:'FAILURE',elapsedMs:Math.max(0,now()-attemptStartedAt),reason:failure.reason,failureClass:failure.failureClass,providerStatus:failure.providerStatus});
-   if(index===0&&models.length>1&&canTrySecondary(error)&&remaining()>=MIN_DIRECT_WINDOW_MS)continue;
-   break;
+  const response=await fetchFn(proxyUrl,{method:'POST',headers:{'Content-Type':'application/json','X-VLA-Client':PROXY_CLIENT},signal:controller.signal,body:JSON.stringify({content:content.toString('base64'),contentType,promptVersion})});
+  const payload=await response.json().catch(()=>({}));
+  if(!response.ok||payload?.ok!==true||!String(payload?.raw||'').trim()){
+   throw Object.assign(new Error(String(payload?.message||'El lector alterno no pudo procesar el comprobante.')),{code:String(payload?.code||'AI_PROVIDER_ERROR'),status:Number(response.status)||0});
   }
+  return{raw:validateRawForPrefill(payload.raw),model:`proxy:${String(payload.model||'gemini').trim()}`,provider:'proxy'};
+ }catch(error){
+  if(error?.name==='AbortError')throw Object.assign(new Error('El análisis alterno excedió el tiempo máximo.'),{code:'TIMEOUT',status:504});
+  throw error;
+ }finally{clearTimeout(timer)}
+}
+async function analyzeDirect({model,proof,report,promptVersion,runnerFactory=createGeminiAnalysisRunner}={}){
+ const runner=runnerFactory({timeoutMs:DIRECT_TIMEOUT_MS,maxOutputTokens:2048});
+ const raw=await runner({model,proof,report,promptVersion});
+ return{raw:validateRawForPrefill(raw),model,provider:'direct'};
+}
+async function analyzeWithFallback({config,proof,report,promptVersion}={},deps={}){
+ const discover=deps.discoverCompatibleModel||discoverCompatibleModel;
+ const direct=deps.analyzeDirect||analyzeDirect;
+ const proxy=deps.analyzeViaProxy||analyzeViaProxy;
+ const hasLocal=deps.localGeminiConfigured||localGeminiConfigured;
+ let selection=null,discoveryError=null,lastError=null;
+
+ if(hasLocal()){
+  try{selection=await discover()}
+  catch(error){discoveryError=error;lastError=error}
+
+  const discoveryCode=errorCode(discoveryError);
+  const directAllowed=!['AI_AUTH_FAILED','AI_NOT_CONFIGURED'].includes(discoveryCode);
+  if(directAllowed){
+   const models=modelCandidates(config,selection).slice(0,MAX_DIRECT_ATTEMPTS);
+   for(const model of models){
+    try{return await direct({model,proof,report,promptVersion})}
+    catch(error){
+     lastError=error;
+     if(!canTryAnotherModel(error))break;
+    }
+   }
+  }
+ }
+
+ try{return await proxy({proof,promptVersion})}
+ catch(error){
+  if(!lastError||['AI_AUTH_FAILED','AI_NOT_CONFIGURED'].includes(errorCode(lastError)))lastError=error;
  }
  throw lastError||Object.assign(new Error('No hay un lector disponible para analizar el comprobante.'),{code:'AI_NOT_CONFIGURED'});
 }
 
 const handler=async event=>{
- const requestStartedAt=Date.now();
  if(event.httpMethod!=='POST')return json(405,{message:'Method Not Allowed'});
  try{
   const body=JSON.parse(event.body||'{}'),ownerId=String(body.ownerId||'').trim();
@@ -153,7 +141,7 @@ const handler=async event=>{
   if(!ipLimit.allowed||!ownerLimit.allowed){const retryAfter=Math.max(ipLimit.retryAfter||0,ownerLimit.retryAfter||0,60);return json(429,{message:'Se alcanzó el límite temporal de lecturas. Puede completar los datos manualmente.',manualAvailable:true},{'Retry-After':String(retryAfter)})}
   const [config,accountState]=await Promise.all([loadAiConfig(),loadAuthorizedAccounts()]);
   if(!config.aiEnabled)return json(503,{message:'La lectura automática no está disponible. Complete los datos manualmente.',manualAvailable:true});
-  const result=await analyzeWithFallback({config,proof:{content:attachment.content,contentType:attachment.contentType},report:{targetMode:''},promptVersion:config.promptVersion,deadlineAt:requestStartedAt+PREFILL_HANDLER_BUDGET_MS}),raw=result.raw;
+  const result=await analyzeWithFallback({config,proof:{content:attachment.content,contentType:attachment.contentType},report:{targetMode:''},promptVersion:config.promptVersion}),raw=result.raw;
   const parsed=contract.parseRawJson(raw);
   if(!parsed.ok)return json(422,{message:'No pudimos leer el comprobante con seguridad. Complete los datos manualmente.',manualAvailable:true,reason:parsed.reason});
   const validation=contract.validateAnalysis(parsed.value,{minimumConfidence:0}),fatal=(validation.issueCodes||[]).filter(code=>!['CRITICAL_FIELDS_MISSING','LOW_CONFIDENCE'].includes(code));
@@ -170,9 +158,8 @@ const handler=async event=>{
  }catch(error){
   const message=String(error?.message||'');
   if(['INVALID_ATTACHMENT'].includes(errorCode(error))||/adjunto|JPG|PNG|PDF|3 MB|formato/i.test(message))return json(400,{message:safeDisplayText(message,300),manualAvailable:false});
-  const failure=publicFailure(error),networkCode=failure.failureClass==='NETWORK'?transportCode(error):'';
-  console.error(JSON.stringify({event:'VLA_PAYMENT_PREFILL_FAILED',...failure,...(networkCode?{transportCode:networkCode}:{})}));
-  return json(503,{message:'La lectura inteligente no respondió. Intente nuevamente o complete los datos manualmente.',manualAvailable:true,...failure});
+  console.error('Prelectura de comprobante:',safeDisplayText(error?.code||message,300));
+  return json(503,{message:'La lectura inteligente no respondió. Intente nuevamente o complete los datos manualmente.',manualAvailable:true,reason:safeDisplayText(error?.code||'AI_PROVIDER_ERROR',80),providerStatus:Number(error?.status)||null});
  }
 };
 
@@ -181,21 +168,13 @@ exports.missingFields=missingFields;
 exports.requiredFieldsFor=requiredFieldsFor;
 exports.methodLabel=methodLabel;
 exports.unique=unique;
-exports.safeModelLabel=safeModelLabel;
 exports.modelCandidates=modelCandidates;
 exports.errorCode=errorCode;
-exports.transportCode=transportCode;
-exports.normalizeTransportError=normalizeTransportError;
-exports.publicFailure=publicFailure;
-exports.canTrySecondary=canTrySecondary;
+exports.canTryAnotherModel=canTryAnotherModel;
 exports.validateRawForPrefill=validateRawForPrefill;
+exports.analyzeViaProxy=analyzeViaProxy;
 exports.analyzeDirect=analyzeDirect;
 exports.analyzeWithFallback=analyzeWithFallback;
-exports.loadAiConfig=loadAiConfig;
 exports.loadAuthorizedAccounts=loadAuthorizedAccounts;
 exports.recipientVerification=recipientVerification;
-exports.DIRECT_TIMEOUT_MS=DIRECT_TIMEOUT_MS;
-exports.PREFILL_TOTAL_BUDGET_MS=PREFILL_TOTAL_BUDGET_MS;
-exports.PREFILL_HANDLER_BUDGET_MS=PREFILL_HANDLER_BUDGET_MS;
-exports.PREFILL_FAST_MODEL=PREFILL_FAST_MODEL;
 exports.CURRENT_STABLE_MODELS=CURRENT_STABLE_MODELS;
