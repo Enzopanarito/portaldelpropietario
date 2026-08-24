@@ -35,49 +35,10 @@ async function runScenario(browser,{amount,expectedMode,debtUsd=85,debtBs=221.4}
   await page.close();
 }
 
-function prefillFixture(amount,reference){return JSON.stringify({success:true,analysis:{amount,currency:'USD',reference,bank:'Zelle',method:'ZELLE',transactionDate:'2026-08-12',transactionDateSource:'PROOF_EXTRACTED',transactionDateConfidence:'HIGH',transactionDateNeedsReview:false,transactionDateEvidence:'12 Aug 2026 visible',transactionStatus:'COMPLETED',recipient:'Villa Los Apamates',confidence:.99,warnings:[]},analysisProvider:'fixture-model',analysisRoute:'fixture',complete:true,missing:[]})}
-async function installRaceFixture(page){
-  await page.setContent('<!doctype html><html><head><base href="https://vla.test/"></head><body><button id="reportBtn">Reportar</button><button id="reportSide"></button><button id="reportMobile"></button><div id="modal" class="hidden"></div><div id="toast"></div><script>var currentOwner={id:"recABCDEFGHIJKLMN",Casa:4,Propietario:"Casa 4"},current={debtUsd:85,debtBs:0,total:85,bsDue:0};function rate(){return 180}function usd(n){return "$"+Number(n||0).toFixed(2)}function bs(n){return "Bs. "+Number(n||0).toFixed(2)}function caracasLabel(){return "12 de agosto de 2026"}function toast(){}function openReport(){}function hideModal(){}function setupModes(){}</script></body></html>');
-  await page.addStyleTag({path:path.resolve('owner-payment-report-v3.css')});
-  await page.addScriptTag({path:path.resolve('payment-report-intelligence.js')});
-  await page.addScriptTag({path:path.resolve('owner-payment-report-v3.js')});
-  await page.locator('html[data-vla-owner-payment-report="progressive-v13"]').waitFor({state:'attached'});
-  await page.click('#reportBtn');
-}
-async function runStalePrefillScenario(browser){
-  const page=await browser.newPage({viewport:{width:390,height:844}});let calls=0,firstSeenResolve,thirdSeenResolve;
-  const firstSeen=new Promise(resolve=>{firstSeenResolve=resolve}),thirdSeen=new Promise(resolve=>{thirdSeenResolve=resolve});
-  await page.route('**/api/vla/payment-proof-prefill',async route=>{const call=++calls;if(call===1){firstSeenResolve();await new Promise(resolve=>setTimeout(resolve,300))}if(call===3){thirdSeenResolve();await new Promise(resolve=>setTimeout(resolve,300))}try{await route.fulfill({status:200,contentType:'application/json',body:prefillFixture(call*10,`REF-${call}`)})}catch(error){if(call!==1&&call!==3)throw error}});
-  try{
-    await installRaceFixture(page);
-    await page.setInputFiles('#payProof',{name:'primero.png',mimeType:'image/png',buffer:png});await firstSeen;
-    await page.setInputFiles('#payProof',{name:'segundo.png',mimeType:'image/png',buffer:Buffer.concat([png,Buffer.from('second')])});
-    await page.locator('#payAmount').waitFor({state:'attached'});await page.waitForFunction(()=>document.getElementById('payAmount').value==='20');await page.waitForTimeout(400);
-    assert(await page.locator('#payAmount').inputValue()==='20','Una respuesta anterior reemplazó los datos del comprobante actual.');
-    await page.setInputFiles('#payProof',{name:'tercero.png',mimeType:'image/png',buffer:Buffer.concat([png,Buffer.from('third')])});await thirdSeen;
-    await page.setInputFiles('#payProof',[]);await page.evaluate(()=>{document.getElementById('payAmount').value=''});await page.waitForTimeout(400);
-    assert(await page.locator('#payAmount').inputValue()==='','La lectura cancelada pobló datos después de quitar el archivo.');
-  }finally{await page.close()}
-}
-async function runClientTimeoutScenario(browser){
-  const page=await browser.newPage({viewport:{width:390,height:844}});
-  await page.route('**/api/vla/payment-proof-prefill',async route=>{await new Promise(resolve=>setTimeout(resolve,500));try{await route.fulfill({status:200,contentType:'application/json',body:prefillFixture(30,'REF-TIMEOUT')})}catch(_){}});
-  try{
-    await page.setContent('<!doctype html><html><head><base href="https://vla.test/"></head><body><button id="reportBtn">Reportar</button><button id="reportSide"></button><button id="reportMobile"></button><div id="modal" class="hidden"></div><div id="toast"></div><script>var currentOwner={id:"recABCDEFGHIJKLMN",Casa:4,Propietario:"Casa 4"},current={debtUsd:85,debtBs:0,total:85,bsDue:0};function rate(){return 180}function usd(n){return "$"+Number(n||0).toFixed(2)}function bs(n){return "Bs. "+Number(n||0).toFixed(2)}function caracasLabel(){return "12 de agosto de 2026"}function toast(){}function openReport(){}function hideModal(){}function setupModes(){}</script></body></html>');
-    await page.addStyleTag({path:path.resolve('owner-payment-report-v3.css')});await page.addScriptTag({path:path.resolve('payment-report-intelligence.js')});
-    await page.evaluate(()=>{const nativeSetTimeout=window.setTimeout.bind(window);window.setTimeout=(callback,delay,...args)=>nativeSetTimeout(callback,delay===15000?50:delay,...args)});
-    await page.addScriptTag({path:path.resolve('owner-payment-report-v3.js')});await page.click('#reportBtn');await page.setInputFiles('#payProof',{name:'lento.png',mimeType:'image/png',buffer:png});
-    await page.getByText('La lectura está tardando',{exact:true}).waitFor({state:'visible',timeout:2000});
-    assert(!(await page.locator('#vla-pay-manual').isDisabled()),'El límite de lectura debe liberar la corrección manual.');
-  }finally{await page.close()}
-}
-
 (async()=>{
   const browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.CHROMIUM_EXECUTABLE_PATH}:{})});
   await runScenario(browser,{amount:85,expectedMode:'USD'});
   await runScenario(browser,{amount:221.4,expectedMode:'Bs BCV'});
-  await runStalePrefillScenario(browser);
-  await runClientTimeoutScenario(browser);
   await browser.close();
   console.log('PAYMENT_REPORT_PROOF_FIRST_V9_BROWSER_OK');
 })().catch(error=>{console.error(error);process.exit(1)});

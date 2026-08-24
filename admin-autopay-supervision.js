@@ -13,14 +13,13 @@ function ensurePanel(){
  if(panel())return panel();
  const reports=document.getElementById('reports');if(!reports)return null;
  const host=reports.querySelector(':scope > div')||reports;
- host.insertAdjacentHTML('beforeend',`<section id="vla-autopay-supervision" class="vla-autopay-panel"><div class="vla-autopay-heading"><div><h3>Historial de pagos aprobados</h3><p>Trazabilidad completa desde la hora del reporte hasta su aprobación automática o manual.</p></div><button id="vla-autopay-refresh" type="button">Actualizar historial</button></div><div id="vla-autopay-summary" class="vla-autopay-summary"></div><div id="vla-autopay-body" class="vla-autopay-body"><div class="vla-autopay-empty">Abre Pagos para cargar el historial.</div></div></section>`);
+ host.insertAdjacentHTML('beforeend',`<section id="vla-autopay-supervision" class="vla-autopay-panel"><div class="vla-autopay-heading"><div><h3>Historial de pagos aprobados automáticamente</h3><p>Supervisión posterior del Piloto Automático. Los pagos dudosos siguen yendo a revisión.</p></div><button id="vla-autopay-refresh" type="button">Actualizar historial</button></div><div id="vla-autopay-summary" class="vla-autopay-summary"></div><div id="vla-autopay-body" class="vla-autopay-body"><div class="vla-autopay-empty">Abre Pagos para cargar el historial automático.</div></div></section>`);
  document.getElementById('vla-autopay-refresh')?.addEventListener('click',()=>loadHistory(true));
  document.getElementById('vla-autopay-body')?.addEventListener('click',handleAction);
  return panel();
 }
 function summaryHtml(summary={}){
- const all=summary.all||summary,automatic=summary.automatic||{},manual=summary.manual||{};
- return `<div><span>Total aprobados</span><b>${num(all.active)}</b></div><div><span>Automáticos</span><b>${num(automatic.active)}</b></div><div><span>Manuales</span><b>${num(manual.active)}</b></div><div><span>Total activo</span><b>${usd(all.totalActiveUsd)}</b></div><div><span>Requieren atención</span><b>${num(all.attention)}</b></div>`;
+ return `<div><span>Activos</span><b>${num(summary.active)}</b></div><div><span>Revertidos</span><b>${num(summary.reverted)}</b></div><div><span>Requieren atención</span><b>${num(summary.attention)}</b></div><div><span>Total activo</span><b>${usd(summary.totalActiveUsd)}</b></div><div><span>Confianza promedio</span><b>${summary.averageConfidence?pct(summary.averageConfidence):'—'}</b></div>`;
 }
 function statusBadge(item){
  if(item.status==='REVERTIDO')return'<span class="vla-autopay-status reverted">Revertido por excepción</span>';
@@ -33,18 +32,17 @@ function card(item){
  const reversal=item.status==='REVERTIDO'?`<div class="vla-autopay-reversal"><b>Reversión:</b> ${esc(item.reversalReason||'Sin motivo visible')}<br><small>${esc(date(item.reversalAt))}</small></div>`:'';
  const closeNotice=item.appliedAtClose?'<div class="vla-autopay-close-notice">Este pago ya pertenece a un cierre mensual. Una corrección requiere ajuste administrativo y no eliminación.</div>':'';
  const reverseButton=item.canReverse?`<button class="danger" data-autopay-action="reverse" data-report-id="${esc(item.reportId)}" data-payment-id="${esc(item.paymentId)}">Revertir aprobación automática</button>`:'';
- return `<article class="vla-autopay-card"><div class="vla-autopay-card-head"><div><strong>Casa ${esc(item.house||'—')} · ${esc(item.ownerName||'')}</strong><small>Reportado: ${esc(date(item.reportedAt))} · Aprobado: ${esc(date(item.approvedAt))}</small></div><span class="vla-autopay-status ${item.approvalType==='AUTOMATIC'?'active':'closed'}">${esc(item.approvalLabel||'Manual')}</span></div><div class="vla-autopay-grid"><div><span>Monto aplicado</span><b>${usd(item.amountUsd)}</b>${item.amountBs?`<small>Bs ref.: ${usd(item.amountBs)}</small>`:''}</div><div><span>Referencia</span><b>${esc(item.reference||'—')}</b><small>${esc(item.paymentDate||'')}</small></div><div><span>Método</span><b>${esc(method)}</b><small>${esc(item.mode||'')}</small></div><div><span>Aprobación</span><b>${esc(item.reviewedBy||item.approvalLabel||'—')}</b><small>${esc(item.decision||'')}</small></div></div>${statusBadge(item)}${closeNotice}${reversal}<div class="vla-autopay-actions"><button data-autopay-action="proof" data-report-id="${esc(item.reportId)}">Ver comprobante</button>${reverseButton}</div></article>`;
+ return `<article class="vla-autopay-card"><div class="vla-autopay-card-head"><div><strong>Casa ${esc(item.house||'—')} · ${esc(item.ownerName||'')}</strong><small>${esc(date(item.approvedAt))}</small></div>${statusBadge(item)}</div><div class="vla-autopay-grid"><div><span>Monto aplicado</span><b>${usd(item.amountUsd)}</b>${item.amountBs?`<small>Bs ref.: ${usd(item.amountBs)}</small>`:''}</div><div><span>Referencia</span><b>${esc(item.reference||'—')}</b><small>${esc(item.paymentDate||'')}</small></div><div><span>Método</span><b>${esc(method)}</b><small>${esc(item.mode||'')}</small></div><div><span>Validación</span><b>${esc(receiver)}</b><small>IA ${item.confidence?pct(item.confidence):'—'}</small></div></div>${closeNotice}${reversal}<div class="vla-autopay-actions"><button data-autopay-action="proof" data-report-id="${esc(item.reportId)}">Ver comprobante</button>${reverseButton}</div></article>`;
 }
 function render(data){
  const summary=document.getElementById('vla-autopay-summary'),body=document.getElementById('vla-autopay-body');if(!summary||!body)return;
  summary.innerHTML=summaryHtml(data.summary||{});
  const items=Array.isArray(data.items)?data.items:[];
- const automatic=items.filter(item=>item.approvalType==='AUTOMATIC'),manual=items.filter(item=>item.approvalType==='MANUAL');
- body.innerHTML=items.length?`<section><h4>Aprobados automáticamente</h4>${automatic.length?automatic.map(card).join(''):'<div class="vla-autopay-empty">Todavía no hay aprobaciones automáticas.</div>'}</section><section><h4>Aprobados manualmente</h4>${manual.length?manual.map(card).join(''):'<div class="vla-autopay-empty">Todavía no hay aprobaciones manuales.</div>'}</section>`:'<div class="vla-autopay-empty">Todavía no hay pagos aprobados.</div>';
+ body.innerHTML=items.length?items.map(card).join(''):'<div class="vla-autopay-empty">Todavía no hay autopagos aprobados. Cuando el motor apruebe uno aparecerá aquí para supervisión.</div>';
 }
 async function loadHistory(force=false){
  ensurePanel();if(loading)return;if(!force&&Date.now()-lastLoadedAt<30000)return;
- const body=document.getElementById('vla-autopay-body');loading=true;if(body)body.innerHTML='<div class="vla-autopay-empty">Cargando historial de aprobaciones…</div>';
+ const body=document.getElementById('vla-autopay-body');loading=true;if(body)body.innerHTML='<div class="vla-autopay-empty">Cargando historial automático…</div>';
  try{
    if(typeof adminFetch!=='function')throw new Error('Sesión administrativa no disponible.');
    const data=await adminFetch(ENDPOINT);render(data);lastLoadedAt=Date.now();

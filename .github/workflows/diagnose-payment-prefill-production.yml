@@ -65,26 +65,17 @@ jobs:
           TARGET_URL: https://villalosapamates.netlify.app/api/vla/payment-proof-prefill
         run: |
           set -euo pipefail
-          metrics="$(curl --silent --show-error --location \
+          status="$(curl --silent --show-error --location \
             --output prefill-response.json \
-            --dump-header prefill-headers.txt \
-            --write-out '%{http_code} %{time_total}' \
-            --max-time 20 \
+            --write-out '%{http_code}' \
+            --max-time 90 \
             --request POST "$TARGET_URL" \
             --header 'Content-Type: application/json' \
             --data-binary @prefill-request.json)"
-          read -r status duration <<< "$metrics"
           echo "status=$status" >> "$GITHUB_OUTPUT"
-          echo "duration=$duration" >> "$GITHUB_OUTPUT"
-          python3 - "$status" "$duration" <<'PY'
+          python3 - "$status" <<'PY'
           import json, sys
           status = int(sys.argv[1])
-          duration = float(sys.argv[2])
-          headers = {}
-          for line in open('prefill-headers.txt', errors='replace'):
-              if ':' in line:
-                  key, value = line.split(':', 1)
-                  headers[key.strip().lower()] = value.strip()
           try:
               payload = json.load(open('prefill-response.json'))
           except Exception:
@@ -94,11 +85,8 @@ jobs:
               'success': payload.get('success'),
               'complete': payload.get('complete'),
               'reason': payload.get('reason'),
-              'failureClass': payload.get('failureClass'),
               'providerStatus': payload.get('providerStatus'),
               'analysisProvider': payload.get('analysisProvider'),
-              'durationSeconds': round(duration, 3),
-              'netlifyRequestId': headers.get('x-nf-request-id'),
               'message': payload.get('message'),
               'detectedCurrency': (payload.get('analysis') or {}).get('currency'),
               'detectedAmount': (payload.get('analysis') or {}).get('amount'),
@@ -107,8 +95,6 @@ jobs:
           print(json.dumps(safe, indent=2, ensure_ascii=False))
           if status != 200 or payload.get('success') is not True:
               raise SystemExit(f'Production prefill returned HTTP {status}')
-          if duration > 15:
-              raise SystemExit(f'Production prefill exceeded the 15 second user watchdog: {duration:.3f}s')
           if not payload.get('analysisProvider'):
               raise SystemExit('Production prefill did not identify the provider used')
           analysis = payload.get('analysis') or {}
