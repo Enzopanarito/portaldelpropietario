@@ -78,14 +78,14 @@ function responseText(data){
  return value;
 }
 function providerError(data,status){
- const providerStatus=clean(data?.error?.status),providerMessage=clean(data?.error?.message).slice(0,300);
+ const providerStatus=clean(data?.error?.status),providerMessage=clean(data?.error?.message).slice(0,300),messageLower=providerMessage.toLowerCase();
  let code='AI_PROVIDER_ERROR';
- if(status===400)code='AI_MODEL_INVALID';
- else if(status===401||status===403)code='AI_AUTH_FAILED';
+ if(status===401||status===403||/api key not valid|invalid api key|api_key_invalid|permission denied|unauthenticated/.test(messageLower))code='AI_AUTH_FAILED';
  else if(status===404)code='AI_MODEL_NOT_FOUND';
  else if(status===408)code='TIMEOUT';
  else if(status===429)code='RATE_LIMIT';
  else if(status>=500)code='PROVIDER_UNAVAILABLE';
+ else if(status===400&&/model|not found|unsupported model|invalid model/.test(messageLower))code='AI_MODEL_INVALID';
  return codedError('El proveedor de análisis no pudo procesar el comprobante.',code,{status,providerStatus,providerMessage});
 }
 function createGeminiAnalysisRunner({fetchFn=global.fetch,apiKey=process.env.GEMINI_API_KEY,timeoutMs=DEFAULT_TIMEOUT_MS,maxOutputTokens=DEFAULT_MAX_OUTPUT_TOKENS}={}){
