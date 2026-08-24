@@ -42,10 +42,34 @@ function missingFields(analysis){
  if(required.has('method')&&!analysis?.bank_or_platform&&!methodLabel(analysis?.method))missing.push({field:'bank',label:'banco o método'});
  return missing;
 }
-async function loadAiConfig(){
+function previewConfigAllowed(env=process.env){
+ const context=String(env?.CONTEXT||'').trim().toLowerCase(),dataEnv=String(env?.VLA_DATA_ENVIRONMENT||'').trim().toLowerCase();
+ return ['deploy-preview','branch-deploy','dev'].includes(context)&&dataEnv!=='production';
+}
+function previewReadOnlyAiConfig(){
+ return{
+  aiEnabled:true,
+  primaryModel:'gemini-3.6-flash',
+  secondaryModel:'gemini-3.5-flash',
+  primaryTimeoutSeconds:12,
+  maximumPrimaryRetries:0,
+  secondaryEnabled:true,
+  minimumConfidence:0.85,
+  promptVersion:'preview-readonly-v1',
+  automaticApprovalEnabled:false,
+  minimumAutomaticConfidence:1
+ };
+}
+async function loadAiConfig({env=process.env,listConfig=listAll}={}){
  let records;
- try{records=await listAll(TABLES.config,'?maxRecords=1')}
- catch(_){throw Object.assign(new Error('La configuración de prelectura no está disponible.'),{code:'PREFILL_CONFIG_UNAVAILABLE'})}
+ try{records=await listConfig(TABLES.config,'?maxRecords=1')}
+ catch(error){
+  if(previewConfigAllowed(env)){
+   console.warn(JSON.stringify({event:'VLA_PAYMENT_PREFILL_PREVIEW_CONFIG_FALLBACK',reason:'AIRTABLE_CONFIG_UNAVAILABLE'}));
+   return previewReadOnlyAiConfig();
+  }
+  throw Object.assign(new Error('La configuración de prelectura no está disponible.'),{code:'PREFILL_CONFIG_UNAVAILABLE',cause:error});
+ }
  const record=records[0]||{fields:{}},rules=mergeConfig(record);
  return aiConfig(record,rules);
 }
@@ -66,11 +90,7 @@ function safeModelLabel(value){const model=String(value||'').trim();return/^[A-Z
 function modelCandidates(config={}){
  const configured=unique([config.primaryModel,config.secondaryModel]),usesKnownProductionModel=configured.some(model=>CURRENT_STABLE_MODELS.includes(model));
  if(!usesKnownProductionModel)return configured.slice(0,MAX_DIRECT_ATTEMPTS);
- return unique([
-  PREFILL_FAST_MODEL,
-  ...configured,
-  ...CURRENT_STABLE_MODELS
- ]).slice(0,MAX_DIRECT_ATTEMPTS);
+ return unique([PREFILL_FAST_MODEL,...configured,...CURRENT_STABLE_MODELS]).slice(0,MAX_DIRECT_ATTEMPTS);
 }
 function errorCode(error){return String(error?.code||'').trim().toUpperCase()}
 function transportCode(error){
@@ -183,6 +203,8 @@ exports.handler=withAirtableUsage('payment-proof-prefill',handler);
 exports.missingFields=missingFields;
 exports.requiredFieldsFor=requiredFieldsFor;
 exports.methodLabel=methodLabel;
+exports.previewConfigAllowed=previewConfigAllowed;
+exports.previewReadOnlyAiConfig=previewReadOnlyAiConfig;
 exports.unique=unique;
 exports.safeModelLabel=safeModelLabel;
 exports.modelCandidates=modelCandidates;
