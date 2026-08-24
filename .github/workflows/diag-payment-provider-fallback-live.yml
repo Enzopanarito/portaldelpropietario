@@ -1,0 +1,70 @@
+name: DIAG Payment Provider Fallback Live
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/diag-payment-provider-fallback-live.yml'
+      - 'netlify/functions/_shared/_payment_ai_proxy.js'
+      - 'netlify/functions/_shared/_payment_ai_contract.js'
+
+permissions:
+  contents: read
+
+jobs:
+  live-fallback:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Generate realistic JPEG
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet pillow
+          python3 - <<'PY'
+          import os
+          from PIL import Image,ImageDraw,ImageFont,ImageFilter
+          w,h=1800,2400
+          bg=Image.effect_noise((w,h),24).convert('RGB').filter(ImageFilter.GaussianBlur(.35))
+          d=ImageDraw.Draw(bg)
+          d.rounded_rectangle((140,180,w-140,h-180),radius=44,fill=(248,248,246),outline=(210,210,205),width=5)
+          f=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',72)
+          s=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',60)
+          b=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',82)
+          lines=[('PAGO MOVIL COMPLETADO',b),('Banco de Venezuela',f),('Monto: Bs. 12.345,67',f),('Fecha: 04/08/2026',f),('Hora: 10:30 AM',s),('Referencia: 987654321012',s),('Estado: COMPLETADO',f),('Receptor: Villa Los Apamates',s),('Telefono: 0412-0000000',s)]
+          y=330
+          for text,font in lines:d.text((260,y),text,fill=(20,25,30),font=font);y+=185
+          d.text((260,h-410),'Comprobante de prueba CI - NO ES UN PAGO REAL',fill=(75,75,75),font=s)
+          im=bg.rotate(.7,resample=Image.Resampling.BICUBIC,expand=False,fillcolor=(32,34,36));im.save('fallback-proof.jpeg',quality=94,optimize=True)
+          print('JPEG_BYTES='+str(os.path.getsize('fallback-proof.jpeg')))
+          PY
+
+      - name: Execute branch fallback module against live proxy
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('fs');
+          const proxy=require('./netlify/functions/_shared/_payment_ai_proxy');
+          const contract=require('./netlify/functions/_shared/_payment_ai_contract');
+          (async()=>{
+            const started=Date.now();
+            const result=await proxy.analyzePaymentProofViaProxy({
+              proof:{content:fs.readFileSync('fallback-proof.jpeg'),contentType:'image/jpeg'},
+              promptVersion:'VLA_PAYMENT_PROOF_V3_2026-08-14',
+              timeoutMs:30000
+            });
+            const evaluated=contract.evaluateRawOutput(result.raw,{minimumConfidence:0});
+            const a=evaluated.normalized||{};
+            const safe={ok:evaluated.ok===true,route:result.route,provider:result.provider,model:result.model,elapsedMs:Date.now()-started,amount:a.amount,currency:a.currency,referencePresent:Boolean(a.reference),date:a.transaction_date,status:a.transaction_status,confidence:a.confidence,reason:evaluated.reason||null};
+            console.log(JSON.stringify(safe,null,2));
+            if(!safe.ok)throw new Error('Contrato adaptado no válido: '+String(safe.reason||'unknown'));
+            if(safe.route!=='proxy'||safe.provider!=='VLA AI Proxy')throw new Error('Ruta de fallback inesperada.');
+            if(safe.currency!=='VES'||Math.abs(Number(safe.amount||0)-12345.67)>0.01||!safe.referencePresent)throw new Error('La extracción no devolvió monto/moneda/referencia esperados.');
+          })().catch(error=>{console.error(String(error?.stack||error));process.exit(1)});
+          NODE
