@@ -40,9 +40,45 @@ const baseArgs={
  promptVersion:'test-v1'
 };
 
-test('un modelo con HTTP 404 no bloquea el siguiente modelo compatible',async()=>{
+test('prelectura prioriza el proxy y no desperdicia tiempo en Gemini directo',async()=>{
+ let proxyCalls=0,discoveryCalls=0,directCalls=0;
+ const result=await prefill.analyzeWithFallback(baseArgs,{
+  localGeminiConfigured:()=>true,
+  discoverCompatibleModel:async()=>{discoveryCalls+=1;return{model:'gemini-primary'}},
+  analyzeDirect:async()=>{directCalls+=1;return{raw:VALID_RAW,model:'gemini-primary',provider:'direct'}},
+  analyzeViaProxy:async()=>{proxyCalls+=1;return{raw:VALID_RAW,model:'proxy:gemini-3.6-flash',provider:'proxy'}}
+ });
+ assert.equal(proxyCalls,1);
+ assert.equal(discoveryCalls,0);
+ assert.equal(directCalls,0);
+ assert.equal(result.provider,'proxy');
+});
+
+test('timeout del proxy en prelectura termina de inmediato sin gastar otro intento directo',async()=>{
+ let discoveryCalls=0,directCalls=0;
+ await assert.rejects(
+  ()=>prefill.analyzeWithFallback(baseArgs,{
+   localGeminiConfigured:()=>true,
+   discoverCompatibleModel:async()=>{discoveryCalls+=1;return{model:'gemini-primary'}},
+   analyzeDirect:async()=>{directCalls+=1;return{raw:VALID_RAW,model:'gemini-primary',provider:'direct'}},
+   analyzeViaProxy:async()=>{throw coded('TIMEOUT',504)}
+  }),
+  error=>error?.code==='TIMEOUT'&&error?.status===504
+ );
+ assert.equal(discoveryCalls,0);
+ assert.equal(directCalls,0);
+});
+
+test('la prelectura reserva 20 segundos al proxy para fotos reales',()=>{
+ assert.equal(prefill.PROXY_TIMEOUT_MS,20000);
+ assert.equal(prefill.PREFILL_IP_SCOPE,'PAYMENT_PREFILL_IP_V3');
+ assert.equal(prefill.PREFILL_OWNER_SCOPE,'PAYMENT_PREFILL_OWNER_V3');
+});
+
+test('un modelo con HTTP 404 no bloquea el siguiente modelo compatible en modo directo de respaldo',async()=>{
  const attempted=[];
  const result=await prefill.analyzeWithFallback(baseArgs,{
+  proxyFirst:false,
   localGeminiConfigured:()=>true,
   discoverCompatibleModel:async()=>({model:'gemini-primary',models:['gemini-primary','gemini-secondary']}),
   analyzeDirect:async({model})=>{
@@ -57,9 +93,10 @@ test('un modelo con HTTP 404 no bloquea el siguiente modelo compatible',async()=
  assert.equal(result.provider,'direct');
 });
 
-test('cuando todos los modelos directos devuelven 404 se usa el lector alterno',async()=>{
+test('cuando todos los modelos directos devuelven 404 se usa el lector alterno en modo directo de respaldo',async()=>{
  let proxyCalls=0,directCalls=0;
  const result=await prefill.analyzeWithFallback(baseArgs,{
+  proxyFirst:false,
   localGeminiConfigured:()=>true,
   discoverCompatibleModel:async()=>({models:['gemini-primary','gemini-secondary']}),
   analyzeDirect:async()=>{directCalls+=1;throw coded('AI_MODEL_NOT_FOUND',404)},
@@ -70,9 +107,10 @@ test('cuando todos los modelos directos devuelven 404 se usa el lector alterno',
  assert.equal(result.provider,'proxy');
 });
 
-test('un timeout salta al respaldo sin esperar los demás modelos directos',async()=>{
+test('un timeout directo salta al respaldo sin esperar los demás modelos directos',async()=>{
  let proxyCalls=0,directCalls=0;
  const result=await prefill.analyzeWithFallback(baseArgs,{
+  proxyFirst:false,
   localGeminiConfigured:()=>true,
   discoverCompatibleModel:async()=>({models:['gemini-primary','gemini-secondary']}),
   analyzeDirect:async()=>{directCalls+=1;throw coded('TIMEOUT',504)},
@@ -83,9 +121,10 @@ test('un timeout salta al respaldo sin esperar los demás modelos directos',asyn
  assert.equal(result.provider,'proxy');
 });
 
-test('un fallo de autenticación en el catálogo salta directamente al respaldo',async()=>{
+test('un fallo de autenticación en el catálogo salta directamente al respaldo en modo directo',async()=>{
  let directCalls=0,proxyCalls=0;
  const result=await prefill.analyzeWithFallback(baseArgs,{
+  proxyFirst:false,
   localGeminiConfigured:()=>true,
   discoverCompatibleModel:async()=>{throw coded('AI_AUTH_FAILED',403)},
   analyzeDirect:async()=>{directCalls+=1;throw new Error('No debe ejecutarse')},
@@ -99,6 +138,7 @@ test('un fallo de autenticación en el catálogo salta directamente al respaldo'
 test('sin clave local se usa el respaldo sin intentar descubrimiento',async()=>{
  let discoveryCalls=0,directCalls=0;
  const result=await prefill.analyzeWithFallback(baseArgs,{
+  proxyFirst:false,
   localGeminiConfigured:()=>false,
   discoverCompatibleModel:async()=>{discoveryCalls+=1;return{}},
   analyzeDirect:async()=>{directCalls+=1;return{}},
