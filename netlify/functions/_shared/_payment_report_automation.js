@@ -159,7 +159,7 @@ async function defaultExecuteApproval({reportId,result}){
 }
 function createPaymentReportAutomation(deps={}){
  const loadBundle=deps.loadBundle||defaultLoadBundle,patch=deps.patchReport||((id,fields)=>patchRecord(TABLES.reports,id,fields)),executeApproval=deps.executeApproval||defaultExecuteApproval;
- const orchestrator=deps.orchestrator||require('./_payment_processing_orchestrator').createOrchestrator({analysisRunner:deps.analysisRunner||require('./_payment_ai_gemini').createGeminiAnalysisRunner()});
+ const orchestrator=deps.orchestrator||require('./_payment_processing_orchestrator').createOrchestrator({analysisRunner:deps.analysisRunner||require('./_payment_ai_proxy').createResilientPaymentAnalysisRunner()});
  return{async process(reportId,env=process.env){
   if(!validRecordId(reportId))throw new Error('Reporte inválido.');
   const bundle=await loadBundle(reportId,env),result=await orchestrator.run(bundle,env),preserveReport=preserveReportForResult(result);

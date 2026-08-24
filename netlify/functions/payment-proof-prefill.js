@@ -5,6 +5,7 @@ const {withAirtableUsage}=require('./_shared/_airtable_meter');
 const {decodeAttachment}=require('./_shared/_payment_report_attachment');
 const {createGeminiAnalysisRunner}=require('./_shared/_payment_ai_gemini');
 const {discoverCompatibleModel}=require('./_shared/_payment_ai_model_discovery');
+const {adaptProxyRaw}=require('./_shared/_payment_ai_proxy');
 const contract=require('./_shared/_payment_ai_contract');
 const {consume}=require('./_shared/_persistent_rate_limit');
 const {safeDisplayText}=require('./_shared/_security_utils');
@@ -87,7 +88,7 @@ async function analyzeViaProxy({proof,promptVersion,fetchFn=global.fetch,proxyUr
   if(!response.ok||payload?.ok!==true||!String(payload?.raw||'').trim()){
    throw Object.assign(new Error(String(payload?.message||'El lector alterno no pudo procesar el comprobante.')),{code:String(payload?.code||'AI_PROVIDER_ERROR'),status:Number(response.status)||0});
   }
-  return{raw:validateRawForPrefill(payload.raw),model:`proxy:${String(payload.model||'gemini').trim()}`,provider:'proxy'};
+  return{raw:validateRawForPrefill(adaptProxyRaw(payload.raw)),model:`proxy:${String(payload.model||'gemini').trim()}`,provider:'proxy'};
  }catch(error){
   if(error?.name==='AbortError')throw Object.assign(new Error('El análisis alterno excedió el tiempo máximo.'),{code:'TIMEOUT',status:504});
   throw error;
