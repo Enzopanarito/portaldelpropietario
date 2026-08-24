@@ -1,0 +1,123 @@
+name: DIAG Gemini Prefill Matrix
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/diag-gemini-prefill-matrix.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      NETLIFY_AUTH_TOKEN_PRIMARY: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_AUTH_TOKEN_FALLBACK: ${{ secrets.NETLIFY_TOKEN }}
+      NETLIFY_SITE_ID_PRIMARY: ${{ secrets.NETLIFY_SITE_ID }}
+      NETLIFY_SITE_ID_FALLBACK: ${{ secrets.NETLIFY_SITE_ID_VILLALOSAPAMATES }}
+      CURRENT_SHA: 4f91dbe0be402b02b14700124a24a1186b97e30a
+    steps:
+      - name: Checkout diagnostic legacy branch
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 2
+
+      - name: Resolve Gemini key privately from Netlify production config
+        shell: bash
+        run: |
+          set -euo pipefail
+          AUTH_TOKEN="${NETLIFY_AUTH_TOKEN_PRIMARY:-${NETLIFY_AUTH_TOKEN_FALLBACK:-}}"
+          SITE_ID="${NETLIFY_SITE_ID_PRIMARY:-${NETLIFY_SITE_ID_FALLBACK:-}}"
+          [ -n "$AUTH_TOKEN" ] && [ -n "$SITE_ID" ] || { echo 'Missing Netlify credentials'; exit 1; }
+          echo "::add-mask::$AUTH_TOKEN"
+          site_json="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $AUTH_TOKEN" -H 'User-Agent: VLA-Gemini-Matrix' "https://api.netlify.com/api/v1/sites/$SITE_ID")"
+          account_id="$(printf '%s' "$site_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(String(JSON.parse(s).account_id||'')))")"
+          [ -n "$account_id" ] || { echo 'Missing account id'; exit 1; }
+          env_json="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $AUTH_TOKEN" -H 'User-Agent: VLA-Gemini-Matrix' "https://api.netlify.com/api/v1/accounts/$account_id/env/GEMINI_API_KEY?site_id=$SITE_ID")"
+          gemini_key="$(printf '%s' "$env_json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s),v=Array.isArray(j.values)?j.values:[];const p=v.find(x=>x.context==='production'&&String(x.value||'').trim());const a=v.find(x=>x.context==='all'&&String(x.value||'').trim());process.stdout.write(String((p||a||{}).value||''))})")"
+          [ -n "$gemini_key" ] || { echo 'Gemini key has no effective production/all value'; exit 1; }
+          echo "::add-mask::$gemini_key"
+          echo "GEMINI_API_KEY=$gemini_key" >> "$GITHUB_ENV"
+          echo 'GEMINI_KEY_RESOLVED=true'
+
+      - name: Materialize current engine from production candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$CURRENT_SHA"
+          mkdir -p .diag-current
+          git show "$CURRENT_SHA:netlify/functions/_shared/_payment_ai_gemini.js" > .diag-current/gemini.js
+          git show "$CURRENT_SHA:netlify/functions/_shared/_payment_ai_model_discovery.js" > .diag-current/discovery.js
+          echo "CURRENT_GEMINI_SHA=$(git rev-parse "$CURRENT_SHA:netlify/functions/_shared/_payment_ai_gemini.js")"
+          echo "CURRENT_DISCOVERY_SHA=$(git rev-parse "$CURRENT_SHA:netlify/functions/_shared/_payment_ai_model_discovery.js")"
+          echo "LEGACY_GEMINI_SHA=$(git rev-parse HEAD:netlify/functions/_shared/_payment_ai_gemini.js)"
+          echo "LEGACY_DISCOVERY_SHA=$(git rev-parse HEAD:netlify/functions/_shared/_payment_ai_model_discovery.js)"
+
+      - name: Generate identical realistic JPEG
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet pillow
+          python3 - <<'PY'
+          import os
+          from PIL import Image,ImageDraw,ImageFont,ImageFilter
+          w,h=1800,2400
+          background=Image.effect_noise((w,h),24).convert('RGB').filter(ImageFilter.GaussianBlur(0.35))
+          draw=ImageDraw.Draw(background); card=(140,180,w-140,h-180)
+          draw.rounded_rectangle(card,radius=44,fill=(248,248,246),outline=(210,210,205),width=5)
+          font=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',72)
+          small=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',60)
+          bold=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',82)
+          lines=[('PAGO MOVIL COMPLETADO',bold),('Banco de Venezuela',font),('Monto: Bs. 12.345,67',font),('Fecha: 04/08/2026',font),('Hora: 10:30 AM',small),('Referencia: 987654321012',small),('Estado: COMPLETADO',font),('Receptor: Villa Los Apamates',small),('Telefono: 0412-0000000',small)]
+          y=330
+          for text,selected in lines: draw.text((260,y),text,fill=(20,25,30),font=selected); y+=185
+          draw.text((260,h-410),'Comprobante de prueba CI - NO ES UN PAGO REAL',fill=(75,75,75),font=small)
+          image=background.rotate(0.7,resample=Image.Resampling.BICUBIC,expand=False,fillcolor=(32,34,36))
+          image.save('matrix-proof.jpeg',format='JPEG',quality=94,optimize=True)
+          print('MATRIX_JPEG_BYTES='+str(os.path.getsize('matrix-proof.jpeg')))
+          PY
+
+      - name: Run 2x2 engine/model matrix directly against Gemini
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('fs');
+          const currentGemini=require('./.diag-current/gemini');
+          const currentDiscovery=require('./.diag-current/discovery');
+          const legacyGemini=require('./netlify/functions/_shared/_payment_ai_gemini');
+          const legacyDiscovery=require('./netlify/functions/_shared/_payment_ai_model_discovery');
+          const key=process.env.GEMINI_API_KEY;
+          const storeFactory=async()=>({get:async()=>null,setJSON:async()=>{}});
+          const proof={content:fs.readFileSync('matrix-proof.jpeg'),contentType:'image/jpeg'};
+          const report={targetMode:''};
+          const promptVersion='VLA_PAYMENT_PROOF_V2_2026-07-13';
+          const discover=async(mod)=>mod.discoverCompatibleModel({apiKey:key,fetchFn:global.fetch,storeFactory,forceRefresh:true});
+          const safeResult=raw=>{let x={};try{x=JSON.parse(raw)}catch(_){}return{currency:x.currency,amount:x.amount,referencePresent:Boolean(x.reference),method:x.method,confidence:x.confidence}};
+          const run=async(label,engine,model)=>{
+            const started=Date.now();
+            try{
+              const runner=engine.createGeminiAnalysisRunner({apiKey:key,fetchFn:global.fetch,timeoutMs:30000,maxOutputTokens:2048});
+              const raw=await runner({model,proof,report,promptVersion});
+              console.log(JSON.stringify({label,ok:true,model,elapsedMs:Date.now()-started,...safeResult(raw)}));
+              return true;
+            }catch(error){
+              console.log(JSON.stringify({label,ok:false,model,elapsedMs:Date.now()-started,code:String(error?.code||''),status:Number(error?.status||0)||null,providerStatus:String(error?.providerStatus||'').slice(0,80),message:String(error?.message||'').slice(0,160)}));
+              return false;
+            }
+          };
+          (async()=>{
+            const [currentSel,legacySel]=await Promise.all([discover(currentDiscovery),discover(legacyDiscovery)]);
+            const currentModel=String(currentSel.model||currentSel.models?.[0]||'');
+            const legacyModel=String(legacySel.model||legacySel.models?.[0]||'');
+            console.log(JSON.stringify({selection:{currentModel,legacyModel,currentTop:(currentSel.models||[]).slice(0,4),legacyTop:(legacySel.models||[]).slice(0,4)}}));
+            const results={};
+            results.current_current=await run('current-engine/current-model',currentGemini,currentModel);
+            results.current_legacy=await run('current-engine/legacy-model',currentGemini,legacyModel);
+            results.legacy_current=await run('legacy-engine/current-model',legacyGemini,currentModel);
+            results.legacy_legacy=await run('legacy-engine/legacy-model',legacyGemini,legacyModel);
+            console.log(JSON.stringify({MATRIX_COMPLETE:true,results}));
+            if(!results.legacy_legacy)process.exit(2);
+          })().catch(error=>{console.error(JSON.stringify({MATRIX_FATAL:String(error?.code||error?.message||error)}));process.exit(1)});
+          NODE
