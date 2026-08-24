@@ -12,6 +12,7 @@ const TABLES=Object.freeze({
  accounts:'Cuentas de Cobro Autorizadas',
  config:'Configuración'
 });
+const PRESERVE_REPORT_CODES=Object.freeze(new Set(['PROCESSING_BUSY','PROCESSING_NOT_FOUND','PROCESSING_CAS_CONFLICT','PROCESSING_LEASE_LOST']));
 
 function clean(value){return String(value??'').trim()}
 function fieldsOf(record){return record&&record.fields?record.fields:record||{}}
@@ -19,6 +20,7 @@ function select(value){return value&&typeof value==='object'&&value.name?value.n
 function linked(value){return Array.isArray(value)?value.map(item=>typeof item==='string'?item:item?.id).filter(Boolean):[]}
 function validRecordId(value){return /^rec[A-Za-z0-9]{14}$/.test(clean(value))}
 function compactJson(value,max=90000){const text=JSON.stringify(value??null);return text.length<=max?text:text.slice(0,max)}
+function preserveReportForResult(result){return result?.ok===false&&PRESERVE_REPORT_CODES.has(clean(result?.reason).toUpperCase())}
 function airtableEndpoint(table,query=''){return`https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(table)}${query}`}
 async function airtableJson(table,query='',options={}){
  const response=await fetch(airtableEndpoint(table,query),{...options,headers:{Authorization:`Bearer ${process.env.AIRTABLE_API_TOKEN}`,...(options.body?{'Content-Type':'application/json'}:{}),...(options.headers||{})}});
@@ -160,12 +162,12 @@ function createPaymentReportAutomation(deps={}){
  const orchestrator=deps.orchestrator||require('./_payment_processing_orchestrator').createOrchestrator({analysisRunner:deps.analysisRunner||require('./_payment_ai_gemini').createGeminiAnalysisRunner()});
  return{async process(reportId,env=process.env){
   if(!validRecordId(reportId))throw new Error('Reporte inválido.');
-  const bundle=await loadBundle(reportId,env),result=await orchestrator.run(bundle,env);
-  await patch(reportId,resultFields(result,bundle.report));
+  const bundle=await loadBundle(reportId,env),result=await orchestrator.run(bundle,env),preserveReport=preserveReportForResult(result);
+  if(!preserveReport)await patch(reportId,resultFields(result,bundle.report));
   let execution=null;
   if(result.automaticApproval===true&&result.canCreatePayment===true&&result.canEnableAccess===false)execution=await executeApproval({reportId,result,bundle,env});
-  return{success:true,reportId,result,execution,automatic:result.automaticApproval===true};
+  return{success:true,reportId,result,execution,automatic:result.automaticApproval===true,deferred:preserveReport};
  }};
 }
 
-module.exports={TABLES,clean,fieldsOf,select,linked,validRecordId,compactJson,airtableEndpoint,airtableJson,getRecord,patchRecord,listAll,aiConfig,proofDescriptor,resultFields,defaultLoadBundle,defaultExecuteApproval,createPaymentReportAutomation};
+module.exports={TABLES,PRESERVE_REPORT_CODES,clean,fieldsOf,select,linked,validRecordId,compactJson,preserveReportForResult,airtableEndpoint,airtableJson,getRecord,patchRecord,listAll,aiConfig,proofDescriptor,resultFields,defaultLoadBundle,defaultExecuteApproval,createPaymentReportAutomation};

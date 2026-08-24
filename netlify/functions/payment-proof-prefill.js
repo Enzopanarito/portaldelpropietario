@@ -15,10 +15,11 @@ const {METHOD_ACCOUNT_MAP,accountActive,findAuthorizedRecipient}=require('./_sha
 const {signRecipientAttestation}=require('./_shared/_payment_recipient_attestation');
 
 const WINDOW_MS=60*60*1000;
-const CURRENT_STABLE_MODELS=Object.freeze(['gemini-3.6-flash','gemini-3.5-flash']);
-const DIRECT_TIMEOUT_MS=6000;
-const PREFILL_TOTAL_BUDGET_MS=12000;
-const PREFILL_HANDLER_BUDGET_MS=12000;
+const PREFILL_FAST_MODEL='gemini-3.5-flash-lite';
+const CURRENT_STABLE_MODELS=Object.freeze([PREFILL_FAST_MODEL,'gemini-3.6-flash','gemini-3.5-flash']);
+const DIRECT_TIMEOUT_MS=7500;
+const PREFILL_TOTAL_BUDGET_MS=15000;
+const PREFILL_HANDLER_BUDGET_MS=15000;
 const MIN_DIRECT_WINDOW_MS=5000;
 const MAX_DIRECT_ATTEMPTS=2;
 const TRANSPORT_CODES=Object.freeze(new Set(['ENOTFOUND','EAI_AGAIN','ECONNRESET','ECONNREFUSED','ETIMEDOUT','EPIPE','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET']));
@@ -63,9 +64,10 @@ function recipientVerification(analysis,accountState,config={},now=new Date()){
 function unique(values){return[...new Set((values||[]).map(value=>String(value||'').trim()).filter(Boolean))]}
 function safeModelLabel(value){const model=String(value||'').trim();return/^[A-Za-z0-9._-]{3,120}$/.test(model)?model:'INVALID_MODEL'}
 function modelCandidates(config={}){
+ const configured=unique([config.primaryModel,config.secondaryModel]),usesKnownProductionModel=configured.some(model=>CURRENT_STABLE_MODELS.includes(model));
  return unique([
-  config.primaryModel,
-  config.secondaryModel,
+  ...(usesKnownProductionModel?[PREFILL_FAST_MODEL]:[]),
+  ...configured,
   ...CURRENT_STABLE_MODELS
  ]).slice(0,MAX_DIRECT_ATTEMPTS);
 }
@@ -195,4 +197,5 @@ exports.recipientVerification=recipientVerification;
 exports.DIRECT_TIMEOUT_MS=DIRECT_TIMEOUT_MS;
 exports.PREFILL_TOTAL_BUDGET_MS=PREFILL_TOTAL_BUDGET_MS;
 exports.PREFILL_HANDLER_BUDGET_MS=PREFILL_HANDLER_BUDGET_MS;
+exports.PREFILL_FAST_MODEL=PREFILL_FAST_MODEL;
 exports.CURRENT_STABLE_MODELS=CURRENT_STABLE_MODELS;
