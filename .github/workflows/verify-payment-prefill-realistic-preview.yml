@@ -9,6 +9,7 @@ on:
       - 'netlify/edge-functions/owner-mobile-assets.js'
       - 'scripts/build-production.js'
       - 'tests/payment-prefill-mobile-runtime.test.js'
+      - 'tests/payment-prefill-preview-config.test.js'
       - 'tests/payment-proof-prefill-resilience.test.js'
       - '.github/workflows/verify-payment-prefill-realistic-preview.yml'
 
@@ -94,9 +95,9 @@ jobs:
           print(f'REALISTIC_JPEG_BYTES={len(content)} quality={quality}')
           PY
 
-      - name: Verify realistic JPEG against read-only production prefill
+      - name: Verify realistic JPEG through exact preview backend
         env:
-          TARGET_URL: https://villalosapamates.netlify.app/api/vla/payment-proof-prefill
+          TARGET_URL: https://deploy-preview-${{ github.event.pull_request.number }}--villalosapamates.netlify.app/api/vla/payment-proof-prefill
         run: |
           set -euo pipefail
           start="$(date +%s)"
@@ -130,7 +131,7 @@ jobs:
           }
           print(json.dumps(safe,indent=2,ensure_ascii=False))
           if status != 200 or payload.get('success') is not True:
-              raise SystemExit(f'Realistic production prefill failed HTTP {status}')
+              raise SystemExit(f'Realistic preview prefill failed HTTP {status}')
           if analysis.get('currency') != 'VES':
               raise SystemExit('Currency was not read from realistic JPEG')
           if abs(float(analysis.get('amount') or 0)-12345.67) > 0.01:
