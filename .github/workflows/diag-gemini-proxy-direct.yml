@@ -1,0 +1,44 @@
+name: DIAG Gemini Proxy Direct
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/diag-gemini-proxy-direct.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  proxy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Generate realistic JPEG and call proxy directly
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet pillow
+          python3 - <<'PY'
+          import base64,json,os
+          from PIL import Image,ImageDraw,ImageFont,ImageFilter
+          w,h=1800,2400
+          bg=Image.effect_noise((w,h),24).convert('RGB').filter(ImageFilter.GaussianBlur(.35)); d=ImageDraw.Draw(bg)
+          d.rounded_rectangle((140,180,w-140,h-180),radius=44,fill=(248,248,246),outline=(210,210,205),width=5)
+          f=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',72); s=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',60); b=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',82)
+          lines=[('PAGO MOVIL COMPLETADO',b),('Banco de Venezuela',f),('Monto: Bs. 12.345,67',f),('Fecha: 04/08/2026',f),('Referencia: 987654321012',s),('Estado: COMPLETADO',f),('Receptor: Villa Los Apamates',s)]
+          y=330
+          for t,font in lines:d.text((260,y),t,fill=(20,25,30),font=font);y+=210
+          im=bg.rotate(.7,resample=Image.Resampling.BICUBIC,expand=False,fillcolor=(32,34,36));im.save('proof.jpeg',quality=94,optimize=True)
+          raw=open('proof.jpeg','rb').read();print('JPEG_BYTES='+str(len(raw)))
+          open('proxy-request.json','w').write(json.dumps({'content':base64.b64encode(raw).decode(),'contentType':'image/jpeg','promptVersion':'VLA_PAYMENT_PROOF_V2_2026-07-13'}))
+          PY
+          start="$(date +%s%3N)"
+          status="$(curl --silent --show-error --location --output proxy-response.json --write-out '%{http_code}' --max-time 60 -X POST 'https://gemini-proxy-seinca.vercel.app/api/payment-proof' -H 'Content-Type: application/json' -H 'X-VLA-Client: villa-los-apamates-payment-proof-v1' --data-binary @proxy-request.json || true)"
+          end="$(date +%s%3N)"
+          python3 - "$status" "$((end-start))" <<'PY'
+          import json,sys
+          try:p=json.load(open('proxy-response.json'))
+          except Exception:p={}
+          safe={'httpStatus':int(sys.argv[1] or 0),'elapsedMs':int(sys.argv[2]),'ok':p.get('ok'),'code':p.get('code'),'message':str(p.get('message') or '')[:500],'model':p.get('model'),'hasRaw':bool(str(p.get('raw') or '').strip())}
+          print(json.dumps(safe,indent=2,ensure_ascii=False))
+          PY
