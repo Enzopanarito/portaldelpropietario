@@ -17,11 +17,11 @@ const {signRecipientAttestation}=require('./_shared/_payment_recipient_attestati
 const WINDOW_MS=60*60*1000;
 const PREFILL_FAST_MODEL='gemini-3.5-flash-lite';
 const CURRENT_STABLE_MODELS=Object.freeze([PREFILL_FAST_MODEL,'gemini-3.6-flash','gemini-3.5-flash']);
-const DIRECT_TIMEOUT_MS=7500;
-const PREFILL_TOTAL_BUDGET_MS=15000;
-const PREFILL_HANDLER_BUDGET_MS=15000;
-const MIN_DIRECT_WINDOW_MS=5000;
-const MAX_DIRECT_ATTEMPTS=2;
+const DIRECT_TIMEOUT_MS=12000;
+const PREFILL_TOTAL_BUDGET_MS=28000;
+const PREFILL_HANDLER_BUDGET_MS=28000;
+const MIN_DIRECT_WINDOW_MS=6000;
+const MAX_DIRECT_ATTEMPTS=3;
 const TRANSPORT_CODES=Object.freeze(new Set(['ENOTFOUND','EAI_AGAIN','ECONNRESET','ECONNREFUSED','ETIMEDOUT','EPIPE','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET']));
 const PUBLIC_FAILURE_CODES=Object.freeze(new Set(['PREFILL_CONFIG_UNAVAILABLE','AI_NETWORK_ERROR','PROVIDER_UNAVAILABLE','TIMEOUT','RATE_LIMIT','AI_AUTH_FAILED','AI_NOT_CONFIGURED','AI_MODEL_INVALID','AI_MODEL_NOT_FOUND','EMPTY_OUTPUT','INVALID_OUTPUT','AI_PROVIDER_ERROR','AI_PROVIDER_UNAVAILABLE']));
 const MODEL_FAILURE_CODES=Object.freeze(new Set(['AI_MODEL_INVALID','AI_MODEL_NOT_FOUND','EMPTY_OUTPUT','INVALID_OUTPUT']));
@@ -65,8 +65,9 @@ function unique(values){return[...new Set((values||[]).map(value=>String(value||
 function safeModelLabel(value){const model=String(value||'').trim();return/^[A-Za-z0-9._-]{3,120}$/.test(model)?model:'INVALID_MODEL'}
 function modelCandidates(config={}){
  const configured=unique([config.primaryModel,config.secondaryModel]),usesKnownProductionModel=configured.some(model=>CURRENT_STABLE_MODELS.includes(model));
+ if(!usesKnownProductionModel)return configured.slice(0,MAX_DIRECT_ATTEMPTS);
  return unique([
-  ...(usesKnownProductionModel?[PREFILL_FAST_MODEL]:[]),
+  PREFILL_FAST_MODEL,
   ...configured,
   ...CURRENT_STABLE_MODELS
  ]).slice(0,MAX_DIRECT_ATTEMPTS);
@@ -134,7 +135,7 @@ async function analyzeWithFallback({config,proof,report,promptVersion,deadlineAt
    lastError=error;
    const failure=publicFailure(error);
    recordAttempt({event:'VLA_PAYMENT_PREFILL_ATTEMPT',route:'direct',model:safeModelLabel(model),attempt:index+1,outcome:'FAILURE',elapsedMs:Math.max(0,now()-attemptStartedAt),reason:failure.reason,failureClass:failure.failureClass,providerStatus:failure.providerStatus});
-   if(index===0&&models.length>1&&canTrySecondary(error)&&remaining()>=MIN_DIRECT_WINDOW_MS)continue;
+   if(index<models.length-1&&canTrySecondary(error)&&remaining()>=MIN_DIRECT_WINDOW_MS)continue;
    break;
   }
  }
@@ -149,15 +150,17 @@ const handler=async event=>{
   if(!validRecordId(ownerId))return json(400,{message:'Propietario inválido.'});
   const attachment=decodeAttachment(body.attachment);
   if(!attachment)return json(400,{message:'Adjunte el comprobante antes de continuar.'});
-  const [ipLimit,ownerLimit]=await Promise.all([allowed('PAYMENT_PREFILL_IP',clientIp(event),12),allowed('PAYMENT_PREFILL_OWNER',ownerId,8)]);
-  if(!ipLimit.allowed||!ownerLimit.allowed){const retryAfter=Math.max(ipLimit.retryAfter||0,ownerLimit.retryAfter||0,60);return json(429,{message:'Se alcanzó el límite temporal de lecturas. Puede completar los datos manualmente.',manualAvailable:true},{'Retry-After':String(retryAfter)})}
-  const [config,accountState]=await Promise.all([loadAiConfig(),loadAuthorizedAccounts()]);
-  if(!config.aiEnabled)return json(503,{message:'La lectura automática no está disponible. Complete los datos manualmente.',manualAvailable:true});
+  const [ipLimit,ownerLimit]=await Promise.all([allowed('PAYMENT_PREFILL_IP_V2',clientIp(event),20),allowed('PAYMENT_PREFILL_OWNER_V2',ownerId,12)]);
+  if(!ipLimit.allowed||!ownerLimit.allowed){const retryAfter=Math.max(ipLimit.retryAfter||0,ownerLimit.retryAfter||0,60);return json(429,{message:'Se alcanzó el límite temporal de lecturas. Puede completar los datos manualmente.',manualAvailable:true,reason:'RATE_LIMIT',failureClass:'RATE_LIMIT'},{'Retry-After':String(retryAfter)})}
+  const accountStatePromise=loadAuthorizedAccounts();
+  const config=await loadAiConfig();
+  if(!config.aiEnabled)return json(503,{message:'La lectura automática no está disponible. Complete los datos manualmente.',manualAvailable:true,reason:'AI_DISABLED',failureClass:'CONFIG'});
   const result=await analyzeWithFallback({config,proof:{content:attachment.content,contentType:attachment.contentType},report:{targetMode:''},promptVersion:config.promptVersion,deadlineAt:requestStartedAt+PREFILL_HANDLER_BUDGET_MS}),raw=result.raw;
+  const accountState=await accountStatePromise;
   const parsed=contract.parseRawJson(raw);
-  if(!parsed.ok)return json(422,{message:'No pudimos leer el comprobante con seguridad. Complete los datos manualmente.',manualAvailable:true,reason:parsed.reason});
+  if(!parsed.ok)return json(422,{message:'No pudimos leer el comprobante con seguridad. Complete los datos manualmente.',manualAvailable:true,reason:parsed.reason,failureClass:'OUTPUT'});
   const validation=contract.validateAnalysis(parsed.value,{minimumConfidence:0}),fatal=(validation.issueCodes||[]).filter(code=>!['CRITICAL_FIELDS_MISSING','LOW_CONFIDENCE'].includes(code));
-  if(fatal.length)return json(422,{message:'El comprobante no devolvió datos utilizables. Complete los datos manualmente.',manualAvailable:true,reason:fatal[0]});
+  if(fatal.length)return json(422,{message:'El comprobante no devolvió datos utilizables. Complete los datos manualmente.',manualAvailable:true,reason:fatal[0],failureClass:'OUTPUT'});
   const analysis=contract.normalizeAnalysis(parsed.value),missing=missingFields(analysis),bank=analysis.bank_or_platform||methodLabel(analysis.method),date=resolvePrefillDate({proofDate:analysis.transaction_date,attachment:body.attachment,method:analysis.method,bank}),attachmentSha=crypto.createHash('sha256').update(attachment.content).digest('hex'),recipient=recipientVerification(analysis,accountState,config);
   let dateAttestation='',recipientAttestation='';
   if(date.transactionDateSource==='PROOF_EXTRACTED'){
