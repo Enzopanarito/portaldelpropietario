@@ -26,13 +26,14 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in $(seq 1 80); do
-            if curl --silent --fail --max-time 10 "$PREVIEW_URL/" >/dev/null; then
+            if curl --silent --fail --max-time 10 -D preview-headers.txt -o /dev/null "$PREVIEW_URL/" \
+              && grep -qi '^x-vla-payment-prefill-runtime: v1' preview-headers.txt; then
               echo "PREVIEW_READY=$PREVIEW_URL"
               exit 0
             fi
             sleep 5
           done
-          echo "Preview not ready in time" >&2
+          echo "Exact preview with prefill runtime v1 not ready in time" >&2
           exit 1
 
       - name: Generate realistic large JPEG receipt
@@ -40,7 +41,7 @@ jobs:
           set -euo pipefail
           python3 -m pip install --quiet pillow
           python3 - <<'PY'
-          import base64, json, os, random
+          import base64, json, os
           from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
           w,h=1800,2400
@@ -68,7 +69,6 @@ jobs:
               y+=185
           draw.text((260,h-410),'Comprobante de prueba CI · NO ES UN PAGO REAL',fill=(75,75,75),font=small)
 
-          # Leve perspectiva/rotación para parecer una captura/foto real y no un fixture perfecto.
           image=background.rotate(0.7,resample=Image.Resampling.BICUBIC,expand=False,fillcolor=(32,34,36))
           quality=94
           while True:
