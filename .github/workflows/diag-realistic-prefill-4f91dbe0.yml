@@ -1,4 +1,4 @@
-name: DIAG Realistic Payment Prefill 4f91dbe0
+name: DIAG A Current Payment Prefill
 
 on:
   pull_request:
@@ -9,24 +9,24 @@ permissions:
   contents: read
 
 jobs:
-  realistic-prefill:
+  realistic-prefill-current:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 12
     steps:
-      - name: Wait for exact production release
+      - name: Wait for current preview
         env:
-          EXPECTED_SHA: 4f91dbe0be402b02b14700124a24a1186b97e30a
+          TARGET_URL: https://deploy-preview-206--villalosapamates.netlify.app
         run: |
           set -euo pipefail
-          for attempt in $(seq 1 120); do
-            if curl --silent --fail --max-time 10 "https://villalosapamates.netlify.app/release.json?diag=${GITHUB_RUN_ID}-${attempt}" -o release.json \
-              && grep -q "$EXPECTED_SHA" release.json; then
-              echo "EXACT_PRODUCTION_RELEASE_READY=$EXPECTED_SHA"
+          for attempt in $(seq 1 90); do
+            code="$(curl --silent --location --output /tmp/release.json --write-out '%{http_code}' --max-time 15 "${TARGET_URL}/release.json?diag=${GITHUB_RUN_ID}-${attempt}" || true)"
+            if [ "$code" = "200" ]; then
+              echo "CURRENT_PREVIEW_READY=$TARGET_URL"
               exit 0
             fi
             sleep 5
           done
-          echo "Production never reached expected SHA $EXPECTED_SHA" >&2
+          echo "Preview 206 unavailable" >&2
           exit 1
 
       - name: Generate realistic 920KB-class JPEG receipt
@@ -36,7 +36,6 @@ jobs:
           python3 - <<'PY'
           import base64, json, os
           from PIL import Image, ImageDraw, ImageFont, ImageFilter
-
           w,h=1800,2400
           background=Image.effect_noise((w,h),24).convert('RGB').filter(ImageFilter.GaussianBlur(0.35))
           draw=ImageDraw.Draw(background)
@@ -46,88 +45,44 @@ jobs:
           small=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',60)
           bold=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',82)
           lines=[
-              ('PAGO MOVIL COMPLETADO',bold),
-              ('Banco de Venezuela',font),
-              ('Monto: Bs. 12.345,67',font),
-              ('Fecha: 04/08/2026',font),
-              ('Hora: 10:30 AM',small),
-              ('Referencia: 987654321012',small),
-              ('Estado: COMPLETADO',font),
-              ('Receptor: Villa Los Apamates',small),
-              ('Telefono: 0412-0000000',small),
+              ('PAGO MOVIL COMPLETADO',bold),('Banco de Venezuela',font),('Monto: Bs. 12.345,67',font),
+              ('Fecha: 04/08/2026',font),('Hora: 10:30 AM',small),('Referencia: 987654321012',small),
+              ('Estado: COMPLETADO',font),('Receptor: Villa Los Apamates',small),('Telefono: 0412-0000000',small),
           ]
           y=330
           for text,selected in lines:
-              draw.text((260,y),text,fill=(20,25,30),font=selected)
-              y+=185
+              draw.text((260,y),text,fill=(20,25,30),font=selected); y+=185
           draw.text((260,h-410),'Comprobante de prueba CI - NO ES UN PAGO REAL',fill=(75,75,75),font=small)
           image=background.rotate(0.7,resample=Image.Resampling.BICUBIC,expand=False,fillcolor=(32,34,36))
           quality=94
           while True:
               image.save('realistic-payment-proof.jpeg',format='JPEG',quality=quality,optimize=True)
               size=os.path.getsize('realistic-payment-proof.jpeg')
-              if size <= 2_750_000 or quality <= 78:
-                  break
+              if 850000 <= size <= 2750000 or quality <= 78: break
               quality-=3
-          if size > 3*1024*1024:
-              raise SystemExit(f'JPEG too large: {size}')
+          if size > 3*1024*1024: raise SystemExit(f'JPEG too large: {size}')
           content=open('realistic-payment-proof.jpeg','rb').read()
-          payload={
-              'ownerId':'recREALPHOTO00001',
-              'attachment':{
-                  'name':'realistic-payment-proof.jpeg',
-                  'type':'image/jpeg',
-                  'size':len(content),
-                  'base64':base64.b64encode(content).decode('ascii'),
-              },
-          }
+          payload={'ownerId':'recREALPHOTO00001','attachment':{'name':'realistic-payment-proof.jpeg','type':'image/jpeg','size':len(content),'base64':base64.b64encode(content).decode('ascii')}}
           open('realistic-prefill-request.json','w').write(json.dumps(payload))
           print(f'REALISTIC_JPEG_BYTES={len(content)} quality={quality}')
           PY
 
-      - name: Verify realistic JPEG against restored production prefill
+      - name: Probe current preview prefill
         env:
-          TARGET_URL: https://villalosapamates.netlify.app/api/vla/payment-proof-prefill
+          TARGET_URL: https://deploy-preview-206--villalosapamates.netlify.app/api/vla/payment-proof-prefill
         run: |
           set -euo pipefail
           start_ms="$(date +%s%3N)"
-          status="$(curl --silent --show-error --location \
-            --output realistic-prefill-response.json \
-            --write-out '%{http_code}' \
-            --max-time 90 \
-            --request POST "$TARGET_URL" \
-            --header 'Content-Type: application/json' \
-            --data-binary @realistic-prefill-request.json)"
-          end_ms="$(date +%s%3N)"
-          elapsed_ms="$((end_ms-start_ms))"
+          status="$(curl --silent --show-error --location --output realistic-prefill-response.json --write-out '%{http_code}' --max-time 90 --request POST "$TARGET_URL" --header 'Content-Type: application/json' --data-binary @realistic-prefill-request.json)"
+          end_ms="$(date +%s%3N)"; elapsed_ms="$((end_ms-start_ms))"
           python3 - "$status" "$elapsed_ms" <<'PY'
-          import json, sys
-          status=int(sys.argv[1]); elapsed_ms=int(sys.argv[2])
-          try:
-              payload=json.load(open('realistic-prefill-response.json'))
-          except Exception:
-              payload={}
+          import json,sys
+          status=int(sys.argv[1]); elapsed=int(sys.argv[2])
+          try: payload=json.load(open('realistic-prefill-response.json'))
+          except Exception: payload={}
           analysis=payload.get('analysis') or {}
-          safe={
-              'httpStatus':status,
-              'elapsedMs':elapsed_ms,
-              'success':payload.get('success'),
-              'complete':payload.get('complete'),
-              'reason':payload.get('reason'),
-              'providerStatus':payload.get('providerStatus'),
-              'analysisProvider':payload.get('analysisProvider'),
-              'analysisRoute':payload.get('analysisRoute'),
-              'currency':analysis.get('currency'),
-              'amount':analysis.get('amount'),
-              'referencePresent':bool(analysis.get('reference')),
-          }
+          safe={'httpStatus':status,'elapsedMs':elapsed,'success':payload.get('success'),'complete':payload.get('complete'),'reason':payload.get('reason'),'providerStatus':payload.get('providerStatus'),'analysisProvider':payload.get('analysisProvider'),'analysisRoute':payload.get('analysisRoute'),'currency':analysis.get('currency'),'amount':analysis.get('amount'),'referencePresent':bool(analysis.get('reference'))}
           print(json.dumps(safe,indent=2,ensure_ascii=False))
-          if status != 200 or payload.get('success') is not True:
-              raise SystemExit(f'Realistic restored prefill failed HTTP {status}')
-          if analysis.get('currency') != 'VES':
-              raise SystemExit('Currency was not read from realistic JPEG')
-          if abs(float(analysis.get('amount') or 0)-12345.67) > 0.01:
-              raise SystemExit('Amount was not read from realistic JPEG')
-          if not analysis.get('reference'):
-              raise SystemExit('Reference was not read from realistic JPEG')
+          if status != 200 or payload.get('success') is not True: raise SystemExit(f'CURRENT_STACK_FAILED_HTTP_{status}')
+          if analysis.get('currency')!='VES' or abs(float(analysis.get('amount') or 0)-12345.67)>0.01 or not analysis.get('reference'): raise SystemExit('CURRENT_STACK_INCOMPLETE_EXTRACTION')
           PY
