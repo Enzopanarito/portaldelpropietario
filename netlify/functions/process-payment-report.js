@@ -16,6 +16,8 @@ const {ensureFinancialWritesAllowed}=require('./_shared/_financial_write_lock');
 const {safeDisplayText,deepEscapeStrings}=require('./_shared/_security_utils');
 const adminDecision=require('./_shared/_payment_admin_decision');
 
+const TRANSIENT_PROCESSING_FAILURES=Object.freeze(new Set(['PROCESSING_BUSY','PROCESSING_NOT_FOUND','PROCESSING_CAS_CONFLICT','PROCESSING_LEASE_LOST']));
+
 function validRecordId(id){return /^rec[A-Za-z0-9]{14}$/.test(String(id||''))}
 function selectName(value){return value&&typeof value==='object'&&value.name?value.name:String(value||'')}
 function linkedPaymentForReport(payments,reportId){return(payments||[]).find(payment=>Array.isArray(payment?.fields?.['Reporte de Pago Origen'])&&payment.fields['Reporte de Pago Origen'].includes(reportId))||null}
@@ -29,9 +31,24 @@ function operationResponse(result){
 function adminId(auth,decisionSource){return decisionSource==='automatic'?'AUTOPILOT':safeDisplayText(auth.claims?.jti||'ADMIN',120)}
 function audit(fields,context){return adminDecision.appendAudit(fields['Log de Auditoría'],context)}
 function appendInformationRequest(existing,reason,at){const current=String(existing||'').trim(),entry=`[${at}] ${reason}`;return[current,entry].filter(Boolean).join('\n').slice(-9000)}
+function processingFailureCode(fields={}){
+ const direct=safeDisplayText(fields['AI Failure Reason']||'',120).trim().toUpperCase();
+ if(TRANSIENT_PROCESSING_FAILURES.has(direct))return direct;
+ const detail=safeDisplayText(fields['Último Error de Procesamiento']||'',500).trim().toUpperCase(),match=/^([A-Z0-9_]+)/.exec(detail);
+ return match&&TRANSIENT_PROCESSING_FAILURES.has(match[1])?match[1]:'';
+}
+function terminalProcessingCleanup(fields={}){
+ const code=processingFailureCode(fields);
+ return code?{code,patch:{'AI Failure Reason':null,'Último Error de Procesamiento':null,'Processing Lock':false,'Processing Lease Expires At':null}}:{code:'',patch:{}};
+}
+function terminalAudit(fields,context){
+ const cleanup=terminalProcessingCleanup(fields),base=fields['Log de Auditoría'];
+ const normalized=cleanup.code?adminDecision.appendAudit(base,{action:'clear_transient_processing_failure',adminId:context.adminId,reason:cleanup.code,result:'terminal-decision-authoritative',at:context.at}):base;
+ return adminDecision.appendAudit(normalized,context);
+}
 function terminalPatch(action,fields,{who,reason,now}){
- const duplicate=action==='mark_duplicate';
- return{Estado:'Rechazado','Estado de Procesamiento':duplicate?'Duplicado detectado':'Rechazado','Resultado Validación':duplicate?'Duplicado':selectName(fields['Resultado Validación'])||'Revisión manual urgente','Decisión Administrativa':duplicate?'Marcado duplicado':'Rechazado','Validación Realizada Por':'Administrador','Administrador que Revisó':who,'Fecha Revisión':now,...(reason?{'Motivo del Rechazo':reason}:{}),'Posible Duplicado':duplicate||fields['Posible Duplicado']===true,...(duplicate?{'Nivel de Duplicado':'confirmed'}:{}),'Log de Auditoría':audit(fields,{action,adminId:who,reason,result:duplicate?'duplicate-confirmed':'rejected',at:now})};
+ const duplicate=action==='mark_duplicate',cleanup=terminalProcessingCleanup(fields);
+ return{...cleanup.patch,Estado:'Rechazado','Estado de Procesamiento':duplicate?'Duplicado detectado':'Rechazado','Resultado Validación':duplicate?'Duplicado':selectName(fields['Resultado Validación'])||'Revisión manual urgente','Decisión Administrativa':duplicate?'Marcado duplicado':'Rechazado','Validación Realizada Por':'Administrador','Administrador que Revisó':who,'Fecha Revisión':now,...(reason?{'Motivo del Rechazo':reason}:{}),'Posible Duplicado':duplicate||fields['Posible Duplicado']===true,...(duplicate?{'Nivel de Duplicado':'confirmed'}:{}),'Log de Auditoría':terminalAudit(fields,{action,adminId:who,reason,result:duplicate?'duplicate-confirmed':'rejected',at:now})};
 }
 
 const handler=async function(event){
@@ -98,8 +115,8 @@ const handler=async function(event){
   }
   if(!validRecordId(paymentId))throw new Error('Airtable no devolvió un pago definitivo válido.');
 
-  const finalDecision=decisionSource==='automatic'?'Aprobación automática':input.action==='approve_exception'?'Aprobado por excepción':input.action==='correct_and_approve'?'Corregido y aprobado':'Aprobado';
-  const patched=await airtablePatchRecord(TABLES.reportes,reportId,{Estado:'Confirmado','Estado de Procesamiento':'Aprobado','Resultado Validación':'Coincidencia exacta verificada','Decisión Administrativa':finalDecision,'Validación Realizada Por':decisionSource==='automatic'?'Motor determinístico':'Administrador','Administrador que Revisó':who,'Fecha Revisión':reviewedAt,'Pago Definitivo Creado':true,'Pago Definitivo Relacionado':[paymentId],...(input.action==='approve_exception'&&input.reason?{'Motivo de Excepción':input.reason}:{}),'Log de Auditoría':audit(fields,{action:input.action,adminId:who,reason:input.reason,corrections:input.corrections,result:paymentCreated?'payment-created':'payment-reused-idempotently',paymentId,at:reviewedAt})});
+  const finalDecision=decisionSource==='automatic'?'Aprobación automática':input.action==='approve_exception'?'Aprobado por excepción':input.action==='correct_and_approve'?'Corregido y aprobado':'Aprobado',cleanup=terminalProcessingCleanup(fields);
+  const patched=await airtablePatchRecord(TABLES.reportes,reportId,{...cleanup.patch,Estado:'Confirmado','Estado de Procesamiento':'Aprobado','Resultado Validación':'Coincidencia exacta verificada','Decisión Administrativa':finalDecision,'Validación Realizada Por':decisionSource==='automatic'?'Motor determinístico':'Administrador','Administrador que Revisó':who,'Fecha Revisión':reviewedAt,'Pago Definitivo Creado':true,'Pago Definitivo Relacionado':[paymentId],...(input.action==='approve_exception'&&input.reason?{'Motivo de Excepción':input.reason}:{}),'Log de Auditoría':terminalAudit(fields,{action:input.action,adminId:who,reason:input.reason,corrections:input.corrections,result:paymentCreated?'payment-created':'payment-reused-idempotently',paymentId,at:reviewedAt})});
   writeStage=2;
 
   let receipt=null;try{receipt=await createAndSendReceipt({ownerId,paymentId,mode:effective.mode,amountUsd:effective.amountUsd,amountBs:effective.amountBs,reference:effective.reference,concept:decisionSource==='automatic'?'Pago reportado y validado automáticamente':input.action==='approve_exception'?'Pago reportado y aprobado por excepción administrativa':'Pago reportado y aprobado por administración'})}catch(error){receipt={success:false,warning:safeDisplayText(error.message,500)}}
@@ -118,3 +135,6 @@ exports.linkedPaymentForReport=linkedPaymentForReport;
 exports.findExistingPayment=findExistingPayment;
 exports.terminalPatch=terminalPatch;
 exports.appendInformationRequest=appendInformationRequest;
+exports.processingFailureCode=processingFailureCode;
+exports.terminalProcessingCleanup=terminalProcessingCleanup;
+exports.terminalAudit=terminalAudit;
