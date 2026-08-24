@@ -98,7 +98,7 @@ jobs:
       - name: Verify payment report behavior and readability
         env:
           TARGET_URL: ${{ steps.target.outputs.url }}
-        run: node tests/owner-payment-report-browser.cjs
+        run: node --test tests/owner-payment-report-browser.cjs tests/payment-prefill-client-race-browser.cjs
 
       - name: Verify dark-mode activation, persistence and runtime contrast
         env:

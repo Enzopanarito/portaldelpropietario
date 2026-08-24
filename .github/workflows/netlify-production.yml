@@ -62,7 +62,7 @@ jobs:
           npx playwright install --with-deps chromium
 
       - name: Run critical payment and admin browser gates
-        run: node --test tests/owner-payment-report-browser.cjs tests/payment-duplicate-feedback-browser.cjs tests/payment-report-proof-first-v9-browser.cjs tests/payment-report-tracking-browser.cjs tests/admin-owner-access-browser.cjs tests/admin-premium-browser.cjs tests/admin-responsive-fouc-browser.cjs
+        run: node --test tests/owner-payment-report-browser.cjs tests/payment-prefill-client-race-browser.cjs tests/payment-duplicate-feedback-browser.cjs tests/payment-report-proof-first-v9-browser.cjs tests/payment-report-tracking-browser.cjs tests/admin-owner-access-browser.cjs tests/admin-premium-browser.cjs tests/admin-responsive-fouc-browser.cjs
 
       - name: Resolve Netlify credentials safely
         id: credentials
