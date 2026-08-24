@@ -20,10 +20,8 @@ function score(model){
  const id=modelId(model).toLowerCase(),methods=model?.supportedGenerationMethods||[];
  if(!id.startsWith('gemini-')||!methods.includes('generateContent'))return-1;
  if(/(?:embedding|embed|aqa|tts|live|image|imagen|robotics|computer-use|deep-research)/.test(id))return-1;
- // Un flujo financiero no debe adoptar automáticamente modelos preview/exp.
  if(/(?:preview|experimental|exp)/.test(id))return-1;
  let value=180;
- // Para un fallback financiero priorizamos Flash estable completo sobre Lite.
  if(/flash-lite/.test(id))value+=420;
  else if(/flash/.test(id))value+=560;
  else if(/pro/.test(id))value+=300;
@@ -56,9 +54,12 @@ async function fetchCatalog({apiKey,fetchFn=global.fetch,timeoutMs=DISCOVERY_TIM
   const response=await fetchFn(MODELS_URL,{headers:{'x-goog-api-key':key},signal:controller.signal});
   const data=await response.json().catch(()=>({}));
   if(!response.ok){
-   const status=Number(response.status)||0;
-   const code=status===401||status===403?'AI_AUTH_FAILED':status===429?'RATE_LIMIT':status>=500?'PROVIDER_UNAVAILABLE':'AI_MODEL_DISCOVERY_FAILED';
-   throw codedError('No se pudo consultar el catálogo compatible de Gemini.',code,{status});
+   const status=Number(response.status)||0,providerMessage=clean(data?.error?.message).slice(0,300),messageLower=providerMessage.toLowerCase();
+   let code='AI_MODEL_DISCOVERY_FAILED';
+   if(status===401||status===403||/api key not valid|invalid api key|api_key_invalid|permission denied|unauthenticated/.test(messageLower))code='AI_AUTH_FAILED';
+   else if(status===429)code='RATE_LIMIT';
+   else if(status>=500)code='PROVIDER_UNAVAILABLE';
+   throw codedError('No se pudo consultar el catálogo compatible de Gemini.',code,{status,providerMessage});
   }
   return data.models||[];
  }catch(error){
