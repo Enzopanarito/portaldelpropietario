@@ -87,6 +87,7 @@ function createHandler(deps = {}) {
   const isPreview = deps.previewMode || previewMode;
   const now = deps.now || (() => new Date());
   const env = deps.env || process.env;
+  const scoreCache = deps.cache || cache;
   return async function handler(event) {
     if (event.httpMethod && event.httpMethod !== 'GET') return json(405, { message: 'Method Not Allowed' });
     const ownerId = String(event.queryStringParameters && event.queryStringParameters.ownerId || '').trim();
@@ -95,7 +96,7 @@ function createHandler(deps = {}) {
 
     if (isPreview(env)) return json(200, previewScore(ownerId, now()), null, { 'X-Punctuality-Source': 'PREVIEW_FIXTURE' });
 
-    const cached = cache.get(ownerId);
+    const cached = scoreCache.get(ownerId);
     if (cached && cached.expiresAt > Date.now()) return json(200, cached.value, null, { 'X-Punctuality-Source': 'MEMORY_CACHE' });
 
     const token = env.AIRTABLE_API_TOKEN, baseId = env.AIRTABLE_BASE_ID;
@@ -127,7 +128,7 @@ function createHandler(deps = {}) {
         now: now(),
         months: 6
       }));
-      cache.set(ownerId, { value: score, expiresAt: Date.now() + CACHE_TTL_MS });
+      scoreCache.set(ownerId, { value: score, expiresAt: Date.now() + CACHE_TTL_MS });
       return json(200, score, counter, { 'X-Punctuality-Source': 'LEDGER_AUDIT' });
     } catch (error) {
       console.error(JSON.stringify({ event: 'VLA_PUNCTUALITY_READ_ERROR', message: String(error && error.message || '').slice(0, 300) }));
