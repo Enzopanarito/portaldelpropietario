@@ -66,7 +66,10 @@ function recurringKeyOf(record){
 }
 function repeatActiveOf(record){
  const fields=fieldsOf(record),explicit=clean(fields[FIELDS.recurringKey]);
- if(explicit)return fields[FIELDS.repeatActive]!==false;
+ // Airtable omite de la respuesta los checkboxes desmarcados. Por eso una
+ // plantilla con clave explícita solo está activa cuando el checkbox viene true.
+ // Los Fijo legacy sin clave se consideran activos hasta su migración.
+ if(explicit)return fields[FIELDS.repeatActive]===true;
  return choice(fields.Frecuencia)==='Fijo'&&statusOf(record)!==STATUS.VOID;
 }
 function recordOrder(record){
@@ -89,15 +92,15 @@ function buildPreloadPlan(records,{closingMonth=currentMonthCaracas(),targetMont
  // su regeneración en ese mismo mes. Así "eliminar este mes" no mata la plantilla,
  // pero tampoco reaparece por un reintento automático.
  const existingRecurringKeys=new Set(targetRecords.map(recurringKeyOf).filter(Boolean));
- const creates=[];
- for(const record of recurringSources(all,targetMonth)){
+ const sources=recurringSources(all,targetMonth),creates=[];
+ for(const record of sources){
   const recurringKey=recurringKeyOf(record);if(!recurringKey||!repeatActiveOf(record))continue;
   const template=compactTemplate(record,targetMonth),key=templateKey(template),identity=templateIdentity(template);
   if(existingRecurringKeys.has(recurringKey)||existingKeys.has(key)||existingIdentities.has(identity))continue;
   existingRecurringKeys.add(recurringKey);existingKeys.add(key);existingIdentities.add(identity);
   creates.push({sourceId:template.sourceId,key,recurringKey,fields:{Concepto:template.concept,Monto:template.amount,'Tipo de Gasto':template.type,'Forma de Pago':template.mode,Frecuencia:'Fijo',Propietarios:template.owners,[FIELDS.month]:targetMonth,[FIELDS.status]:STATUS.SCHEDULED,[FIELDS.origin]:ORIGIN.RECURRING,[FIELDS.templateKey]:key,[FIELDS.recurringKey]:recurringKey,[FIELDS.repeatActive]:true,[FIELDS.preparedAt]:now.toISOString(),...(template.plant.domain?{[PLANT_FIELDS.domain]:template.plant.domain,[PLANT_FIELDS.category]:template.plant.category,[PLANT_FIELDS.retroactive]:template.plant.retroactive}:{})}});
  }
- return{schemaVersion:2,closingMonth,targetMonth,sourceCount:recurringSources(all,targetMonth).filter(repeatActiveOf).length,createCount:creates.length,creates};
+ return{schemaVersion:2,closingMonth,targetMonth,sourceCount:sources.filter(repeatActiveOf).length,createCount:creates.length,creates};
 }
 function buildRotationPlan(records,{closingMonth=currentMonthCaracas(),targetMonth=nextMonth(closingMonth),now=new Date()}={}){
  const close=filterActiveExpenses(records,closingMonth).filter(record=>monthOf(record)).map(record=>({id:record.id,fields:{[FIELDS.status]:STATUS.CLOSED,[FIELDS.closedAt]:now.toISOString()}}));
