@@ -6,7 +6,11 @@
   function f(record){return record&&record.fields||{}}
   function recurring(record){const fields=f(record);return Boolean(fields['Clave Recurrente']||fields.Frecuencia==='Fijo')}
   function repeatActive(record){const fields=f(record);return recurring(record)&&fields['Repetición Activa']!==false}
-  function findExpense(id){return[...(window.gastos||[]),...(window.gastosProgramados||[])].find(item=>item.id===id)||null}
+  function expenseRecords(){
+    const active=typeof gastos!=='undefined'&&Array.isArray(gastos)?gastos:[],scheduled=typeof gastosProgramados!=='undefined'&&Array.isArray(gastosProgramados)?gastosProgramados:[];
+    return[...active,...scheduled];
+  }
+  function findExpense(id){return expenseRecords().find(item=>item.id===id)||null}
   function monthLabel(ym){try{const [y,m]=String(ym).split('-').map(Number);return new Intl.DateTimeFormat('es-VE',{month:'long',year:'numeric'}).format(new Date(Date.UTC(y,m-1,1)))}catch{return ym}}
   function nextMonth(ym){const [y,m]=String(ym).split('-').map(Number),d=new Date(Date.UTC(y,m,1));return`${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}`}
   function currentMonth(){return typeof caracasDate==='function'?caracasDate().slice(0,7):new Date().toISOString().slice(0,7)}
@@ -70,8 +74,12 @@
     }catch(error){announce(error.message||'No se pudo actualizar el gasto.',true)}finally{button.disabled=false;button.textContent=original}
   }
 
-  const originalRender=window.renderExpenses;
-  if(typeof originalRender==='function')window.renderExpenses=function(){const result=originalRender.apply(this,arguments);decorateRows();return result};
+  const originalRender=typeof renderExpenses==='function'?renderExpenses:null;
+  if(originalRender){
+    const enhancedRender=function(){const result=originalRender.apply(this,arguments);decorateRows();return result};
+    window.renderExpenses=enhancedRender;
+    try{renderExpenses=enhancedRender}catch(_){/* el binding global puede no ser reasignable en navegadores antiguos */}
+  }
   installForm();decorateRows();
   const body=document.getElementById('expenses-body');if(body)body.addEventListener('click',handleClick);
 })();
