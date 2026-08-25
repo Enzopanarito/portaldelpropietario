@@ -20,9 +20,11 @@
   function installForm(){
     const form=document.getElementById('expense-form'),frequency=document.getElementById('expense-frequency');
     if(!form||!frequency||document.getElementById('expense-repeat-monthly'))return;
-    const current=currentMonth(),following=nextMonth(current);
-    const month=document.createElement('div');month.innerHTML=`<label class="block text-sm font-semibold mb-1" for="expense-month">Mes del gasto</label><select id="expense-month" class="w-full p-3 border rounded-lg"><option value="current">Mes actual · ${monthLabel(current)}</option><option value="next">Precargar mes siguiente · ${monthLabel(following)}</option></select>`;
-    frequency.before(month);
+    if(!document.getElementById('expense-month')){
+      const current=currentMonth(),following=nextMonth(current);
+      const month=document.createElement('div');month.innerHTML=`<label class="block text-sm font-semibold mb-1" for="expense-month">Mes del gasto</label><select id="expense-month" class="w-full p-3 border rounded-lg"><option value="current">Mes actual · ${monthLabel(current)}</option><option value="next">Precargar mes siguiente · ${monthLabel(following)}</option></select>`;
+      frequency.before(month);
+    }
     frequency.classList.add('hidden');frequency.setAttribute('aria-hidden','true');
     const recurringBox=document.createElement('label');recurringBox.className='flex items-start gap-3 p-3 rounded-xl border bg-slate-50 cursor-pointer';
     recurringBox.innerHTML=`<input id="expense-repeat-monthly" type="checkbox" class="mt-1"><span><b>Repetir automáticamente cada mes</b><small class="block text-slate-500 mt-1">El monto podrá ajustarse en la precarga. Anular un mes no elimina la repetición futura.</small></span>`;
