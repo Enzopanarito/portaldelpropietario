@@ -22,6 +22,7 @@ const PUBLIC_FILES=[
   'owner-plant-v1.css','owner-plant-v1.js',
   'owner-payment-report-v3.css','owner-payment-report-v3.js',
   'owner-report-sync-v1.css','owner-report-sync-v1.js',
+  'owner-punctuality-score-v1.css','owner-punctuality-score-v1.js',
   'owner-breakdown-v7.css','owner-breakdown-v7.js','payment-report-intelligence.js',
   'vla-finance-v7.js','pwa-register.js','release.json','service-worker.js'
 ];
@@ -51,11 +52,16 @@ const OWNER_SOCIAL_HEAD=`
 
 const ADMIN_FORGOT_PASSWORD=`<p id='vla-admin-forgot-password' class='text-center mt-4'><a href='/seguridad.html?recover=1' class='text-sm font-semibold text-sky-700 hover:text-sky-900 underline underline-offset-4'>¿Olvidaste tu contraseña?</a></p>`;
 const ADMIN_AUTOPAY_ASSETS=`<link rel="stylesheet" href="/admin-autopay-supervision.css"><script defer src="/admin-autopay-supervision.js"></script>`;
+const OWNER_PUNCTUALITY_ASSETS=`<link rel="stylesheet" href="/owner-punctuality-score-v1.css"><script defer src="/owner-punctuality-score-v1.js"></script>`;
 
 function transformHtml(name,text){
   let html=text.replace(TAILWIND_CDN,'<link rel="stylesheet" href="/tailwind.generated.css">');
   if(name==='index.html'&&!html.includes('property="og:title"')){
     html=html.includes('</head>')?html.replace('</head>',OWNER_SOCIAL_HEAD+'\n</head>'):OWNER_SOCIAL_HEAD+html;
+  }
+  if(name==='index.html'&&!html.includes('/owner-punctuality-score-v1.js')){
+    if(!html.includes('</head>'))throw new Error('No se encontró </head> para insertar el índice de puntualidad en index.html.');
+    html=html.replace('</head>',OWNER_PUNCTUALITY_ASSETS+'\n</head>');
   }
   if(name==='admin.html'&&!html.includes("id='vla-admin-forgot-password'")){
     const marker="<p id='login-error'";
