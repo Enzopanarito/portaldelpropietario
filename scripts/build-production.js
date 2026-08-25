@@ -10,7 +10,7 @@ const PUBLIC_FILES=[
   '_redirects',
   'index.html','admin.html','audit.html','auditoria.html','cierre-auditoria.html',
   'mkj-access.html','seguridad.html','verificar-respaldo.html','whatsapp.html',
-  'admin-autopilot.css','admin-autopilot.js','admin-feature-parity.js',
+  'admin-autopilot.css','admin-autopilot.js','admin-feature-parity.js','admin-recurring-expenses.js',
   'admin-autopay-supervision.css','admin-autopay-supervision.js',
   'admin-plant-v1.css','admin-plant-v1.js',
   'admin-owner-access-v1.js','admin-premium-10.css','admin-premium-10.js',
