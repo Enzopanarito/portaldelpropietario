@@ -5,7 +5,7 @@
 
   function f(record){return record&&record.fields||{}}
   function recurring(record){const fields=f(record);return Boolean(fields['Clave Recurrente']||fields.Frecuencia==='Fijo')}
-  function repeatActive(record){const fields=f(record);return recurring(record)&&fields['Repetición Activa']!==false}
+  function repeatActive(record){const fields=f(record);return fields['Clave Recurrente']?fields['Repetición Activa']===true:fields.Frecuencia==='Fijo'}
   function expenseRecords(){
     const active=typeof gastos!=='undefined'&&Array.isArray(gastos)?gastos:[],scheduled=typeof gastosProgramados!=='undefined'&&Array.isArray(gastosProgramados)?gastosProgramados:[];
     return[...active,...scheduled];
