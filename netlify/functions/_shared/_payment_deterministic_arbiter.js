@@ -19,6 +19,7 @@ function normalizePhone(value){return clean(value).replace(/\D+/g,'')}
 function normalizeEmail(value){return clean(value).toLowerCase()}
 function normalizeAccount(value){return clean(value).replace(/\s+/g,'').toUpperCase()}
 function normalizeIdentifier(value){return clean(value).replace(/[^A-Za-z0-9]/g,'').toUpperCase()}
+function normalizeReference(value){return clean(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,'')}
 function dateMs(value){const time=Date.parse(clean(value));return Number.isFinite(time)?time:NaN}
 function fieldsOf(record){return record&&record.fields?record.fields:record||{}}
 function splitAlternatives(value){return clean(value).split(/[\n,;|]+/).map(normalizeText).filter(Boolean)}
@@ -131,14 +132,22 @@ function evaluatePaymentReport({report={},owner={},attachment={},analysis=null,s
  const reportedAmount=targetMode==='USD'?money(fields['Equivalente USD Reportado']||fields['Monto Reportado']):money(fields['Monto Reportado Bs']);
  const reportedAmountMatches=reportedAmount>TOLERANCE&&Math.abs(reportedAmount-amount)<=TOLERANCE;
  checks.push(check('REPORTED_AMOUNT_MATCH',reportedAmountMatches,`${reportedAmount} / ${amount}`));
+ const reportedReference=normalizeReference(fields.Referencia),detectedReference=normalizeReference(analysis.reference),reportedReferenceMatches=Boolean(reportedReference&&detectedReference&&reportedReference===detectedReference);
+ checks.push(check('REPORTED_REFERENCE_MATCH',reportedReferenceMatches,reportedReferenceMatches?'Coincide':'No coincide'));
  const automaticConfidenceOk=Number(analysis.confidence)>=automaticConfidence;
  checks.push(check('AUTOMATIC_CONFIDENCE',automaticConfidenceOk,`Confianza ${Number(analysis.confidence)||0}; mínimo automático ${automaticConfidence}.`));
  const settlementConfirmed=clean(analysis.transaction_status)==='COMPLETED';
  checks.push(check('AUTOMATIC_SETTLEMENT_STATUS',settlementConfirmed,analysis.transaction_status));
- if(automaticEnabled&&automaticConfidenceOk&&reportedAmountMatches&&settlementConfirmed){
+ if(automaticEnabled&&automaticConfidenceOk&&reportedAmountMatches&&reportedReferenceMatches&&settlementConfirmed){
   return resultEnvelope({processingState:'Aprobación automática autorizada',resultValidation:'Coincidencia exacta verificada',preliminaryMatch:true,automaticApproval:true,reasons:['DETERMINISTIC_AUTOMATIC_APPROVAL'],checks,receiver:recipient});
  }
- return resultEnvelope({processingState:'Coincide preliminarmente',resultValidation:'Coincide preliminarmente',preliminaryMatch:true,reasons:['ADMIN_DECISION_REQUIRED'],checks,receiver:recipient});
+ const automaticReasons=[];
+ if(!automaticEnabled)automaticReasons.push('AUTOMATIC_APPROVAL_DISABLED');
+ if(!automaticConfidenceOk)automaticReasons.push('AUTOMATIC_CONFIDENCE_BELOW_THRESHOLD');
+ if(!reportedAmountMatches)automaticReasons.push('REPORTED_AMOUNT_MISMATCH');
+ if(!reportedReferenceMatches)automaticReasons.push('REPORTED_REFERENCE_MISMATCH');
+ if(!settlementConfirmed)automaticReasons.push('AUTOMATIC_STATUS_NOT_COMPLETED');
+ return resultEnvelope({processingState:'Coincide preliminarmente',resultValidation:'Coincide preliminarmente',preliminaryMatch:true,reasons:automaticReasons.length?automaticReasons:['ADMIN_DECISION_REQUIRED'],checks,receiver:recipient});
 }
 
-module.exports={TOLERANCE,COMPLETED_STATUSES,METHOD_ACCOUNT_MAP,clean,money,choice,normalizeText,normalizePhone,normalizeEmail,normalizeAccount,normalizeIdentifier,dateMs,fieldsOf,splitAlternatives,targetCurrency,accountActive,accountCompatibility,accountCurrencyCompatibility,methodCodeForAccount,expectedRecipientSummary,recipientEvidence,normalizedIdentifierReady,recipientMatchesAccount,findAuthorizedRecipient,check,resultEnvelope,evaluatePaymentReport};
+module.exports={TOLERANCE,COMPLETED_STATUSES,METHOD_ACCOUNT_MAP,clean,money,choice,normalizeText,normalizePhone,normalizeEmail,normalizeAccount,normalizeIdentifier,normalizeReference,dateMs,fieldsOf,splitAlternatives,targetCurrency,accountActive,accountCompatibility,accountCurrencyCompatibility,methodCodeForAccount,expectedRecipientSummary,recipientEvidence,normalizedIdentifierReady,recipientMatchesAccount,findAuthorizedRecipient,check,resultEnvelope,evaluatePaymentReport};
