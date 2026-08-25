@@ -5,7 +5,7 @@ const { debtFields } = require('./_monthly_close_core');
 const { TABLES, patchBatches, setCloseMarker, createRecord, closeKey } = require('./_monthly_close_store');
 const { createPreparedLog, persistProgress } = require('./_monthly_close_operation');
 const { verifyPlan, restorePlan } = require('./_monthly_close_verify');
-const { rotateExpenses } = require('./_expense_lifecycle_store');
+const { rotateExpenses, syncRecurringPreloads } = require('./_expense_lifecycle_store');
 const { nextMonth } = require('./_expense_lifecycle');
 
 async function executeClose({ month, closeLock, plan, context, token, baseId, counter, json }) {
@@ -63,13 +63,19 @@ async function executeClose({ month, closeLock, plan, context, token, baseId, co
     payload.state = 'ACCOUNTING_COMPLETED';
     await persistProgress(operationLog.id, payload, token, baseId, counter).catch(() => null);
 
-    let expenseRotation = null;
+    const activatedMonth=nextMonth(month),futureMonth=nextMonth(activatedMonth);
+    let expenseRotation = null,expensePreload=null;
     try {
-      expenseRotation = await rotateExpenses({ closingMonth:month, targetMonth:nextMonth(month), token, baseId, counter });
+      expenseRotation = await rotateExpenses({ closingMonth:month, targetMonth:activatedMonth, token, baseId, counter });
+      // Una vez activado el nuevo mes, dejamos preparado el siguiente de inmediato.
+      // Esto ya no depende de que el piloto diario coincida con una ventana de fechas.
+      expensePreload = await syncRecurringPreloads({closingMonth:activatedMonth,targetMonth:futureMonth,token,baseId,counter,scope:'EXPENSE_POST_CLOSE_PRELOAD'});
     } catch (error) {
-      expenseRotation = { success:false, error:error.message, retryable:true };
+      if(!expenseRotation?.success)expenseRotation = { success:false, error:error.message, retryable:true };
+      else expensePreload = { success:false, error:error.message, retryable:true };
     }
     payload.expenseRotation = expenseRotation;
+    payload.expensePreload = expensePreload;
 
     let accessSync = null;
     try { accessSync = await autoSyncAll({ forceMkj: true, sendEmail: true }); }
@@ -85,6 +91,7 @@ async function executeClose({ month, closeLock, plan, context, token, baseId, co
     const accessErrors = Number(accessSync?.errors || 0);
     const accessWarning = accessSync?.success === false || accessErrors > 0;
     const rotationWarning = expenseRotation?.success === false;
+    const preloadWarning = expensePreload?.success === false;
     return json(200, {
       success: true,
       month,
@@ -95,13 +102,16 @@ async function executeClose({ month, closeLock, plan, context, token, baseId, co
       validation: plan.validation,
       verification,
       expenseRotation,
+      expensePreload,
       accessSync,
-      warning: logWarning || (rotationWarning ? 'El cierre contable terminó, pero la rotación de gastos debe reintentarse.' : null) || (accessWarning ? 'El cierre contable terminó, pero uno o más accesos requieren revisión.' : null),
+      warning: logWarning || (rotationWarning ? 'El cierre contable terminó, pero la rotación de gastos debe reintentarse.' : null) || (preloadWarning ? 'El cierre contable terminó, pero la precarga recurrente del mes posterior debe reintentarse.' : null) || (accessWarning ? 'El cierre contable terminó, pero uno o más accesos requieren revisión.' : null),
       message: rotationWarning
         ? 'Cierre mensual completado y verificado. La activación de gastos del nuevo mes quedó en reintento seguro.'
+        : preloadWarning
+        ? 'Cierre mensual completado y verificado. Los gastos del nuevo mes se activaron, pero la siguiente precarga recurrente quedó en reintento seguro.'
         : accessWarning
         ? 'Cierre mensual completado y verificado. La sincronización del portón terminó con advertencias.'
-        : 'Cierre mensual completado, verificado y sincronizado con el portón.'
+        : 'Cierre mensual completado, verificado, con recurrencias futuras preparadas y sincronizado con el portón.'
     }, counter);
   } catch (error) {
     if (dataCompleted) {
