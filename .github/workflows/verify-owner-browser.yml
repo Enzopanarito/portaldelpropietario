@@ -98,6 +98,15 @@ jobs:
           echo "OWNER_BROWSER_CERT_FAILED after 3 complete browser sessions"
           exit 1
 
+      - name: Verify punctuality score on desktop and mobile
+        env:
+          TARGET_URL: ${{ steps.target.outputs.url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f owner-punctuality-result.json owner-punctuality-error.txt owner-punctuality-desktop.png owner-punctuality-mobile.png
+          node tests/owner-punctuality-score-browser.cjs
+
       - name: Upload browser evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -107,6 +116,10 @@ jobs:
             owner-production-result.json
             owner-production-error.txt
             owner-production.png
+            owner-punctuality-result.json
+            owner-punctuality-error.txt
+            owner-punctuality-desktop.png
+            owner-punctuality-mobile.png
           if-no-files-found: ignore
           retention-days: 7
 
@@ -119,7 +132,7 @@ jobs:
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
             -f state=success \
             -f context='Owner Portal Production Verification' \
-            -f description='Release exacto, desglose y 15/15 saldos visibles verificados.' \
+            -f description='Release exacto, desglose, 15/15 saldos y puntualidad responsive verificados.' \
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
       - name: Publish failed production status
