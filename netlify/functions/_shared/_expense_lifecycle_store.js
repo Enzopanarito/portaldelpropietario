@@ -1,8 +1,9 @@
 'use strict';
 
+const crypto=require('crypto');
 const {begin,setState}=require('./_operation_guard');
 const {getAll,patchBatches,TABLES}=require('./_monthly_close_store');
-const {buildPreloadPlan,buildRotationPlan,FIELDS,STATUS}=require('./_expense_lifecycle');
+const {buildPreloadPlan,buildRotationPlan,FIELDS,STATUS,recurringKeyOf}=require('./_expense_lifecycle');
 const plantEngine=require('./_plant_engine');
 const {TABLES:PLANT_TABLES,EXPENSE_FIELDS:PLANT_FIELDS,profileFromRecord}=require('./_plant_store');
 
@@ -47,26 +48,38 @@ async function hydratePlantPreloads(plan,{token,baseId,counter}){
  }
  return plan;
 }
-async function preloadExpenses({closingMonth,targetMonth,token,baseId,counter={calls:0},now=new Date()}){
- const key=`${closingMonth}|${targetMonth}`,guard=await begin('EXPENSE_PRELOAD',key);
+function preloadPlanSignature(plan){
+ return crypto.createHash('sha256').update(JSON.stringify((plan.creates||[]).map(item=>({key:item.key,recurringKey:item.recurringKey,amount:item.fields?.Monto,month:plan.targetMonth})).sort((a,b)=>String(a.recurringKey||a.key).localeCompare(String(b.recurringKey||b.key))))).digest('hex').slice(0,24);
+}
+async function syncRecurringPreloads({closingMonth,targetMonth,token,baseId,counter={calls:0},now=new Date(),scope='EXPENSE_RECURRING_SYNC'}){
+ const records=await getAll(TABLES.expenses,'',token,baseId,counter),plan=buildPreloadPlan(records,{closingMonth,targetMonth,now});
+ if(!plan.creates.length)return{success:true,idempotent:true,closingMonth,targetMonth,sourceCount:plan.sourceCount,createdCount:0,verified:true,message:`Precarga ${targetMonth} ya está reconciliada.`};
+ await hydratePlantPreloads(plan,{token,baseId,counter});
+ const signature=preloadPlanSignature(plan),key=`${closingMonth}|${targetMonth}|${signature}`,guard=await begin(scope,key);
  if(!guard.ok){
-  if(guard.reason==='done')return{success:true,idempotent:true,closingMonth,targetMonth,createdCount:0,message:`La precarga ${targetMonth} ya estaba preparada.`};
-  return{success:false,protected:true,reason:guard.reason,closingMonth,targetMonth,message:'La precarga ya está en proceso o requiere revisión.'};
+  if(guard.reason==='done')return{success:true,idempotent:true,closingMonth,targetMonth,sourceCount:plan.sourceCount,createdCount:0,verified:true,message:`Precarga ${targetMonth} ya estaba reconciliada.`};
+  return{success:false,protected:true,reason:guard.reason,closingMonth,targetMonth,message:'La reconciliación de gastos ya está en proceso o requiere revisión.'};
  }
  let created=[];
  try{
-  const records=await getAll(TABLES.expenses,'',token,baseId,counter),plan=buildPreloadPlan(records,{closingMonth,targetMonth,now});
-  await hydratePlantPreloads(plan,{token,baseId,counter});
-  created=await createBatches(plan.creates,token,baseId,counter);
-  const verified=await getAll(TABLES.expenses,'',token,baseId,counter),keys=new Set(verified.map(record=>String(record?.fields?.[FIELDS.templateKey]||'')));
-  const missing=plan.creates.filter(item=>!keys.has(item.key));
-  if(missing.length)throw new Error(`La verificación detectó ${missing.length} gasto(s) precargado(s) faltante(s).`);
-  await setState(guard.marker,'EXPENSE_PRELOAD',key,'DONE',targetMonth);
-  return{success:true,closingMonth,targetMonth,sourceCount:plan.sourceCount,createdCount:created.length,verified:true,message:`Precarga ${targetMonth} preparada y verificada.`};
+  // Releer después de adquirir el guard evita duplicados si otra operación dejó
+  // el mes reconciliado entre el primer plan y esta escritura.
+  const fresh=await getAll(TABLES.expenses,'',token,baseId,counter),freshPlan=buildPreloadPlan(fresh,{closingMonth,targetMonth,now});
+  await hydratePlantPreloads(freshPlan,{token,baseId,counter});
+  created=await createBatches(freshPlan.creates,token,baseId,counter);
+  const verified=await getAll(TABLES.expenses,'',token,baseId,counter);
+  const targetRows=verified.filter(record=>String(record?.fields?.[FIELDS.month]||'')===targetMonth),recurringKeys=new Set(targetRows.map(recurringKeyOf).filter(Boolean)),templateKeys=new Set(targetRows.map(record=>String(record?.fields?.[FIELDS.templateKey]||'')).filter(Boolean));
+  const missing=freshPlan.creates.filter(item=>!(item.recurringKey?recurringKeys.has(item.recurringKey):templateKeys.has(item.key)));
+  if(missing.length)throw new Error(`La verificación detectó ${missing.length} gasto(s) recurrente(s) faltante(s).`);
+  await setState(guard.marker,scope,key,'DONE',targetMonth);
+  return{success:true,closingMonth,targetMonth,sourceCount:freshPlan.sourceCount,createdCount:created.length,verified:true,message:`Precarga ${targetMonth} reconciliada y verificada.`};
  }catch(error){
-  await setState(guard.marker,'EXPENSE_PRELOAD',key,created.length?'PARTIAL':'ERROR',targetMonth).catch(()=>null);
+  await setState(guard.marker,scope,key,created.length?'PARTIAL':'ERROR',targetMonth).catch(()=>null);
   throw error;
  }
+}
+async function preloadExpenses({closingMonth,targetMonth,token,baseId,counter={calls:0},now=new Date()}){
+ return syncRecurringPreloads({closingMonth,targetMonth,token,baseId,counter,now,scope:'EXPENSE_PRELOAD'});
 }
 async function rotateExpenses({closingMonth,targetMonth,token,baseId,counter={calls:0},now=new Date()}){
  const records=await getAll(TABLES.expenses,'',token,baseId,counter),plan=buildRotationPlan(records,{closingMonth,targetMonth,now});
@@ -78,4 +91,4 @@ async function rotateExpenses({closingMonth,targetMonth,token,baseId,counter={ca
  return{success:true,closingMonth,targetMonth,closedCount:plan.closeCount,activatedCount:plan.activateCount,verified:true,message:`Gastos ${closingMonth} cerrados y ${targetMonth} activados.`};
 }
 
-module.exports={request,tableUrl,createBatches,hydratePlantPreloads,preloadExpenses,rotateExpenses};
+module.exports={request,tableUrl,createBatches,hydratePlantPreloads,preloadPlanSignature,syncRecurringPreloads,preloadExpenses,rotateExpenses};

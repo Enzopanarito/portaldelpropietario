@@ -8,6 +8,7 @@ const { ensureFinancialWritesAllowed } = require('./_shared/_financial_write_loc
 const { begin, setState } = require('./_shared/_operation_guard');
 const { cleanPlainText, deepEscapeStrings, safeDisplayText } = require('./_shared/_security_utils');
 const { currentMonthCaracas, nextMonth, newExpenseLifecycleFields, compactTemplate, templateKey, FIELDS, ORIGIN } = require('./_shared/_expense_lifecycle');
+const { syncRecurringPreloads } = require('./_shared/_expense_lifecycle_store');
 const plantEngine = require('./_shared/_plant_engine');
 const { TABLES:PLANT_TABLES, EXPENSE_FIELDS:PLANT_FIELDS, profileFromRecord } = require('./_shared/_plant_store');
 
@@ -64,7 +65,8 @@ const handler = async function(event) {
   try {
     const lock = await ensureFinancialWritesAllowed(); if (!lock.ok) return lock.response;
     const body = JSON.parse(event.body || '{}');
-    const concept = cleanPlainText(body.concept, 160), amount = money(body.amount), type = String(body.type || ''), mode = String(body.mode || ''), frequency = String(body.frequency || 'Eventual');
+    const concept = cleanPlainText(body.concept, 160), amount = money(body.amount), type = String(body.type || ''), mode = String(body.mode || '');
+    const requestedFrequency=String(body.frequency||'Eventual'),repeatMonthly=body.repeatMonthly===true||requestedFrequency==='Fijo',frequency=repeatMonthly?'Fijo':'Eventual';
     const currentMonth=currentMonthCaracas(),allowedMonths=new Set([currentMonth,nextMonth(currentMonth)]);
     const month=/^\d{4}-(0[1-9]|1[0-2])$/.test(String(body.month||''))?String(body.month):currentMonth;
     let ownerIds = [...new Set((Array.isArray(body.ownerIds) ? body.ownerIds : []).map(value => String(value || '').trim()).filter(validRecordId))];
@@ -110,7 +112,9 @@ const handler = async function(event) {
       return json(409, { success:false,protected:true,message:'Este gasto ya está siendo creado. Espere y actualice el panel.' });
     }
     operation = guard.marker;
+    const recurringKey=repeatMonthly?`REC-${crypto.randomUUID()}`:'';
     const fields = { Concepto:concept, Monto:amount, 'Tipo de Gasto':type, Frecuencia:frequency, Propietarios:ownerIds, 'Forma de Pago':mode, ...newExpenseLifecycleFields({month,origin:month===currentMonth?ORIGIN.MANUAL:ORIGIN.PRELOAD}) };
+    if(repeatMonthly){fields[FIELDS.recurringKey]=recurringKey;fields[FIELDS.repeatActive]=true}
     if(plantSnapshot){
       const eventId=`PLANT-${month}-${plantSnapshot.snapshotHash.slice(0,16).toUpperCase()}`;
       Object.assign(fields,{
@@ -126,7 +130,13 @@ const handler = async function(event) {
     const data = await request(TABLE_GASTOS, { method:'POST', body:JSON.stringify({ records:[{ fields }], typecast:true }) });
     const record = data.records?.[0] || null; recordId = record?.id || '';
     await setState(operation, 'EXPENSE_CREATE', key, 'DONE', recordId);
-    return json(200, deepEscapeStrings({ success:true,record,month,plant:isPlant,plantSnapshotHash:plantSnapshot?.snapshotHash||null,scheduled:month!==currentMonthCaracas(),message:plantSnapshot?`Gasto de planta creado y distribuido automáticamente entre ${ownerIds.length} casa(s); el snapshot histórico quedó sellado.`:month!==currentMonthCaracas()?`Gasto precargado para ${month}; se activará con el cierre.`:type==='Gasto Especial'?`Gasto especial creado entre ${ownerIds.length} propietario(s).`:'Gasto común creado correctamente.' }));
+    let recurringSync=null,warning=null;
+    if(repeatMonthly&&month===currentMonth){
+      try{recurringSync=await syncRecurringPreloads({closingMonth:currentMonth,targetMonth:nextMonth(currentMonth),token:process.env.AIRTABLE_API_TOKEN,baseId:process.env.AIRTABLE_BASE_ID,counter:{calls:0}})}
+      catch(error){warning='El gasto recurrente quedó creado, pero la precarga del mes siguiente requiere reintento seguro.';recurringSync={success:false,error:safeDisplayText(error.message,300),retryable:true}}
+    }
+    const message=warning||(plantSnapshot?`Gasto de planta creado y distribuido automáticamente entre ${ownerIds.length} casa(s); el snapshot histórico quedó sellado.`:month!==currentMonthCaracas()?`Gasto precargado para ${month}; se activará con el cierre.`:repeatMonthly?`Gasto recurrente creado; el mes siguiente quedó preparado automáticamente.`:type==='Gasto Especial'?`Gasto especial creado entre ${ownerIds.length} propietario(s).`:'Gasto común creado correctamente.');
+    return json(200, deepEscapeStrings({ success:true,record,month,plant:isPlant,repeatMonthly,recurringKey:recurringKey||null,recurringSync,warning,plantSnapshotHash:plantSnapshot?.snapshotHash||null,scheduled:month!==currentMonthCaracas(),message }));
   } catch (error) {
     if (operation) await setState(operation, 'EXPENSE_CREATE', key, recordId ? 'PARTIAL' : 'ERROR', recordId).catch(() => null);
     return json(500, { success:false,protected:true,partial:Boolean(recordId),recordId:recordId||null,message:recordId?'El gasto pudo haberse creado antes del error. Revise la tabla antes de repetir.':'No se pudo crear el gasto.',detail:safeDisplayText(error.message,500) });

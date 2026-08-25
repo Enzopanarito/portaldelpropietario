@@ -8,6 +8,8 @@ const FIELDS=Object.freeze({
  status:'Estado del Gasto',
  origin:'Origen del Gasto',
  templateKey:'Clave de Plantilla',
+ recurringKey:'Clave Recurrente',
+ repeatActive:'Repetición Activa',
  voidedAt:'Anulado En',
  voidReason:'Motivo de Anulación',
  preparedAt:'Precargado En',
@@ -44,7 +46,7 @@ function isClosingExpense(record,month){
 }
 function filterClosingExpenses(records,month){return(records||[]).filter(record=>isClosingExpense(record,month))}
 function compactTemplate(record,targetMonth){
- const fields=fieldsOf(record),owners=Array.isArray(fields.Propietarios)?[...fields.Propietarios].sort():[];
+ const fields=fieldsOf(record),owners=Array.isArray(fields.Propietarios)?[...fields.Propietarios].map(item=>typeof item==='object'&&item?.id?item.id:item).sort():[];
  return{sourceId:clean(record&&record.id),targetMonth,concept:clean(fields.Concepto),amount:Number(fields.Monto||0),type:choice(fields['Tipo de Gasto']),mode:choice(fields['Forma de Pago']||'Bs BCV'),frequency:choice(fields.Frecuencia||'Eventual'),owners,plant:{domain:choice(fields[PLANT_FIELDS.domain]),category:choice(fields[PLANT_FIELDS.category]),retroactive:fields[PLANT_FIELDS.retroactive]===true}};
 }
 function templateKey(template){
@@ -53,17 +55,52 @@ function templateKey(template){
 function templateIdentity(template){
  return crypto.createHash('sha256').update(JSON.stringify({month:template.targetMonth,concept:template.concept,type:template.type,mode:template.mode,owners:template.owners,plant:template.plant})).digest('hex');
 }
+function legacyRecurringKey(record){
+ const fields=fieldsOf(record),template=compactTemplate(record,'');
+ const payload={concept:template.concept.toUpperCase(),type:template.type,mode:template.mode,owners:template.owners,plant:template.plant};
+ return choice(fields.Frecuencia)==='Fijo'?`REC-${crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0,32)}`:'';
+}
+function recurringKeyOf(record){
+ const fields=fieldsOf(record),explicit=clean(fields[FIELDS.recurringKey]);
+ return explicit||legacyRecurringKey(record);
+}
+function repeatActiveOf(record){
+ const fields=fieldsOf(record),explicit=clean(fields[FIELDS.recurringKey]);
+ // Airtable omite de la respuesta los checkboxes desmarcados. Por eso una
+ // plantilla con clave explícita solo está activa cuando el checkbox viene true.
+ // Los Fijo legacy sin clave se consideran activos hasta su migración.
+ if(explicit)return fields[FIELDS.repeatActive]===true;
+ return choice(fields.Frecuencia)==='Fijo'&&statusOf(record)!==STATUS.VOID;
+}
+function recordOrder(record){
+ return`${monthOf(record)||'0000-00'}|${clean(record?.createdTime)||''}|${clean(record?.id)||''}`;
+}
+function latestRecurringRecord(records,key,{beforeMonth='9999-99'}={}){
+ const matches=(records||[]).filter(record=>recurringKeyOf(record)===key&&(!monthOf(record)||monthOf(record)<beforeMonth));
+ return matches.sort((a,b)=>recordOrder(a).localeCompare(recordOrder(b))).at(-1)||null;
+}
+function recurringSources(records,targetMonth){
+ const keys=new Set((records||[]).map(recurringKeyOf).filter(Boolean)),sources=[];
+ for(const key of keys){const latest=latestRecurringRecord(records,key,{beforeMonth:targetMonth});if(latest)sources.push(latest)}
+ return sources;
+}
 function buildPreloadPlan(records,{closingMonth=currentMonthCaracas(),targetMonth=nextMonth(closingMonth),now=new Date()}={}){
- const all=records||[],targetRecords=all.filter(record=>monthOf(record)===targetMonth&&statusOf(record)!==STATUS.VOID),existingKeys=new Set(targetRecords.map(record=>templateKey(compactTemplate(record,targetMonth)))),existingIdentities=new Set(targetRecords.map(record=>templateIdentity(compactTemplate(record,targetMonth))));
- const fixed=filterActiveExpenses(all,closingMonth).filter(record=>choice(fieldsOf(record).Frecuencia)==='Fijo');
- const creates=[];
- for(const record of fixed){
+ const all=records||[],targetRecords=all.filter(record=>monthOf(record)===targetMonth),activeTargetRecords=targetRecords.filter(record=>statusOf(record)!==STATUS.VOID);
+ const existingKeys=new Set(activeTargetRecords.map(record=>templateKey(compactTemplate(record,targetMonth))));
+ const existingIdentities=new Set(activeTargetRecords.map(record=>templateIdentity(compactTemplate(record,targetMonth))));
+ // Un gasto recurrente anulado expresamente para el mes destino también bloquea
+ // su regeneración en ese mismo mes. Así "eliminar este mes" no mata la plantilla,
+ // pero tampoco reaparece por un reintento automático.
+ const existingRecurringKeys=new Set(targetRecords.map(recurringKeyOf).filter(Boolean));
+ const sources=recurringSources(all,targetMonth),creates=[];
+ for(const record of sources){
+  const recurringKey=recurringKeyOf(record);if(!recurringKey||!repeatActiveOf(record))continue;
   const template=compactTemplate(record,targetMonth),key=templateKey(template),identity=templateIdentity(template);
-  if(existingKeys.has(key)||existingIdentities.has(identity))continue;
-  existingKeys.add(key);existingIdentities.add(identity);
-  creates.push({sourceId:template.sourceId,key,fields:{Concepto:template.concept,Monto:template.amount,'Tipo de Gasto':template.type,'Forma de Pago':template.mode,Frecuencia:template.frequency,Propietarios:template.owners,[FIELDS.month]:targetMonth,[FIELDS.status]:STATUS.SCHEDULED,[FIELDS.origin]:ORIGIN.RECURRING,[FIELDS.templateKey]:key,[FIELDS.preparedAt]:now.toISOString(),...(template.plant.domain?{[PLANT_FIELDS.domain]:template.plant.domain,[PLANT_FIELDS.category]:template.plant.category,[PLANT_FIELDS.retroactive]:template.plant.retroactive}:{})}});
+  if(existingRecurringKeys.has(recurringKey)||existingKeys.has(key)||existingIdentities.has(identity))continue;
+  existingRecurringKeys.add(recurringKey);existingKeys.add(key);existingIdentities.add(identity);
+  creates.push({sourceId:template.sourceId,key,recurringKey,fields:{Concepto:template.concept,Monto:template.amount,'Tipo de Gasto':template.type,'Forma de Pago':template.mode,Frecuencia:'Fijo',Propietarios:template.owners,[FIELDS.month]:targetMonth,[FIELDS.status]:STATUS.SCHEDULED,[FIELDS.origin]:ORIGIN.RECURRING,[FIELDS.templateKey]:key,[FIELDS.recurringKey]:recurringKey,[FIELDS.repeatActive]:true,[FIELDS.preparedAt]:now.toISOString(),...(template.plant.domain?{[PLANT_FIELDS.domain]:template.plant.domain,[PLANT_FIELDS.category]:template.plant.category,[PLANT_FIELDS.retroactive]:template.plant.retroactive}:{})}});
  }
- return{schemaVersion:1,closingMonth,targetMonth,sourceCount:fixed.length,createCount:creates.length,creates};
+ return{schemaVersion:2,closingMonth,targetMonth,sourceCount:sources.filter(repeatActiveOf).length,createCount:creates.length,creates};
 }
 function buildRotationPlan(records,{closingMonth=currentMonthCaracas(),targetMonth=nextMonth(closingMonth),now=new Date()}={}){
  const close=filterActiveExpenses(records,closingMonth).filter(record=>monthOf(record)).map(record=>({id:record.id,fields:{[FIELDS.status]:STATUS.CLOSED,[FIELDS.closedAt]:now.toISOString()}}));
@@ -75,4 +112,4 @@ function newExpenseLifecycleFields({month=currentMonthCaracas(),status,origin=OR
  return{[FIELDS.month]:month,[FIELDS.status]:active,[FIELDS.origin]:origin,...(active===STATUS.SCHEDULED?{[FIELDS.preparedAt]:now.toISOString()}:{[FIELDS.activatedAt]:now.toISOString()})};
 }
 
-module.exports={FIELDS,STATUS,ORIGIN,clean,choice,fieldsOf,currentMonthCaracas,nextMonth,statusOf,monthOf,isActiveExpense,filterActiveExpenses,isClosingExpense,filterClosingExpenses,compactTemplate,templateKey,templateIdentity,buildPreloadPlan,buildRotationPlan,newExpenseLifecycleFields};
+module.exports={FIELDS,STATUS,ORIGIN,clean,choice,fieldsOf,currentMonthCaracas,nextMonth,statusOf,monthOf,isActiveExpense,filterActiveExpenses,isClosingExpense,filterClosingExpenses,compactTemplate,templateKey,templateIdentity,legacyRecurringKey,recurringKeyOf,repeatActiveOf,latestRecurringRecord,recurringSources,buildPreloadPlan,buildRotationPlan,newExpenseLifecycleFields};
