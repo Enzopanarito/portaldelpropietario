@@ -27,7 +27,19 @@ function parseBody(result) {
   catch (_) { return {}; }
 }
 function previewMode(env = process.env) {
-  return String(env.CONTEXT || '').toLowerCase() !== 'production';
+  const context = String(env.CONTEXT || '').trim().toLowerCase();
+  const dataEnvironment = String(env.VLA_DATA_ENVIRONMENT || '').trim().toLowerCase();
+  // Un Deploy Preview/branch/dev explícito jamás debe consultar producción,
+  // aunque herede por accidente VLA_DATA_ENVIRONMENT=production del sitio.
+  if (['deploy-preview', 'branch-deploy', 'dev'].includes(context)) return true;
+  // Producción real mantiene prioridad cuando CONTEXT la identifica.
+  if (context === 'production') return false;
+  // Los deploys CLI de producción pueden no traer CONTEXT; en ese caso la
+  // variable de datos conserva el fail-safe hacia el historial real.
+  if (dataEnvironment === 'production') return false;
+  if (['staging', 'local', 'preview', 'test'].includes(dataEnvironment)) return true;
+  // Un entorno desconocido nunca recibe fixture ficticio.
+  return false;
 }
 function previewScore(ownerId, now = new Date()) {
   const month = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit' }).format(now);
@@ -37,15 +49,19 @@ function previewScore(ownerId, now = new Date()) {
     return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
   }
   return {
-    version: 'vla-punctuality-v1', readOnly: true, preview: true, ownerId: String(ownerId || ''), casa: 4,
-    score: 92, level: { key: 'EXCELENTE', label: 'Excelente', color: '#0f7a3a' }, evaluatedMonths: 3,
-    targetMonths: 6, forming: true, streak: 1, trend: { key: 'SUBIENDO', label: 'Subiendo', symbol: '↑' }, dueDay: 10,
+    version: 'vla-punctuality-v2', readOnly: true, preview: true, ownerId: String(ownerId || ''), casa: 4,
+    score: 78, level: { key: 'ACEPTABLE', label: 'Aceptable', color: '#e8ba25' }, evaluatedMonths: 6,
+    targetMonths: 12, forming: false, onTimeMonths: 3, onTimeRate: 50, severityScore: 86,
+    streak: 1, trend: { key: 'SUBIENDO', label: 'Subiendo', symbol: '↑' }, dueDay: 10,
     history: [
-      { month, score: 100, state: 'PUNTUAL', finalized: true, completionDate: `${month}-08`, completionDay: 8 },
-      { month: previous(month, -1), score: 85, state: 'LEVE_RETRASO', finalized: true, completionDate: `${previous(month, -1)}-13`, completionDay: 13 },
-      { month: previous(month, -2), score: 100, state: 'PUNTUAL', finalized: true, completionDate: `${previous(month, -2)}-07`, completionDay: 7 }
+      { month, score: 100, state: 'PUNTUAL', finalized: true, completionDate: `${month}-08`, completionDay: 8, source: 'PREVIEW' },
+      { month: previous(month, -1), score: 80, state: 'LEVE_RETRASO', finalized: true, completionDate: `${previous(month, -1)}-13`, completionDay: 13, source: 'PREVIEW' },
+      { month: previous(month, -2), score: 100, state: 'PUNTUAL', finalized: true, completionDate: `${previous(month, -2)}-07`, completionDay: 7, source: 'PREVIEW' },
+      { month: previous(month, -3), score: 60, state: 'RETRASO', finalized: true, completionDate: `${previous(month, -3)}-18`, completionDay: 18, source: 'PREVIEW' },
+      { month: previous(month, -4), score: 100, state: 'PUNTUAL', finalized: true, completionDate: `${previous(month, -4)}-09`, completionDay: 9, source: 'PREVIEW' },
+      { month: previous(month, -5), score: 40, state: 'TARDIO', finalized: true, completionDate: `${previous(month, -5)}-24`, completionDay: 24, source: 'PREVIEW' }
     ],
-    advice: 'Mantén la totalidad de tus obligaciones ordinarias cubierta antes del día 10 para conservar este nivel.',
+    advice: 'Los meses puntuales pesan mucho. Mantén todos tus pagos definitivos dentro de los primeros 10 días.',
     generatedAt: new Date().toISOString()
   };
 }
@@ -61,6 +77,9 @@ function sanitizedScore(score) {
     evaluatedMonths: score.evaluatedMonths,
     targetMonths: score.targetMonths,
     forming: score.forming,
+    onTimeMonths: score.onTimeMonths,
+    onTimeRate: score.onTimeRate,
+    severityScore: score.severityScore,
     streak: score.streak,
     trend: score.trend,
     dueDay: score.dueDay,
@@ -71,7 +90,7 @@ function sanitizedScore(score) {
       finalized: item.finalized,
       completionDate: item.completionDate || null,
       completionDay: item.completionDay || null,
-      requiredReference: item.requiredReference,
+      paymentCount: item.paymentCount || 0,
       remainingReference: item.remainingReference,
       source: item.source
     })),
@@ -109,9 +128,8 @@ function createHandler(deps = {}) {
         queryStringParameters: { ...(event.queryStringParameters || {}), force: '1' }
       });
       const auditFormula = encodeURIComponent("LEFT({Concepto},10)='AUDITORIA|'");
-      const [publicResult, expenses, history] = await Promise.all([
+      const [publicResult, history] = await Promise.all([
         publicResultPromise,
-        listAll(TABLES.expenses, '', token, baseId, counter),
         listAll(TABLES.history, `?filterByFormula=${auditFormula}`, token, baseId, counter)
       ]);
       const payload = parseBody(publicResult);
@@ -122,14 +140,13 @@ function createHandler(deps = {}) {
       const score = sanitizedScore(scoreBuilder({
         owner,
         payments: payload.pagos || [],
-        expenses,
         history,
         dueDay,
         now: now(),
-        months: 6
+        months: 12
       }));
       scoreCache.set(ownerId, { value: score, expiresAt: Date.now() + CACHE_TTL_MS });
-      return json(200, score, counter, { 'X-Punctuality-Source': 'LEDGER_AUDIT' });
+      return json(200, score, counter, { 'X-Punctuality-Source': 'LEDGER_PAYMENT_HISTORY' });
     } catch (error) {
       console.error(JSON.stringify({ event: 'VLA_PUNCTUALITY_READ_ERROR', message: String(error && error.message || '').slice(0, 300) }));
       return json(503, { message: 'Índice temporalmente no disponible. Tu estado de cuenta no se ve afectado.' }, counter);

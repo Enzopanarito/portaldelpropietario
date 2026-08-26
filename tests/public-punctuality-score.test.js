@@ -1,28 +1,55 @@
 'use strict';
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {createHandler}=require('../netlify/functions/public-punctuality-score');
+const {createHandler,previewMode}=require('../netlify/functions/public-punctuality-score');
 
 const OWNER_ID='recABCDEFGHIJKLMN';
 function response(statusCode,body){return{statusCode,body:JSON.stringify(body)}}
+function fakeScore(score=44,casa=10){return{version:'vla-punctuality-v2',readOnly:true,ownerId:OWNER_ID,casa,score,level:{key:score>=50?'TARDIO':'MOROSO',label:score>=50?'Tardío':'Moroso',color:'#d94b4b'},evaluatedMonths:8,targetMonths:12,forming:false,onTimeMonths:2,onTimeRate:25,severityScore:65,streak:0,trend:{key:'BAJANDO',label:'Bajando',symbol:'↓'},dueDay:10,history:[],advice:'Prueba',generatedAt:'2026-08-25T12:00:00.000Z'}}
 
 test('preview devuelve fixture y nunca consulta Airtable',async()=>{
   let reads=0;
-  const handler=createHandler({env:{CONTEXT:'deploy-preview'},cache:new Map(),getAll:async()=>{reads++;throw new Error('no debe leer Airtable')},now:()=>new Date('2026-08-25T12:00:00-04:00')});
+  const handler=createHandler({env:{CONTEXT:'deploy-preview',VLA_DATA_ENVIRONMENT:'staging'},cache:new Map(),getAll:async()=>{reads++;throw new Error('no debe leer Airtable')},now:()=>new Date('2026-08-25T12:00:00-04:00')});
   const result=await handler({httpMethod:'GET',queryStringParameters:{ownerId:OWNER_ID}}),body=JSON.parse(result.body);
-  assert.equal(result.statusCode,200);assert.equal(body.preview,true);assert.equal(body.readOnly,true);assert.equal(reads,0);
+  assert.equal(result.statusCode,200);assert.equal(body.preview,true);assert.equal(body.version,'vla-punctuality-v2');assert.equal(body.targetMonths,12);assert.equal(body.readOnly,true);assert.equal(reads,0);
+});
+
+test('Deploy Preview explícito nunca consulta producción aunque herede VLA_DATA_ENVIRONMENT=production',async()=>{
+  assert.equal(previewMode({CONTEXT:'deploy-preview',VLA_DATA_ENVIRONMENT:'production'}),true);
+  let reads=0;
+  const handler=createHandler({env:{CONTEXT:'deploy-preview',VLA_DATA_ENVIRONMENT:'production'},cache:new Map(),getAll:async()=>{reads++;throw new Error('no debe leer Airtable')},now:()=>new Date('2026-08-25T12:00:00-04:00')});
+  const result=await handler({httpMethod:'GET',queryStringParameters:{ownerId:OWNER_ID}}),body=JSON.parse(result.body);
+  assert.equal(result.statusCode,200);assert.equal(body.preview,true);assert.equal(result.headers['X-Punctuality-Source'],'PREVIEW_FIXTURE');assert.equal(reads,0);
+});
+
+test('un entorno desconocido o producción real jamás activa el fixture ficticio',()=>{
+  assert.equal(previewMode({}),false);
+  assert.equal(previewMode({VLA_DATA_ENVIRONMENT:'production'}),false);
+  assert.equal(previewMode({CONTEXT:'production'}),false);
+  assert.equal(previewMode({CONTEXT:'deploy-preview',VLA_DATA_ENVIRONMENT:'staging'}),true);
+  assert.equal(previewMode({CONTEXT:'branch-deploy',VLA_DATA_ENVIRONMENT:'production'}),true);
+  assert.equal(previewMode({VLA_DATA_ENVIRONMENT:'local'}),true);
+});
+
+test('producción sin CONTEXT pero con VLA_DATA_ENVIRONMENT=production calcula datos reales',async()=>{
+  let built=0;
+  const owner={id:OWNER_ID,Casa:10,totalPagadero:333.17,deudaVencidaUsd:120,deudaVencidaBs:213.17};
+  const publicHandler=async()=>response(200,{propietarios:[owner],pagos:[],automation:{payment:{dueDay:10}}});
+  const handler=createHandler({env:{VLA_DATA_ENVIRONMENT:'production',AIRTABLE_API_TOKEN:'test-token',AIRTABLE_BASE_ID:'app4nE4ReGRi2SuP2'},cache:new Map(),publicHandler,getAll:async()=>[],buildPunctualityScore:()=>{built++;return fakeScore(44,10)}});
+  const result=await handler({httpMethod:'GET',queryStringParameters:{ownerId:OWNER_ID}}),body=JSON.parse(result.body);
+  assert.equal(result.statusCode,200);assert.equal(built,1);assert.equal(body.preview,undefined);assert.equal(body.score,44);assert.equal(body.targetMonths,12);assert.equal(result.headers['X-Punctuality-Source'],'LEDGER_PAYMENT_HISTORY');
 });
 
 test('producción solo ejecuta lecturas y entrega contrato read-only',async()=>{
   const calls=[];
-  const owner={id:OWNER_ID,Casa:1,Alicuota:1,'Deuda Anterior':0,'Deuda Anterior USD':0,'Deuda Anterior Bs Ref':0};
+  const owner={id:OWNER_ID,Casa:1,totalPagadero:0,deudaVencidaUsd:0,deudaVencidaBs:0};
   const publicHandler=async()=>response(200,{propietarios:[owner],pagos:[],automation:{payment:{dueDay:10}}});
   const getAll=async(table,query)=>{calls.push({table,query});return[]};
   let built=0;
-  const buildPunctualityScore=args=>{built++;assert.equal(args.owner.id,OWNER_ID);assert.equal(args.dueDay,10);return{version:'vla-punctuality-v1',readOnly:true,ownerId:OWNER_ID,casa:1,score:88,level:{key:'MUY_PUNTUAL',label:'Muy puntual',color:'#36a55c'},evaluatedMonths:1,targetMonths:6,forming:true,streak:0,trend:{key:'FORMACION',label:'En formación',symbol:'•'},dueDay:10,history:[],advice:'Prueba',generatedAt:'2026-08-25T12:00:00.000Z'}};
+  const buildPunctualityScore=args=>{built++;assert.equal(args.owner.id,OWNER_ID);assert.equal(args.dueDay,10);assert.equal(args.months,12);return fakeScore(88,1)};
   const handler=createHandler({env:{CONTEXT:'production',AIRTABLE_API_TOKEN:'test-token',AIRTABLE_BASE_ID:'app4nE4ReGRi2SuP2'},cache:new Map(),publicHandler,getAll,buildPunctualityScore,now:()=>new Date('2026-08-25T12:00:00-04:00')});
   const result=await handler({httpMethod:'GET',queryStringParameters:{ownerId:OWNER_ID}}),body=JSON.parse(result.body);
-  assert.equal(result.statusCode,200);assert.equal(result.headers['X-Punctuality-Read-Only'],'true');assert.equal(body.readOnly,true);assert.equal(body.score,88);assert.equal(built,1);assert.equal(calls.length,2);assert.ok(calls.every(call=>typeof call.table==='string'));
+  assert.equal(result.statusCode,200);assert.equal(result.headers['X-Punctuality-Read-Only'],'true');assert.equal(body.readOnly,true);assert.equal(body.score,88);assert.equal(body.onTimeRate,25);assert.equal(built,1);assert.equal(calls.length,1);assert.ok(calls[0].query.includes('AUDITORIA'));
 });
 
 test('un fallo del índice falla suave y no contamina el estado de cuenta',async()=>{

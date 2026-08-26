@@ -15,12 +15,13 @@ test('producción empaqueta e inyecta ambos assets del índice',()=>{
   assert.ok(fs.existsSync(path.join(ROOT,'owner-punctuality-score-v1.js')));
 });
 
-test('el diseño tiene reglas separadas para escritorio y móvil sin ancho fijo destructivo',()=>{
+test('el diseño compacto tiene reglas separadas para escritorio y móvil sin ancho fijo destructivo',()=>{
   const css=fs.readFileSync(path.join(ROOT,'owner-punctuality-score-v1.css'),'utf8');
-  assert.match(css,/grid-template-columns:minmax\(320px,.95fr\) minmax\(360px,1.05fr\)/);
+  assert.match(css,/grid-template-columns:minmax\(280px,.88fr\) minmax\(360px,1.12fr\)/);
+  assert.match(css,/\.vla-score-gauge\{[^}]*width:min\(100%,330px\)/);
   assert.match(css,/@media\(max-width:1023px\)/);
   assert.match(css,/@media\(max-width:640px\)/);
-  assert.match(css,/width:min\(100%,305px\)/);
+  assert.match(css,/width:min\(100%,270px\)/);
   assert.match(css,/prefers-reduced-motion/);
 });
 
