@@ -29,9 +29,16 @@ function parseBody(result) {
 function previewMode(env = process.env) {
   const context = String(env.CONTEXT || '').trim().toLowerCase();
   const dataEnvironment = String(env.VLA_DATA_ENVIRONMENT || '').trim().toLowerCase();
-  if (context === 'production' || dataEnvironment === 'production') return false;
+  // Un Deploy Preview/branch/dev explícito jamás debe consultar producción,
+  // aunque herede por accidente VLA_DATA_ENVIRONMENT=production del sitio.
   if (['deploy-preview', 'branch-deploy', 'dev'].includes(context)) return true;
+  // Producción real mantiene prioridad cuando CONTEXT la identifica.
+  if (context === 'production') return false;
+  // Los deploys CLI de producción pueden no traer CONTEXT; en ese caso la
+  // variable de datos conserva el fail-safe hacia el historial real.
+  if (dataEnvironment === 'production') return false;
   if (['staging', 'local', 'preview', 'test'].includes(dataEnvironment)) return true;
+  // Un entorno desconocido nunca recibe fixture ficticio.
   return false;
 }
 function previewScore(ownerId, now = new Date()) {
