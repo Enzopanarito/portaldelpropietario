@@ -22,8 +22,11 @@
     if(!host)return;
     const estado=document.getElementById('estado');
     const reportBtn=document.getElementById('reportBtn');
-    const paymentSection=reportBtn&&reportBtn.closest('section');
-    if(mobileLayout()&&paymentSection){if(host.previousElementSibling!==paymentSection)paymentSection.insertAdjacentElement('afterend',host);return}
+    const paymentCard=reportBtn&&reportBtn.closest('.card');
+    if(mobileLayout()&&paymentCard){
+      if(host.previousElementSibling!==paymentCard)paymentCard.insertAdjacentElement('afterend',host);
+      return;
+    }
     if(estado&&host.previousElementSibling!==estado)estado.insertAdjacentElement('afterend',host);
   }
   function ensureHost(){let host=document.getElementById('vla-punctuality-score');if(!host){host=document.createElement('section');host.id='vla-punctuality-score';host.className='vla-punctuality-card hidden';host.setAttribute('data-vla-owner-punctuality',VERSION);host.setAttribute('aria-live','polite')}placeHost(host);return host}
