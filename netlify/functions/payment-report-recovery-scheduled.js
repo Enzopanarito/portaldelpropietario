@@ -6,7 +6,8 @@ const {TABLES,listAll,fieldsOf}=require('./_shared/_payment_report_automation');
 const {createProcessingStore}=require('./_shared/_payment_processing_store');
 const {sign}=require('./_shared/_internal_job_auth');
 
-const MIN_RECOVERY_AGE_MS=20*60*1000;
+const MIN_RECOVERY_AGE_MS=3*60*1000;
+const DISPATCH_TIMEOUT_MS=4000;
 
 function reportCreatedAtMs(report){
  const value=fieldsOf(report)['Fecha y Hora del Reporte']||report?.createdTime||'';
@@ -26,12 +27,34 @@ async function classifyRecoveryCandidate(report,{nowMs=Date.now(),readProcessing
  }
  return{eligible:true,reason:'RECOVERY_ELIGIBLE'};
 }
-async function queue(reportId){
- const site=String(process.env.URL||'').replace(/\/$/,'');if(!site)throw new Error('Falta URL del sitio.');
- const payload=JSON.stringify({reportId}),authorization=sign(payload);
- const response=await fetch(`${site}/api/vla/payment-report-analyzer`,{method:'POST',headers:{'Content-Type':'application/json','x-vla-job-timestamp':authorization.timestamp,'x-vla-job-signature':authorization.signature},body:payload});
- return{reportId,queued:response.ok,status:response.status};
+function siteBaseUrl(env=process.env){return String(env.URL||env.DEPLOY_PRIME_URL||'').replace(/\/$/,'')}
+async function postAnalyzer(endpoint,payload,authorization,{fetchImpl=fetch,timeoutMs=DISPATCH_TIMEOUT_MS}={}){
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
+ try{
+  const response=await fetchImpl(endpoint,{method:'POST',headers:{'Content-Type':'application/json','x-vla-job-timestamp':authorization.timestamp,'x-vla-job-signature':authorization.signature},body:payload,signal:controller.signal});
+  return{ok:response.ok,status:response.status};
+ }finally{clearTimeout(timer)}
 }
+async function dispatchBackgroundAnalysis(reportId,{fetchImpl=fetch,siteUrl=siteBaseUrl()}={}){
+ const id=String(reportId||'').trim();
+ if(!/^rec[A-Za-z0-9]{14}$/.test(id))throw new Error('Reporte inválido para recuperación.');
+ if(!siteUrl)throw new Error('Falta URL del sitio.');
+ const payload=JSON.stringify({reportId:id}),authorization=sign(payload),attempts=[];
+ const endpoints=[
+  {route:'DIRECT_FUNCTION',url:`${siteUrl}/.netlify/functions/payment-report-analyzer-background`},
+  {route:'API_REDIRECT',url:`${siteUrl}/api/vla/payment-report-analyzer`}
+ ];
+ for(const endpoint of endpoints){
+  try{
+   const result=await postAnalyzer(endpoint.url,payload,authorization,{fetchImpl});
+   attempts.push({route:endpoint.route,status:result.status,ok:result.ok});
+   if(result.ok)return{reportId:id,queued:true,status:result.status,route:endpoint.route,attempts};
+  }catch(error){attempts.push({route:endpoint.route,status:'NETWORK_ERROR',ok:false,error:String(error?.name||error?.message||'ERROR').slice(0,80)})}
+ }
+ const last=attempts[attempts.length-1]||{};
+ return{reportId:id,queued:false,status:last.status||'DISPATCH_FAILED',route:null,attempts};
+}
+async function queue(reportId){return dispatchBackgroundAnalysis(reportId)}
 const handler=async function(){
  try{
   const mode=await getAccessMode(),automation=await getAutomationRules(mode),fields=mode.record?.fields||{};
@@ -52,6 +75,11 @@ const handler=async function(){
 
 exports.handler=withAirtableUsage('payment-report-recovery-scheduled',handler);
 exports.MIN_RECOVERY_AGE_MS=MIN_RECOVERY_AGE_MS;
+exports.DISPATCH_TIMEOUT_MS=DISPATCH_TIMEOUT_MS;
 exports.reportCreatedAtMs=reportCreatedAtMs;
 exports.reportAgeMs=reportAgeMs;
 exports.classifyRecoveryCandidate=classifyRecoveryCandidate;
+exports.siteBaseUrl=siteBaseUrl;
+exports.postAnalyzer=postAnalyzer;
+exports.dispatchBackgroundAnalysis=dispatchBackgroundAnalysis;
+exports.queue=queue;
