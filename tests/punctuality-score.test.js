@@ -5,8 +5,8 @@ const score=require('../netlify/functions/_shared/_punctuality_score');
 
 const OWNER={id:'recOWNER00000001',Casa:1,Alicuota:1,'Deuda Anterior':0,'Deuda Anterior USD':0,'Deuda Anterior Bs Ref':0};
 function expense({id='recEXPENSE0000001',month='2026-08',amount=100,mode='Bs BCV',type='Gasto Común',created='2026-08-01T12:00:00.000Z',frequency='',key='' }={}){return{id,createdTime:created,fields:{Concepto:'Cuota ordinaria',Monto:amount,'Tipo de Gasto':type,Propietarios:[OWNER.id],'Forma de Pago':mode,'Mes de Aplicación':month,'Estado del Gasto':'Activo',Frecuencia:frequency,'Clave Recurrente':key}}}
-function payment({id='recPAYMENT0000001',date='2026-08-05',amount=100,mode='Bs BCV'}={}){return{id,fields:{'Propietario que Paga':[OWNER.id],'Fecha de Pago':date,'Equivalente USD Aplicado':amount,'Monto Pagado':amount,'Forma de Pago':mode}}}
-function audit(month,label,amount){return{id:`recAUDIT${Math.random().toString(36).slice(2,12)}`.slice(0,17),fields:{Concepto:`AUDITORIA|${month}|Casa 1|${label} | Propietario`,'Monto Cargado':amount}}}
+function payment({id='recPAYMENT0000001',date='2026-08-05',amount=100,mode='Bs BCV',ownerId=OWNER.id}={}){return{id,fields:{'Propietario que Paga':[ownerId],'Fecha de Pago':date,'Equivalente USD Aplicado':amount,'Monto Pagado':amount,'Forma de Pago':mode}}}
+function audit(month,label,amount,casa=1){return{id:`recAUDIT${Math.random().toString(36).slice(2,12)}`.slice(0,17),fields:{Concepto:`AUDITORIA|${month}|Casa ${casa}|${label} | Propietario`,'Monto Cargado':amount}}}
 
 test('un pago parcial temprano no vuelve puntual un mes hasta cubrirlo completo',()=>{
   const result=score.completionDate({owner:OWNER,expenses:[expense()],month:'2026-08',dueDay:10,prior:{usd:0,bs:0},payments:[payment({date:'2026-08-05',amount:25,id:'recPAYMENT0000001'}),payment({date:'2026-08-14',amount:75,id:'recPAYMENT0000002'})]});
@@ -65,4 +65,23 @@ test('el índice pondera meses recientes y declara formación con historial inco
   const history=[audit('2026-07','Saldo inicial USD',0),audit('2026-07','Saldo inicial Bs Ref',0)];
   const result=score.buildPunctualityScore({owner:OWNER,payments,expenses,history,dueDay:10,now:new Date('2026-08-25T16:00:00-04:00'),months:6});
   assert.equal(result.score,93);assert.equal(result.evaluatedMonths,2);assert.equal(result.forming,true);assert.equal(result.streak,1);assert.equal(result.trend.key,'SUBIENDO');assert.equal(result.readOnly,true);
+});
+
+test('regresión Casa 10: deuda arrastrada y pagos tardíos no pueden producir nivel Excelente',()=>{
+  const owner10={id:'rec9pzoVmBB5DYeH2',Casa:10,Alicuota:.06186,'Deuda Anterior':333.17,'Deuda Anterior USD':120,'Deuda Anterior Bs Ref':213.17};
+  const expenses=[
+    {id:'recJULCOMMON00001',createdTime:'2026-07-01T12:00:00.000Z',fields:{Concepto:'Gastos comunes julio',Monto:1360,'Tipo de Gasto':'Gasto Común','Forma de Pago':'Bs BCV','Mes de Aplicación':'2026-07','Estado del Gasto':'Cerrado',Frecuencia:'Fijo'}},
+    {id:'recAUGCOMMON00001',createdTime:'2026-07-31T12:00:00.000Z',fields:{Concepto:'Gastos comunes agosto',Monto:1360,'Tipo de Gasto':'Gasto Común','Forma de Pago':'Bs BCV','Mes de Aplicación':'2026-08','Estado del Gasto':'Activo',Frecuencia:'Fijo'}}
+  ];
+  const payments=[
+    payment({id:'recH10JUL100USD1',date:'2026-07-10',amount:100,mode:'USD',ownerId:owner10.id}),
+    payment({id:'recH10JUL050USD1',date:'2026-07-11',amount:50,mode:'USD',ownerId:owner10.id}),
+    payment({id:'recH10AUG170USD1',date:'2026-08-07',amount:170,mode:'USD',ownerId:owner10.id}),
+    payment({id:'recH10AUG214BS01',date:'2026-08-07',amount:214.75,mode:'Bs BCV',ownerId:owner10.id})
+  ];
+  const history=[audit('2026-07','Saldo inicial USD',0,10),audit('2026-07','Saldo inicial Bs Ref',0,10)];
+  const result=score.buildPunctualityScore({owner:owner10,payments,expenses,history,dueDay:10,now:new Date('2026-08-25T16:00:00-04:00'),months:6});
+  assert.equal(result.history[0].month,'2026-08');assert.equal(result.history[0].score,55);
+  assert.equal(result.history[1].month,'2026-07');assert.equal(result.history[1].score,30);
+  assert.equal(result.score,44);assert.equal(result.level.key,'TARDIO');assert.notEqual(result.level.key,'EXCELENTE');assert.equal(result.evaluatedMonths,2);assert.equal(result.forming,true);
 });
