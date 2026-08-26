@@ -1,0 +1,38 @@
+name: Diagnose Owner Preview HTTP
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Wait for preview and probe owner endpoints
+        shell: bash
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          base="https://deploy-preview-${PR_NUMBER}--villalosapamates.netlify.app"
+          for attempt in $(seq 1 60); do
+            code="$(curl -L -sS -o /tmp/release.json -w '%{http_code}' --max-time 20 "$base/release.json?probe=${GITHUB_RUN_ID}-${attempt}" || true)"
+            [ "$code" = "200" ] && break
+            sleep 5
+          done
+          probe() {
+            label="$1"; url="$2"
+            code="$(curl -L -sS -o "/tmp/${label}.body" -w '%{http_code}' --max-time 30 "$url" || true)"
+            size="$(wc -c < "/tmp/${label}.body" 2>/dev/null || echo 0)"
+            printf '%-28s HTTP=%s bytes=%s\n' "$label" "$code" "$size"
+            head -c 220 "/tmp/${label}.body" | tr '\n' ' '; echo
+          }
+          probe root "$base/?probe=${GITHUB_RUN_ID}"
+          probe public_data "$base/api/vla/public-data?force=1&probe=${GITHUB_RUN_ID}"
+          probe score "$base/.netlify/functions/public-punctuality-score?ownerId=recABCDEFGHIJKLMN&probe=${GITHUB_RUN_ID}"
+          probe plant "$base/api/vla/plant?ownerId=recABCDEFGHIJKLMN&probe=${GITHUB_RUN_ID}"
+          probe bcv "$base/.netlify/functions/bcv-rate?probe=${GITHUB_RUN_ID}"
