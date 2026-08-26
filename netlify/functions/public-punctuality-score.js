@@ -27,7 +27,16 @@ function parseBody(result) {
   catch (_) { return {}; }
 }
 function previewMode(env = process.env) {
-  return String(env.CONTEXT || '').toLowerCase() !== 'production';
+  const context = String(env.CONTEXT || '').trim().toLowerCase();
+  const dataEnvironment = String(env.VLA_DATA_ENVIRONMENT || '').trim().toLowerCase();
+
+  // Fail-safe: un entorno no identificado jamás debe recibir datos ficticios.
+  // Producción se reconoce tanto por CONTEXT como por VLA_DATA_ENVIRONMENT,
+  // porque los deploys CLI pueden no exponer CONTEXT de forma consistente.
+  if (context === 'production' || dataEnvironment === 'production') return false;
+  if (['deploy-preview', 'branch-deploy', 'dev'].includes(context)) return true;
+  if (['staging', 'local', 'preview', 'test'].includes(dataEnvironment)) return true;
+  return false;
 }
 function previewScore(ownerId, now = new Date()) {
   const month = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit' }).format(now);
