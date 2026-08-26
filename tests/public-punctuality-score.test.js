@@ -14,12 +14,20 @@ test('preview devuelve fixture y nunca consulta Airtable',async()=>{
   assert.equal(result.statusCode,200);assert.equal(body.preview,true);assert.equal(body.version,'vla-punctuality-v2');assert.equal(body.targetMonths,12);assert.equal(body.readOnly,true);assert.equal(reads,0);
 });
 
-test('un entorno desconocido o producción jamás activa el fixture ficticio',()=>{
+test('Deploy Preview explícito nunca consulta producción aunque herede VLA_DATA_ENVIRONMENT=production',async()=>{
+  assert.equal(previewMode({CONTEXT:'deploy-preview',VLA_DATA_ENVIRONMENT:'production'}),true);
+  let reads=0;
+  const handler=createHandler({env:{CONTEXT:'deploy-preview',VLA_DATA_ENVIRONMENT:'production'},cache:new Map(),getAll:async()=>{reads++;throw new Error('no debe leer Airtable')},now:()=>new Date('2026-08-25T12:00:00-04:00')});
+  const result=await handler({httpMethod:'GET',queryStringParameters:{ownerId:OWNER_ID}}),body=JSON.parse(result.body);
+  assert.equal(result.statusCode,200);assert.equal(body.preview,true);assert.equal(result.headers['X-Punctuality-Source'],'PREVIEW_FIXTURE');assert.equal(reads,0);
+});
+
+test('un entorno desconocido o producción real jamás activa el fixture ficticio',()=>{
   assert.equal(previewMode({}),false);
   assert.equal(previewMode({VLA_DATA_ENVIRONMENT:'production'}),false);
   assert.equal(previewMode({CONTEXT:'production'}),false);
-  assert.equal(previewMode({CONTEXT:'deploy-preview',VLA_DATA_ENVIRONMENT:'production'}),false);
   assert.equal(previewMode({CONTEXT:'deploy-preview',VLA_DATA_ENVIRONMENT:'staging'}),true);
+  assert.equal(previewMode({CONTEXT:'branch-deploy',VLA_DATA_ENVIRONMENT:'production'}),true);
   assert.equal(previewMode({VLA_DATA_ENVIRONMENT:'local'}),true);
 });
 
