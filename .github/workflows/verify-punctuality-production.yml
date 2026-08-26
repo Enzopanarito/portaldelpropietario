@@ -1,0 +1,139 @@
+name: Verify Punctuality Production
+
+on:
+  workflow_run:
+    workflows: ["Deploy Netlify Production"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  verify-punctuality-production:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact production commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Wait for exact production release
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_release="${RUNNER_TEMP}/punctuality-release.json"
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error --location --max-time 30 \
+              "https://villalosapamates.netlify.app/release.json?punctuality=${GITHUB_RUN_ID}-${attempt}" \
+              --output "$remote_release" \
+              && node scripts/verify-release-contract.js release.json "$remote_release"; then
+              echo "Exact production release detected."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Exact production release was not detected."
+          exit 1
+
+      - name: Audit 15 houses against real payment dates
+        env:
+          TARGET_URL: https://villalosapamates.netlify.app
+        run: |
+          node <<'NODE'
+          const fs=require('fs');
+          const target=String(process.env.TARGET_URL||'').replace(/\/$/,'');
+          const dueDefault=10;
+          function monthOf(date){return String(date||'').slice(0,7)}
+          function linked(value){return Array.isArray(value)?value.map(item=>typeof item==='string'?item:item&&item.id).filter(Boolean):[]}
+          async function json(url){
+            const response=await fetch(url,{headers:{Accept:'application/json','Cache-Control':'no-cache','User-Agent':'VLA-Punctuality-15of15'}});
+            const text=await response.text();
+            let body;try{body=JSON.parse(text)}catch(_){throw new Error(`JSON inválido ${response.status} ${url}`)}
+            if(!response.ok)throw new Error(`HTTP ${response.status} ${url}: ${body.message||text.slice(0,160)}`);
+            return {response,body};
+          }
+          (async()=>{
+            const {body:publicData}=await json(`${target}/api/vla/public-data?force=1&punctuality-audit=${Date.now()}`);
+            const owners=(publicData.propietarios||[]).slice().sort((a,b)=>Number(a.Casa)-Number(b.Casa));
+            const payments=publicData.pagos||[];
+            if(owners.length!==15)throw new Error(`Fuente pública devolvió ${owners.length}/15 casas.`);
+            const rows=[];
+            for(const owner of owners){
+              const ownerId=String(owner.id||'');
+              const {response,body}=await json(`${target}/.netlify/functions/public-punctuality-score?ownerId=${encodeURIComponent(ownerId)}&audit=${Date.now()}`);
+              const source=response.headers.get('x-punctuality-source')||'';
+              if(body.preview===true||source==='PREVIEW_FIXTURE')throw new Error(`Casa ${owner.Casa}: producción entregó fixture ficticio.`);
+              if(body.version!=='vla-punctuality-v2')throw new Error(`Casa ${owner.Casa}: versión inesperada ${body.version}.`);
+              if(body.readOnly!==true)throw new Error(`Casa ${owner.Casa}: contrato no es read-only.`);
+              if(Number(body.casa)!==Number(owner.Casa))throw new Error(`Casa ${owner.Casa}: endpoint respondió casa ${body.casa}.`);
+              if(body.score!==null&&(!Number.isFinite(Number(body.score))||Number(body.score)<0||Number(body.score)>100))throw new Error(`Casa ${owner.Casa}: score inválido ${body.score}.`);
+              if(!['LEDGER_PAYMENT_HISTORY','MEMORY_CACHE'].includes(source))throw new Error(`Casa ${owner.Casa}: fuente inesperada ${source}.`);
+
+              const ownerPayments=payments.filter(p=>linked((p.fields||{})['Propietario que Paga']).includes(ownerId));
+              for(const item of body.history||[]){
+                if(!item.completionDate)continue;
+                if(!['PAYMENT_HISTORY','AUDIT_CLOSE','CURRENT_LEDGER'].includes(String(item.source||'')))continue;
+                const month=String(item.month||'');
+                const dates=ownerPayments.map(p=>String((p.fields||{})['Fecha de Pago']||'')).filter(d=>monthOf(d)===month).sort();
+                if(!dates.length)continue;
+                const latest=dates[dates.length-1];
+                if(String(item.completionDate)!==latest)throw new Error(`Casa ${owner.Casa} ${month}: fecha índice ${item.completionDate} != último pago real ${latest}.`);
+              }
+
+              rows.push({
+                casa:Number(owner.Casa),
+                ownerId,
+                score:body.score,
+                level:body.level&&body.level.key,
+                label:body.level&&body.level.label,
+                evaluatedMonths:Number(body.evaluatedMonths||0),
+                onTimeRate:body.onTimeRate,
+                streak:Number(body.streak||0),
+                source,
+                history:(body.history||[]).map(x=>({month:x.month,score:x.score,state:x.state,completionDate:x.completionDate,source:x.source}))
+              });
+            }
+            const house10=rows.find(row=>row.casa===10);
+            if(!house10)throw new Error('Falta Casa 10 en auditoría.');
+            if(house10.level==='EXCELENTE')throw new Error(`Casa 10 no puede quedar Excelente con el historial real actual: score ${house10.score}.`);
+            if(rows.some(row=>row.source==='PREVIEW_FIXTURE'))throw new Error('Se detectó fixture de preview en producción.');
+            fs.writeFileSync('punctuality-production-audit.json',JSON.stringify({generatedAt:new Date().toISOString(),houses:rows},null,2));
+            console.table(rows.map(({casa,score,label,evaluatedMonths,onTimeRate,streak,source})=>({casa,score,label,evaluatedMonths,onTimeRate,streak,source})));
+            console.log(`PUNCTUALITY_15_OF_15_OK houses=${rows.length} house10=${house10.score}/${house10.label}`);
+          })().catch(error=>{console.error(error.stack||error);process.exit(1)});
+          NODE
+
+      - name: Upload punctuality audit
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: punctuality-production-audit
+          path: punctuality-production-audit.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Publish punctuality status
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ job.status }}
+          TARGET_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          state=failure
+          description='Auditoría 15/15 del índice de puntualidad falló.'
+          if [ "$RESULT" = "success" ]; then state=success; description='Índice V2 y fechas reales verificados en 15/15 casas.'; fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+            -f state="$state" \
+            -f context='Punctuality Production 15/15' \
+            -f description="$description" \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
