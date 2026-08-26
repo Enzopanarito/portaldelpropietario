@@ -17,9 +17,9 @@ async function openOwner(page){
 }
 async function inspect(page,kind){
   const info=await page.evaluate(()=>{
-    const card=document.getElementById('vla-punctuality-score'),inner=card.querySelector('.vla-punctuality-inner'),gauge=card.querySelector('.vla-score-gauge'),number=card.querySelector('.vla-score-number strong'),svg=card.querySelector('svg');
-    const cr=card.getBoundingClientRect(),gr=gauge.getBoundingClientRect();
-    return {viewport:window.innerWidth,scrollWidth:document.documentElement.scrollWidth,card:{left:cr.left,right:cr.right,width:cr.width},gauge:{left:gr.left,right:gr.right,width:gr.width},grid:getComputedStyle(inner).gridTemplateColumns,score:(number&&number.textContent||'').trim(),svgWidth:svg&&svg.getAttribute('viewBox'),marker:card.getAttribute('data-vla-owner-punctuality'),note:(card.querySelector('.vla-punctuality-note')||{}).textContent||''};
+    const card=document.getElementById('vla-punctuality-score'),inner=card.querySelector('.vla-punctuality-inner'),gauge=card.querySelector('.vla-score-gauge'),visual=card.querySelector('.vla-score-visual'),number=card.querySelector('.vla-score-number strong'),numberBox=card.querySelector('.vla-score-number'),hub=card.querySelector('.vla-score-hub'),needle=card.querySelector('.vla-score-needle'),svg=card.querySelector('svg');
+    const cr=card.getBoundingClientRect(),gr=gauge.getBoundingClientRect(),vr=visual.getBoundingClientRect(),nr=numberBox.getBoundingClientRect(),hr=hub.getBoundingClientRect();
+    return {viewport:window.innerWidth,scrollWidth:document.documentElement.scrollWidth,card:{left:cr.left,right:cr.right,width:cr.width},gauge:{left:gr.left,right:gr.right,width:gr.width},visual:{width:vr.width,height:vr.height},scoreBox:{top:nr.top,bottom:nr.bottom},hub:{top:hr.top,bottom:hr.bottom},needleEnd:Number(needle&&needle.getAttribute('y2')),grid:getComputedStyle(inner).gridTemplateColumns,score:(number&&number.textContent||'').trim(),svgWidth:svg&&svg.getAttribute('viewBox'),marker:card.getAttribute('data-vla-owner-punctuality'),note:(card.querySelector('.vla-punctuality-note')||{}).textContent||''};
   });
   assert.equal(info.marker,'score-v1',`${kind}: marcador de versión ausente.`);
   assert.ok(info.card.left>=-1&&info.card.right<=info.viewport+1,`${kind}: la tarjeta se sale del viewport.`);
@@ -27,9 +27,17 @@ async function inspect(page,kind){
   assert.ok(info.scrollWidth<=info.viewport+2,`${kind}: existe scroll horizontal (${info.scrollWidth}>${info.viewport}).`);
   assert.ok(/^\d+$/.test(info.score)||info.score==='—',`${kind}: puntaje visual inválido.`);
   assert.equal(info.svgWidth,'0 0 340 205',`${kind}: gauge SVG no mantiene viewBox responsive.`);
+  assert.ok(info.needleEnd>=100,`${kind}: la aguja volvió a quedar demasiado larga (${info.needleEnd}).`);
+  assert.ok(info.scoreBox.top>=info.hub.bottom-1,`${kind}: el score invade el pivote de la aguja (${info.scoreBox.top}<${info.hub.bottom}).`);
   assert.match(info.note,/No modifica saldos, recargos, aprobación de pagos ni acceso/i,`${kind}: falta advertencia informativa.`);
-  if(kind==='desktop')assert.ok(info.grid.trim().split(/\s+/).length>=2,`desktop: se esperaba composición en dos columnas, recibido ${info.grid}`);
-  if(kind==='mobile')assert.ok(info.grid.trim().split(/\s+/).length===1,`mobile: se esperaba una sola columna, recibido ${info.grid}`);
+  if(kind==='desktop'){
+    assert.ok(info.grid.trim().split(/\s+/).length>=2,`desktop: se esperaba composición en dos columnas, recibido ${info.grid}`);
+    assert.ok(info.gauge.width<=320,`desktop: el gauge volvió a crecer demasiado (${info.gauge.width}px).`);
+  }
+  if(kind==='mobile'){
+    assert.ok(info.grid.trim().split(/\s+/).length===1,`mobile: se esperaba una sola columna, recibido ${info.grid}`);
+    assert.ok(info.gauge.width<=260,`mobile: el gauge volvió a crecer demasiado (${info.gauge.width}px).`);
+  }
   return info;
 }
 (async()=>{
