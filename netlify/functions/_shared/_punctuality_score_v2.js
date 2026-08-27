@@ -123,11 +123,16 @@ function parseAuditSnapshots(history = []) {
     if (!match) continue;
     const month = match[1], casa = Number(match[2]), label = match[3].trim().toLowerCase();
     const key = `${month}|${casa}`;
-    if (!map.has(key)) map.set(key, { month, casa, labels: new Map(), createdAt: '' });
+    if (!map.has(key)) map.set(key, { month, casa, labels: new Map(), createdAt: '', cutoffAt: '', splitBalanceCutoffAt: '' });
     const snapshot = map.get(key);
     snapshot.labels.set(label, auditAmount(record));
     const created = String(record && record.createdTime || '');
     if (created && (!snapshot.createdAt || created > snapshot.createdAt)) snapshot.createdAt = created;
+    // El corte contable debe ser el instante del saldo final, no el último
+    // marcador auxiliar de auditoría que pudiera escribirse horas después.
+    if (created && label.startsWith('saldo final total')) snapshot.cutoffAt = created;
+    if (created && (label.startsWith('saldo final usd') || label.startsWith('saldo final bs ref'))
+      && (!snapshot.splitBalanceCutoffAt || created < snapshot.splitBalanceCutoffAt)) snapshot.splitBalanceCutoffAt = created;
   }
   return map;
 }
@@ -161,9 +166,15 @@ function auditFinalBalance(snapshot) {
   if (!usdKey && !bsKey) return null;
   return money((usdKey ? snapshot.labels.get(usdKey) : 0) + (bsKey ? snapshot.labels.get(bsKey) : 0));
 }
+function auditCutoff(snapshot) {
+  return String(snapshot && (snapshot.cutoffAt || snapshot.splitBalanceCutoffAt || snapshot.createdAt) || '');
+}
 function latestAuditAnchor(auditMap, casa, currentMonth, targetMonths) {
   const max = Math.max(1, Number(targetMonths || 6));
-  for (let offset = 1; offset < max; offset += 1) {
+  // Elegir la fotografía auditada más antigua disponible dentro de la ventana
+  // permite que el índice madure naturalmente hasta seis meses. Una fotografía
+  // más reciente sigue siendo útil si las anteriores aún no existen.
+  for (let offset = max - 1; offset >= 1; offset -= 1) {
     const month = addMonths(currentMonth, -offset);
     const snapshot = auditMap.get(`${month}|${Number(casa || 0)}`);
     if (snapshot && Number.isFinite(auditFinalBalance(snapshot))) return snapshot;
@@ -185,7 +196,7 @@ function chargeTotalForMonth(owner, expenses, month, cutoffIso = '') {
 function inferOpeningFromAudit({ owner, payments, expenses, snapshot }) {
   const finalBalance = auditFinalBalance(snapshot);
   if (!Number.isFinite(finalBalance)) return null;
-  const cutoff = String(snapshot.createdAt || ''), month = snapshot.month;
+  const cutoff = auditCutoff(snapshot), month = snapshot.month;
   const charges = chargeTotalForMonth(owner, expenses, month, cutoff);
   const paid = paymentsForOwner(payments, owner.id)
     .filter(payment => monthOf(payment.date) === month && (!cutoff || !payment.createdAt || payment.createdAt <= cutoff))
@@ -358,6 +369,6 @@ function buildPunctualityScore({ owner, payments = [], expenses = [], history = 
 module.exports = {
   TOLERANCE, WEIGHTS, MIN_LEVEL_MONTHS, money, dateOnly, monthOf, dayOf, monthEnd, addMonths, addDays, daysBetween, caracasClock,
   paymentAmount, expenseIsRecurring, expenseIsEligibleForPunctuality, expenseEffectiveDate, ownerShare, parseAuditSnapshots, currentPrior,
-  paymentsForOwner, auditFinalBalance, latestAuditAnchor, chargeTotalForMonth, inferOpeningFromAudit, buildObligations, scoreByDeadline,
+  paymentsForOwner, auditFinalBalance, auditCutoff, latestAuditAnchor, chargeTotalForMonth, inferOpeningFromAudit, buildObligations, scoreByDeadline,
   replayLedger, summarizeMonth, levelFor, weightedScore, buildPunctualityScore
 };
