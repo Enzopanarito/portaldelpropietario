@@ -29,6 +29,6 @@ test('el diseño compacto tiene reglas separadas para escritorio y móvil sin an
 test('la interfaz declara explícitamente que el índice no altera finanzas ni portón',()=>{
   const js=fs.readFileSync(path.join(ROOT,'owner-punctuality-score-v1.js'),'utf8');
   assert.match(js,/No modifica saldos, recargos, aprobación de pagos ni acceso al portón/);
-  assert.match(js,/public-punctuality-score\?ownerId=/);
+  assert.match(js,/\/api\/vla\/punctuality-score\?ownerId=/);
   assert.doesNotMatch(js,/public-report-payment|process-payment-report|payment-proof-prefill/);
 });

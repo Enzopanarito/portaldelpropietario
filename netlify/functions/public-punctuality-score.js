@@ -27,7 +27,8 @@ function parseBody(result) {
   catch (_) { return {}; }
 }
 function previewMode(env = process.env) {
-  return String(env.CONTEXT || '').toLowerCase() !== 'production';
+  const flag = String(env.VLA_PUNCTUALITY_PREVIEW_FIXTURE || '').trim().toLowerCase();
+  return flag === '1' || flag === 'true' || flag === 'yes' || flag === 'on';
 }
 function previewScore(ownerId, now = new Date()) {
   const month = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit' }).format(now);
