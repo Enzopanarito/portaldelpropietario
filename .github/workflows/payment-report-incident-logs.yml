@@ -27,8 +27,7 @@ jobs:
           npx --yes "netlify-cli@${NETLIFY_CLI_VERSION}" logs \
             --json \
             --source functions \
-            --since '2026-08-27T16:29:00Z' \
-            --until '2026-08-27T16:45:00Z' > "$raw"
+            --since '2026-08-27T16:29:00Z' > "$raw"
           node - "$raw" <<'NODE'
           const fs=require('fs');
           const path=process.argv[2];
@@ -42,5 +41,4 @@ jobs:
           console.log(`NETLIFY_LOG_LINES_TOTAL=${lines.length}`);
           console.log(`NETLIFY_LOG_LINES_SELECTED=${selected.length}`);
           for(const line of selected) console.log(line.slice(0,4000));
-          if(!selected.some(line=>line.includes('recUrxwsxPPUsJ3m7'))) console.log('FIRST_REPORT_ID_NOT_FOUND_IN_RETAINED_LOGS');
           NODE
