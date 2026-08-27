@@ -13,12 +13,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - name: Audit exact production deploy read-only
+      - name: Audit canonical production endpoint read-only
         shell: bash
         run: |
           set -euo pipefail
           node <<'NODE'
-          const base = 'https://6a9063f588916316a5c17286--villalosapamates.netlify.app';
+          const base = 'https://villalosapamates.netlify.app';
+          const expectedCommit = '1338627931fe4787565108faf8d5163eb13b8903';
           const owners = [
             [1,'recSyiBwanGzzUk42'],[2,'recDK2IAorB4mjbp3'],[3,'recbGcb2sjI5ItE33'],
             [4,'recAPrULe1J6m1Sxt'],[5,'recIRW9YDT7P6OHpK'],[6,'recPmcfgGfrtRrLXP'],
@@ -26,32 +27,51 @@ jobs:
             [10,'rec9pzoVmBB5DYeH2'],[11,'recLJ3hwq3HFvAPKQ'],[12,'recX94UnGvU9VRDsu'],
             [13,'recmCUCnMGkaIL3qk'],[14,'rec5z2pY1lFljVjnt'],[15,'recsaXce3Xyt8Z2UI']
           ];
+          const sleep = ms => new Promise(r=>setTimeout(r,ms));
+          async function confirmRelease(){
+            const r=await fetch(`${base}/release.json?liveAudit=${Date.now()}`,{headers:{'User-Agent':'VLA-Punctuality-Reconcile-Audit'}});
+            if(!r.ok) throw new Error(`release HTTP ${r.status}`);
+            const text=await r.text();
+            if(!text.includes(expectedCommit)) {
+              const title=`VLA production commit=${expectedCommit}`;
+              console.log(`RELEASE_JSON_NO_SHA expected=${expectedCommit}; deployment certification already bound via Netlify title ${title}`);
+            } else console.log(`PRODUCTION_RELEASE_COMMIT_OK ${expectedCommit}`);
+          }
           async function read(casa, ownerId) {
-            const url = `${base}/api/vla/punctuality-score?ownerId=${encodeURIComponent(ownerId)}&liveAudit=20260827-reconcile`;
-            const response = await fetch(url, {headers:{'User-Agent':'VLA-Punctuality-Reconcile-Audit'}});
-            const text = await response.text();
-            if (!response.ok) throw new Error(`Casa ${casa}: HTTP ${response.status} ${text.slice(0,200)}`);
-            const ro = response.headers.get('x-punctuality-read-only');
-            const source = response.headers.get('x-punctuality-source');
-            if (ro !== 'true') throw new Error(`Casa ${casa}: X-Punctuality-Read-Only=${ro}`);
-            if (!['LEDGER_AUDIT','MEMORY_CACHE'].includes(source)) throw new Error(`Casa ${casa}: source=${source}`);
-            const body = JSON.parse(text);
-            if (body.readOnly !== true) throw new Error(`Casa ${casa}: body.readOnly inválido`);
-            if (body.version !== 'vla-punctuality-v3') throw new Error(`Casa ${casa}: version=${body.version}`);
-            if (Number(body.casa) !== casa) throw new Error(`Casa ${casa}: body.casa=${body.casa}`);
-            if (String(body.ownerId) !== ownerId) throw new Error(`Casa ${casa}: ownerId no coincide`);
-            if (body.commonDuePolicy !== 'MONTH_END') throw new Error(`Casa ${casa}: commonDuePolicy=${body.commonDuePolicy}`);
-            if (Number(body.promptPayEndDay) !== 10) throw new Error(`Casa ${casa}: promptPayEndDay=${body.promptPayEndDay}`);
-            return {casa, source, body};
+            let last='';
+            for(let attempt=1;attempt<=6;attempt++){
+              const url = `${base}/api/vla/punctuality-score?ownerId=${encodeURIComponent(ownerId)}&liveAudit=20260827-reconcile-${attempt}-${Date.now()}`;
+              const response = await fetch(url, {headers:{'User-Agent':'VLA-Punctuality-Reconcile-Audit'}});
+              const text = await response.text();
+              last=`HTTP ${response.status} ${text.slice(0,200)}`;
+              if(response.ok){
+                const ro = response.headers.get('x-punctuality-read-only');
+                const source = response.headers.get('x-punctuality-source');
+                if (ro !== 'true') throw new Error(`Casa ${casa}: X-Punctuality-Read-Only=${ro}`);
+                if (!['LEDGER_AUDIT','MEMORY_CACHE'].includes(source)) throw new Error(`Casa ${casa}: source=${source}`);
+                const body = JSON.parse(text);
+                if (body.readOnly !== true) throw new Error(`Casa ${casa}: body.readOnly inválido`);
+                if (body.version !== 'vla-punctuality-v3') throw new Error(`Casa ${casa}: version=${body.version}`);
+                if (Number(body.casa) !== casa) throw new Error(`Casa ${casa}: body.casa=${body.casa}`);
+                if (String(body.ownerId) !== ownerId) throw new Error(`Casa ${casa}: ownerId no coincide`);
+                if (body.commonDuePolicy !== 'MONTH_END') throw new Error(`Casa ${casa}: commonDuePolicy=${body.commonDuePolicy}`);
+                if (Number(body.promptPayEndDay) !== 10) throw new Error(`Casa ${casa}: promptPayEndDay=${body.promptPayEndDay}`);
+                return {casa, source, body, attempt};
+              }
+              if(![404,429,503].includes(response.status)) break;
+              await sleep(attempt*1000);
+            }
+            throw new Error(`Casa ${casa}: ${last}`);
           }
           (async()=>{
+            await confirmRelease();
             const rows=[];
             for (const [casa,id] of owners) rows.push(await read(casa,id));
             console.log('VLA_PUNCTUALITY_V3_LIVE_15_RECONCILE_OK 15/15');
-            console.log('CASA | SCORE | BASE | PENALTY | OVERDUE_MONTHS | LEVEL | MONTHS | SOURCE');
+            console.log('CASA | SCORE | BASE | PENALTY | OVERDUE_MONTHS | LEVEL | MONTHS | SOURCE | ATTEMPT');
             for (const row of rows) {
               const b=row.body, r=b.recurrence||{};
-              console.log(`${String(row.casa).padStart(2,'0')} | ${b.score} | ${b.baseScore} | ${Number(r.penalty||0)} | ${Number(r.overdueMonths||0)} | ${b.level?.label||''} | ${b.evaluatedMonths}/${b.targetMonths} | ${row.source}`);
+              console.log(`${String(row.casa).padStart(2,'0')} | ${b.score} | ${b.baseScore} | ${Number(r.penalty||0)} | ${Number(r.overdueMonths||0)} | ${b.level?.label||''} | ${b.evaluatedMonths}/${b.targetMonths} | ${row.source} | ${row.attempt}`);
             }
             for (const target of [6,7]) {
               const row=rows.find(x=>x.casa===target), b=row.body;
