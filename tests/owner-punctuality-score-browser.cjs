@@ -19,9 +19,9 @@ async function inspect(page,kind){
   const info=await page.evaluate(()=>{
     const card=document.getElementById('vla-punctuality-score'),inner=card.querySelector('.vla-punctuality-inner'),gauge=card.querySelector('.vla-score-gauge'),visual=card.querySelector('.vla-score-visual'),number=card.querySelector('.vla-score-number strong'),numberBox=card.querySelector('.vla-score-number'),hub=card.querySelector('.vla-score-hub'),needle=card.querySelector('.vla-score-needle'),svg=card.querySelector('svg');
     const cr=card.getBoundingClientRect(),gr=gauge.getBoundingClientRect(),vr=visual.getBoundingClientRect(),nr=numberBox.getBoundingClientRect(),hr=hub.getBoundingClientRect();
-    return {viewport:window.innerWidth,scrollWidth:document.documentElement.scrollWidth,card:{left:cr.left,right:cr.right,width:cr.width},gauge:{left:gr.left,right:gr.right,width:gr.width},visual:{width:vr.width,height:vr.height},scoreBox:{top:nr.top,bottom:nr.bottom},hub:{top:hr.top,bottom:hr.bottom},needleEnd:Number(needle&&needle.getAttribute('y2')),grid:getComputedStyle(inner).gridTemplateColumns,score:(number&&number.textContent||'').trim(),svgWidth:svg&&svg.getAttribute('viewBox'),marker:card.getAttribute('data-vla-owner-punctuality'),note:(card.querySelector('.vla-punctuality-note')||{}).textContent||''};
+    return {viewport:window.innerWidth,scrollWidth:document.documentElement.scrollWidth,card:{left:cr.left,right:cr.right,width:cr.width},gauge:{left:gr.left,right:gr.right,width:gr.width},visual:{width:vr.width,height:vr.height},scoreBox:{top:nr.top,bottom:nr.bottom},hub:{top:hr.top,bottom:hr.bottom},needleEnd:Number(needle&&needle.getAttribute('y2')),grid:getComputedStyle(inner).gridTemplateColumns,score:(number&&number.textContent||'').trim(),svgWidth:svg&&svg.getAttribute('viewBox'),marker:card.getAttribute('data-vla-owner-punctuality'),note:(card.querySelector('.vla-punctuality-note')||{}).textContent||'',policy:(card.querySelector('.vla-punctuality-history-title')||{}).textContent||''};
   });
-  assert.equal(info.marker,'score-v2',`${kind}: marcador de versión ausente.`);
+  assert.equal(info.marker,'score-v3',`${kind}: marcador de versión ausente.`);
   assert.ok(info.card.left>=-1&&info.card.right<=info.viewport+1,`${kind}: la tarjeta se sale del viewport.`);
   assert.ok(info.gauge.left>=info.card.left-1&&info.gauge.right<=info.card.right+1,`${kind}: el gauge se desborda de la tarjeta.`);
   assert.ok(info.scrollWidth<=info.viewport+2,`${kind}: existe scroll horizontal (${info.scrollWidth}>${info.viewport}).`);
@@ -30,6 +30,7 @@ async function inspect(page,kind){
   assert.ok(info.needleEnd>=100,`${kind}: la aguja volvió a quedar demasiado larga (${info.needleEnd}).`);
   assert.ok(info.scoreBox.top>=info.hub.bottom-1,`${kind}: el score invade el pivote de la aguja (${info.scoreBox.top}<${info.hub.bottom}).`);
   assert.match(info.note,/No modifica saldos, recargos, aprobación de pagos ni acceso/i,`${kind}: falta advertencia informativa.`);
+  assert.match(info.policy,/Comunes: vencen al cambiar de mes/i,`${kind}: la interfaz no explica el vencimiento real.`);
   if(kind==='desktop'){
     assert.ok(info.grid.trim().split(/\s+/).length>=2,`desktop: se esperaba composición en dos columnas, recibido ${info.grid}`);
     assert.ok(info.gauge.width<=320,`desktop: el gauge volvió a crecer demasiado (${info.gauge.width}px).`);
