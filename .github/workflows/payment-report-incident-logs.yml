@@ -28,7 +28,7 @@ jobs:
             --json \
             --source functions \
             --since '2026-08-27T16:29:00Z' \
-            --until '2026-08-27T16:36:00Z' > "$raw"
+            --until '2026-08-27T16:45:00Z' > "$raw"
           node - "$raw" <<'NODE'
           const fs=require('fs');
           const path=process.argv[2];
