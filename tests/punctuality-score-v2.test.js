@@ -8,6 +8,7 @@ function owner(casa,{aliquota=1,prior=0}={}){return{id:IDS[casa-1],Casa:casa,Ali
 function expense({id,month='2026-08',amount=100,type='Gasto Común',created=`${month}-01T12:00:00.000Z`,owners=IDS,frequency=type==='Gasto Común'?'Fijo':'Eventual'}={}){return{id:id||`recEXP${Math.random().toString(36).slice(2,12)}`.slice(0,17),createdTime:created,fields:{Concepto:type==='Gasto Especial'?'Cuota especial':'Cuota común',Monto:amount,'Tipo de Gasto':type,'Mes de Aplicación':month,'Estado del Gasto':'Activo',Propietarios:owners,Frecuencia:frequency,'Forma de Pago':'Bs BCV'}}}
 function payment(ownerId,date,amount,{id,created}={}){return{id:id||`recPAY${Math.random().toString(36).slice(2,12)}`.slice(0,17),createdTime:created||`${date}T18:00:00.000Z`,fields:{'Propietario que Paga':[ownerId],'Fecha de Pago':date,'Monto Pagado':amount,'Equivalente USD Aplicado':amount,'Forma de Pago':'Bs BCV'}}}
 function audit(casa,amount,created='2026-08-01T07:04:05.000Z'){return{id:`recAUD${String(casa).padStart(11,'0')}`,createdTime:created,fields:{Concepto:`AUDITORIA|2026-07|Casa ${casa}|Saldo final total (Deuda) | Prueba`,'Monto Cargado':amount}}}
+function auditRecord(casa,month,label,amount,created){return{id:`recA${Math.random().toString(36).slice(2,15)}`.slice(0,17),createdTime:created,fields:{Concepto:`AUDITORIA|${month}|Casa ${casa}|${label} | Prueba`,'Monto Cargado':amount}}}
 
 function twoMonthExpenses(o){return[
  expense({id:'recJULCOMMON00001',month:'2026-07',amount:100,owners:[o.id],frequency:'Fijo'}),
@@ -80,6 +81,27 @@ test('un pago con fecha real de julio pero registrado tras el cierre no altera e
  assert.equal(opening.payments,0,'el cierre del 1 de agosto no puede ver un registro creado el 2');
  const result=score.buildPunctualityScore({owner:o,expenses,payments:[backdated],history:[audit(14,100)],now:new Date('2026-08-26T12:00:00-04:00')});
  assert.equal(result.history[0].score,100,'la fecha real de operación sí debe contar para puntualidad');
+});
+
+test('el corte del ancla usa el saldo final y no un marcador auxiliar escrito después',()=>{
+ const o=owner(14),history=[
+  auditRecord(14,'2026-07','Saldo final total (Deuda)',100,'2026-08-01T07:04:05.000Z'),
+  auditRecord(14,'2026-07','Modo de cálculo transición legacy',0,'2026-08-02T04:03:03.000Z')
+ ];
+ const snapshot=score.parseAuditSnapshots(history).get('2026-07|14');
+ assert.equal(score.auditCutoff(snapshot),'2026-08-01T07:04:05.000Z');
+ const lateInserted=payment(o.id,'2026-07-31',100,{created:'2026-08-01T20:00:00.000Z'});
+ const opening=score.inferOpeningFromAudit({owner:o,expenses:[],payments:[lateInserted],snapshot});
+ assert.equal(opening.payments,0,'un pago creado después del saldo final no pertenece a la foto del cierre');
+});
+
+test('la ventana elige la auditoría más antigua disponible para poder madurar hasta seis meses',()=>{
+ const map=score.parseAuditSnapshots([
+  auditRecord(4,'2026-07','Saldo final total (Deuda)',20,'2026-08-01T07:04:05.000Z'),
+  auditRecord(4,'2026-06','Saldo final total (Deuda)',10,'2026-07-01T07:04:05.000Z')
+ ]);
+ const anchor=score.latestAuditAnchor(map,4,'2026-08',6);
+ assert.equal(anchor.month,'2026-06');
 });
 
 test('con menos de tres meses el número puede mostrarse pero no se proclama Excelente',()=>{
