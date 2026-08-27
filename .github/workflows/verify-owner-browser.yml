@@ -107,6 +107,16 @@ jobs:
           rm -f owner-punctuality-result.json owner-punctuality-error.txt owner-punctuality-desktop.png owner-punctuality-mobile.png
           node tests/owner-punctuality-score-browser.cjs
 
+      - name: Audit all 15 live production punctuality scores
+        if: github.event_name == 'pull_request'
+        env:
+          TARGET_URL: https://villalosapamates.netlify.app
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f owner-punctuality-production-audit.json owner-punctuality-production-audit-error.txt
+          node tests/owner-punctuality-production-audit.cjs
+
       - name: Upload browser evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -120,6 +130,8 @@ jobs:
             owner-punctuality-error.txt
             owner-punctuality-desktop.png
             owner-punctuality-mobile.png
+            owner-punctuality-production-audit.json
+            owner-punctuality-production-audit-error.txt
           if-no-files-found: ignore
           retention-days: 7
 
