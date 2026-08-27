@@ -1,0 +1,46 @@
+name: Payment Report Incident Logs
+
+on:
+  push:
+    branches:
+      - audit/payment-report-incident-20260827
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+      NETLIFY_CLI_VERSION: '27.1.2'
+    steps:
+      - name: Read production function logs only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${NETLIFY_AUTH_TOKEN:-}" || { echo 'NETLIFY_AUTH_TOKEN missing'; exit 1; }
+          test -n "${NETLIFY_SITE_ID:-}" || { echo 'NETLIFY_SITE_ID missing'; exit 1; }
+          raw="${RUNNER_TEMP}/netlify-payment-incident.jsonl"
+          npx --yes "netlify-cli@${NETLIFY_CLI_VERSION}" logs \
+            --json \
+            --source functions \
+            --since '2026-08-27T16:29:00Z' \
+            --until '2026-08-27T16:36:00Z' > "$raw"
+          node - "$raw" <<'NODE'
+          const fs=require('fs');
+          const path=process.argv[2];
+          const needles=[
+            'recUrxwsxPPUsJ3m7','recrZPYCUJCFSCpYv',
+            'VLA_PAYMENT_REPORT_CREATED','PAYMENT_REPORT_AUTOMATION_FAILED',
+            'PROCESSING_','payment-report-analyzer','public-report-payment'
+          ];
+          const lines=fs.readFileSync(path,'utf8').split(/\r?\n/).filter(Boolean);
+          const selected=lines.filter(line=>needles.some(needle=>line.includes(needle)));
+          console.log(`NETLIFY_LOG_LINES_TOTAL=${lines.length}`);
+          console.log(`NETLIFY_LOG_LINES_SELECTED=${selected.length}`);
+          for(const line of selected) console.log(line.slice(0,4000));
+          if(!selected.some(line=>line.includes('recUrxwsxPPUsJ3m7'))) console.log('FIRST_REPORT_ID_NOT_FOUND_IN_RETAINED_LOGS');
+          NODE
