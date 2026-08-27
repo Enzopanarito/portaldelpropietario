@@ -38,17 +38,19 @@ function previewScore(ownerId, now = new Date()) {
     return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
   }
   return {
-    version: 'vla-punctuality-v2', readOnly: true, preview: true, ownerId: String(ownerId || ''), casa: 4,
-    score: 92, level: { key: 'EXCELENTE', label: 'Excelente', color: '#0f7a3a' }, evaluatedMonths: 3,
-    targetMonths: 6, forming: true, levelProvisional: false, specialGraceDays: 30,
-    streak: 1, trend: { key: 'SUBIENDO', label: 'Subiendo', symbol: '↑' }, dueDay: 10,
+    version: 'vla-punctuality-v3', readOnly: true, preview: true, ownerId: String(ownerId || ''), casa: 4,
+    score: 92, baseScore: 92, level: { key: 'FORMACION', label: 'En formación', color: '#64748b' }, evaluatedMonths: 3,
+    targetMonths: 6, forming: true, levelProvisional: true, specialGraceDays: 30,
+    streak: 2, trend: { key: 'SUBIENDO', label: 'Subiendo', symbol: '↑' }, dueDay: 10, promptPayEndDay: 10,
+    commonDuePolicy: 'MONTH_END', recurrence: { overdueMonths: 0, longestOverdueStreak: 0, penalty: 0 },
+    scoringMethod: 'AMOUNT_WEIGHTED_RECENCY_WITH_REPEAT_MORA',
     history: [
-      { month, score: 100, state: 'PUNTUAL', finalized: true, completionDate: `${month}-08`, completionDay: 8, commonScore: 100, specialScore: 100, specialInGrace: 0 },
-      { month: previous(month, -1), score: 85, state: 'LEVE_RETRASO', finalized: true, completionDate: `${previous(month, -1)}-13`, completionDay: 13, commonScore: 85, specialScore: 100, specialInGrace: 0 },
-      { month: previous(month, -2), score: 100, state: 'PUNTUAL', finalized: true, completionDate: `${previous(month, -2)}-07`, completionDay: 7, commonScore: 100, specialScore: 100, specialInGrace: 0 }
+      { month, score: 97, state: 'PRONTO_PAGO', finalized: true, completionDate: `${month}-08`, completionDay: 8, commonScore: 97, specialScore: 97, specialInGrace: 0, hadOverdue: false, overdueObligations: 0, maxOverdueDays: 0 },
+      { month: previous(month, -1), score: 92, state: 'PAGO_MISMO_MES', finalized: true, completionDate: `${previous(month, -1)}-13`, completionDay: 13, commonScore: 92, specialScore: 100, specialInGrace: 0, hadOverdue: false, overdueObligations: 0, maxOverdueDays: 0 },
+      { month: previous(month, -2), score: 98, state: 'PRONTO_PAGO', finalized: true, completionDate: `${previous(month, -2)}-07`, completionDay: 7, commonScore: 98, specialScore: 100, specialInGrace: 0, hadOverdue: false, overdueObligations: 0, maxOverdueDays: 0 }
     ],
     anchor: { month: previous(month, -2), source: 'PREVIEW_FIXTURE' },
-    advice: 'Mantén los gastos comunes cubiertos antes del día 10 y las cuotas especiales dentro de sus 30 días.',
+    advice: 'Los primeros 10 días reciben la mejor valoración. Después sigue siendo pago del mes, pero el promedio baja gradualmente hasta el cierre.',
     generatedAt: new Date().toISOString()
   };
 }
@@ -60,6 +62,7 @@ function sanitizedScore(score) {
     ownerId: score.ownerId,
     casa: score.casa,
     score: score.score,
+    baseScore: score.baseScore ?? score.score,
     level: score.level,
     evaluatedMonths: score.evaluatedMonths,
     targetMonths: score.targetMonths,
@@ -69,6 +72,14 @@ function sanitizedScore(score) {
     streak: score.streak,
     trend: score.trend,
     dueDay: score.dueDay,
+    promptPayEndDay: Number(score.promptPayEndDay || score.dueDay || 10),
+    commonDuePolicy: String(score.commonDuePolicy || 'MONTH_END'),
+    recurrence: score.recurrence ? {
+      overdueMonths: Number(score.recurrence.overdueMonths || 0),
+      longestOverdueStreak: Number(score.recurrence.longestOverdueStreak || 0),
+      penalty: Number(score.recurrence.penalty || 0)
+    } : { overdueMonths: 0, longestOverdueStreak: 0, penalty: 0 },
+    scoringMethod: String(score.scoringMethod || 'AMOUNT_WEIGHTED_RECENCY_WITH_REPEAT_MORA'),
     anchor: score.anchor ? { month: score.anchor.month, source: score.anchor.source } : null,
     history: (score.history || []).map(item => ({
       month: item.month,
@@ -84,6 +95,9 @@ function sanitizedScore(score) {
       overdueScore: item.overdueScore ?? null,
       specialInGrace: Number(item.specialInGrace || 0),
       obligationsEvaluated: Number(item.obligationsEvaluated || 0),
+      hadOverdue: item.hadOverdue === true,
+      overdueObligations: Number(item.overdueObligations || 0),
+      maxOverdueDays: Number(item.maxOverdueDays || 0),
       source: item.source
     })),
     advice: score.advice,
