@@ -3,7 +3,7 @@
 const { withAirtableUsage } = require('./_shared/_airtable_meter');
 const publicData = require('./public-data-v3');
 const { getAll, TABLES } = require('./_shared/_monthly_close_store');
-const { buildPunctualityScore } = require('./_shared/_punctuality_score');
+const { buildPunctualityScore } = require('./_shared/_punctuality_score_v2');
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const cache = new Map();
@@ -38,15 +38,17 @@ function previewScore(ownerId, now = new Date()) {
     return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
   }
   return {
-    version: 'vla-punctuality-v1', readOnly: true, preview: true, ownerId: String(ownerId || ''), casa: 4,
+    version: 'vla-punctuality-v2', readOnly: true, preview: true, ownerId: String(ownerId || ''), casa: 4,
     score: 92, level: { key: 'EXCELENTE', label: 'Excelente', color: '#0f7a3a' }, evaluatedMonths: 3,
-    targetMonths: 6, forming: true, streak: 1, trend: { key: 'SUBIENDO', label: 'Subiendo', symbol: '↑' }, dueDay: 10,
+    targetMonths: 6, forming: true, levelProvisional: false, specialGraceDays: 30,
+    streak: 1, trend: { key: 'SUBIENDO', label: 'Subiendo', symbol: '↑' }, dueDay: 10,
     history: [
-      { month, score: 100, state: 'PUNTUAL', finalized: true, completionDate: `${month}-08`, completionDay: 8 },
-      { month: previous(month, -1), score: 85, state: 'LEVE_RETRASO', finalized: true, completionDate: `${previous(month, -1)}-13`, completionDay: 13 },
-      { month: previous(month, -2), score: 100, state: 'PUNTUAL', finalized: true, completionDate: `${previous(month, -2)}-07`, completionDay: 7 }
+      { month, score: 100, state: 'PUNTUAL', finalized: true, completionDate: `${month}-08`, completionDay: 8, commonScore: 100, specialScore: 100, specialInGrace: 0 },
+      { month: previous(month, -1), score: 85, state: 'LEVE_RETRASO', finalized: true, completionDate: `${previous(month, -1)}-13`, completionDay: 13, commonScore: 85, specialScore: 100, specialInGrace: 0 },
+      { month: previous(month, -2), score: 100, state: 'PUNTUAL', finalized: true, completionDate: `${previous(month, -2)}-07`, completionDay: 7, commonScore: 100, specialScore: 100, specialInGrace: 0 }
     ],
-    advice: 'Mantén la totalidad de tus obligaciones ordinarias cubierta antes del día 10 para conservar este nivel.',
+    anchor: { month: previous(month, -2), source: 'PREVIEW_FIXTURE' },
+    advice: 'Mantén los gastos comunes cubiertos antes del día 10 y las cuotas especiales dentro de sus 30 días.',
     generatedAt: new Date().toISOString()
   };
 }
@@ -62,9 +64,12 @@ function sanitizedScore(score) {
     evaluatedMonths: score.evaluatedMonths,
     targetMonths: score.targetMonths,
     forming: score.forming,
+    levelProvisional: score.levelProvisional === true,
+    specialGraceDays: Number(score.specialGraceDays || 30),
     streak: score.streak,
     trend: score.trend,
     dueDay: score.dueDay,
+    anchor: score.anchor ? { month: score.anchor.month, source: score.anchor.source } : null,
     history: (score.history || []).map(item => ({
       month: item.month,
       score: item.score,
@@ -74,6 +79,11 @@ function sanitizedScore(score) {
       completionDay: item.completionDay || null,
       requiredReference: item.requiredReference,
       remainingReference: item.remainingReference,
+      commonScore: item.commonScore ?? null,
+      specialScore: item.specialScore ?? null,
+      overdueScore: item.overdueScore ?? null,
+      specialInGrace: Number(item.specialInGrace || 0),
+      obligationsEvaluated: Number(item.obligationsEvaluated || 0),
       source: item.source
     })),
     advice: score.advice,
