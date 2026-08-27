@@ -26,9 +26,12 @@ function parseBody(result) {
   try { return JSON.parse(result && result.body || '{}'); }
   catch (_) { return {}; }
 }
-function previewMode(env = process.env) {
+function previewMode(env = process.env, event = {}) {
   const flag = String(env.VLA_PUNCTUALITY_PREVIEW_FIXTURE || '').trim().toLowerCase();
-  return flag === '1' || flag === 'true' || flag === 'yes' || flag === 'on';
+  if (flag === '1' || flag === 'true' || flag === 'yes' || flag === 'on') return true;
+  const headers = event && event.headers || {};
+  const host = String(headers.host || headers.Host || '').trim().toLowerCase().split(':')[0];
+  return /^deploy-preview-\d+--villalosapamates\.netlify\.app$/.test(host);
 }
 function previewScore(ownerId, now = new Date()) {
   const month = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit' }).format(now);
@@ -92,10 +95,10 @@ function createHandler(deps = {}) {
   return async function handler(event) {
     if (event.httpMethod && event.httpMethod !== 'GET') return json(405, { message: 'Method Not Allowed' });
     const ownerId = String(event.queryStringParameters && event.queryStringParameters.ownerId || '').trim();
-    if (!/^rec[A-Za-z0-9]{14}$/.test(ownerId) && !isPreview(env)) return json(400, { message: 'Propietario inválido.' });
+    if (!/^rec[A-Za-z0-9]{14}$/.test(ownerId) && !isPreview(env, event)) return json(400, { message: 'Propietario inválido.' });
     if (!ownerId) return json(400, { message: 'Debe indicar el propietario.' });
 
-    if (isPreview(env)) return json(200, previewScore(ownerId, now()), null, { 'X-Punctuality-Source': 'PREVIEW_FIXTURE' });
+    if (isPreview(env, event)) return json(200, previewScore(ownerId, now()), null, { 'X-Punctuality-Source': 'PREVIEW_FIXTURE' });
 
     const cached = scoreCache.get(ownerId);
     if (cached && cached.expiresAt > Date.now()) return json(200, cached.value, null, { 'X-Punctuality-Source': 'MEMORY_CACHE' });
