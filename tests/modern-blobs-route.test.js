@@ -32,11 +32,19 @@ test('el administrador recupera el comprobante desde Lambda nativa',()=>{
   assert.match(source,/connectLambdaEvent\(event\)/);
 });
 
-test('el analizador entra en la función background nativa que recibe event.blobs',()=>{
-  assert.match(config,rewrite('/api/vla/payment-report-analyzer','/.netlify/functions/payment-report-analyzer-background'));
-  assert.equal(fs.existsSync('netlify/functions/payment-report-analyzer-modern-background.mjs'),false);
-  const source=fs.readFileSync('netlify/functions/payment-report-analyzer-background.js','utf8');
-  assert.match(source,/connectLambdaEvent\(event\)/);
+test('el analizador entra por Background Function moderna con contexto Blobs',()=>{
+  assert.doesNotMatch(config,rewrite('/api/vla/payment-report-analyzer','/.netlify/functions/payment-report-analyzer-background'));
+  assert.equal(fs.existsSync('netlify/functions/payment-report-analyzer-modern-background.mjs'),true);
+  const modern=fs.readFileSync('netlify/functions/payment-report-analyzer-modern-background.mjs','utf8');
+  const legacy=fs.readFileSync('netlify/functions/payment-report-analyzer-background.js','utf8');
+  const bridge=fs.readFileSync('netlify/functions/_shared/legacy-function-bridge.mjs','utf8');
+  assert.match(modern,/payment-report-analyzer-background\.js/);
+  assert.match(modern,/invokeLegacy/);
+  assert.match(modern,/path:'\/api\/vla\/payment-report-analyzer'/);
+  assert.match(modern,/method:'POST'/);
+  assert.match(modern,/background:true/);
+  assert.match(legacy,/connectLambdaEvent\(event\)/);
+  assert.match(bridge,/__netlifyModernRuntime:\s*true/);
 });
 
 test('la sonda temporal quedó anulada de forma permanente',()=>{
