@@ -1,0 +1,70 @@
+name: Audit Punctuality V2 Live 15
+
+on:
+  push:
+    branches:
+      - audit/punctuality-v2-live-15-20260827
+
+permissions:
+  contents: read
+
+jobs:
+  audit-live-punctuality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Audit all 15 live production scores read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const https=require('https');
+          const owners=[
+            [1,'recSyiBwanGzzUk42'],[2,'recDK2IAorB4mjbp3'],[3,'recbGcb2sjI5ItE33'],[4,'recAPrULe1J6m1Sxt'],[5,'recIRW9YDT7P6OHpK'],
+            [6,'recPmcfgGfrtRrLXP'],[7,'recEudX0CRFI68WS1'],[8,'recDHPQpoWr3CnM4X'],[9,'recgTGvQXCRHEGL1m'],[10,'rec9pzoVmBB5DYeH2'],
+            [11,'recLJ3hwq3HFvAPKQ'],[12,'recX94UnGvU9VRDsu'],[13,'recmCUCnMGkaIL3qk'],[14,'rec5z2pY1lFljVjnt'],[15,'recsaXce3Xyt8Z2UI']
+          ];
+          function get(casa,ownerId){
+            return new Promise((resolve,reject)=>{
+              const path='/api/vla/punctuality-score?ownerId='+encodeURIComponent(ownerId)+'&audit-v2='+Date.now()+'-'+casa;
+              const req=https.get({hostname:'villalosapamates.netlify.app',path,headers:{Accept:'application/json','Cache-Control':'no-cache','User-Agent':'VLA-Punctuality-V2-Live-Audit'}},res=>{
+                let raw=''; res.setEncoding('utf8'); res.on('data',d=>raw+=d); res.on('end',()=>{
+                  let body={}; try{body=JSON.parse(raw)}catch(e){return reject(new Error(`Casa ${casa}: JSON inválido HTTP ${res.statusCode}`))}
+                  resolve({casa,ownerId,status:res.statusCode,headers:res.headers,body});
+                });
+              });
+              req.setTimeout(30000,()=>req.destroy(new Error(`Casa ${casa}: timeout`))); req.on('error',reject);
+            });
+          }
+          (async()=>{
+            const results=[];
+            for(const [casa,ownerId] of owners) results.push(await get(casa,ownerId));
+            for(const r of results){
+              const source=String(r.headers['x-punctuality-source']||'');
+              const readOnly=String(r.headers['x-punctuality-read-only']||'');
+              if(r.status!==200) throw new Error(`Casa ${r.casa}: HTTP ${r.status}`);
+              if(readOnly!=='true') throw new Error(`Casa ${r.casa}: X-Punctuality-Read-Only=${readOnly||'missing'}`);
+              if(!['LEDGER_AUDIT','MEMORY_CACHE'].includes(source)) throw new Error(`Casa ${r.casa}: fuente inválida ${source||'missing'}`);
+              if(source==='PREVIEW_FIXTURE'||r.body.preview===true) throw new Error(`Casa ${r.casa}: fixture detectado`);
+              if(r.body.readOnly!==true) throw new Error(`Casa ${r.casa}: body readOnly inválido`);
+              if(String(r.body.ownerId)!==r.ownerId) throw new Error(`Casa ${r.casa}: ownerId no coincide`);
+              if(Number(r.body.casa)!==r.casa) throw new Error(`Casa ${r.casa}: casa devuelta ${r.body.casa}`);
+              if(String(r.body.version)!=='vla-punctuality-v2') throw new Error(`Casa ${r.casa}: versión ${r.body.version}`);
+            }
+            const compact=results.map(r=>({
+              casa:r.casa,
+              score:r.body.score,
+              level:r.body.level?.label||null,
+              evaluatedMonths:r.body.evaluatedMonths,
+              targetMonths:r.body.targetMonths,
+              forming:r.body.forming,
+              source:String(r.headers['x-punctuality-source']||''),
+              version:r.body.version,
+              history:(r.body.history||[]).map(x=>({month:x.month,score:x.score,state:x.state,completionDate:x.completionDate||null}))
+            }));
+            console.log('PUNCTUALITY_V2_LIVE_15_JSON='+JSON.stringify(compact));
+            console.log('PUNCTUALITY_V2_LIVE_15_OK 15/15 HTTP 200 · read-only · v2 · no fixture · owner match');
+            const focus=compact.filter(x=>[4,11,14].includes(x.casa));
+            console.log('PUNCTUALITY_V2_FOCUS_4_11_14='+JSON.stringify(focus));
+          })().catch(error=>{console.error(error.stack||error);process.exit(1)});
+          NODE
