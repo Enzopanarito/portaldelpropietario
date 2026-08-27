@@ -1,9 +1,10 @@
 'use strict';
 const assert=require('assert');
+const crypto=require('crypto');
 const Module=require('module');
 const path=require('path');
 
-const created=[];const mails=[];const encrypted=new Map();let reservationCount=0;let historicalExactDuplicate=false,historicalFinancialDuplicate=false;
+const created=[];const mails=[];const encrypted=new Map(),financialLocks=new Map();let reservationCount=0;let historicalExactDuplicate=false,historicalFinancialDuplicate=false;
 const originalLoad=Module._load;
 Module._load=function(request,parent,isMain){
   if(parent&&String(parent.filename||'').endsWith(path.join('netlify','functions','public-report-payment.js'))){
@@ -27,6 +28,13 @@ Module._load=function(request,parent,isMain){
     if(request==='./_shared/_bcv_store')return{loadLastGood:async()=>({rate:180,source:'bcv-test'})};
     if(request==='./_shared/_payment_visual_hash')return{computePerceptualHash:async()=>({hash:'0123456789abcdef',algorithm:'dhash-64-v1'})};
     if(request==='./_shared/_blobs_compat')return{connectLambdaEvent:()=>({connected:true,source:'test'})};
+    if(request==='./_shared/_payment_report_dedup_store')return{
+      identityHash:input=>crypto.createHash('sha256').update(JSON.stringify([input.ownerId,String(input.enteredCurrency).toUpperCase(),Number(input.amount).toFixed(2),String(input.reference).replace(/[^A-Za-z0-9]/g,'').toUpperCase(),input.transactionDate])).digest('hex'),
+      createPaymentReportDedupStore:()=>({
+        reserve:async({identity,requestId})=>{const existing=financialLocks.get(identity);if(!existing){financialLocks.set(identity,{state:'RESERVED',requestId});return{acquired:true,created:true,identity,requestId,key:`financial-${identity}`}}if(existing.state==='COMPLETED'){if(existing.requestId===requestId)return{acquired:false,idempotent:true,reportId:existing.reportId,identity,requestId};return{acquired:false,duplicate:true,reportId:existing.reportId,identity,requestId}}return{acquired:false,pending:true,duplicate:existing.requestId!==requestId,identity,requestId}},
+        complete:async({reservation,reportId})=>{financialLocks.set(reservation.identity,{state:'COMPLETED',requestId:reservation.requestId,reportId});return{completed:true}}
+      })
+    };
     if(request==='./_shared/_payment_proof_store')return{createProofStore:()=>({
       reserveIdentity:async()=>({acquired:true,created:true,key:`reservation-${++reservationCount}`,requestId:`request-${reservationCount}`}),
       completeIdentity:async()=>({completed:true}),
@@ -57,7 +65,8 @@ Module._load=originalLoad;
 function event(body){return{httpMethod:'POST',headers:{'x-forwarded-for':'192.0.2.10'},body:JSON.stringify(body)}}
 function parse(response){return JSON.parse(response.body)}
 const png=Buffer.concat([Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]),Buffer.from('proof')]);
-const proofSha=require('crypto').createHash('sha256').update(png).digest('hex');
+const transformedPng=Buffer.concat([Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]),Buffer.from('proof-transformed')]);
+const proofSha=crypto.createHash('sha256').update(png).digest('hex');
 const dateAttestation=require('../netlify/functions/_shared/_payment_date_attestation').signDateAttestation({ownerId:'recABCDEFGHIJKLMN',attachmentSha:proofSha,method:'MOBILE_PAYMENT_VE',transactionDate:'2026-07-31'});
 const zelleDateAttestation=require('../netlify/functions/_shared/_payment_date_attestation').signDateAttestation({ownerId:'recABCDEFGHIJKLMN',attachmentSha:proofSha,method:'ZELLE',transactionDate:'2026-08-12'});
 const unauthorizedRecipientAttestation=require('../netlify/functions/_shared/_payment_recipient_attestation').signRecipientAttestation({ownerId:'recABCDEFGHIJKLMN',attachmentSha:proofSha,method:'MOBILE_PAYMENT_VE',classification:'UNAUTHORIZED'});
@@ -144,11 +153,18 @@ const {todayCaracasISO}=require('../netlify/functions/_shared/_payment_date_reso
   response=await handler(event({...mismatchPayload,uncertaintyAcknowledged:true}));body=parse(response);
   assert.equal(response.statusCode,200,JSON.stringify(body));assert.equal(created.length,beforeRecipientMismatch+1);assert.equal(body.uncertaintyAcknowledged,true);assert.equal(body.reviewDeadlineHours,72);assert.equal(created.at(-1)['Alerta Aceptada por Propietario'],true);assert.match(created.at(-1)['Alertas Presentadas'],/receptor detectado no coincide/i);
 
+  const incidentBefore=created.length;
+  const incidentBase={ownerId:'recABCDEFGHIJKLMN',mode:'Bs BCV',amount:27000,enteredCurrency:'BS',reference:'62392974025',rate:180,transactionDate:'2026-08-27',analysisSummary:{confidence:.98,transactionStatus:'COMPLETED',prefillComplete:true}};
+  response=await handler(event({...incidentBase,submissionId:'incident-first-20260827',bank:'Banesco',method:'TRANSFER_VE',attachment:{name:'comprobante.jpg',type:'image/png',base64:png.toString('base64')}}));body=parse(response);
+  assert.equal(response.statusCode,200,JSON.stringify(body));assert.equal(created.length,incidentBefore+1);
+  response=await handler(event({...incidentBase,submissionId:'incident-second-20260827',bank:'Pago móvil',method:'MOBILE_PAYMENT_VE',attachment:{name:'comprobante-convertido.png',type:'image/png',base64:transformedPng.toString('base64')}}));body=parse(response);
+  assert.equal(response.statusCode,409,JSON.stringify(body));assert.equal(body.canSubmitForReview,false);assert.equal(body.duplicateLevel,'confirmed');assert.equal(created.length,incidentBefore+1,'Dos archivos distintos de la misma transacción jamás pueden crear dos reportes.');
+
   historicalFinancialDuplicate=true;
   const reportsBeforeFinancialDuplicate=created.length;
   response=await handler(event({ownerId:'recABCDEFGHIJKLMN',submissionId:'submission-financial-duplicate-001',mode:'USD',amount:85,enteredCurrency:'USD',reference:'EXACT-FIN-001',bank:'Zelle',method:'ZELLE',transactionDate:'2026-08-12',transactionDateSource:'PROOF_EXTRACTED',dateAttestation:zelleDateAttestation,uncertaintyAcknowledged:true,attachment:{name:'otro-archivo.png',type:'image/png',base64:png.toString('base64')}}));body=parse(response);
-  assert.equal(response.statusCode,409,JSON.stringify(body));assert.equal(body.duplicateType,'Referencia financiera exacta');assert.equal(body.duplicateLevel,'confirmed');
-  assert.equal(created.length,reportsBeforeFinancialDuplicate,'Una coincidencia financiera exacta debe pedir confirmación antes de crear el reporte.');
+  assert.equal(response.statusCode,409,JSON.stringify(body));assert.equal(body.duplicateType,'Referencia financiera exacta');assert.equal(body.duplicateLevel,'confirmed');assert.equal(body.canSubmitForReview,false);
+  assert.equal(created.length,reportsBeforeFinancialDuplicate,'Una coincidencia financiera exacta debe bloquear el segundo reporte.');
   historicalFinancialDuplicate=false;
 
   historicalExactDuplicate=true;
@@ -156,13 +172,12 @@ const {todayCaracasISO}=require('../netlify/functions/_shared/_payment_date_reso
   const exactDuplicatePayload={ownerId:'recABCDEFGHIJKLMN',submissionId:'submission-exact-duplicate-001',mode:'USD',amount:85,enteredCurrency:'USD',reference:'EXACT-001',bank:'Zelle',method:'ZELLE',uncertaintyAcknowledged:true,attachment:{name:'repetido.png',type:'image/png',base64:png.toString('base64')}};
   response=await handler(event(exactDuplicatePayload));body=parse(response);
   assert.equal(response.statusCode,409,JSON.stringify(body));
-  assert.equal(body.duplicateLevel,'confirmed');assert.equal(body.canSubmitForReview,true);assert.match(body.message,/No se creó ningún reporte/i);
-  assert.equal(created.length,reportsBeforeExactDuplicate,'El primer intento de duplicado exacto no puede crear un reporte.');
+  assert.equal(body.duplicateLevel,'confirmed');assert.equal(body.canSubmitForReview,false);assert.match(body.message,/No se creó ningún reporte adicional/i);
+  assert.equal(created.length,reportsBeforeExactDuplicate,'Un duplicado exacto no puede crear un reporte.');
 
   response=await handler(event({...exactDuplicatePayload,duplicateReviewRequested:true}));body=parse(response);
-  assert.equal(response.statusCode,200,JSON.stringify(body));assert.equal(body.duplicateReview,true);assert.equal(body.reviewDeadlineHours,72);
-  assert.match(body.message,/no cambia tu saldo ni tu acceso/i);assert.equal(created.length,reportsBeforeExactDuplicate+1);
-  assert.equal(created.at(-1)['Estado de Procesamiento'],'Pendiente de administrador');assert.equal(created.at(-1)['Nivel de Duplicado'],'confirmed');
+  assert.equal(response.statusCode,409,JSON.stringify(body));assert.equal(body.canSubmitForReview,false);
+  assert.equal(created.length,reportsBeforeExactDuplicate,'Ni una petición manipulada de revisión puede crear un segundo reporte confirmado.');
   historicalExactDuplicate=false;
 
   console.log('PUBLIC_REPORT_PAYMENT_SMART_OK');
