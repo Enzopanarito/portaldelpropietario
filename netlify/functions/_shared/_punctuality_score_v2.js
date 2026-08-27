@@ -3,6 +3,10 @@
 const TOLERANCE = 0.01;
 const WEIGHTS = Object.freeze([30, 25, 18, 12, 9, 6]);
 const MIN_LEVEL_MONTHS = 6;
+const COMMON_PROMPT_END_SCORE = 96;
+const COMMON_POST_PROMPT_START_SCORE = 94;
+const COMMON_MONTH_END_SCORE = 70;
+const SPECIAL_DEADLINE_SCORE = 85;
 
 function money(value) {
   const n = Number(value || 0);
@@ -88,15 +92,10 @@ function expenseEffectiveDate(expense, month) {
   if (created && monthOf(created) === month) return created;
   return monthStart(month);
 }
-function expenseIsEligibleForPunctuality(expense, month, dueDay) {
-  const f = expense && expense.fields || {};
+function expenseIsEligibleForPunctuality(expense, month) {
   if (expenseMonth(expense) !== month || expenseStatus(expense) === 'Anulado') return false;
   const type = expenseType(expense);
-  if (type === 'Gasto Especial') return true;
-  if (type !== 'Gasto Común') return false;
-  if (expenseIsRecurring(f)) return true;
-  const effective = expenseEffectiveDate(expense, month);
-  return !effective || dayOf(effective) <= Math.max(1, Math.min(28, Number(dueDay || 10)));
+  return type === 'Gasto Común' || type === 'Gasto Especial';
 }
 function ownerShare(expense, owner) {
   const f = expense && expense.fields || {};
@@ -207,51 +206,99 @@ function monthSequence(startMonth, endMonth) {
   return result;
 }
 function buildObligations({ owner, expenses, startMonth, endMonth, dueDay }) {
-  const due = Math.max(1, Math.min(28, Number(dueDay || 10))), obligations = [];
+  const promptDay = Math.max(1, Math.min(28, Number(dueDay || 10))), obligations = [];
   let seq = 0;
   for (const month of monthSequence(startMonth, endMonth)) {
-    let commonAmount = 0;
+    let recurringCommonAmount = 0;
     for (const expense of expenses || []) {
-      if (expenseMonth(expense) !== month || expenseStatus(expense) === 'Anulado') continue;
+      if (!expenseIsEligibleForPunctuality(expense, month)) continue;
       const share = ownerShare(expense, owner);
       if (Math.abs(share) <= TOLERANCE) continue;
       const f = expense.fields || {}, type = expenseType(expense), effective = expenseEffectiveDate(expense, month), concept = String(f.Concepto || 'Gasto');
-      if (type === 'Gasto Común') {
-        if (expenseIsEligibleForPunctuality(expense, month, due)) commonAmount = money(commonAmount + share);
-        else obligations.push({ id: String(expense.id || `common-late-${month}-${seq}`), seq: seq++, kind: 'COMMON_LATE', applicationMonth: month, concept, amount: share, remaining: share, effectiveDate: effective || monthStart(month), deadline: addDays(effective || monthStart(month), 30), scoreable: true, completionDate: null, paymentsApplied: [] });
+      if (type === 'Gasto Común' && expenseIsRecurring(f)) {
+        recurringCommonAmount = money(recurringCommonAmount + share);
+      } else if (type === 'Gasto Común') {
+        obligations.push({ id: String(expense.id || `common-event-${month}-${seq}`), seq: seq++, kind: 'COMMON_EVENT', applicationMonth: month, concept, amount: share, remaining: share, effectiveDate: effective || monthStart(month), promptPayEnd: null, deadline: monthEnd(month), scoreable: true, completionDate: null, paymentsApplied: [], applications: [] });
       } else if (type === 'Gasto Especial') {
-        obligations.push({ id: String(expense.id || `special-${month}-${seq}`), seq: seq++, kind: 'SPECIAL', applicationMonth: month, concept, amount: share, remaining: share, effectiveDate: effective || monthStart(month), deadline: addDays(effective || monthStart(month), 30), scoreable: true, completionDate: null, paymentsApplied: [] });
+        obligations.push({ id: String(expense.id || `special-${month}-${seq}`), seq: seq++, kind: 'SPECIAL', applicationMonth: month, concept, amount: share, remaining: share, effectiveDate: effective || monthStart(month), promptPayEnd: null, deadline: addDays(effective || monthStart(month), 30), scoreable: true, completionDate: null, paymentsApplied: [], applications: [] });
       }
     }
-    if (commonAmount > TOLERANCE) obligations.push({ id: `COMMON|${month}`, seq: seq++, kind: 'COMMON', applicationMonth: month, concept: 'Gastos comunes del mes', amount: commonAmount, remaining: commonAmount, effectiveDate: monthStart(month), deadline: `${month}-${String(due).padStart(2, '0')}`, scoreable: true, completionDate: null, paymentsApplied: [] });
+    if (recurringCommonAmount > TOLERANCE) obligations.push({ id: `COMMON|${month}`, seq: seq++, kind: 'COMMON', applicationMonth: month, concept: 'Gastos comunes del mes', amount: recurringCommonAmount, remaining: recurringCommonAmount, effectiveDate: monthStart(month), promptPayEnd: `${month}-${String(promptDay).padStart(2, '0')}`, deadline: monthEnd(month), scoreable: true, completionDate: null, paymentsApplied: [], applications: [] });
   }
   return obligations;
+}
+function interpolateScore(position, start, end, startScore, endScore) {
+  const span = Math.max(0, Number(end) - Number(start));
+  if (!Number.isFinite(Number(position))) return null;
+  if (span <= 0) return Math.round(startScore);
+  const ratio = Math.max(0, Math.min(1, (Number(position) - Number(start)) / span));
+  return Math.round(startScore + (endScore - startScore) * ratio);
+}
+function scoreOverdueDays(days) {
+  const d = Math.max(1, Number(days || 1));
+  if (d <= 7) return interpolateScore(d, 1, 7, 45, 35);
+  if (d <= 15) return interpolateScore(d, 8, 15, 34, 22);
+  if (d <= 31) return interpolateScore(d, 16, 31, 20, 8);
+  if (d <= 62) return interpolateScore(d, 32, 62, 7, 0);
+  return 0;
+}
+function overdueState(days) {
+  const d = Math.max(1, Number(days || 1));
+  if (d <= 7) return 'MORA_1_7';
+  if (d <= 31) return 'MORA_SIGUIENTE_MES';
+  if (d <= 62) return 'MORA_PROLONGADA';
+  return 'MORA_SEVERA';
+}
+function scoreCommon(obligation, date, finalized) {
+  const deadline = obligation.deadline, late = daysBetween(deadline, date);
+  if (late > 0) return { score: scoreOverdueDays(late), state: overdueState(late), finalized };
+  const currentDay = dayOf(date), lastDay = dayOf(deadline);
+  if (obligation.kind === 'COMMON_EVENT') {
+    const totalWindow = Math.max(0, daysBetween(obligation.effectiveDate, deadline) || 0);
+    const elapsed = Math.max(0, daysBetween(obligation.effectiveDate, date) || 0);
+    return {
+      score: interpolateScore(elapsed, 0, totalWindow, 100, COMMON_MONTH_END_SCORE),
+      state: finalized ? 'COMUN_EVENTUAL_PUNTUAL' : 'COMUN_EVENTUAL_EN_PLAZO', finalized
+    };
+  }
+  const promptEndDay = Math.max(1, Math.min(lastDay, dayOf(obligation.promptPayEnd) || 10));
+  if (currentDay <= promptEndDay) {
+    return { score: interpolateScore(currentDay, 1, promptEndDay, 100, COMMON_PROMPT_END_SCORE), state: finalized ? 'PRONTO_PAGO' : 'PRONTO_PAGO_EN_CURSO', finalized };
+  }
+  return {
+    score: interpolateScore(currentDay, promptEndDay + 1, lastDay, COMMON_POST_PROMPT_START_SCORE, COMMON_MONTH_END_SCORE),
+    state: finalized ? 'PAGO_MISMO_MES' : (lastDay - currentDay <= 5 ? 'CERCA_VENCIMIENTO' : 'MES_EN_CURSO'), finalized
+  };
+}
+function scoreSpecial(obligation, date, finalized) {
+  const late = daysBetween(obligation.deadline, date);
+  if (late > 0) {
+    let score;
+    if (late <= 7) score = interpolateScore(late, 1, 7, 55, 45);
+    else if (late <= 15) score = interpolateScore(late, 8, 15, 44, 32);
+    else if (late <= 30) score = interpolateScore(late, 16, 30, 30, 15);
+    else if (late <= 60) score = interpolateScore(late, 31, 60, 14, 5);
+    else score = 0;
+    return { score, state: overdueState(late), finalized };
+  }
+  const totalWindow = Math.max(1, daysBetween(obligation.effectiveDate, obligation.deadline) || 30);
+  const elapsed = Math.max(0, daysBetween(obligation.effectiveDate, date) || 0);
+  return { score: interpolateScore(elapsed, 0, totalWindow, 100, SPECIAL_DEADLINE_SCORE), state: finalized ? 'ESPECIAL_PUNTUAL' : 'ESPECIAL_EN_PLAZO', finalized };
 }
 function scoreByDeadline(obligation, completionOrNow, finalized) {
   const date = dateOnly(completionOrNow);
   if (!date || !obligation || !obligation.deadline) return { score: null, state: 'SIN_DATOS', finalized: false };
+  if (obligation.kind === 'COMMON' || obligation.kind === 'COMMON_EVENT') return scoreCommon(obligation, date, finalized);
+  if (obligation.kind === 'SPECIAL') return scoreSpecial(obligation, date, finalized);
   const late = daysBetween(obligation.deadline, date);
   if (late === null) return { score: null, state: 'SIN_DATOS', finalized: false };
-  if (late <= 0) return { score: 100, state: obligation.kind === 'SPECIAL' ? 'ESPECIAL_PUNTUAL' : obligation.kind === 'PRIOR_DEBT' ? 'DEUDA_PUNTUAL' : 'PUNTUAL', finalized };
-  if (obligation.kind === 'COMMON') {
-    if (late <= 5) return { score: 85, state: finalized ? 'LEVE_RETRASO' : 'PENDIENTE_11_15', finalized };
-    if (late <= 10) return { score: 70, state: finalized ? 'RETRASO' : 'PENDIENTE_16_20', finalized };
-    if (monthOf(date) === obligation.applicationMonth) return { score: 55, state: finalized ? 'TARDIO' : 'PENDIENTE_21_FIN', finalized };
-    if (late <= 31) return { score: 30, state: 'MORA_SIGUIENTE_MES', finalized };
-    if (late <= 62) return { score: 10, state: 'MORA_PROLONGADA', finalized };
-    return { score: 0, state: 'MORA_SEVERA', finalized };
-  }
-  if (late <= 7) return { score: 85, state: finalized ? 'LEVE_RETRASO' : 'VENCIDO_1_7', finalized };
-  if (late <= 15) return { score: 70, state: finalized ? 'RETRASO' : 'VENCIDO_8_15', finalized };
-  if (late <= 30) return { score: 55, state: finalized ? 'TARDIO' : 'VENCIDO_16_30', finalized };
-  if (late <= 60) return { score: 30, state: 'MORA_SIGUIENTE_MES', finalized };
-  if (late <= 90) return { score: 10, state: 'MORA_PROLONGADA', finalized };
-  return { score: 0, state: 'MORA_SEVERA', finalized };
+  if (late <= 0) return { score: 100, state: 'DEUDA_PUNTUAL', finalized };
+  return { score: scoreOverdueDays(late), state: overdueState(late), finalized };
 }
 function replayLedger({ opening = 0, startMonth, obligations = [], payments = [], ownerId, nowDate }) {
   const active = [];
   let credit = Math.max(0, -money(opening));
-  const prior = money(opening) > TOLERANCE ? { id: `PRIOR|${startMonth}`, seq: -1, kind: 'PRIOR_DEBT', applicationMonth: startMonth, concept: 'Deuda vencida al iniciar el período', amount: money(opening), remaining: money(opening), effectiveDate: monthStart(startMonth), deadline: monthEnd(addMonths(startMonth, -1)), scoreable: true, completionDate: null, paymentsApplied: [] } : null;
+  const prior = money(opening) > TOLERANCE ? { id: `PRIOR|${startMonth}`, seq: -1, kind: 'PRIOR_DEBT', applicationMonth: startMonth, concept: 'Deuda vencida al iniciar el período', amount: money(opening), remaining: money(opening), effectiveDate: monthStart(startMonth), promptPayEnd: null, deadline: monthEnd(addMonths(startMonth, -1)), scoreable: true, completionDate: null, paymentsApplied: [], applications: [] } : null;
   const all = prior ? [prior, ...obligations] : [...obligations], events = [];
   for (const obligation of all) if (obligation.effectiveDate <= nowDate) events.push({ date: obligation.effectiveDate, order: 0, kind: 'charge', obligation });
   for (const payment of paymentsForOwner(payments, ownerId).filter(item => item.date >= monthStart(startMonth) && item.date <= nowDate)) events.push({ date: payment.date, order: 1, kind: 'payment', payment });
@@ -263,41 +310,77 @@ function replayLedger({ opening = 0, startMonth, obligations = [], payments = []
       if (remaining <= TOLERANCE) break;
       const used = Math.min(obligation.remaining, remaining);
       obligation.remaining = money(obligation.remaining - used); remaining = money(remaining - used);
-      if (used > TOLERANCE && paymentId) obligation.paymentsApplied.push(paymentId);
+      if (used > TOLERANCE && paymentId) {
+        obligation.paymentsApplied.push(paymentId);
+        obligation.applications.push({ paymentId, date, amount: money(used) });
+      }
       if (obligation.remaining <= TOLERANCE && !obligation.completionDate) obligation.completionDate = date;
     }
     return remaining;
   }
-  for (const event of events) {
-    if (event.kind === 'charge') {
-      active.push(event.obligation);
-      if (credit > TOLERANCE) credit = applyAmount(credit, event.date, 'CREDITO_ANTICIPADO');
-    } else credit = money(credit + applyAmount(event.payment.amount, event.date, event.payment.id));
+  for (let index = 0; index < events.length;) {
+    const date = events[index].date, sameDay = [];
+    while (index < events.length && events[index].date === date) sameDay.push(events[index++]);
+    for (const event of sameDay) if (event.kind === 'charge') active.push(event.obligation);
+    if (credit > TOLERANCE) credit = applyAmount(credit, date, 'CREDITO_ANTICIPADO');
+    for (const event of sameDay) if (event.kind === 'payment') credit = money(credit + applyAmount(event.payment.amount, date, event.payment.id));
   }
   return { obligations: all, endingCredit: credit };
 }
+function amountWeightedScore(items) {
+  const scored = (items || []).filter(item => Number.isFinite(item.score) && Number(item.scoreWeight ?? item.amount) > TOLERANCE);
+  if (!scored.length) return null;
+  const denominator = scored.reduce((sum, item) => sum + Number(item.scoreWeight ?? item.amount), 0);
+  if (denominator <= TOLERANCE) return null;
+  return Math.round(scored.reduce((sum, item) => sum + Number(item.score) * Number(item.scoreWeight ?? item.amount), 0) / denominator);
+}
+function scoreObligation(item, nowDate) {
+  const parts = [];
+  for (const application of item.applications || []) {
+    if (Number(application.amount) <= TOLERANCE) continue;
+    parts.push({ amount: Number(application.amount), ...scoreByDeadline(item, application.date, true), observedDate: application.date });
+  }
+  if (item.remaining > TOLERANCE) {
+    if (!(item.kind === 'SPECIAL' && nowDate <= item.deadline)) {
+      parts.push({ amount: Number(item.remaining), ...scoreByDeadline(item, nowDate, false), observedDate: nowDate });
+    }
+  }
+  const scored = parts.filter(part => Number.isFinite(part.score));
+  const score = amountWeightedScore(scored);
+  const worst = scored.slice().sort((a, b) => a.score - b.score)[0];
+  const hadOverdue = scored.some(part => part.observedDate > item.deadline);
+  return {
+    ...item,
+    score,
+    scoreWeight: money(scored.reduce((sum, part) => sum + Number(part.amount || 0), 0)),
+    state: worst ? worst.state : (item.kind === 'SPECIAL' && item.remaining > TOLERANCE && nowDate <= item.deadline ? 'ESPECIAL_EN_PLAZO' : 'SIN_DATOS'),
+    finalized: item.remaining <= TOLERANCE,
+    hadOverdue,
+    maxOverdueDays: scored.reduce((max, part) => part.observedDate > item.deadline ? Math.max(max, daysBetween(item.deadline, part.observedDate) || 0) : max, 0)
+  };
+}
 function summarizeMonth(obligations, month, nowDate, source) {
   const items = obligations.filter(item => item.applicationMonth === month && item.effectiveDate <= nowDate);
-  if (!items.length) return { month, score: null, state: 'SIN_OBLIGACIONES', finalized: false, scoreable: false, source };
-  const details = items.map(item => {
-    if (!item.scoreable) return { ...item, score: null, state: 'NO_RETROACTIVO', finalized: item.remaining <= TOLERANCE };
-    if (item.completionDate) return { ...item, ...scoreByDeadline(item, item.completionDate, true) };
-    if (nowDate <= item.deadline) return { ...item, score: null, state: item.kind === 'SPECIAL' ? 'ESPECIAL_EN_PLAZO' : 'EN_PLAZO', finalized: false };
-    return { ...item, ...scoreByDeadline(item, nowDate, false) };
-  });
-  const scored = details.filter(item => Number.isFinite(item.score));
-  const score = scored.length ? Math.min(...scored.map(item => item.score)) : null;
+  if (!items.length) return { month, score: null, state: 'SIN_OBLIGACIONES', finalized: false, scoreable: false, hadOverdue: false, source };
+  const details = items.map(item => item.scoreable ? scoreObligation(item, nowDate) : { ...item, score: null, scoreWeight: 0, state: 'NO_RETROACTIVO', finalized: item.remaining <= TOLERANCE, hadOverdue: false, maxOverdueDays: 0 });
+  const scored = details.filter(item => Number.isFinite(item.score) && item.scoreWeight > TOLERANCE);
+  const score = amountWeightedScore(scored);
   const worst = scored.slice().sort((a, b) => a.score - b.score)[0] || details.find(item => !item.finalized) || details[0];
-  const common = details.filter(item => (item.kind === 'COMMON' || item.kind === 'COMMON_LATE') && Number.isFinite(item.score));
+  const common = details.filter(item => (item.kind === 'COMMON' || item.kind === 'COMMON_EVENT') && Number.isFinite(item.score));
   const special = details.filter(item => item.kind === 'SPECIAL' && Number.isFinite(item.score));
   const overdue = details.filter(item => item.kind === 'PRIOR_DEBT' && Number.isFinite(item.score));
   const completionDates = details.map(item => item.completionDate).filter(Boolean).sort();
+  const overdueDetails = details.filter(item => item.hadOverdue);
   return {
     month, score, state: worst ? worst.state : 'SIN_DATOS', finalized: details.filter(item => item.scoreable).every(item => item.completionDate), scoreable: score !== null,
     completionDate: completionDates.length ? completionDates[completionDates.length - 1] : null, completionDay: completionDates.length ? dayOf(completionDates[completionDates.length - 1]) : null,
     requiredReference: money(details.reduce((sum, item) => sum + item.amount, 0)), remainingReference: money(details.reduce((sum, item) => sum + item.remaining, 0)),
-    commonScore: common.length ? Math.min(...common.map(item => item.score)) : null, specialScore: special.length ? Math.min(...special.map(item => item.score)) : null, overdueScore: overdue.length ? Math.min(...overdue.map(item => item.score)) : null,
-    specialInGrace: details.filter(item => item.kind === 'SPECIAL' && !item.completionDate && nowDate <= item.deadline).length, obligationsEvaluated: scored.length, source
+    commonScore: amountWeightedScore(common), specialScore: amountWeightedScore(special), overdueScore: amountWeightedScore(overdue),
+    specialInGrace: details.filter(item => item.kind === 'SPECIAL' && item.remaining > TOLERANCE && nowDate <= item.deadline).length,
+    obligationsEvaluated: scored.length, hadOverdue: overdueDetails.length > 0,
+    overdueObligations: overdueDetails.length,
+    maxOverdueDays: overdueDetails.reduce((max, item) => Math.max(max, item.maxOverdueDays || 0), 0),
+    source
   };
 }
 function levelFor(score) {
@@ -314,9 +397,25 @@ function weightedScore(items) {
   scored.forEach((item, index) => { const w = WEIGHTS[index] || 0; numerator += item.score * w; denominator += w; });
   return denominator ? Math.round(numerator / denominator) : null;
 }
+function recurrenceMetrics(items) {
+  const scored = (items || []).filter(item => Number.isFinite(item.score));
+  const flags = scored.map(item => item.hadOverdue === true);
+  const overdueMonths = flags.filter(Boolean).length;
+  let longestOverdueStreak = 0, running = 0;
+  for (const flag of flags.slice().reverse()) {
+    if (flag) { running += 1; longestOverdueStreak = Math.max(longestOverdueStreak, running); }
+    else running = 0;
+  }
+  const penalty = Math.min(18, Math.max(0, overdueMonths - 1) * 4 + Math.max(0, longestOverdueStreak - 1) * 2);
+  return { overdueMonths, longestOverdueStreak, penalty };
+}
 function streak(items) {
   let count = 0;
-  for (const item of items) { if (!Number.isFinite(item.score)) continue; if (item.score === 100) count += 1; else break; }
+  for (const item of items) {
+    if (!Number.isFinite(item.score)) continue;
+    if (item.hadOverdue) break;
+    count += 1;
+  }
   return count;
 }
 function trend(items) {
@@ -327,13 +426,14 @@ function trend(items) {
   if (diff <= -5) return { key: 'BAJANDO', label: 'Bajando', symbol: '↓' };
   return { key: 'ESTABLE', label: 'Estable', symbol: '→' };
 }
-function advice(score, latest, dueDay = 10) {
-  if (score === null) return 'El índice está en formación. Los gastos comunes y las cuotas especiales conservan plazos distintos.';
-  if (latest && latest.specialInGrace > 0) return `Mantén los gastos comunes cubiertos antes del día ${dueDay}. Las cuotas especiales pendientes aún están dentro de sus 30 días y no te penalizan.`;
-  if (score >= 90) return `Mantén los gastos comunes cubiertos antes del día ${dueDay} y las cuotas especiales dentro de sus 30 días.`;
-  if (score >= 75) return 'Los meses recientes pesan más. Evitar deuda vencida hará subir el índice con rapidez.';
-  if (score >= 60) return 'Prioriza primero cualquier deuda vencida y luego cubre los gastos comunes dentro de su plazo.';
-  return 'La deuda vencida pesa especialmente. Quedar al día y sostener pagos puntuales en los meses recientes recupera el índice.';
+function advice(score, latest, dueDay = 10, recurrence = { penalty: 0 }) {
+  if (score === null) return 'El índice está en formación. Los gastos comunes vencen al cambiar de mes y las cuotas especiales conservan 30 días.';
+  if (recurrence && recurrence.penalty > 0) return 'La mora repetida está reduciendo el promedio. Pagar el mes corriente antes de que cambie el mes corta esa reincidencia.';
+  if (latest && latest.specialInGrace > 0) return `Pagar los gastos comunes en los primeros ${dueDay} días maximiza el índice. La cuota especial pendiente sigue dentro de sus 30 días.`;
+  if (score >= 90) return `Los primeros ${dueDay} días reciben la mejor valoración. Después sigue siendo pago del mes, pero el promedio baja gradualmente hasta el cierre.`;
+  if (score >= 75) return 'Sigues dentro de un buen comportamiento. Pagar más temprano en el mes mejora el promedio y evita acercarte al vencimiento.';
+  if (score >= 60) return 'Conviene adelantar los pagos del mes. Una cuota común solo entra en mora cuando comienza el mes siguiente sin estar cubierta.';
+  return 'La deuda vencida pesa especialmente. Ponerse al día y evitar repetir meses en mora recupera el índice más rápido.';
 }
 function buildPunctualityScore({ owner, payments = [], expenses = [], history = [], dueDay = 10, now = new Date(), months = 6 }) {
   if (!owner || !owner.id) throw new Error('Propietario inválido para índice de puntualidad.');
@@ -350,16 +450,20 @@ function buildPunctualityScore({ owner, payments = [], expenses = [], history = 
     if (item.scoreable || item.state !== 'SIN_OBLIGACIONES') candidates.push(item);
     if (month === startMonth) break;
   }
-  const score = weightedScore(candidates), evaluatedMonths = candidates.filter(item => Number.isFinite(item.score)).length;
+  const baseScore = weightedScore(candidates), recurrence = recurrenceMetrics(candidates);
+  const score = baseScore === null ? null : Math.max(0, Math.min(100, baseScore - recurrence.penalty));
+  const evaluatedMonths = candidates.filter(item => Number.isFinite(item.score)).length;
   const formationLevel = { key: 'FORMACION', label: 'En formación', color: '#64748b' };
   const requiredLevelMonths = Math.min(MIN_LEVEL_MONTHS, targetMonths);
   const levelProvisional = evaluatedMonths < requiredLevelMonths;
   const level = score === null || levelProvisional ? formationLevel : levelFor(score);
+  const promptDay = Math.max(1, Math.min(28, Number(dueDay || 10)));
   return Object.freeze({
-    version: 'vla-punctuality-v2', readOnly: true, ownerId: String(owner.id), casa: Number(owner.Casa || 0), score, level,
+    version: 'vla-punctuality-v3', readOnly: true, ownerId: String(owner.id), casa: Number(owner.Casa || 0), score, baseScore, level,
     evaluatedMonths, targetMonths, forming: evaluatedMonths < targetMonths, levelProvisional,
-    streak: streak(candidates), trend: trend(candidates), dueDay: Math.max(1, Math.min(28, Number(dueDay || 10))), specialGraceDays: 30,
-    history: candidates.slice(0, targetMonths), anchor: { month: startMonth, source }, advice: advice(score, candidates[0] || null, dueDay), generatedAt: new Date().toISOString()
+    streak: streak(candidates), trend: trend(candidates), dueDay: promptDay, promptPayEndDay: promptDay,
+    commonDuePolicy: 'MONTH_END', specialGraceDays: 30, recurrence, scoringMethod: 'AMOUNT_WEIGHTED_RECENCY_WITH_REPEAT_MORA',
+    history: candidates.slice(0, targetMonths), anchor: { month: startMonth, source }, advice: advice(score, candidates[0] || null, promptDay, recurrence), generatedAt: new Date().toISOString()
   });
 }
 
@@ -367,5 +471,5 @@ module.exports = {
   TOLERANCE, WEIGHTS, MIN_LEVEL_MONTHS, money, dateOnly, monthOf, dayOf, monthEnd, addMonths, addDays, daysBetween, caracasClock,
   paymentAmount, expenseIsRecurring, expenseIsEligibleForPunctuality, expenseEffectiveDate, ownerShare, parseAuditSnapshots, currentPrior,
   paymentsForOwner, auditFinalBalance, auditCutoff, latestAuditAnchor, chargeTotalForMonth, inferOpeningFromAudit, buildObligations, scoreByDeadline,
-  replayLedger, summarizeMonth, levelFor, weightedScore, buildPunctualityScore
+  replayLedger, amountWeightedScore, summarizeMonth, levelFor, weightedScore, recurrenceMetrics, buildPunctualityScore
 };
