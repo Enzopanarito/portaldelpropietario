@@ -2,7 +2,7 @@
 
 const TOLERANCE = 0.01;
 const WEIGHTS = Object.freeze([30, 25, 18, 12, 9, 6]);
-const MIN_LEVEL_MONTHS = 3;
+const MIN_LEVEL_MONTHS = 6;
 
 function money(value) {
   const n = Number(value || 0);
@@ -128,8 +128,6 @@ function parseAuditSnapshots(history = []) {
     snapshot.labels.set(label, auditAmount(record));
     const created = String(record && record.createdTime || '');
     if (created && (!snapshot.createdAt || created > snapshot.createdAt)) snapshot.createdAt = created;
-    // El corte contable debe ser el instante del saldo final, no el último
-    // marcador auxiliar de auditoría que pudiera escribirse horas después.
     if (created && label.startsWith('saldo final total')) snapshot.cutoffAt = created;
     if (created && (label.startsWith('saldo final usd') || label.startsWith('saldo final bs ref'))
       && (!snapshot.splitBalanceCutoffAt || created < snapshot.splitBalanceCutoffAt)) snapshot.splitBalanceCutoffAt = created;
@@ -171,9 +169,6 @@ function auditCutoff(snapshot) {
 }
 function latestAuditAnchor(auditMap, casa, currentMonth, targetMonths) {
   const max = Math.max(1, Number(targetMonths || 6));
-  // Elegir la fotografía auditada más antigua disponible dentro de la ventana
-  // permite que el índice madure naturalmente hasta seis meses. Una fotografía
-  // más reciente sigue siendo útil si las anteriores aún no existen.
   for (let offset = max - 1; offset >= 1; offset -= 1) {
     const month = addMonths(currentMonth, -offset);
     const snapshot = auditMap.get(`${month}|${Number(casa || 0)}`);
@@ -223,7 +218,7 @@ function buildObligations({ owner, expenses, startMonth, endMonth, dueDay }) {
       const f = expense.fields || {}, type = expenseType(expense), effective = expenseEffectiveDate(expense, month), concept = String(f.Concepto || 'Gasto');
       if (type === 'Gasto Común') {
         if (expenseIsEligibleForPunctuality(expense, month, due)) commonAmount = money(commonAmount + share);
-        else obligations.push({ id: String(expense.id || `common-late-${month}-${seq}`), seq: seq++, kind: 'COMMON_LATE', applicationMonth: month, concept, amount: share, remaining: share, effectiveDate: effective || monthStart(month), deadline: monthEnd(month), scoreable: false, completionDate: null, paymentsApplied: [] });
+        else obligations.push({ id: String(expense.id || `common-late-${month}-${seq}`), seq: seq++, kind: 'COMMON_LATE', applicationMonth: month, concept, amount: share, remaining: share, effectiveDate: effective || monthStart(month), deadline: addDays(effective || monthStart(month), 30), scoreable: true, completionDate: null, paymentsApplied: [] });
       } else if (type === 'Gasto Especial') {
         obligations.push({ id: String(expense.id || `special-${month}-${seq}`), seq: seq++, kind: 'SPECIAL', applicationMonth: month, concept, amount: share, remaining: share, effectiveDate: effective || monthStart(month), deadline: addDays(effective || monthStart(month), 30), scoreable: true, completionDate: null, paymentsApplied: [] });
       }
@@ -293,7 +288,7 @@ function summarizeMonth(obligations, month, nowDate, source) {
   const scored = details.filter(item => Number.isFinite(item.score));
   const score = scored.length ? Math.min(...scored.map(item => item.score)) : null;
   const worst = scored.slice().sort((a, b) => a.score - b.score)[0] || details.find(item => !item.finalized) || details[0];
-  const common = details.filter(item => item.kind === 'COMMON' && Number.isFinite(item.score));
+  const common = details.filter(item => (item.kind === 'COMMON' || item.kind === 'COMMON_LATE') && Number.isFinite(item.score));
   const special = details.filter(item => item.kind === 'SPECIAL' && Number.isFinite(item.score));
   const overdue = details.filter(item => item.kind === 'PRIOR_DEBT' && Number.isFinite(item.score));
   const completionDates = details.map(item => item.completionDate).filter(Boolean).sort();
@@ -357,10 +352,12 @@ function buildPunctualityScore({ owner, payments = [], expenses = [], history = 
   }
   const score = weightedScore(candidates), evaluatedMonths = candidates.filter(item => Number.isFinite(item.score)).length;
   const formationLevel = { key: 'FORMACION', label: 'En formación', color: '#64748b' };
-  const level = score === null || evaluatedMonths < MIN_LEVEL_MONTHS ? formationLevel : levelFor(score);
+  const requiredLevelMonths = Math.min(MIN_LEVEL_MONTHS, targetMonths);
+  const levelProvisional = evaluatedMonths < requiredLevelMonths;
+  const level = score === null || levelProvisional ? formationLevel : levelFor(score);
   return Object.freeze({
     version: 'vla-punctuality-v2', readOnly: true, ownerId: String(owner.id), casa: Number(owner.Casa || 0), score, level,
-    evaluatedMonths, targetMonths, forming: evaluatedMonths < targetMonths, levelProvisional: evaluatedMonths < MIN_LEVEL_MONTHS,
+    evaluatedMonths, targetMonths, forming: evaluatedMonths < targetMonths, levelProvisional,
     streak: streak(candidates), trend: trend(candidates), dueDay: Math.max(1, Math.min(28, Number(dueDay || 10))), specialGraceDays: 30,
     history: candidates.slice(0, targetMonths), anchor: { month: startMonth, source }, advice: advice(score, candidates[0] || null, dueDay), generatedAt: new Date().toISOString()
   });
