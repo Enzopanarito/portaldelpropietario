@@ -28,6 +28,17 @@ test('gastos comunes vencen el día 10 y una cuota especial recibe 30 días real
  assert.equal(special.deadline,'2026-09-19');
 });
 
+test('un gasto común creado después del día 10 no castiga retroactivamente pero sí puede vencer',()=>{
+ const o=owner(1),late=expense({id:'recCOMMONLATE001',created:'2026-08-18T12:00:00.000Z',owners:[o.id],frequency:'Eventual'});
+ const obligations=score.buildObligations({owner:o,expenses:[late],startMonth:'2026-08',endMonth:'2026-08',dueDay:10});
+ const obligation=obligations.find(x=>x.kind==='COMMON_LATE');
+ assert.ok(obligation);
+ assert.equal(obligation.deadline,'2026-09-17');
+ assert.equal(obligation.scoreable,true);
+ assert.equal(score.scoreByDeadline(obligation,'2026-09-16',false).score,100);
+ assert.equal(score.scoreByDeadline(obligation,'2026-09-18',false).score,85);
+});
+
 test('una cuota especial todavía dentro de sus 30 días no castiga el mes',()=>{
  const o=owner(1);
  const result=score.buildPunctualityScore({owner:o,expenses:[
@@ -53,7 +64,6 @@ test('saldo a favor auditado se reconstruye hacia atrás y cubre obligaciones fu
 test('deuda vencida consume pagos antes que el mes corriente y reduce el índice',()=>{
  const o=owner(4,{prior:20}),expenses=twoMonthExpenses(o);
  const payments=[payment(o.id,'2026-07-02',200),payment(o.id,'2026-07-29',230),payment(o.id,'2026-08-05',150)];
- // final julio 20 con 150 de cargos y 430 pagados implica 300 de deuda al iniciar julio.
  const result=score.buildPunctualityScore({owner:o,expenses,payments,history:[audit(4,20)],dueDay:10,now:new Date('2026-08-26T12:00:00-04:00')});
  assert.equal(result.anchor.source,'AUDIT_RECONSTRUCTED');
  assert.equal(result.history[1].overdueScore,55);
@@ -104,9 +114,10 @@ test('la ventana elige la auditoría más antigua disponible para poder madurar 
  assert.equal(anchor.month,'2026-06');
 });
 
-test('con menos de tres meses el número puede mostrarse pero no se proclama Excelente',()=>{
+test('hasta completar seis meses el número puede mostrarse pero no se proclama Excelente',()=>{
  const o=owner(14),expenses=twoMonthExpenses(o),payments=[payment(o.id,'2026-07-05',150),payment(o.id,'2026-08-05',150)];
  const result=score.buildPunctualityScore({owner:o,expenses,payments,history:[audit(14,0)],now:new Date('2026-08-26T12:00:00-04:00')});
+ assert.equal(score.MIN_LEVEL_MONTHS,6);
  assert.equal(result.score,100);
  assert.equal(result.evaluatedMonths,2);
  assert.equal(result.level.key,'FORMACION');
