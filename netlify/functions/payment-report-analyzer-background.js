@@ -8,7 +8,7 @@ const {safeDisplayText}=require('./_shared/_security_utils');
 const {connectLambdaEvent}=require('./_shared/_blobs_compat');
 
 const CONCURRENCY_HANDOFF=new Set(['PROCESSING_BUSY','PROCESSING_LEASE_LOST']);
-const RETRYABLE=new Set(['TIMEOUT','PROVIDER_UNAVAILABLE','RATE_LIMIT','TEMPORARY_ERROR','GENERATION_STUCK','EMPTY_OUTPUT','PROCESSING_NOT_FOUND','PROCESSING_CAS_CONFLICT']);
+const RETRYABLE=new Set(['TIMEOUT','PROVIDER_UNAVAILABLE','RATE_LIMIT','TEMPORARY_ERROR','GENERATION_STUCK','EMPTY_OUTPUT','PROCESSING_NOT_FOUND','PROCESSING_CAS_CONFLICT','PROCESSING_FAILED']);
 function retryable(code){const value=String(code||'').trim().toUpperCase();return RETRYABLE.has(value)||value.startsWith('BLOBS_')}
 function concurrencyHandoff(code){return CONCURRENCY_HANDOFF.has(String(code||'').trim().toUpperCase())}
 function retryError(code,message){const error=new Error(message||'Fallo transitorio del análisis de pago.');error.code=String(code||'TEMPORARY_ERROR').trim().toUpperCase();return error}
@@ -27,9 +27,9 @@ const handler=async function(event){
  }catch(error){
   const code=String(error?.code||'PROCESSING_FAILED').trim().toUpperCase();
   console.error('PAYMENT_REPORT_AUTOMATION_FAILED',safeDisplayText(code,100));
-  // En una Background Function, lanzar el fallo transitorio permite que Netlify
-  // ejecute sus reintentos nativos. Las carreras de lease no se reintentan aquí:
-  // la ejecución propietaria o el recovery diferido conserva la autoridad.
+  // Los reportes recién creados son idempotentes. Reintentar también un fallo
+  // inesperado de carga/orquestación evita que un error transitorio deje el
+  // reporte eternamente en "Recibido" sin relajar ninguna regla financiera.
   if(retryable(code))throw error;
   return{statusCode:200,headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:JSON.stringify({success:false,protected:true,message:'El reporte quedó protegido para revisión administrativa.',code:safeDisplayText(code,100)})};
  }
