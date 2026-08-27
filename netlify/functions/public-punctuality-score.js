@@ -3,7 +3,7 @@
 const { withAirtableUsage } = require('./_shared/_airtable_meter');
 const publicData = require('./public-data-v3');
 const { getAll, TABLES } = require('./_shared/_monthly_close_store');
-const { buildPunctualityScore } = require('./_shared/_punctuality_score_v2');
+const { buildPunctualityScore } = require('./_shared/_punctuality_score_v3');
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const cache = new Map();
