@@ -62,3 +62,19 @@ test('una lectura lenta puede terminar y no es abortada por el antiguo reloj de 
   assert.match(await page.locator('#vla-pay-scan').innerText(),/Comprobante leído/);
  }finally{await browser.close()}
 });
+
+
+test('Zelle sin referencia visible llena monto y receptor y habilita envío para revisión',async()=>{
+ const browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.CHROMIUM_EXECUTABLE_PATH}:{})});
+ const page=await fixturePage(browser);
+ try{
+  await page.route('**/api/vla/payment-proof-prefill',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({success:true,complete:true,analysis:{amount:60,currency:'USD',reference:'',bank:'Zelle',method:'ZELLE',transactionDate:'',transactionDateSource:'UNDETERMINED',transactionDateConfidence:'LOW',transactionDateNeedsReview:true,transactionDateEvidence:'Zelle no muestra fecha en esta pantalla.',transactionStatus:'SENT',recipient:'Enzo panarito · enzopanarito@gmail.com',recipientClassification:'CONFIRMED',recipientNeedsReview:false,confidence:.99,warnings:[]},analysisProvider:'proxy:gemini-test',analysisRoute:'proxy',missing:[]})}));
+  await page.setInputFiles('#payProof',proof('zelle-sin-referencia'));
+  await page.waitForFunction(()=>document.getElementById('payAmount').value==='60');
+  assert.equal(await page.locator('#payRef').inputValue(),'');
+  assert.equal(await page.locator('#vla-pay-confirmation').isVisible(),true);
+  assert.equal(await page.locator('#submitReport').isEnabled(),true);
+  assert.match(await page.locator('#vla-pay-confirm-card').innerText(),/Zelle no muestra referencia/i);
+  assert.match(await page.locator('#submitReport').innerText(),/Enviar para revisión/i);
+ }finally{await browser.close()}
+});
