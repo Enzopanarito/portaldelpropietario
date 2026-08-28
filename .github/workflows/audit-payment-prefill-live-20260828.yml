@@ -1,0 +1,65 @@
+name: Audit payment prefill live 20260828
+
+on:
+  push:
+    branches:
+      - audit/payment-prefill-live-20260828
+    paths:
+      - .github/workflows/audit-payment-prefill-live-20260828.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build isolated synthetic proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet pillow
+          python - <<'PY'
+          from PIL import Image, ImageDraw, ImageFont
+          import base64, io, json
+          image=Image.new('RGB',(1000,700),'white')
+          draw=ImageDraw.Draw(image)
+          regular=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',36)
+          bold=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',44)
+          rows=[
+            ('COMPROBANTE DE PAGO MOVIL',bold),('Banco: Mercantil',regular),
+            ('Monto: Bs 123,45',regular),('Fecha: 28/08/2026',regular),
+            ('Hora: 11:30:00',regular),('Referencia: 987654321098',regular),
+            ('Estado: COMPLETADO',regular),('Receptor: Villa Los Apamates',regular),
+          ]
+          y=55
+          for text,font in rows:
+            draw.text((55,y),text,fill='black',font=font); y+=76
+          out=io.BytesIO(); image.save(out,format='PNG',optimize=True)
+          payload={'ownerId':'recAAAAAAAAAAAAAA','attachment':{'name':'audit-read-only.png','type':'image/png','size':len(out.getvalue()),'base64':base64.b64encode(out.getvalue()).decode('ascii')}}
+          open('/tmp/payload.json','w').write(json.dumps(payload))
+          PY
+      - name: Call production prefill only
+        shell: bash
+        run: |
+          set -euo pipefail
+          body=$(mktemp)
+          status=$(curl -sS --max-time 70 -o "$body" -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H 'Cache-Control: no-cache' --data-binary @/tmp/payload.json 'https://villalosapamates.netlify.app/api/vla/payment-proof-prefill')
+          echo "HTTP_STATUS=$status"
+          cat "$body"
+          echo
+          python - "$status" "$body" <<'PY'
+          import json,sys
+          status,path=sys.argv[1:]
+          body=json.load(open(path))
+          assert status=='200', (status,body)
+          assert body.get('success') is True, body
+          a=body.get('analysis') or {}
+          assert a.get('currency')=='VES', a
+          assert abs(float(a.get('amount') or 0)-123.45)<0.02, a
+          assert str(a.get('reference') or '')=='987654321098', a
+          assert str(body.get('analysisProvider') or '').startswith(('proxy:','gemini-')), body
+          print('VLA_PAYMENT_PREFILL_LIVE_OK')
+          PY
