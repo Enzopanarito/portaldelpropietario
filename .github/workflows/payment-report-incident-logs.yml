@@ -11,7 +11,7 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 3
     env:
       NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
       NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
@@ -24,10 +24,11 @@ jobs:
           test -n "${NETLIFY_AUTH_TOKEN:-}" || { echo 'NETLIFY_AUTH_TOKEN missing'; exit 1; }
           test -n "${NETLIFY_SITE_ID:-}" || { echo 'NETLIFY_SITE_ID missing'; exit 1; }
           raw="${RUNNER_TEMP}/netlify-payment-prefill.jsonl"
-          npx --yes "netlify-cli@${NETLIFY_CLI_VERSION}" logs \
+          timeout 25s npx --yes "netlify-cli@${NETLIFY_CLI_VERSION}" logs \
             --json \
             --source functions \
-            --since '2026-08-29T02:00:00Z' > "$raw"
+            --since '2026-08-29T02:00:00Z' > "$raw" || code=$?
+          if [ "${code:-0}" -ne 0 ] && [ "${code:-0}" -ne 124 ]; then exit "$code"; fi
           node - "$raw" <<'NODE'
           const fs=require('fs');
           const path=process.argv[2];
