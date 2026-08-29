@@ -1,0 +1,83 @@
+name: Audit Zelle Prefill Real Route
+
+on:
+  push:
+    branches:
+      - fix/zelle-prefill-real-20260828
+
+permissions:
+  contents: read
+
+jobs:
+  audit-zelle-prefill:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Generate realistic Zelle confirmation image
+        shell: bash
+        env:
+          OWNER_ID: recSyntheticAI002
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet pillow
+          python3 - <<'PY'
+          import base64, json, os
+          from PIL import Image, ImageDraw, ImageFont
+          w,h=1170,2532
+          im=Image.new('RGB',(w,h),'white')
+          d=ImageDraw.Draw(im)
+          title=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',64)
+          body=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',50)
+          bold=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',54)
+          y=180
+          rows=[
+            ('Zelle',title),
+            ('Payment sent',title),
+            ('$60.00',title),
+            ('To',body),
+            ('Enzo Panarito',bold),
+            ('enzopanarito@gmail.com',body),
+            ('Your payment was sent successfully.',body),
+            ('This confirmation screen does not show',body),
+            ('a reference number or transaction date.',body),
+          ]
+          for text,font in rows:
+            d.text((100,y),text,fill='black',font=font)
+            y += 150
+          d.text((100,h-180),'CI SYNTHETIC IMAGE - NOT A REAL PAYMENT',fill=(100,100,100),font=body)
+          im.save('zelle-confirmation.jpeg',quality=94)
+          content=open('zelle-confirmation.jpeg','rb').read()
+          payload={'ownerId':os.environ['OWNER_ID'],'attachment':{'name':'zelle-confirmation.jpeg','type':'image/jpeg','size':len(content),'base64':base64.b64encode(content).decode('ascii')}}
+          open('request.json','w').write(json.dumps(payload))
+          print('JPEG_BYTES='+str(len(content)))
+          PY
+
+      - name: Call production prefill read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(curl --silent --show-error --location --max-time 90 --output response.json --write-out '%{http_code}' --request POST 'https://villalosapamates.netlify.app/api/vla/payment-proof-prefill' --header 'Content-Type: application/json' --data-binary @request.json)"
+          python3 - "$status" <<'PY'
+          import json,sys
+          status=int(sys.argv[1])
+          try: payload=json.load(open('response.json'))
+          except Exception: payload={}
+          analysis=payload.get('analysis') or {}
+          safe={
+            'httpStatus':status,
+            'success':payload.get('success'),
+            'complete':payload.get('complete'),
+            'message':payload.get('message'),
+            'reason':payload.get('reason'),
+            'providerStatus':payload.get('providerStatus'),
+            'analysisProvider':payload.get('analysisProvider'),
+            'analysisRoute':payload.get('analysisRoute'),
+            'method':analysis.get('method'),
+            'currency':analysis.get('currency'),
+            'amount':analysis.get('amount'),
+            'referencePresent':bool(analysis.get('reference')),
+            'recipientClassification':analysis.get('recipientClassification'),
+            'missing':payload.get('missing'),
+          }
+          print(json.dumps(safe,indent=2,ensure_ascii=False))
+          PY
