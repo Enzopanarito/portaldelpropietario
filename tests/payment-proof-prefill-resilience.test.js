@@ -54,19 +54,18 @@ test('prelectura prioriza el proxy y no desperdicia tiempo en Gemini directo',as
  assert.equal(result.provider,'proxy');
 });
 
-test('timeout del proxy en prelectura termina de inmediato sin gastar otro intento directo',async()=>{
+test('timeout del proxy cae a Gemini local y evita mandar al propietario a carga manual',async()=>{
  let discoveryCalls=0,directCalls=0;
- await assert.rejects(
-  ()=>prefill.analyzeWithFallback(baseArgs,{
-   localGeminiConfigured:()=>true,
-   discoverCompatibleModel:async()=>{discoveryCalls+=1;return{model:'gemini-primary'}},
-   analyzeDirect:async()=>{directCalls+=1;return{raw:VALID_RAW,model:'gemini-primary',provider:'direct'}},
-   analyzeViaProxy:async()=>{throw coded('TIMEOUT',504)}
-  }),
-  error=>error?.code==='TIMEOUT'&&error?.status===504
- );
- assert.equal(discoveryCalls,0);
- assert.equal(directCalls,0);
+ const result=await prefill.analyzeWithFallback(baseArgs,{
+  localGeminiConfigured:()=>true,
+  discoverCompatibleModel:async()=>{discoveryCalls+=1;return{model:'gemini-primary'}},
+  analyzeDirect:async()=>{directCalls+=1;return{raw:VALID_RAW,model:'gemini-primary',provider:'direct'}},
+  analyzeViaProxy:async()=>{throw coded('TIMEOUT',504)}
+ });
+ assert.equal(discoveryCalls,1);
+ assert.equal(directCalls,1);
+ assert.equal(result.provider,'direct');
+ assert.equal(result.model,'gemini-primary');
 });
 
 test('la prelectura reserva 20 segundos al proxy para fotos reales',()=>{
