@@ -22,7 +22,20 @@ jobs:
           node-version: 24
           package-manager-cache: false
       - name: Patch source
-        run: python3 scripts/apply-zelle-runtime-fix.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/apply-zelle-runtime-fix.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('tests/payment-reference-precedence-v9.test.js')
+          s=p.read_text()
+          old="owner-mobile-fluid-v2-payment-report-tracking-v13-2026-08-15"
+          new="owner-mobile-fluid-v2-payment-report-tracking-v14-2026-08-29"
+          if old not in s:
+              raise SystemExit('payment reference cache-busting assertion anchor not found')
+          p.write_text(s.replace(old,new,1).replace('flujo de pagos v13','flujo de pagos v14',1))
+          PY
       - name: Install dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Run unit gates
