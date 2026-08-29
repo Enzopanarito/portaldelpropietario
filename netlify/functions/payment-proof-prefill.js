@@ -15,6 +15,7 @@ const {resolvePrefillDate}=require('./_shared/_payment_date_resolver');
 const {signDateAttestation}=require('./_shared/_payment_date_attestation');
 const {METHOD_ACCOUNT_MAP,accountActive,findAuthorizedRecipient}=require('./_shared/_payment_deterministic_arbiter');
 const {signRecipientAttestation}=require('./_shared/_payment_recipient_attestation');
+const {currencyForMethod}=require('../../payment-report-intelligence');
 
 const WINDOW_MS=60*60*1000;
 const CURRENT_STABLE_MODELS=Object.freeze(['gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-2.5-flash']);
@@ -31,8 +32,10 @@ function validRecordId(value){return /^rec[A-Za-z0-9]{14}$/.test(String(value||'
 function clientIp(event){const headers=event.headers||{};return String(headers['x-nf-client-connection-ip']||headers['X-Nf-Client-Connection-Ip']||headers['x-forwarded-for']||headers['X-Forwarded-For']||'unknown').split(',')[0].trim().slice(0,120)}
 async function allowed(scope,identity,max){try{return await consume({scope,identity,max,windowMs:WINDOW_MS,countBeforeRecord:true})}catch(error){console.warn('Límite de prelectura no disponible:',error.message);return{allowed:true,retryAfter:3600}}}
 function methodLabel(method){return({TRANSFER_VE:'Transferencia bancaria',MOBILE_PAYMENT_VE:'Pago móvil',ZELLE:'Zelle',TRANSFER_US:'Transferencia bancaria internacional',BINANCE_PAY:'Binance Pay',CRYPTO_TRANSFER:'Binance / transferencia cripto',OTHER:'Otro método'}[method]||'')}
+function applyCurrencyPolicy(analysis){if(!analysis||typeof analysis!=='object')return analysis;return{...analysis,currency:currencyForMethod(analysis.method,analysis.currency)}}
 function requiredFieldsFor(method){const normalized=String(method||'').trim().toUpperCase();return normalized==='ZELLE'?['amount','currency','method']:['amount','currency','reference','method']}
 function missingFields(analysis){
+ analysis=applyCurrencyPolicy(analysis);
  const required=new Set(requiredFieldsFor(analysis?.method)),missing=[];
  if(required.has('amount')&&(!analysis||!Number(analysis.amount)))missing.push({field:'amount',label:'monto'});
  if(required.has('currency')&&(!analysis||!['VES','USD'].includes(analysis.currency)))missing.push({field:'currency',label:'moneda'});
@@ -82,7 +85,7 @@ function validateRawForPrefill(raw){
 function prefillQuality(raw){
  const parsed=contract.parseRawJson(String(raw||''));
  if(!parsed.ok)return{usable:false,complete:false,confidence:0,missing:[{field:'analysis',label:'lectura'}],rank:-1000};
- const analysis=contract.normalizeAnalysis(parsed.value),missing=missingFields(analysis),confidence=Math.max(0,Math.min(1,Number(analysis.confidence)||0)),coreMissing=missing.filter(item=>['amount','currency','method'].includes(item.field)),usable=coreMissing.length===0&&confidence>=0.75,complete=missing.length===0;
+ const analysis=applyCurrencyPolicy(contract.normalizeAnalysis(parsed.value)),missing=missingFields(analysis),confidence=Math.max(0,Math.min(1,Number(analysis.confidence)||0)),coreMissing=missing.filter(item=>['amount','currency','method'].includes(item.field)),usable=coreMissing.length===0&&confidence>=0.75,complete=missing.length===0;
  return{usable,complete,confidence,missing,analysis,rank:(usable?1000:0)+(complete?500:0)+confidence*100-missing.length*25};
 }
 
@@ -161,7 +164,7 @@ const handler=async event=>{
   if(!parsed.ok)return json(422,{message:'No pudimos leer el comprobante con seguridad. Complete los datos manualmente.',manualAvailable:true,reason:parsed.reason});
   const validation=contract.validateAnalysis(parsed.value,{minimumConfidence:0}),fatal=(validation.issueCodes||[]).filter(code=>!['CRITICAL_FIELDS_MISSING','LOW_CONFIDENCE'].includes(code));
   if(fatal.length)return json(422,{message:'El comprobante no devolvió datos utilizables. Complete los datos manualmente.',manualAvailable:true,reason:fatal[0]});
-  const analysis=contract.normalizeAnalysis(parsed.value),missing=missingFields(analysis),bank=analysis.bank_or_platform||methodLabel(analysis.method),date=resolvePrefillDate({proofDate:analysis.transaction_date,attachment:body.attachment,method:analysis.method,bank}),attachmentSha=crypto.createHash('sha256').update(attachment.content).digest('hex'),recipient=recipientVerification(analysis,accountState,config);
+  const analysis=applyCurrencyPolicy(contract.normalizeAnalysis(parsed.value)),missing=missingFields(analysis),bank=analysis.bank_or_platform||methodLabel(analysis.method),date=resolvePrefillDate({proofDate:analysis.transaction_date,attachment:body.attachment,method:analysis.method,bank}),attachmentSha=crypto.createHash('sha256').update(attachment.content).digest('hex'),recipient=recipientVerification(analysis,accountState,config);
   let dateAttestation='',recipientAttestation='';
   if(date.transactionDateSource==='PROOF_EXTRACTED'){
    try{dateAttestation=signDateAttestation({ownerId,attachmentSha,method:analysis.method,transactionDate:date.transactionDate,transactionDateEvidence:date.transactionDateEvidence})}
@@ -191,6 +194,7 @@ exports.analyzeViaProxy=analyzeViaProxy;
 exports.analyzeDirect=analyzeDirect;
 exports.analyzeWithFallback=analyzeWithFallback;
 exports.prefillQuality=prefillQuality;
+exports.applyCurrencyPolicy=applyCurrencyPolicy;
 exports.loadAuthorizedAccounts=loadAuthorizedAccounts;
 exports.recipientVerification=recipientVerification;
 exports.CURRENT_STABLE_MODELS=CURRENT_STABLE_MODELS;
