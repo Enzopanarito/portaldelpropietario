@@ -20,11 +20,12 @@ assert(!/function digitalMissing\(\)\{[^}]*missing\.push\('date'\)/.test(ui),'La
 assert(/function digitalMissing\(\)\{[^}]*missing\.push\('reference'\)/.test(ui),'Si la referencia crítica no aparece, debe preguntarse una sola vez.');
 assert(/function digitalMissing\(\)\{[^}]*missing\.push\('bank'\)/.test(ui),'Si el banco crítico no aparece, debe preguntarse una sola vez.');
 assert(!ui.includes('generatedReference')&&ui.includes('reportReference')&&ui.includes('reportBank'),'No deben inventarse referencias ni bancos técnicos.');
-assert(ui.includes('inferTargetMode'),'VLA debe inferir automáticamente a cuál cuenta corresponde el pago cuando la evidencia es inequívoca.');
+assert(ui.includes('inferTargetMode')&&ui.includes("reason:'strict-currency-account-policy'")===false,'VLA debe aplicar la política central de cuenta desde la moneda, sin duplicar la regla en la interfaz.');
 assert(ui.includes("const singleMissing=!cash&&!editAll&&!manualMode&&missing.length?missing[0]:''"),'Las excepciones digitales deben preguntarse una por una.');
 assert(!/confianza \$\{confidence\}%/i.test(ui),'El propietario no debe ver porcentajes técnicos de confianza.');
 assert(ui.includes('analysisSummary')&&ui.includes('possibleVisualModification'),'El administrador debe recibir la mayor información de la prelectura.');
-assert(ui.includes("cash?(currency==='BS'?'Bs BCV':currency==='USD'?'USD':'')"),'El efectivo debe asignar la cuenta desde su moneda sin pedir un campo oculto.');
+assert(ui.includes('syncCurrencyFromMethod')&&ui.includes('currencyForMethod'),'Los métodos reconocidos deben fijar su moneda obligatoria en la interfaz.');
+assert(ui.includes("if(key==='mode')show=false"),'El propietario nunca debe elegir manualmente una cuenta que contradiga la moneda.');
 assert(!/function cashMissing\(\)\{[^}]*missing\.push\('mode'\)/.test(ui),'El flujo de efectivo no puede exigir una cuenta oculta.');
 assert(ui.includes('La fecha se registrará automáticamente con el día de hoy. Administración confirmará la entrega.'),'El propietario debe saber que la fecha del efectivo la asigna el servidor al reportarlo.');
 assert(ui.includes("if(!selectedFile)return['proof']"),'Antes del comprobante solo debe pedirse el comprobante.');
@@ -51,6 +52,7 @@ assert(ui.includes('Sí, enviar para revisión')&&ui.includes('duplicateReviewRe
 assert(server.includes("paymentChannel==='DIGITAL'?decodeAttachment(body.attachment):null"),'El comprobante es obligatorio solo para digital.');
 assert(server.includes("'Archivo Obligatorio':paymentChannel==='DIGITAL'")&&server.includes('reserveIdentity'),'Debe conservar comprobante condicional y deduplicación.');
 assert(server.includes('connectLambdaEvent(event)')&&server.includes('POST_CREATE_TIMEOUT_MS'),'El guardado Blobs y las tareas posteriores deben estar protegidos.');
+assert(server.includes('mode!==policyMode')&&server.includes("policyMethodCurrency!=='UNKNOWN'"),'El servidor debe rechazar cualquier cruce entre moneda, método y cuenta.');
 assert(!server.includes('ACCEPTED_TRANSACTION_STATUSES'),'El cliente no decide si una transacción está completada.');
 assert(browserGate.includes('privatePlantResponses')&&browserGate.includes("response.status()===401")&&browserGate.includes("response.request().method()==='GET'")&&browserGate.includes('/api\\/vla\\/plant(?:\\?|$)'),'El navegador debe correlacionar el 401 con la lectura exacta del endpoint privado de planta.');
 assert(browserGate.includes('challenges.length===errors.privatePlantResponses')&&browserGate.includes('privateChallengeVisible'),'Solo el desafío OTP visible y exactamente correlacionado puede excluirse del error móvil.');
