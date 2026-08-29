@@ -1,6 +1,7 @@
 'use strict';
 
 const {validTransactionDate}=require('./_payment_date_resolver');
+const {currencyForMethod,modeForCurrency}=require('../../../payment-report-intelligence');
 
 const APPROVAL_ACTIONS=new Set(['approve','correct_and_approve','approve_exception']);
 const TERMINAL_ACTIONS=new Set(['reject','mark_duplicate']);
@@ -86,6 +87,9 @@ function effectivePayment(fields={},corrections={}){
  if(!validDate(transactionDate))return{ok:false,message:'Debe corregir o verificar la fecha de la operación antes de aprobar.'};
  if(!reference)return{ok:false,message:'Debe corregir o verificar la referencia antes de aprobar.'};
  if(!CURRENCIES.has(receivedCurrency)||!(receivedAmount>0))return{ok:false,message:'La moneda o monto recibido no es válido.'};
+ if(modeForCurrency(receivedCurrency)!==mode)return{ok:false,message:'La moneda recibida no coincide con la cuenta donde se aplicará el pago.'};
+ const methodCurrency=currencyForMethod(method,'UNKNOWN');
+ if(methodCurrency!=='UNKNOWN'&&methodCurrency!==receivedCurrency)return{ok:false,message:'El método de pago no coincide con la moneda recibida.'};
  if(mode==='Bs BCV'){
   if(!(rate>0)||!(amountBs>0))return{ok:false,message:'El monto Bs, el equivalente USD y la tasa BCV no son coherentes.'};
   const impliedUsd=money(amountBs/rate);
