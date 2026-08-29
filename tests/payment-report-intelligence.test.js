@@ -56,23 +56,34 @@ const intelligence=require('../payment-report-intelligence');
 
 (function exactUsdAmountSelectsUsdAccountWhenBothExist(){
   const result=intelligence.inferTargetMode({enteredCurrency:'USD',amount:85,rate:180,debtUsd:85,debtBs:221.4});
-  assert.equal(result.status,'clear');assert.equal(result.mode,'USD');assert.equal(result.reason,'exact-usd-balance');
+  assert.equal(result.status,'clear');assert.equal(result.mode,'USD');assert.equal(result.reason,'strict-currency-account-policy');
 })();
 
-(function exactBsReferenceAmountSelectsBsAccountWhenBothExist(){
+(function usdNeverSelectsBsEvenWhenAmountMatchesBsBalance(){
   const result=intelligence.inferTargetMode({enteredCurrency:'USD',amount:221.4,rate:180,debtUsd:85,debtBs:221.4});
-  assert.equal(result.status,'clear');assert.equal(result.mode,'Bs BCV');assert.equal(result.reason,'exact-bs-balance');
+  assert.equal(result.status,'clear');assert.equal(result.mode,'USD');assert.equal(result.reason,'strict-currency-account-policy');
 })();
 
-(function ambiguousPartialPaymentAsksOnlyForTargetAccount(){
+(function usdPartialPaymentStillSelectsUsd(){
   const result=intelligence.inferTargetMode({enteredCurrency:'USD',amount:50,rate:180,debtUsd:85,debtBs:90});
-  assert.equal(result.status,'ambiguous');assert.equal(result.mode,'');assert.equal(result.reason,'both-accounts-plausible');
+  assert.equal(result.status,'clear');assert.equal(result.mode,'USD');assert.equal(result.reason,'strict-currency-account-policy');
 })();
 
-(function singleDebtAndAdvanceNeedNoAccountQuestion(){
+(function balancesNeverOverridePaymentCurrency(){
   assert.equal(intelligence.inferTargetMode({enteredCurrency:'USD',amount:20,debtUsd:50,debtBs:0}).mode,'USD');
-  assert.equal(intelligence.inferTargetMode({enteredCurrency:'USD',amount:20,debtUsd:0,debtBs:50}).mode,'Bs BCV');
+  assert.equal(intelligence.inferTargetMode({enteredCurrency:'USD',amount:20,debtUsd:0,debtBs:50}).mode,'USD');
   assert.equal(intelligence.inferTargetMode({enteredCurrency:'USD',amount:20,debtUsd:0,debtBs:0}).mode,'USD');
+})();
+
+(function methodsHaveMandatoryCurrencyAndAccount(){
+  for(const method of ['ZELLE','TRANSFER_US','BINANCE_PAY','CRYPTO_TRANSFER']){
+    assert.equal(intelligence.currencyForMethod(method,'VES'),'USD');
+    assert.equal(intelligence.modeForCurrency(intelligence.currencyForMethod(method)),'USD');
+  }
+  for(const method of ['TRANSFER_VE','MOBILE_PAYMENT_VE']){
+    assert.equal(intelligence.currencyForMethod(method,'USD'),'VES');
+    assert.equal(intelligence.modeForCurrency(intelligence.currencyForMethod(method)),'Bs BCV');
+  }
 })();
 
 console.log('payment-report-intelligence: OK');
