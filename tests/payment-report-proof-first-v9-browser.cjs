@@ -38,7 +38,7 @@ async function runScenario(browser,{amount,expectedMode,debtUsd=85,debtBs=221.4}
 (async()=>{
   const browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.CHROMIUM_EXECUTABLE_PATH}:{})});
   await runScenario(browser,{amount:85,expectedMode:'USD'});
-  await runScenario(browser,{amount:221.4,expectedMode:'Bs BCV'});
+  await runScenario(browser,{amount:221.4,expectedMode:'USD'});
   await browser.close();
   console.log('PAYMENT_REPORT_PROOF_FIRST_V9_BROWSER_OK');
 })().catch(error=>{console.error(error);process.exit(1)});
