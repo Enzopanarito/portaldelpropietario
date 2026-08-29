@@ -77,8 +77,8 @@
     byId('vla-pay-duplicate-cancel').onclick=cancelDuplicateReview;byId('vla-pay-duplicate-review').onclick=submitDuplicateReview;
     byId('vla-pay-uncertainty-review').onclick=cancelUncertainReport;byId('vla-pay-uncertainty-submit').onclick=submitUncertainReport;
     document.querySelectorAll('input[name="payChannel"]').forEach(node=>node.addEventListener('change',switchPaymentChannel));
-    byId('payCurrency').addEventListener('change',()=>{modeUserChosen=false;clearSubmitError()});
-    byId('payMode').addEventListener('change',()=>{modeUserChosen=true;clearSubmitError()});
+    byId('payCurrency').addEventListener('change',()=>{modeUserChosen=false;syncCurrencyFromMethod();syncModeFromEvidence();clearSubmitError()});
+    byId('payMode').addEventListener('change',()=>{modeUserChosen=false;syncModeFromEvidence();clearSubmitError()});
     byId('payAmount').addEventListener('input',()=>{if(!modeUserChosen)syncModeFromEvidence();clearSubmitError()});
     ['payBank','payCashReceiver','payRef'].forEach(id=>byId(id).addEventListener('input',clearSubmitError));
     byId('payTransactionDate').addEventListener('input',()=>{analysisData={...(analysisData||{}),transactionDateSource:'USER_CONFIRMED',transactionDateConfidence:'MEDIUM',transactionDateNeedsReview:true,transactionDateEvidence:'Fecha editada o confirmada por el propietario.'};clearSubmitError()});
@@ -87,16 +87,20 @@
   }
 
   function setupModesSmart(){
-    const select=byId('payMode'),usdBalance=accountBalance('USD'),bsBalance=accountBalance('Bs BCV');if(!select)return;
-    select.innerHTML=['<option value="">Seleccionar cuenta</option>',`<option value="USD">Cuenta USD · ${refUsd(usdBalance)} pendiente</option>`,`<option value="Bs BCV">Cuenta Bs · ${refUsd(bsBalance)} ref. pendiente</option>`].join('');
+    const select=byId('payMode');if(!select)return;
+    select.innerHTML=['<option value="">Asignación automática por moneda</option>','<option value="USD">Cuenta USD</option>','<option value="Bs BCV">Cuenta Bs BCV</option>'].join('');
   }
-  function suggestedMode(currency){const usdBalance=accountBalance('USD'),bsBalance=accountBalance('Bs BCV');if(currency==='BS')return'Bs BCV';if(currency!=='USD')return'';if(usdBalance>0.01&&bsBalance>0.01)return'';if(usdBalance>0.01)return'USD';if(bsBalance>0.01)return'Bs BCV';return'USD'}
+  function suggestedMode(currency){return currency==='BS'?'Bs BCV':currency==='USD'?'USD':''}
+  function syncCurrencyFromMethod(){
+    const select=byId('payCurrency'),method=String(analysisData?.method||'').trim().toUpperCase(),intelligence=window.VLAPaymentIntelligence;if(!select||!intelligence)return false;
+    const fixed=Boolean(intelligence.USD_METHODS?.has(method)||intelligence.VES_METHODS?.has(method));select.disabled=fixed;
+    if(fixed){const currency=intelligence.currencyForMethod(method,'UNKNOWN');select.value=currency==='VES'?'BS':'USD'}
+    return fixed;
+  }
   function syncModeFromEvidence(){
-    const mode=byId('payMode'),currency=byId('payCurrency')?.value,cash=paymentChannel()==='CASH';if(!mode||modeUserChosen)return;
-    const simple=cash?(currency==='BS'?'Bs BCV':currency==='USD'?'USD':''):suggestedMode(currency);
-    if(cash){mode.value=simple;return}
-    const inference=window.VLAPaymentIntelligence.inferTargetMode({enteredCurrency:currency,amount:enteredAmount(),rate:fxRate(),debtUsd:accountBalance('USD'),debtBs:accountBalance('Bs BCV')});
-    mode.value=inference.status==='clear'?inference.mode:simple;
+    const mode=byId('payMode'),currency=byId('payCurrency')?.value;if(!mode)return;
+    const inference=window.VLAPaymentIntelligence.inferTargetMode({enteredCurrency:currency});
+    mode.value=inference.status==='clear'?inference.mode:suggestedMode(currency);
   }
   function trackingStorageKey(){return`vla-payment-reports-v1:${String(currentOwner?.id||'')}`}
   function parseTrackingCode(code){const match=/^(rec[A-Za-z0-9]{14})\.([A-Za-z0-9_-]{43})$/.exec(String(code||''));return match?{reportId:match[1],token:match[2]}:null}
@@ -137,7 +141,7 @@
     return paymentChannel()==='DIGITAL'&&method==='ZELLE'&&classification==='CONFIRMED'&&!reportReference()&&enteredAmount()>0&&byId('payCurrency')?.value==='USD'&&Boolean(recipient);
   }
   function digitalMissing(){
-    if(!selectedFile)return['proof'];if(analyzing)return['analysis'];const missing=[];if(!byId('payCurrency').value)missing.push('currency');if(!(enteredAmount()>0))missing.push('amount');syncModeFromEvidence();if(!byId('payMode').value)missing.push('mode');if(!byId('payRef').value.trim()&&!zelleProofWithoutReference())missing.push('reference');if(!byId('payBank').value.trim())missing.push('bank');if((byId('payMode').value==='Bs BCV'||byId('payCurrency').value==='BS')&&!fxRate())missing.push('rate');return missing;
+    if(!selectedFile)return['proof'];if(analyzing)return['analysis'];syncCurrencyFromMethod();const missing=[];if(!byId('payCurrency').value)missing.push('currency');if(!(enteredAmount()>0))missing.push('amount');syncModeFromEvidence();if(!byId('payMode').value)missing.push('mode');if(!byId('payRef').value.trim()&&!zelleProofWithoutReference())missing.push('reference');if(!byId('payBank').value.trim())missing.push('bank');if((byId('payMode').value==='Bs BCV'||byId('payCurrency').value==='BS')&&!fxRate())missing.push('rate');return missing;
   }
   function cashMissing(){const missing=[];if(!byId('payCurrency').value)missing.push('currency');if(!(enteredAmount()>0))missing.push('amount');if(!byId('payCashReceiver').value.trim())missing.push('cash');if((byId('payMode').value==='Bs BCV'||byId('payCurrency').value==='BS')&&!fxRate())missing.push('rate');return missing}
   function missingData(){const channel=paymentChannel();if(!channel)return['channel'];return channel==='CASH'?cashMissing():digitalMissing()}
@@ -154,23 +158,24 @@
     byId('vla-pay-confirmation').classList.toggle('hidden',!ready);if(ready)renderConfirmation();
     const showDetails=cash||editAll||manualMode||missing.length>0;byId('vla-pay-details').classList.toggle('hidden',!showDetails);
     const singleMissing=!cash&&!editAll&&!manualMode&&missing.length?missing[0]:'';
-    Object.entries(FIELD_IDS).forEach(([key,id])=>{let show=editAll||manualMode||(singleMissing===key);if(cash)show=['currency','amount','cash','notes'].includes(key);if(!cash&&key==='cash')show=false;if(!cash&&!editAll&&!manualMode&&['notes','date'].includes(key))show=false;if(key==='date')show=dateEditVisible;byId(id).classList.toggle('hidden',!show)});
+    Object.entries(FIELD_IDS).forEach(([key,id])=>{let show=editAll||manualMode||(singleMissing===key);if(cash)show=['currency','amount','cash','notes'].includes(key);if(!cash&&key==='cash')show=false;if(!cash&&!editAll&&!manualMode&&['notes','date'].includes(key))show=false;if(key==='date')show=dateEditVisible;if(key==='mode')show=false;byId(id).classList.toggle('hidden',!show)});
     const dateNote=byId('vla-pay-date-source-note');if(dateNote)dateNote.textContent=`${displayTransactionDate(byId('payTransactionDate').value)} · ${dateSourceLabel(analysisData?.transactionDateSource)}`;
     if(cash){byId('vla-pay-data-title').textContent='Reportar efectivo';byId('submitReport').textContent='Reportar efectivo'}else if(editAll||manualMode)byId('vla-pay-data-title').textContent='Editar datos del pago';else byId('vla-pay-data-title').textContent='Solo falta confirmar esto';
   }
   function fillFromAnalysis(data){
-    analysisData={...(data.analysis||{}),analysisProvider:data.analysisProvider||'',analysisRoute:data.analysisRoute||'',prefillComplete:data.complete===true,missingLabels:(data.missing||[]).map(item=>item.label)};const a=analysisData;byId('payCurrency').value=a.currency==='VES'?'BS':a.currency==='USD'?'USD':'';byId('payAmount').value=a.amount?String(a.amount).replace('.',','):'';byId('payBank').value=a.bank||'';byId('payRef').value=a.reference||'';byId('payTransactionDate').value=a.transactionDate||'';byId('payTransactionStatus').value=a.transactionStatus||'';modeUserChosen=false;syncModeFromEvidence();
+    analysisData={...(data.analysis||{}),analysisProvider:data.analysisProvider||'',analysisRoute:data.analysisRoute||'',prefillComplete:data.complete===true,missingLabels:(data.missing||[]).map(item=>item.label)};const a=analysisData,policyCurrency=window.VLAPaymentIntelligence.currencyForMethod(a.method,a.currency);byId('payCurrency').value=policyCurrency==='VES'?'BS':policyCurrency==='USD'?'USD':'';syncCurrencyFromMethod();byId('payAmount').value=a.amount?String(a.amount).replace('.',','):'';byId('payBank').value=a.bank||'';byId('payRef').value=a.reference||'';byId('payTransactionDate').value=a.transactionDate||'';byId('payTransactionStatus').value=a.transactionStatus||'';modeUserChosen=false;syncModeFromEvidence();
     const missing=digitalMissing().filter(item=>!['proof','analysis','rate'].includes(item)),serverMissing=(data.missing||[]).map(item=>item.label);if(!missing.length){const verifyLater=serverMissing.length?` VLA volverá a verificar ${serverMissing.join(' y ')} en segundo plano.`:'';scanMessage('ok','Comprobante leído',`Revisa el resumen y confirma.${verifyLater}`)}else{const next={currency:'la moneda',amount:'el monto',mode:'a cuál saldo corresponde',reference:'la referencia o confirmación',bank:'el banco o método'}[missing[0]]||'el dato señalado';scanMessage('warn','Casi listo',`Solo falta confirmar ${next}. VLA verificará el resto automáticamente.`)}renderProgressiveState();
   }
   function switchPaymentChannel(){
-    submitErrorActive=false;hideDuplicateChoice();hideUncertaintyChoice();const channel=paymentChannel(),cash=channel==='CASH';if(analysisController)analysisController.abort();analyzing=false;manualMode=cash;editAll=false;dateEditVisible=false;analysisData=null;modeUserChosen=false;byId('reportForm').querySelectorAll('input:not([name="payChannel"]),select,textarea').forEach(node=>{if(node.id!=='payProof')node.value=''});setupModesSmart();
+    submitErrorActive=false;hideDuplicateChoice();hideUncertaintyChoice();const channel=paymentChannel(),cash=channel==='CASH';if(analysisController)analysisController.abort();analyzing=false;manualMode=cash;editAll=false;dateEditVisible=false;analysisData=null;modeUserChosen=false;byId('reportForm').querySelectorAll('input:not([name="payChannel"]),select,textarea').forEach(node=>{if(node.id!=='payProof'){node.value='';node.disabled=false}});setupModesSmart();
     if(cash){selectedFile=null;byId('payProof').value='';byId('payBank').value='Efectivo'}
     renderSummary();renderProgressiveState();validateForm();
     if(channel==='DIGITAL')byId('payProof').focus();else if(cash)byId('payAmount').focus();
   }
   async function analyzeProof(){
     if(!selectedFile)return;manualMode=false;editAll=false;dateEditVisible=false;analyzing=true;scanMessage('loading','Leyendo información','Buscando monto, moneda, método, referencia, fecha y receptor.');renderProgressiveState();validateForm();if(analysisController)analysisController.abort();analysisController=new AbortController();
-    try{const attachment=await fileToPayload(selectedFile),response=await fetch('/api/vla/payment-proof-prefill',{method:'POST',headers:{'Content-Type':'application/json'},signal:analysisController.signal,body:JSON.stringify({ownerId:currentOwner.id,attachment})}),data=await response.json().catch(()=>({}));if(!response.ok)throw Object.assign(new Error(data.message||'No pudimos leer todo automáticamente.'),{status:response.status,data});scanMessage('loading','Verificando datos','Relacionando el comprobante con tu saldo actual.');fillFromAnalysis(data)}catch(error){if(error.name==='AbortError')return;const date=automaticDateFromFile(selectedFile);byId('payTransactionDate').value=date.transactionDate;analysisData={method:'OTHER',reference:'',bank:'',transactionStatus:'UNKNOWN',confidence:0,warnings:['La prelectura no estuvo disponible.'],prefillComplete:false,missingLabels:['moneda','monto','referencia','banco o método'],...date};scanMessage('warn','No pudimos leerlo completo','Confirma solo los datos esenciales. El comprobante igualmente será analizado de nuevo al enviarlo.')}finally{analyzing=false;syncModeFromEvidence();renderProgressiveState();validateForm()}
+    const controller=analysisController;
+    try{const attachment=await fileToPayload(selectedFile),response=await fetch('/api/vla/payment-proof-prefill',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({ownerId:currentOwner.id,attachment})}),data=await response.json().catch(()=>({}));if(controller.signal.aborted||analysisController!==controller)return;if(!response.ok)throw Object.assign(new Error(data.message||'No pudimos leer todo automáticamente.'),{status:response.status,data});scanMessage('loading','Verificando datos','Aplicando la moneda detectada a su cuenta correspondiente.');analyzing=false;fillFromAnalysis(data)}catch(error){if(error.name==='AbortError'||analysisController!==controller)return;analyzing=false;const date=automaticDateFromFile(selectedFile);byId('payTransactionDate').value=date.transactionDate;analysisData={method:'OTHER',reference:'',bank:'',transactionStatus:'UNKNOWN',confidence:0,warnings:['La prelectura no estuvo disponible.'],prefillComplete:false,missingLabels:['moneda','monto','referencia','banco o método'],...date};scanMessage('warn','No pudimos leerlo completo','Confirma solo los datos esenciales. El comprobante igualmente será analizado de nuevo al enviarlo.')}finally{if(analysisController!==controller)return;analyzing=false;syncModeFromEvidence();renderProgressiveState();validateForm()}
   }
   function enableManual(){if(!selectedFile)return;manualMode=true;editAll=true;dateEditVisible=false;if(analysisController)analysisController.abort();analyzing=false;scanMessage('manual','Edición manual activa','Puedes corregir los datos visibles. La fecha seguirá protegida y será verificada por el servidor.');renderProgressiveState();validateForm();byId('payCurrency').focus()}
   function onFileSelected(event){

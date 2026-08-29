@@ -26,6 +26,8 @@ const gemini=require('../netlify/functions/_shared/_payment_ai_gemini');
  assert.match(prompt,/No confundas.*barra del teléfono/i);
  assert.match(prompt,/DD\/MM\/YYYY/);
  assert.match(prompt,/candidatas ambiguas/i);
+ assert.match(prompt,/Zelle.*Binance Pay.*currency="USD"/i);
+ assert.match(prompt,/pago móvil.*currency="VES"/i);
  const endpoint=fs.readFileSync(path.join(__dirname,'..','netlify','functions','gemini.js'),'utf8');
  assert(!/console\.(log|error).*GEMINI|\\?key=|gemini-pro:generateContent/.test(endpoint));
  console.log('PAYMENT_AI_GEMINI_OK');
