@@ -10,7 +10,16 @@
   function refUsd(value){return typeof usd==='function'?usd(value):'$'+number(value).toFixed(2)}
   function realBs(value){return typeof bs==='function'?bs(value):'Bs. '+number(value).toFixed(2)}
   function fxRate(){try{return typeof rate==='function'?number(rate()):0}catch(_){return 0}}
-  function enteredAmount(){return window.VLAPaymentIntelligence.parseAmountInput(byId('payAmount')?.value)}
+  function fallbackParseAmount(value){
+    if(typeof value==='number')return Number.isFinite(value)&&value>0?Math.round((value+Number.EPSILON)*100)/100:0;
+    let raw=String(value??'').trim().replace(/[^0-9.,-]/g,'');if(!raw||raw.includes('-'))return 0;
+    const commas=(raw.match(/,/g)||[]).length,dots=(raw.match(/\./g)||[]).length;
+    const withDecimal=separator=>{const index=raw.lastIndexOf(separator),integer=raw.slice(0,index).replace(/[.,]/g,'')||'0',decimals=raw.slice(index+1).replace(/[.,]/g,'');return Number(integer+(decimals?'.'+decimals:''))};
+    let parsed;if(commas&&dots)parsed=withDecimal(raw.lastIndexOf(',')>raw.lastIndexOf('.')?',':'.');else if(commas||dots){const separator=commas?',':'.',count=commas||dots,parts=raw.split(separator),tail=parts[parts.length-1];parsed=count>1?(tail.length>0&&tail.length<=2?withDecimal(separator):Number(parts.join(''))):(tail.length===1||tail.length===2?withDecimal(separator):Number(parts.join('')))}else parsed=Number(raw);
+    return Number.isFinite(parsed)&&parsed>0?Math.round((parsed+Number.EPSILON)*100)/100:0;
+  }
+  function paymentIntelligence(){const api=window.VLAPaymentIntelligence;return api&&typeof api.parseAmountInput==='function'&&typeof api.inferTargetMode==='function'?api:null}
+  function enteredAmount(){const value=byId('payAmount')?.value,api=paymentIntelligence();if(api){try{return api.parseAmountInput(value)}catch(_){}}return fallbackParseAmount(value)}
   function safeText(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
   function currentDateLabel(){try{return typeof caracasLabel==='function'?caracasLabel():new Date().toLocaleDateString('es-VE')}catch(_){return new Date().toLocaleDateString('es-VE')}}
   function caracasDateISO(value=new Date()){try{const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/Caracas',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(value),found=Object.fromEntries(parts.map(part=>[part.type,part.value]));return`${found.year}-${found.month}-${found.day}`}catch(_){return new Date().toISOString().slice(0,10)}}
@@ -95,8 +104,8 @@
     const mode=byId('payMode'),currency=byId('payCurrency')?.value,cash=paymentChannel()==='CASH';if(!mode||modeUserChosen)return;
     const simple=cash?(currency==='BS'?'Bs BCV':currency==='USD'?'USD':''):suggestedMode(currency);
     if(cash){mode.value=simple;return}
-    const inference=window.VLAPaymentIntelligence.inferTargetMode({enteredCurrency:currency,amount:enteredAmount(),rate:fxRate(),debtUsd:accountBalance('USD'),debtBs:accountBalance('Bs BCV')});
-    mode.value=inference.status==='clear'?inference.mode:simple;
+    const api=paymentIntelligence();if(!api){mode.value=simple;return}
+    try{const inference=api.inferTargetMode({enteredCurrency:currency,amount:enteredAmount(),rate:fxRate(),debtUsd:accountBalance('USD'),debtBs:accountBalance('Bs BCV')});mode.value=inference.status==='clear'?inference.mode:simple}catch(_){mode.value=simple}
   }
   function trackingStorageKey(){return`vla-payment-reports-v1:${String(currentOwner?.id||'')}`}
   function parseTrackingCode(code){const match=/^(rec[A-Za-z0-9]{14})\.([A-Za-z0-9_-]{43})$/.exec(String(code||''));return match?{reportId:match[1],token:match[2]}:null}
