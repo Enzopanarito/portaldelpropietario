@@ -57,6 +57,7 @@ function extractionPrompt({promptVersion='',report={}}={}){
   `La cuenta indicada por el usuario es "${reportedMode||'no indicada'}"; úsala solo como contexto, nunca para inventar datos.`,
   'Reconoce comprobantes de bancos venezolanos, pago móvil, Zelle, transferencias de Estados Unidos y Binance.',
   'Para Binance usa BINANCE_PAY cuando sea Binance Pay y CRYPTO_TRANSFER cuando sea una transferencia on-chain.',
+  'Política contable obligatoria: Zelle, transferencias de Estados Unidos, Binance Pay y transferencias cripto se registran con currency="USD"; transferencias bancarias venezolanas y pago móvil se registran con currency="VES". No devuelvas UNKNOWN para esos métodos reconocidos.',
   'Extrae por separado nombre, teléfono, correo, documento, cuenta visible, últimos cuatro dígitos y Binance/Pay ID del receptor; extrae también nombre y cuenta visible del emisor. No mezcles emisor y receptor.',
   'Si el activo visible es USDT, USDC o FDUSD usa currency="USD", conserva activo y red visibles en memo y no inventes equivalencias, red, TxID, Pay ID ni receptor.',
   'Haz una segunda revisión enfocada en la fecha: examina encabezado, detalle de operación, línea cercana al monto, referencia, estado y receptor; reconoce DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD y fechas con meses en español o inglés, y normalízalas a YYYY-MM-DD.',
