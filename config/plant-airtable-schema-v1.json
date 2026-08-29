@@ -103,7 +103,7 @@
     },
     {
       "name": "Solicitudes Planta",
-      "description": "Solicitudes sin efecto financiero directo; toda reincorporación exige revisión, pago definitivo y confirmación administrativa.",
+      "description": "Solicitudes sin efecto financiero directo; toda reincorporación exige confirmación administrativa y, solo cuando exista acumulado, pago definitivo exacto.",
       "fields": [
         { "name": "Solicitud ID", "type": "singleLineText", "primary": true },
         { "name": "Propietario", "type": "multipleRecordLinks", "linkTo": "Propietarios" },

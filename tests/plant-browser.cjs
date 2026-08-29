@@ -16,7 +16,7 @@ const adminView = {
   success: true, moduleVersion: 2, ownerViewContract: 'plant-owner-view-v1', readOnly: true, asset: fixture.assets[0], interventionCount: fixture.interventions.length, requests: [],
   participationSummary: engine.participationSummary({ owners: fixture.owners, profiles: fixture.profiles, at: '2026-08-21' }),
   interventions: fixture.interventions.map(item => ({ interventionId: item.interventionId, date: item.date, category: item.snapshot.category, description: item.description, amountUsd: item.snapshot.totalAmount, historicalOnly: false, source: item.source, voided: false })),
-  houses: fixture.owners.map(item => { const view = engine.ownerPlantView({ ownerId: item.id, profiles: fixture.profiles, interventions: fixture.interventions, recognizedPayments: [], at: '2026-08-21' }); return { house: item.house, ownerId: item.id, ownerName: item.name, hasEmail: true, profile: engine.profileAt(fixture.profiles, item.id, '2026-08-21'), reinstatement: view.reinstatement, ownerView: view }; })
+  houses: fixture.owners.map(item => { const view = engine.ownerPlantView({ ownerId: item.id, profiles: fixture.profiles, interventions: fixture.interventions, recognizedPayments: [], at: '2026-08-21' }); const profile = engine.profileAt(fixture.profiles, item.id, '2026-08-21'); return { house: item.house, ownerId: item.id, ownerName: item.name, hasEmail: true, profile: { ...profile, participationPlan: engine.participationPlanId(profile) }, reinstatement: view.reinstatement, ownerView: view }; })
 };
 
 function ownerHtml() {
@@ -58,6 +58,8 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
     await page.waitForSelector('#vla-owner-plant .vla-plant-status');
     const result = await page.evaluate(() => ({ house: document.querySelector('.vla-plant-status span').textContent, history: document.querySelectorAll('.vla-plant-history-row').length, request: Boolean(document.querySelector('#vla-plant-request-form')), overflow: document.documentElement.scrollWidth - innerWidth }));
     assert.equal(result.house, 'Casa 3'); assert.equal(result.history, 3); assert.equal(result.request, true); assert(result.overflow <= 1);
+    assert.equal(await page.locator('[name="requestedPlan"] option').count(), 3);
+    assert.match(await page.textContent('#vla-plant-plan-preview'), /servicio/i);
     await page.screenshot({ path: `/tmp/vla-plant-owner-${viewport.name}.png`, fullPage: true }); await page.close();
   });
 }
@@ -75,6 +77,7 @@ for (const viewport of [{ name: 'desktop', width: 1365, height: 900 }, { name: '
     await page.click('.plant-owner-mirror .plant-modal-x');
     await page.click('.plant-profile-edit'); await page.waitForSelector('.plant-manual-control #plant-projected-counts');
     assert.match(await page.textContent('.plant-manual-control'), /Confirmar cambio y notificar/i);
+    assert.equal(await page.locator('.plant-manual-control [name="planId"] option').count(), 4);
     await page.click('.plant-manual-control .plant-modal-x');
     await page.click('.plant-profile-simulate'); await page.waitForSelector('.plant-simulation-total');
     await page.screenshot({ path: `/tmp/vla-plant-admin-${viewport.name}.png`, fullPage: true }); await page.close();

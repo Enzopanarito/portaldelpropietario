@@ -1,5 +1,5 @@
 const OWNER_PATHS=['/','/index.html'];
-const MOBILE_RELEASE='owner-mobile-fluid-v2-payment-report-tracking-v14-2026-08-29-strict-currency-routing-v1';
+const MOBILE_RELEASE='owner-mobile-fluid-v2-payment-report-tracking-v15-2026-08-29-strict-currency-routing-v1-plant-participation-plans-v1';
 const CURRENT_MONTH_RELEASE='owner-current-month-v1-2026-08-09';
 const STYLE_HREF=`/owner-mobile-v2.css?v=${MOBILE_RELEASE}`;
 const LAYOUT_FIX_HREF=`/owner-mobile-v2-layout-fix.css?v=${MOBILE_RELEASE}`;

@@ -58,13 +58,19 @@ export default async function handler(request) {
     if (!owner) return http.json(404, { message: 'Propietario no encontrado.' });
     const view = engine.ownerPlantView({ ownerId, profiles: data.profiles, interventions: data.interventions, recognizedPayments: data.recognizedPayments, at: new Date() });
     if (request.method === 'POST') {
-      const type = cleanText(body.type, 40).toUpperCase(), reason = cleanText(body.reason, 1000), today = caracasDay();
+      const requestedPlan = cleanText(body.requestedPlan, 80).toUpperCase(), reason = cleanText(body.reason, 1000), today = caracasDay();
       if (body.confirmation !== 'SOLICITAR_CAMBIO_PLANTA') return http.json(400, { message: 'Debe confirmar el envío de la solicitud.' });
+      if (!requestedPlan) return http.json(400, { message: 'Seleccione exactamente qué gastos de planta mantendrá. Actualice la página si todavía ve el formulario anterior.' });
+      if (view.current.specialAgreement || view.current.reinstatementMode === engine.REINSTATEMENT_MODE.NOT_ALLOWED) return http.json(409, { message: 'Esta casa tiene un acuerdo especial protegido. El cambio debe ser revisado directamente por Administración.' });
+      let requestedPolicy;
+      try { requestedPolicy = engine.participationPlanPolicy(requestedPlan); } catch (_) { return http.json(400, { message: 'La modalidad de planta seleccionada no es válida.' }); }
+      if (requestedPlan === view.current.participationPlan) return http.json(409, { message: 'La casa ya tiene esa modalidad de planta.' });
+      const type = engine.requestTypeForParticipationPlan(view.current, requestedPlan);
       if (!REQUEST_TYPES.has(type)) return http.json(400, { message: 'Tipo de solicitud inválido.' });
       if (reason.length < 10) return http.json(400, { message: 'Explique el motivo con al menos 10 caracteres.' });
       const proposedEffectiveDate = body.proposedEffectiveDate ? engine.isoDay(body.proposedEffectiveDate) : today;
       if (proposedEffectiveDate < today) return http.json(400, { message: 'La fecha propuesta no puede ser anterior a hoy.' });
-      const idempotencyKey = engine.requestIdempotencyKey({ ownerId, type, proposedEffectiveDate, day: today });
+      const idempotencyKey = engine.requestIdempotencyKey({ ownerId, type, requestedPlan, proposedEffectiveDate, day: today });
       requestGuardKey = idempotencyKey;
       const prior = (data.requests || []).find(item => item.idempotencyKey === idempotencyKey);
       if (prior) return http.json(200, { success: true, idempotent: true, requestId: prior.requestId, state: prior.state, message: 'Esta solicitud ya fue recibida. No se duplicó.' });
@@ -80,7 +86,15 @@ export default async function handler(request) {
       const fields = storeModule.requestFields({
         requestId, ownerId, house: owner.house, type, state: 'RECIBIDA', requestedAt: new Date().toISOString(),
         proposedEffectiveDate, currentProfile: view.current, estimatedRetroactive: view.reinstatement.total,
-        calculation: view.reinstatement, reason, conditions: 'Sin efecto financiero directo. Sujeto a revisión y confirmación administrativa.',
+        calculation: {
+          ...view.reinstatement,
+          policyVersion: 'plant-participation-plans-v1',
+          requestedPlan,
+          requestedPolicy
+        },
+        reason, conditions: requestedPolicy.servicioResidencialActivo
+          ? (view.reinstatement.total > 0 ? 'Reincorporación sujeta al pago exacto del acumulado y confirmación administrativa.' : 'Reincorporación sin acumulado pendiente; no requiere pago previo, pero sí confirmación administrativa.')
+          : 'El servicio quedará suspendido desde la fecha que confirme Administración. Los gastos se aplicarán según la modalidad seleccionada.',
         idempotencyKey
       });
       if (!fixture) {
@@ -89,8 +103,9 @@ export default async function handler(request) {
         await operationGuard.setState(requestOperation, 'PLANT_OWNER_REQUEST', idempotencyKey, 'DONE', requestId);
       }
       return http.json(201, {
-        success: true, requestId, state: 'RECIBIDA', previewOnly: fixture, estimatedRetroactive: view.reinstatement.total,
-        message: 'Solicitud recibida. No cambia saldos ni servicio hasta la revisión administrativa.'
+        success: true, requestId, state: 'RECIBIDA', type, previewOnly: fixture, requestedPlan, requestedPolicy,
+        estimatedRetroactive: view.reinstatement.total,
+        message: 'Solicitud recibida con la modalidad exacta. No cambia saldos ni servicio hasta la confirmación administrativa.'
       }, fixture ? { 'X-Preview-Isolated': 'true' } : {});
     }
     return http.json(200, { success: true, dataEnvironment: fixture ? 'preview-fixture' : 'production', ...view }, fixture ? { 'X-Preview-Isolated': 'true' } : {});

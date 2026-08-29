@@ -8,6 +8,6 @@ const production=fs.readFileSync('.github/workflows/netlify-production.yml','utf
 assert(decision.includes("fields['Referencia Detectada']||fields.Referencia"),'La decisión debe preferir la referencia verificada por el análisis de fondo.');
 assert(processor.includes('Referencia:effective.reference'),'El pago definitivo debe usar la referencia verificada o corregida.');
 assert(processor.includes('reference:effective.reference'),'El recibo debe usar la misma referencia verificada o corregida.');
-assert(edge.includes("owner-mobile-fluid-v2-payment-report-tracking-v14-2026-08-29-strict-currency-routing-v1"),'El release móvil debe romper caché para cargar la política estricta de moneda.');
+assert(edge.includes("owner-mobile-fluid-v2-payment-report-tracking-v15-2026-08-29-strict-currency-routing-v1-plant-participation-plans-v1"),'El release móvil debe romper caché sin perder la política estricta de moneda ni la modalidad de planta.');
 assert(production.includes('tests/payment-report-proof-first-v9-browser.cjs'),'Producción debe ejecutar el gate de navegador proof-first v9 antes de desplegar.');
 console.log('PAYMENT_REFERENCE_PRECEDENCE_V9_OK');

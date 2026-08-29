@@ -100,18 +100,40 @@ test('crear versión de perfil en preview no escribe y prohíbe exclusiones retr
   assert.equal(writes.length, 0);
 });
 
-test('reincorporación no activa servicio sin pago definitivo exacto', async () => {
+test('reincorporación exige solicitud y permite volver sin pago cuando solo se suspendió gasoil', async () => {
   const owner = { id: 'rec12345678901234', house: 3, alicuota: 1 };
   const inactive = engine.initialProfileForHouse({ ownerId: owner.id, house: 3, effectiveFrom: '2026-08-21' });
   const profile = { state: engine.PROFILE_STATE.ACTIVE, reinstatementMode: engine.REINSTATEMENT_MODE.ALLOWED, participaReparaciones: true, participaMantenimiento: true, participaGasoilResidencial: true, participaBeneficioComun: true, servicioResidencialActivo: true, specialAgreement: false, observations: '' };
   const base = { env: { VLA_DATA_ENVIRONMENT: 'staging' }, requireAdmin: () => ({ ok: true, claims: { jti: 'test-admin' } }) };
   const blocked = admin.createHandler({ ...base, loadContext: async () => ({ owners: [owner], profiles: [inactive], interventions: [], recognizedPayments: [], requests: [], payments: [], assets: [] }) });
-  const event = { httpMethod: 'POST', body: JSON.stringify({ action: 'create-profile-version', confirmation: 'CONFIRMAR_CAMBIO_PLANTA', ownerId: owner.id, effectiveFrom: '2099-01-01', reason: 'Reincorporación aprobada', profile }) };
+  const effectiveFrom = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const event = { httpMethod: 'POST', body: JSON.stringify({ action: 'create-profile-version', confirmation: 'CONFIRMAR_CAMBIO_PLANTA', ownerId: owner.id, effectiveFrom, reason: 'Reincorporación aprobada', profile }) };
   assert.equal((await blocked(event)).statusCode, 409);
   const fulfilled = { requestId: 'PLS-3', ownerId: owner.id, type: 'REINCORPORACION', state: 'CUMPLIDA', paymentComplete: true, definitivePaymentId: 'recPayment0000001' };
   const allowed = admin.createHandler({ ...base, loadContext: async () => ({ owners: [owner], profiles: [inactive], interventions: [], recognizedPayments: [], requests: [fulfilled], payments: [], assets: [] }) });
-  event.body = JSON.stringify({ action: 'create-profile-version', confirmation: 'CONFIRMAR_CAMBIO_PLANTA', ownerId: owner.id, effectiveFrom: '2099-01-01', reason: 'Reincorporación aprobada', reinstatementRequestId: 'PLS-3', profile });
+  event.body = JSON.stringify({ action: 'create-profile-version', confirmation: 'CONFIRMAR_CAMBIO_PLANTA', ownerId: owner.id, effectiveFrom, reason: 'Reincorporación aprobada', reinstatementRequestId: 'PLS-3', profile });
   assert.equal((await allowed(event)).statusCode, 201);
+});
+
+test('reincorporación con mantenimiento o reparaciones pendientes permanece bloqueada hasta saldar el acumulado', async () => {
+  const owners = [{ id: 'rec12345678901234', house: 1, alicuota: 0.5 }, { id: 'rec22345678901234', house: 2, alicuota: 0.5 }];
+  const effectiveFrom = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const active = owners.map(owner => engine.initialProfileForHouse({ ownerId: owner.id, house: owner.house, effectiveFrom: '2026-07-01' }));
+  const inactive = { ...active[0], ...engine.participationPlanPolicy(engine.PARTICIPATION_PLAN.SUSPEND_ALL), profileId: 'PLP-1-2026-08-01-V2', version: 2, effectiveFrom: '2026-08-01' };
+  const timeline = active.concat(inactive);
+  const snapshot = engine.buildExpenseSnapshot({ owners, profiles: timeline, effectiveDate: effectiveFrom, expense: { concept: 'Reparación planta', amount: 200, type: 'Gasto Especial' } });
+  const request = { requestId: 'PLS-1-DUE', ownerId: owners[0].id, type: 'REINCORPORACION', state: 'CUMPLIDA', paymentComplete: true, definitivePaymentId: 'recPayment0000001', estimatedRetroactive: 200, officialRetroactive: 200, calculation: { requestedPlan: engine.PARTICIPATION_PLAN.ACTIVE_ALL } };
+  const handler = admin.createHandler({
+    env: { VLA_DATA_ENVIRONMENT: 'staging' }, requireAdmin: () => ({ ok: true, claims: { jti: 'test-admin' } }),
+    loadContext: async () => ({ owners, profiles: timeline, interventions: [{ interventionId: 'repair-due', date: effectiveFrom, snapshot }], recognizedPayments: [], requests: [request], payments: [], assets: [] })
+  });
+  const response = await handler({ httpMethod: 'POST', body: JSON.stringify({
+    action: 'create-profile-version', confirmation: 'CONFIRMAR_CAMBIO_PLANTA', ownerId: owners[0].id,
+    effectiveFrom, reason: 'Intento con saldo pendiente', sourceRequestId: request.requestId,
+    planId: engine.PARTICIPATION_PLAN.ACTIVE_ALL, profile: { participationPlan: engine.PARTICIPATION_PLAN.ACTIVE_ALL }
+  }) });
+  assert.equal(response.statusCode, 409);
+  assert.match(JSON.parse(response.body).message, /todavía quedan 200\.00 USD/);
 });
 
 test('vincular pago de reincorporación exige propietario e importe exactos', async () => {
@@ -168,6 +190,9 @@ test('control manual exige consulta explícita, admite hoy y notifica después d
   const body = JSON.parse(response.body);
   assert.equal(response.statusCode, 201);
   assert.equal(body.notification.sent, true);
+  assert.equal(body.profile.servicioResidencialActivo, false);
+  assert.equal(body.profile.reinstatementMode, engine.REINSTATEMENT_MODE.RETROACTIVE_APPROVAL);
+  assert.equal(engine.participationPlanId(body.profile), engine.PARTICIPATION_PLAN.SUSPEND_FUEL_MAINTENANCE);
   assert.match(body.message, /notificado por correo/i);
   assert.equal(notifications.length, 1);
   assert.equal(notifications[0].owner.email, owner.email);
