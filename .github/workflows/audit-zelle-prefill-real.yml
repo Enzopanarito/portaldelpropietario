@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Generate realistic Zelle confirmation image
+      - name: Generate realistic confirmation image without provider name
         shell: bash
         env:
           OWNER_ID: recSyntheticAI002
@@ -29,25 +29,26 @@ jobs:
           title=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',64)
           body=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',50)
           bold=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',54)
-          y=180
           rows=[
-            ('Zelle',title),
-            ('Payment sent',title),
+            ('Confirmation',title),
+            ("We're sending your money now. Payment recipient will",body),
+            ('get it in a few minutes.',body),
             ('$60.00',title),
-            ('To',body),
-            ('Enzo Panarito',bold),
-            ('enzopanarito@gmail.com',body),
-            ('Your payment was sent successfully.',body),
-            ('This confirmation screen does not show',body),
-            ('a reference number or transaction date.',body),
+            ('Payment recipient',bold),
+            ('Registered as PAYMENT RECIPIENT',body),
+            ('recipient@example.com',body),
+            ('Add a Siri shortcut, such as “Pay Recipient,” to save time',body),
+            ('when sending money.',body),
+            ('Done',bold),
           ]
+          y=180
           for text,font in rows:
             d.text((100,y),text,fill='black',font=font)
-            y += 150
-          d.text((100,h-180),'CI SYNTHETIC IMAGE - NOT A REAL PAYMENT',fill=(100,100,100),font=body)
-          im.save('zelle-confirmation.jpeg',quality=94)
-          content=open('zelle-confirmation.jpeg','rb').read()
-          payload={'ownerId':os.environ['OWNER_ID'],'attachment':{'name':'zelle-confirmation.jpeg','type':'image/jpeg','size':len(content),'base64':base64.b64encode(content).decode('ascii')}}
+            y += 170
+          d.text((100,h-120),'CI SYNTHETIC IMAGE - NOT A REAL PAYMENT',fill=(100,100,100),font=body)
+          im.save('confirmation.jpeg',quality=94)
+          content=open('confirmation.jpeg','rb').read()
+          payload={'ownerId':os.environ['OWNER_ID'],'attachment':{'name':'confirmation.jpeg','type':'image/jpeg','size':len(content),'base64':base64.b64encode(content).decode('ascii')}}
           open('request.json','w').write(json.dumps(payload))
           print('JPEG_BYTES='+str(len(content)))
           PY
@@ -74,8 +75,9 @@ jobs:
             'analysisRoute':payload.get('analysisRoute'),
             'method':analysis.get('method'),
             'currency':analysis.get('currency'),
-            'amount':analysis.get('amount'),
+            'amountPresent':bool(analysis.get('amount')),
             'referencePresent':bool(analysis.get('reference')),
+            'transactionStatus':analysis.get('transactionStatus'),
             'recipientClassification':analysis.get('recipientClassification'),
             'missing':payload.get('missing'),
           }
