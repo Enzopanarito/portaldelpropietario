@@ -12,7 +12,7 @@ const { sendMail } = require('./_shared/_mailer');
 const { sanitizeReference, escapeHtml, cleanPlainText, safeDisplayText, deepEscapeStrings } = require('./_shared/_security_utils');
 const { consume } = require('./_shared/_persistent_rate_limit');
 const { loadLastGood } = require('./_shared/_bcv_store');
-const { parseAmountInput, resolveAmount } = require('../../payment-report-intelligence');
+const { parseAmountInput, resolveAmount, currencyForMethod, modeForCurrency } = require('../../payment-report-intelligence');
 const { decodeAttachment } = require('./_shared/_payment_report_attachment');
 const { createProofStore } = require('./_shared/_payment_proof_store');
 const { createPaymentReportDedupStore, identityHash:paymentReportIdentityHash } = require('./_shared/_payment_report_dedup_store');
@@ -188,6 +188,9 @@ const handler = async function(event){
     if(!PAYMENT_CHANNELS.has(paymentChannel))return json(400,{message:'Seleccione si el pago fue digital o en efectivo.'});
     if(!ALLOWED_MODES.has(mode))return json(400,{message:'Seleccione la deuda o cuenta que está pagando.'});
     if(!ALLOWED_ENTERED_CURRENCIES.has(enteredCurrency))return json(400,{message:'Debe confirmar si escribió el monto en dólares o bolívares.'});
+    const normalizedEnteredCurrency=enteredCurrency==='BS'?'VES':'USD',policyMode=modeForCurrency(normalizedEnteredCurrency),policyMethodCurrency=currencyForMethod(method,'UNKNOWN');
+    if(mode!==policyMode)return json(400,{message:enteredCurrency==='BS'?'Los pagos en bolívares solo pueden aplicarse a la cuenta Bs BCV.':'Los pagos en dólares solo pueden aplicarse a la cuenta USD.'});
+    if(paymentChannel==='DIGITAL'&&policyMethodCurrency!=='UNKNOWN'&&policyMethodCurrency!==normalizedEnteredCurrency)return json(400,{message:['ZELLE','BINANCE_PAY','CRYPTO_TRANSFER','TRANSFER_US'].includes(method)?'Zelle y Binance se registran exclusivamente en dólares y en la cuenta USD.':'Los pagos bancarios venezolanos en bolívares se registran exclusivamente en la cuenta Bs BCV.'});
     if(!(amount>0)||amount>1000000000)return json(400,{message:'Monto inválido.'});
     if(paymentChannel==='DIGITAL'&&!reportedBank)return json(400,{message:'Debe indicar el banco o método de pago.'});
     if(paymentChannel==='CASH'&&cashReceiver.length<2)return json(400,{message:'Indique a quién o dónde entregó el efectivo.'});
