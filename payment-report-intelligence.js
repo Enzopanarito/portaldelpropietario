@@ -16,6 +16,30 @@
     return Number.isFinite(number)&&number>0?number:0;
   }
 
+  const USD_METHODS=new Set(['ZELLE','TRANSFER_US','BINANCE_PAY','CRYPTO_TRANSFER']);
+  const VES_METHODS=new Set(['TRANSFER_VE','MOBILE_PAYMENT_VE']);
+
+  function normalizeCurrency(value){
+    const currency=String(value||'').trim().toUpperCase();
+    if(currency==='BS'||currency==='VES')return'VES';
+    if(currency==='USD')return'USD';
+    return'UNKNOWN';
+  }
+
+  function currencyForMethod(method,fallback='UNKNOWN'){
+    const normalizedMethod=String(method||'').trim().toUpperCase();
+    if(USD_METHODS.has(normalizedMethod))return'USD';
+    if(VES_METHODS.has(normalizedMethod))return'VES';
+    return normalizeCurrency(fallback);
+  }
+
+  function modeForCurrency(value){
+    const currency=normalizeCurrency(value);
+    if(currency==='USD')return'USD';
+    if(currency==='VES')return'Bs BCV';
+    return'';
+  }
+
   function parseAmountInput(value){
     if(typeof value==='number')return Number.isFinite(value)&&value>0?money(value):0;
     let raw=String(value??'').trim().replace(/[^0-9.,-]/g,'');
@@ -88,25 +112,9 @@
     return{status:'ambiguous',reason:'similar-or-unmatched',expectedUsd:money(expected),errors:{USD:usdError,BS:bsError},candidates};
   }
 
-  function inferTargetMode({enteredCurrency,amount,rate,debtUsd,debtBs}={}){
-    const currency=String(enteredCurrency||'').toUpperCase(),usdDebt=positive(debtUsd),bsDebt=positive(debtBs),raw=positive(amount),fx=positive(rate);
-    if(currency==='BS')return{status:'clear',mode:'Bs BCV',reason:'bolivar-payment'};
-    if(currency!=='USD')return{status:'ambiguous',mode:'',reason:'currency-unknown'};
-    if(usdDebt>0.01&&bsDebt<=0.01)return{status:'clear',mode:'USD',reason:'only-usd-debt'};
-    if(bsDebt>0.01&&usdDebt<=0.01)return{status:'clear',mode:'Bs BCV',reason:'only-bs-debt'};
-    if(usdDebt<=0.01&&bsDebt<=0.01)return{status:'clear',mode:'USD',reason:'advance-default-usd'};
-    if(!raw)return{status:'ambiguous',mode:'',reason:'amount-missing'};
-
-    const resolved=resolveAmount({amount:raw,enteredCurrency:'USD',rate:fx});
-    const usdRef=resolved.amountUsdRef||raw;
-    const usdError=relativeError(usdRef,usdDebt),bsError=relativeError(usdRef,bsDebt),difference=Math.abs(usdError-bsError);
-    const exactUsd=Math.abs(usdRef-usdDebt)<=0.01,exactBs=Math.abs(usdRef-bsDebt)<=0.01;
-    if(exactUsd&&!exactBs)return{status:'clear',mode:'USD',reason:'exact-usd-balance',errors:{USD:usdError,BS:bsError}};
-    if(exactBs&&!exactUsd)return{status:'clear',mode:'Bs BCV',reason:'exact-bs-balance',errors:{USD:usdError,BS:bsError}};
-
-    const best=usdError<bsError?'USD':'Bs BCV',bestError=Math.min(usdError,bsError),otherError=Math.max(usdError,bsError);
-    if(bestError<=0.08&&otherError>=0.25&&difference>=0.20)return{status:'clear',mode:best,reason:'strong-balance-match',errors:{USD:usdError,BS:bsError}};
-    return{status:'ambiguous',mode:'',reason:'both-accounts-plausible',errors:{USD:usdError,BS:bsError}};
+  function inferTargetMode({enteredCurrency}={}){
+    const mode=modeForCurrency(enteredCurrency);
+    return mode?{status:'clear',mode,reason:'strict-currency-account-policy'}:{status:'ambiguous',mode:'',reason:'currency-unknown'};
   }
 
   function analyzePayment({amount,rate,expectedUsd,forcedCurrency}){
@@ -130,5 +138,5 @@
     return result;
   }
 
-  return{money,parseAmountInput,resolveAmount,inferEnteredCurrency,inferTargetMode,analyzePayment};
+  return{USD_METHODS,VES_METHODS,money,positive,normalizeCurrency,currencyForMethod,modeForCurrency,parseAmountInput,resolveAmount,inferEnteredCurrency,inferTargetMode,analyzePayment};
 });
