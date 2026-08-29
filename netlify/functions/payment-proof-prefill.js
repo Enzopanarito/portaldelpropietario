@@ -31,7 +31,7 @@ function validRecordId(value){return /^rec[A-Za-z0-9]{14}$/.test(String(value||'
 function clientIp(event){const headers=event.headers||{};return String(headers['x-nf-client-connection-ip']||headers['X-Nf-Client-Connection-Ip']||headers['x-forwarded-for']||headers['X-Forwarded-For']||'unknown').split(',')[0].trim().slice(0,120)}
 async function allowed(scope,identity,max){try{return await consume({scope,identity,max,windowMs:WINDOW_MS,countBeforeRecord:true})}catch(error){console.warn('Límite de prelectura no disponible:',error.message);return{allowed:true,retryAfter:3600}}}
 function methodLabel(method){return({TRANSFER_VE:'Transferencia bancaria',MOBILE_PAYMENT_VE:'Pago móvil',ZELLE:'Zelle',TRANSFER_US:'Transferencia bancaria internacional',BINANCE_PAY:'Binance Pay',CRYPTO_TRANSFER:'Binance / transferencia cripto',OTHER:'Otro método'}[method]||'')}
-function requiredFieldsFor(){return['amount','currency','reference','method']}
+function requiredFieldsFor(method){const normalized=String(method||'').trim().toUpperCase();return normalized==='ZELLE'?['amount','currency','method']:['amount','currency','reference','method']}
 function missingFields(analysis){
  const required=new Set(requiredFieldsFor(analysis?.method)),missing=[];
  if(required.has('amount')&&(!analysis||!Number(analysis.amount)))missing.push({field:'amount',label:'monto'});
@@ -79,6 +79,13 @@ function validateRawForPrefill(raw){
  if(fatal.length)throw Object.assign(new Error('La IA devolvió un esquema inválido.'),{code:'INVALID_OUTPUT',detail:fatal[0]});
  return String(raw).trim();
 }
+function prefillQuality(raw){
+ const parsed=contract.parseRawJson(String(raw||''));
+ if(!parsed.ok)return{usable:false,complete:false,confidence:0,missing:[{field:'analysis',label:'lectura'}],rank:-1000};
+ const analysis=contract.normalizeAnalysis(parsed.value),missing=missingFields(analysis),confidence=Math.max(0,Math.min(1,Number(analysis.confidence)||0)),coreMissing=missing.filter(item=>['amount','currency','method'].includes(item.field)),usable=coreMissing.length===0&&confidence>=0.75,complete=missing.length===0;
+ return{usable,complete,confidence,missing,analysis,rank:(usable?1000:0)+(complete?500:0)+confidence*100-missing.length*25};
+}
+
 async function analyzeViaProxy({proof,promptVersion,fetchFn=global.fetch,proxyUrl=PROXY_URL}={}){
  if(!proxyUrl)throw Object.assign(new Error('No existe un lector alterno configurado.'),{code:'AI_NOT_CONFIGURED'});
  const content=Buffer.isBuffer(proof?.content)?proof.content:null,contentType=String(proof?.contentType||'').trim();
@@ -107,40 +114,32 @@ async function analyzeWithFallback({config,proof,report,promptVersion}={},deps={
  const proxy=deps.analyzeViaProxy||analyzeViaProxy;
  const hasLocal=deps.localGeminiConfigured||localGeminiConfigured;
  const proxyFirst=deps.proxyFirst!==false;
- let selection=null,discoveryError=null,lastError=null,firstProxyError=null;
+ let selection=null,discoveryError=null,lastError=null,firstProxyError=null,bestResult=null,bestQuality=null;
+ const consider=result=>{const quality=prefillQuality(result.raw);if(!bestQuality||quality.rank>bestQuality.rank){bestResult=result;bestQuality=quality}return quality};
 
  if(proxyFirst){
-  try{return await proxy({proof,promptVersion})}
-  catch(error){
-   firstProxyError=error;lastError=error;
-   if(['INVALID_ATTACHMENT','RATE_LIMIT','TIMEOUT','PROVIDER_UNAVAILABLE'].includes(errorCode(error)))throw error;
-  }
+  try{const result=await proxy({proof,promptVersion}),quality=consider(result);if(quality.usable&&quality.complete)return result;lastError=Object.assign(new Error('La primera lectura quedó incompleta.'),{code:'LOW_QUALITY_OUTPUT',quality})}
+  catch(error){firstProxyError=error;lastError=error;if(['INVALID_ATTACHMENT','RATE_LIMIT','TIMEOUT','PROVIDER_UNAVAILABLE'].includes(errorCode(error)))throw error}
  }
 
  if(hasLocal()){
   try{selection=await discover()}
   catch(error){discoveryError=error;lastError=error}
-
-  const discoveryCode=errorCode(discoveryError);
-  const directAllowed=!['AI_AUTH_FAILED','AI_NOT_CONFIGURED'].includes(discoveryCode);
+  const discoveryCode=errorCode(discoveryError),directAllowed=!['AI_AUTH_FAILED','AI_NOT_CONFIGURED'].includes(discoveryCode);
   if(directAllowed){
    const models=modelCandidates(config,selection).slice(0,MAX_DIRECT_ATTEMPTS);
    for(const model of models){
-    try{return await direct({model,proof,report,promptVersion})}
-    catch(error){
-     lastError=error;
-     if(!canTryAnotherModel(error))break;
-    }
+    try{const result=await direct({model,proof,report,promptVersion}),quality=consider(result);if(quality.usable&&quality.complete)return result;lastError=Object.assign(new Error('El modelo devolvió una lectura incompleta.'),{code:'LOW_QUALITY_OUTPUT',quality})}
+    catch(error){lastError=error;if(!canTryAnotherModel(error))break}
    }
   }
  }
 
  if(!proxyFirst){
-  try{return await proxy({proof,promptVersion})}
-  catch(error){
-   if(!lastError||['AI_AUTH_FAILED','AI_NOT_CONFIGURED'].includes(errorCode(lastError)))lastError=error;
-  }
+  try{const result=await proxy({proof,promptVersion}),quality=consider(result);if(quality.usable&&quality.complete)return result}
+  catch(error){if(!lastError||['AI_AUTH_FAILED','AI_NOT_CONFIGURED'].includes(errorCode(lastError)))lastError=error}
  }
+ if(bestResult)return bestResult;
  throw firstProxyError||lastError||Object.assign(new Error('No hay un lector disponible para analizar el comprobante.'),{code:'AI_NOT_CONFIGURED'});
 }
 
@@ -191,6 +190,7 @@ exports.validateRawForPrefill=validateRawForPrefill;
 exports.analyzeViaProxy=analyzeViaProxy;
 exports.analyzeDirect=analyzeDirect;
 exports.analyzeWithFallback=analyzeWithFallback;
+exports.prefillQuality=prefillQuality;
 exports.loadAuthorizedAccounts=loadAuthorizedAccounts;
 exports.recipientVerification=recipientVerification;
 exports.CURRENT_STABLE_MODELS=CURRENT_STABLE_MODELS;
