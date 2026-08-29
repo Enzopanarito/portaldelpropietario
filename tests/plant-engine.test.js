@@ -21,6 +21,60 @@ test('configuración inicial refleja los acuerdos sin convertirlos en una sola b
   assert.equal(house(11).reinstatementMode, engine.REINSTATEMENT_MODE.NOT_ALLOWED);
   assert.equal(house(11).specialAgreement, true);
   assert.equal(house(1).servicioResidencialActivo, true);
+  assert.equal(house(1).participationPlan, undefined);
+  assert.equal(engine.participationPlanId(house(1)), engine.PARTICIPATION_PLAN.ACTIVE_ALL);
+  assert.equal(engine.participationPlanId(house(2)), engine.PARTICIPATION_PLAN.SUSPEND_FUEL_MAINTENANCE);
+  assert.equal(engine.participationPlanId(house(3)), engine.PARTICIPATION_PLAN.SUSPEND_ALL);
+});
+
+test('las cuatro modalidades canónicas fijan servicio, cobros y acumulados sin combinaciones libres', () => {
+  const expected = {
+    [engine.PARTICIPATION_PLAN.ACTIVE_ALL]: { service: true, repairs: true, maintenance: true, fuel: true },
+    [engine.PARTICIPATION_PLAN.SUSPEND_FUEL]: { service: false, repairs: true, maintenance: true, fuel: false },
+    [engine.PARTICIPATION_PLAN.SUSPEND_FUEL_MAINTENANCE]: { service: false, repairs: true, maintenance: false, fuel: false },
+    [engine.PARTICIPATION_PLAN.SUSPEND_ALL]: { service: false, repairs: false, maintenance: false, fuel: false }
+  };
+  for (const [planId, values] of Object.entries(expected)) {
+    const policy = engine.participationPlanPolicy(planId);
+    assert.equal(policy.servicioResidencialActivo, values.service, planId);
+    assert.equal(policy.participaReparaciones, values.repairs, planId);
+    assert.equal(policy.participaMantenimiento, values.maintenance, planId);
+    assert.equal(policy.participaGasoilResidencial, values.fuel, planId);
+    assert.equal(engine.participationPlanId(policy), planId);
+  }
+  assert.throws(() => engine.validateProfile({
+    ...profiles[0], state: engine.PROFILE_STATE.PARTIAL, servicioResidencialActivo: false,
+    participaReparaciones: false, participaMantenimiento: true, participaGasoilResidencial: false
+  }), /PLANT_PROFILE_COMBINATION_INVALID/);
+  assert.throws(() => engine.validateProfile({ ...profiles[0], participaGasoilResidencial: false }), /PLANT_PROFILE_COMBINATION_INVALID|PLANT_SERVICE_PARTICIPATION_MISMATCH/);
+});
+
+test('cada suspensión acumula exactamente lo que dejó de pagar y nunca gasoil', () => {
+  const scenarioOwners = [1, 4, 5, 6].map(house => ({ id: `scenario-${house}`, house, alicuota: 0.25 }));
+  const baseProfiles = scenarioOwners.map(owner => engine.initialProfileForHouse({ ownerId: owner.id, house: owner.house, effectiveFrom: '2026-08-01' }));
+  const target = baseProfiles[0];
+  function run(planId) {
+    const changed = { ...target, ...engine.participationPlanPolicy(planId), profileId: `PLAN-${planId}`, version: 2, effectiveFrom: '2026-09-01' };
+    const timeline = baseProfiles.concat(changed);
+    const repair = engine.buildExpenseSnapshot({ owners: scenarioOwners, profiles: timeline, effectiveDate: '2026-09-10', expense: { concept: 'Reparación de planta', amount: 400, type: 'Gasto Especial' } });
+    const maintenance = engine.buildExpenseSnapshot({ owners: scenarioOwners, profiles: timeline, effectiveDate: '2026-09-11', expense: { concept: 'Mantenimiento preventivo de planta', amount: 400, type: 'Gasto Especial' } });
+    const fuel = engine.buildExpenseSnapshot({ owners: scenarioOwners, profiles: timeline, effectiveDate: '2026-09-12', expense: { concept: 'Gasoil planta', amount: 400, type: 'Gasto Especial' } });
+    return engine.calculateReinstatement({ ownerId: target.ownerId, profiles: timeline, interventions: [
+      { interventionId: 'repair', date: '2026-09-10', snapshot: repair },
+      { interventionId: 'maintenance', date: '2026-09-11', snapshot: maintenance },
+      { interventionId: 'fuel', date: '2026-09-12', snapshot: fuel }
+    ], at: '2026-10-01' });
+  }
+  const fuelOnly = run(engine.PARTICIPATION_PLAN.SUSPEND_FUEL);
+  assert.equal(fuelOnly.total, 0);
+  assert.equal(fuelOnly.lines.length, 0);
+  const withoutMaintenance = run(engine.PARTICIPATION_PLAN.SUSPEND_FUEL_MAINTENANCE);
+  assert.equal(withoutMaintenance.total, 133.33);
+  assert.deepEqual(withoutMaintenance.lines.map(line => line.category), [engine.CATEGORY.PREVENTIVE_MAINTENANCE]);
+  const totalWaiver = run(engine.PARTICIPATION_PLAN.SUSPEND_ALL);
+  assert.equal(totalWaiver.total, 266.66);
+  assert.deepEqual(totalWaiver.lines.map(line => line.category).sort(), [engine.CATEGORY.PREVENTIVE_MAINTENANCE, engine.CATEGORY.REPAIR].sort());
+  assert.equal(totalWaiver.lines.some(line => line.category === engine.CATEGORY.RESIDENTIAL_FUEL), false);
 });
 
 test('clasificador reconoce planta y evita confundir el motor del portón', () => {
@@ -240,4 +294,7 @@ test('cambio de propietario no hereda participación económica privada ni clave
   const nextDay = engine.requestIdempotencyKey({ ownerId: newOwnerId, type: 'CAMBIO_PROPIETARIO', proposedEffectiveDate: '2027-02-02', day: '2027-02-02' });
   assert.equal(one, retry);
   assert.notEqual(one, nextDay);
+  const fuelOnly = engine.requestIdempotencyKey({ ownerId: newOwnerId, type: 'SUSPENSION', requestedPlan: engine.PARTICIPATION_PLAN.SUSPEND_FUEL, proposedEffectiveDate: '2027-02-02', day: '2027-02-01' });
+  const totalWaiver = engine.requestIdempotencyKey({ ownerId: newOwnerId, type: 'RENUNCIA', requestedPlan: engine.PARTICIPATION_PLAN.SUSPEND_ALL, proposedEffectiveDate: '2027-02-02', day: '2027-02-01' });
+  assert.notEqual(fuelOnly, totalWaiver);
 });

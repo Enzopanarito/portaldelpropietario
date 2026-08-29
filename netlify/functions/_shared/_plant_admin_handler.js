@@ -41,7 +41,7 @@ function createHandler(deps = {}) {
           const ownerView = engine.ownerPlantView({ ownerId: owner.id, profiles: context.profiles, interventions: context.interventions, recognizedPayments: context.recognizedPayments, at });
           return {
             house: owner.house, ownerId: owner.id, ownerName: safeDisplayText(owner.name || `Casa ${owner.house}`, 180), hasEmail: Boolean(owner.email),
-            profile: engine.profileAt(context.profiles, owner.id, at), reinstatement: ownerView.reinstatement,
+            profile: (() => { const profile = engine.profileAt(context.profiles, owner.id, at); return profile ? { ...profile, participationPlan: engine.participationPlanId(profile) } : null; })(), reinstatement: ownerView.reinstatement,
             ownerView
           };
         });
@@ -61,7 +61,8 @@ function createHandler(deps = {}) {
             requestedAt: item.requestedAt, proposedEffectiveDate: item.proposedEffectiveDate,
             estimatedRetroactive: item.estimatedRetroactive, officialRetroactive: item.officialRetroactive,
             conditions: item.conditions, reason: item.reason, paymentComplete: item.paymentComplete,
-            definitivePaymentId: item.definitivePaymentId
+            definitivePaymentId: item.definitivePaymentId,
+            requestedPlan: item.calculation?.requestedPlan || '', requestedPolicy: item.calculation?.requestedPolicy || null
           })).sort((a, b) => String(b.requestedAt).localeCompare(String(a.requestedAt)))
         });
       }
@@ -97,36 +98,50 @@ function createHandler(deps = {}) {
         if (reason.length < 5) return json(400, { message: 'Indique el motivo del cambio.' });
         if (effectiveFrom < today) return json(400, { message: 'La fecha no puede ser anterior a hoy; no se permiten exclusiones retroactivas.' });
         const existingVersion = context.profiles.find(item => item.ownerId === ownerId && item.effectiveFrom === effectiveFrom);
-        if (existingVersion) return json(200, { success: true, idempotent: true, previewOnly: fixture, profile: existingVersion, message: 'Ya existe una versión programada para esa fecha. No se duplicó.' });
+        if (existingVersion) {
+          const requestedExistingPlan = String(body.planId || body.profile?.participationPlan || engine.participationPlanId(body.profile || {}) || '').trim().toUpperCase();
+          if (requestedExistingPlan && requestedExistingPlan !== engine.participationPlanId(existingVersion)) return json(409, { message: 'Ya existe otra modalidad programada para esa fecha. Elija una fecha posterior o revise la versión existente.' });
+          return json(200, { success: true, idempotent: true, previewOnly: fixture, profile: existingVersion, message: 'Ya existe esa versión programada para la fecha. No se duplicó.' });
+        }
         const current = engine.profileAt(context.profiles, ownerId, effectiveFrom);
         if (!current) return json(409, { message: 'No existe un perfil vigente que pueda versionarse.' });
-        const flags = body.profile || {};
-        const booleanNames = ['participaReparaciones', 'participaMantenimiento', 'participaGasoilResidencial', 'participaBeneficioComun', 'servicioResidencialActivo'];
-        if (booleanNames.some(name => typeof flags[name] !== 'boolean')) return json(400, { message: 'Todas las reglas de participación deben confirmarse explícitamente.' });
+        const submitted = body.profile || {};
+        const planId = String(body.planId || submitted.participationPlan || engine.participationPlanId(submitted) || '').trim().toUpperCase();
+        let policy;
+        try { policy = engine.participationPlanPolicy(planId); } catch (_) { return json(400, { message: 'Seleccione una de las modalidades económicas válidas de la planta.' }); }
         const version = Math.max(0, ...context.profiles.filter(item => item.ownerId === ownerId).map(item => Number(item.version || 0))) + 1;
         const nextProfile = context.profiles.filter(item => item.ownerId === ownerId && engine.isoDay(item.effectiveFrom) > effectiveFrom)
           .sort((left, right) => engine.isoDay(left.effectiveFrom).localeCompare(engine.isoDay(right.effectiveFrom)))[0] || null;
         const profile = engine.validateProfile({
-          ...current, ...flags, ownerId, house: owner.house, state: String(flags.state || ''),
-          reinstatementMode: String(flags.reinstatementMode || ''), effectiveFrom, effectiveTo: nextProfile ? previousDay(nextProfile.effectiveFrom) : null,
+          ...current, ...policy, ownerId, house: owner.house, effectiveFrom, effectiveTo: nextProfile ? previousDay(nextProfile.effectiveFrom) : null,
           profileId: `PLP-${owner.house}-${effectiveFrom}-V${version}`, reason, approvedBy: actor, approvedAt: now,
-          observations: safeDisplayText(flags.observations, 1000), specialAgreement: Boolean(flags.specialAgreement),
+          observations: safeDisplayText(submitted.observations, 1000),
           active: true, version, replacesProfileId: current.profileId
         });
         const conditionFields = ['state', 'reinstatementMode', 'participaReparaciones', 'participaMantenimiento', 'participaGasoilResidencial', 'participaBeneficioComun', 'servicioResidencialActivo', 'specialAgreement', 'observations'];
         if (conditionFields.every(field => profile[field] === current[field])) return json(400, { message: 'No hay ningún cambio de condición para confirmar.' });
+        const sourceRequestId = String(body.sourceRequestId || body.reinstatementRequestId || '').trim();
+        const sourceRequest = sourceRequestId ? (context.requests || []).find(item => item.requestId === sourceRequestId && item.ownerId === ownerId) : null;
+        if (sourceRequest && sourceRequest.calculation?.requestedPlan && sourceRequest.calculation.requestedPlan !== planId) return json(409, { message: 'La modalidad no coincide con la solicitud del propietario.' });
         if (!current.servicioResidencialActivo && profile.servicioResidencialActivo) {
-          const reinstatementRequestId = String(body.reinstatementRequestId || '').trim();
-          const fulfilled = (context.requests || []).find(item => item.requestId === reinstatementRequestId && item.ownerId === ownerId && item.type === 'REINCORPORACION' && item.state === 'CUMPLIDA' && item.paymentComplete && item.definitivePaymentId);
-          if (!fulfilled) return json(409, { message: 'No puede activar el servicio: falta una solicitud de reincorporación cumplida y vinculada a un pago definitivo exacto.' });
-          if (context.profiles.some(item => item.reinstatementRequestId === fulfilled.requestId)) return json(409, { message: 'Esa solicitud de reincorporación ya fue utilizada en otra versión del perfil.' });
-          profile.reinstatementRequestId = fulfilled.requestId;
+          if (effectiveFrom !== today) return json(400, { message: 'La reincorporación debe confirmarse con vigencia de hoy para verificar el acumulado exacto al momento de activar.' });
+          if (!sourceRequest || sourceRequest.type !== 'REINCORPORACION' || ['RECHAZADA', 'CANCELADA'].includes(sourceRequest.state)) return json(409, { message: 'No puede activar el servicio sin una solicitud válida de reincorporación.' });
+          const currentReinstatement = engine.calculateReinstatement({ ownerId, profiles: context.profiles, interventions: context.interventions, recognizedPayments: context.recognizedPayments, at: effectiveFrom });
+          if (currentReinstatement.total > 0) return json(409, { message: `No puede activar el servicio: todavía quedan ${currentReinstatement.total.toFixed(2)} USD por pagar de mantenimiento o reparaciones.` });
+          const originallyRequiredPayment = engine.money(sourceRequest.officialRetroactive || sourceRequest.estimatedRetroactive) > 0;
+          if (originallyRequiredPayment && !(sourceRequest.state === 'CUMPLIDA' && sourceRequest.paymentComplete && sourceRequest.definitivePaymentId)) return json(409, { message: 'No puede activar el servicio: falta confirmar el pago definitivo del acumulado.' });
+          if (context.profiles.some(item => item.reinstatementRequestId === sourceRequest.requestId)) return json(409, { message: 'Esa solicitud de reincorporación ya fue utilizada en otra versión del perfil.' });
+          profile.reinstatementRequestId = sourceRequest.requestId;
         }
         const previousEffectiveDay = previousDay(effectiveFrom);
         let notification = { sent: false, status: 'Vista previa aislada', detail: 'No se envían correos desde un deploy de prueba.', recipientConfigured: Boolean(owner.email) };
         if (!fixture) {
           await store.createRecords(storeModule.TABLES.profiles, [storeModule.profileFields(profile)]);
           if (current.recordId) await store.patchRecords(storeModule.TABLES.profiles, [{ id: current.recordId, fields: { 'Fecha Fin Estado': previousEffectiveDay } }]);
+          if (sourceRequest?.recordId && sourceRequest.state !== 'CUMPLIDA') await store.patchRecords(storeModule.TABLES.requests, [{ id: sourceRequest.recordId, fields: {
+            Estado: 'CUMPLIDA', 'Retroactivo Oficial': engine.money(sourceRequest.officialRetroactive || sourceRequest.estimatedRetroactive),
+            'Revisado Por': actor, 'Fecha Revisión': now, 'Actualizado En': now
+          } }]);
           const audit = { eventId: `PLA-${engine.hash(profile).slice(0, 20).toUpperCase()}`, entity: 'PERFIL', entityId: profile.profileId, action: 'CREAR_VERSION', before: current, after: profile, actor, at: now, reason };
           audit.hash = engine.hash(audit); await store.createRecords(storeModule.TABLES.audit, [storeModule.auditFields(audit)]);
           try {

@@ -27,6 +27,9 @@ test('el portal propietario consulta solo la casa seleccionada y las solicitudes
   assert(source.includes('Acumulado para reincorporarse'));
   assert(source.includes('ACUMULA_REINCORPORACION'));
   assert(source.includes('SOLICITAR_CAMBIO_PLANTA'));
+  for (const marker of ['requestedPlan', 'Cambiar modalidad de planta', 'Toda opción distinta del servicio completo suspende el servicio residencial', 'El gasoil nunca se acumula']) assert(source.includes(marker));
+  const engine = read('netlify/functions/_shared/_plant_engine.js');
+  for (const plan of ['ACTIVO_TODO', 'SUSPENDE_SOLO_GASOIL', 'SUSPENDE_GASOIL_MANTENIMIENTO', 'RENUNCIA_TOTAL']) assert(engine.includes(plan));
   assert(source.includes('payment-reports/session'));
   assert(source.includes('Verifica esta casa'));
   assert.doesNotMatch(source, /participants\s*:/);
@@ -39,6 +42,8 @@ test('API privada de planta reutiliza la sesión firmada de la casa', () => {
   assert(source.includes('sessionFromEvent'));
   assert(source.includes('OWNER_VERIFICATION_REQUIRED'));
   assert(source.includes("begin('PLANT_OWNER_REQUEST'"));
+  assert(source.includes('participationPlanPolicy'));
+  assert(source.includes('requestTypeForParticipationPlan'));
   assert(source.includes("Netlify.env.get('CONTEXT')"));
   assert(source.includes("/^deploy-preview-\\d+--/"));
   assert(source.indexOf('sessionFromEvent') < source.indexOf('const data = await context(fixture)'));
@@ -65,9 +70,9 @@ test('el panel Admin confirma el snapshot antes de crear un gasto automático', 
   new vm.Script(source, { filename: 'admin-plant-v1.js' });
 });
 
-test('Admin incorpora vista espejo, conteo automático y control manual notificado', () => {
+test('Admin incorpora vista espejo, conteo automático y modalidades canónicas notificadas', () => {
   const source = read('admin-plant-v1.js');
-  for (const marker of ['Ver como propietario', 'Vista espejo canónica', 'exactamente lo que ve el propietario', 'Conteo automático de participación', 'Control manual', 'Confirmar cambio y notificar', 'Acumulado para entrar', 'ACUMULA_REINCORPORACION']) assert(source.includes(marker));
+  for (const marker of ['Ver como propietario', 'Vista espejo canónica', 'exactamente lo que ve el propietario', 'Conteo automático de participación', 'Modalidad económica de planta', 'Confirmar cambio y notificar', 'Aplicar modalidad', 'Acumulado para entrar', 'ACUMULA_REINCORPORACION']) assert(source.includes(marker));
   assert(source.includes('#vla-premium-sidebar .vla-nav'));
   assert(source.includes('premiumUiExpected()'));
   assert(source.includes("vlaAdminPlantWaited = 'premium-shell'"));

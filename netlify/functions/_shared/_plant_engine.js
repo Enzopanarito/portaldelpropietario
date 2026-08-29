@@ -18,6 +18,65 @@ const REINSTATEMENT_MODE = Object.freeze({
   NOT_ALLOWED: 'NO_PERMITIDA'
 });
 
+const PARTICIPATION_PLAN = Object.freeze({
+  ACTIVE_ALL: 'ACTIVO_TODO',
+  SUSPEND_FUEL: 'SUSPENDE_SOLO_GASOIL',
+  SUSPEND_FUEL_MAINTENANCE: 'SUSPENDE_GASOIL_MANTENIMIENTO',
+  SUSPEND_ALL: 'RENUNCIA_TOTAL',
+  SPECIAL_EXEMPTION: 'EXENCION_ESPECIAL'
+});
+
+const PARTICIPATION_PLAN_POLICY = Object.freeze({
+  [PARTICIPATION_PLAN.ACTIVE_ALL]: Object.freeze({
+    state: PROFILE_STATE.ACTIVE, participaReparaciones: true, participaMantenimiento: true,
+    participaGasoilResidencial: true, participaBeneficioComun: true, servicioResidencialActivo: true,
+    reinstatementMode: REINSTATEMENT_MODE.ALLOWED, specialAgreement: false
+  }),
+  [PARTICIPATION_PLAN.SUSPEND_FUEL]: Object.freeze({
+    state: PROFILE_STATE.PARTIAL, participaReparaciones: true, participaMantenimiento: true,
+    participaGasoilResidencial: false, participaBeneficioComun: true, servicioResidencialActivo: false,
+    reinstatementMode: REINSTATEMENT_MODE.ALLOWED, specialAgreement: false
+  }),
+  [PARTICIPATION_PLAN.SUSPEND_FUEL_MAINTENANCE]: Object.freeze({
+    state: PROFILE_STATE.PARTIAL, participaReparaciones: true, participaMantenimiento: false,
+    participaGasoilResidencial: false, participaBeneficioComun: true, servicioResidencialActivo: false,
+    reinstatementMode: REINSTATEMENT_MODE.RETROACTIVE_APPROVAL, specialAgreement: false
+  }),
+  [PARTICIPATION_PLAN.SUSPEND_ALL]: Object.freeze({
+    state: PROFILE_STATE.WAIVER, participaReparaciones: false, participaMantenimiento: false,
+    participaGasoilResidencial: false, participaBeneficioComun: true, servicioResidencialActivo: false,
+    reinstatementMode: REINSTATEMENT_MODE.RETROACTIVE_APPROVAL, specialAgreement: false
+  }),
+  [PARTICIPATION_PLAN.SPECIAL_EXEMPTION]: Object.freeze({
+    state: PROFILE_STATE.SALE_RESERVE, participaReparaciones: false, participaMantenimiento: false,
+    participaGasoilResidencial: false, participaBeneficioComun: false, servicioResidencialActivo: false,
+    reinstatementMode: REINSTATEMENT_MODE.NOT_ALLOWED, specialAgreement: true
+  })
+});
+
+const PUBLIC_PARTICIPATION_PLANS = Object.freeze([
+  Object.freeze({
+    id: PARTICIPATION_PLAN.ACTIVE_ALL, label: 'Servicio completo activo', serviceActive: true,
+    pays: Object.freeze(['GASOIL', 'MANTENIMIENTO', 'REPARACIONES']), accrues: Object.freeze([]),
+    description: 'Mantiene el servicio y participa en gasoil, mantenimiento y reparaciones.'
+  }),
+  Object.freeze({
+    id: PARTICIPATION_PLAN.SUSPEND_FUEL, label: 'Suspender solo gasoil', serviceActive: false,
+    pays: Object.freeze(['MANTENIMIENTO', 'REPARACIONES']), accrues: Object.freeze([]),
+    description: 'Suspende el servicio, continúa pagando mantenimiento y reparaciones, y no genera acumulado para volver.'
+  }),
+  Object.freeze({
+    id: PARTICIPATION_PLAN.SUSPEND_FUEL_MAINTENANCE, label: 'Suspender gasoil y mantenimiento', serviceActive: false,
+    pays: Object.freeze(['REPARACIONES']), accrues: Object.freeze(['MANTENIMIENTO']),
+    description: 'Suspende el servicio, continúa pagando reparaciones y acumula los mantenimientos no pagados.'
+  }),
+  Object.freeze({
+    id: PARTICIPATION_PLAN.SUSPEND_ALL, label: 'Renunciar totalmente', serviceActive: false,
+    pays: Object.freeze([]), accrues: Object.freeze(['MANTENIMIENTO', 'REPARACIONES']),
+    description: 'Suspende el servicio y acumula mantenimiento y reparaciones para una futura reincorporación. El gasoil nunca se acumula.'
+  })
+]);
+
 const CATEGORY = Object.freeze({
   REPAIR: 'REPARACION',
   PREVENTIVE_MAINTENANCE: 'MANTENIMIENTO_PREVENTIVO',
@@ -67,8 +126,36 @@ function stable(value) {
   return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stable(value[key])}`).join(',')}}`;
 }
 function hash(value) { return crypto.createHash('sha256').update(stable(value)).digest('hex'); }
-function requestIdempotencyKey({ ownerId, type, proposedEffectiveDate, day }) { return hash({ ownerId: clean(ownerId), type: clean(type), proposedEffectiveDate: isoDay(proposedEffectiveDate), day: isoDay(day) }); }
+function requestIdempotencyKey({ ownerId, type, requestedPlan, proposedEffectiveDate, day }) {
+  const payload = { ownerId: clean(ownerId), type: clean(type), proposedEffectiveDate: isoDay(proposedEffectiveDate), day: isoDay(day) };
+  if (clean(requestedPlan)) payload.requestedPlan = clean(requestedPlan);
+  return hash(payload);
+}
 function withoutHash(value) { const copy = JSON.parse(JSON.stringify(value)); delete copy.snapshotHash; return copy; }
+
+function participationPlanPolicy(planId) {
+  const policy = PARTICIPATION_PLAN_POLICY[clean(planId)];
+  if (!policy) throw new Error('PLANT_PARTICIPATION_PLAN_INVALID');
+  return { ...policy };
+}
+
+function participationPlanId(profile) {
+  if (!profile || typeof profile !== 'object') return '';
+  const keys = ['participaReparaciones', 'participaMantenimiento', 'participaGasoilResidencial', 'participaBeneficioComun', 'servicioResidencialActivo'];
+  for (const [planId, policy] of Object.entries(PARTICIPATION_PLAN_POLICY)) {
+    if (keys.every(key => profile[key] === policy[key]) && Boolean(profile.specialAgreement) === Boolean(policy.specialAgreement)) return planId;
+  }
+  return '';
+}
+
+function publicParticipationPlans() { return PUBLIC_PARTICIPATION_PLANS.map(plan => ({ ...plan, pays: [...plan.pays], accrues: [...plan.accrues] })); }
+
+function requestTypeForParticipationPlan(currentProfile, requestedPlan) {
+  participationPlanPolicy(requestedPlan);
+  if (requestedPlan === PARTICIPATION_PLAN.ACTIVE_ALL) return 'REINCORPORACION';
+  if (requestedPlan === PARTICIPATION_PLAN.SUSPEND_ALL) return 'RENUNCIA';
+  return (currentProfile?.servicioResidencialActivo || currentProfile?.residentialServiceActive) ? 'SUSPENSION' : 'CAMBIO_MODALIDAD';
+}
 
 function initialProfileForHouse({ ownerId, house, effectiveFrom, approvedBy = 'MIGRACION_INICIAL' }) {
   const number = Number(house);
@@ -82,7 +169,7 @@ function initialProfileForHouse({ ownerId, house, effectiveFrom, approvedBy = 'M
   if ([2, 12].includes(number)) policy = {
     state: PROFILE_STATE.PARTIAL, participaReparaciones: true, participaMantenimiento: false,
     participaGasoilResidencial: false, participaBeneficioComun: true, servicioResidencialActivo: false,
-    reinstatementMode: REINSTATEMENT_MODE.ALLOWED
+    reinstatementMode: REINSTATEMENT_MODE.RETROACTIVE_APPROVAL
   };
   else if ([3, 15].includes(number)) policy = {
     state: PROFILE_STATE.WAIVER, participaReparaciones: false, participaMantenimiento: false,
@@ -111,6 +198,11 @@ function validateProfile(profile) {
   if (!Object.values(PROFILE_STATE).includes(profile.state)) throw new Error('PLANT_PROFILE_STATE_INVALID');
   if (!Object.values(REINSTATEMENT_MODE).includes(profile.reinstatementMode)) throw new Error('PLANT_REINSTATEMENT_MODE_INVALID');
   if (requiredBooleans.some(field => typeof profile[field] !== 'boolean')) throw new Error('PLANT_PROFILE_BOOLEAN_INVALID');
+  const planId = participationPlanId(profile);
+  const ownerChoiceState = [PROFILE_STATE.ACTIVE, PROFILE_STATE.PARTIAL, PROFILE_STATE.WAIVER, PROFILE_STATE.SALE_RESERVE].includes(profile.state);
+  if (ownerChoiceState && !planId) throw new Error('PLANT_PROFILE_COMBINATION_INVALID');
+  if (planId && PARTICIPATION_PLAN_POLICY[planId].state !== profile.state) throw new Error('PLANT_PROFILE_STATE_COMBINATION_INVALID');
+  if (profile.servicioResidencialActivo !== (profile.participaReparaciones && profile.participaMantenimiento && profile.participaGasoilResidencial)) throw new Error('PLANT_SERVICE_PARTICIPATION_MISMATCH');
   isoDay(profile.effectiveFrom);
   if (profile.effectiveTo && isoDay(profile.effectiveTo) < isoDay(profile.effectiveFrom)) throw new Error('PLANT_PROFILE_RANGE_INVALID');
   return profile;
@@ -393,6 +485,7 @@ function ownerPlantView({ ownerId, profiles, interventions, recognizedPayments =
     schemaVersion: 1, generatedAt: new Date().toISOString(), ownerId: clean(ownerId), house: Number(profile.house),
     current: {
       state: profile.state, effectiveFrom: isoDay(profile.effectiveFrom),
+      participationPlan: participationPlanId(profile),
       participates: {
         repairs: profile.participaReparaciones, maintenance: profile.participaMantenimiento,
         residentialFuel: profile.participaGasoilResidencial, commonBenefit: profile.participaBeneficioComun
@@ -401,6 +494,7 @@ function ownerPlantView({ ownerId, profiles, interventions, recognizedPayments =
       reinstatementMode: profile.reinstatementMode,
       specialAgreement: Boolean(profile.specialAgreement)
     },
+    availablePlans: publicParticipationPlans(),
     reinstatement: calculateReinstatement({ ownerId, profiles, interventions, recognizedPayments, at }),
     history
   };
@@ -436,8 +530,9 @@ function participationSummary({ owners, profiles, at = new Date() }) {
 }
 
 module.exports = {
-  PROFILE_STATE, REINSTATEMENT_MODE, CATEGORY, PROFILE_FLAG_BY_CATEGORY, DEFAULT_RETROACTIVE,
+  PROFILE_STATE, REINSTATEMENT_MODE, PARTICIPATION_PLAN, PARTICIPATION_PLAN_POLICY, CATEGORY, PROFILE_FLAG_BY_CATEGORY, DEFAULT_RETROACTIVE,
   clean, money, normalize, isoDay, stable, hash, requestIdempotencyKey, initialProfileForHouse, validateProfile, profileAt, inactiveEpisodeStart,
+  participationPlanPolicy, participationPlanId, publicParticipationPlans, requestTypeForParticipationPlan,
   inferPlantExpense, participantFlag, allocateEqual, buildExpenseSnapshot, verifySnapshot, parseSnapshot,
   buildConfirmedHistoricalSnapshot,
   calculateReinstatement, ownerPlantView, participationSummary
