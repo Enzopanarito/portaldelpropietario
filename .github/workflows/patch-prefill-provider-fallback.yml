@@ -20,20 +20,27 @@ jobs:
           node-version: 24
           package-manager-cache: false
       - run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Patch fallback and add regression test
+      - name: Patch resilient fallback and regression contract
         shell: bash
         run: |
           node <<'NODE'
           const fs=require('fs');
-          const path='netlify/functions/payment-proof-prefill.js';
-          let src=fs.readFileSync(path,'utf8');
-          const old="catch(error){firstProxyError=error;lastError=error;if(['INVALID_ATTACHMENT','RATE_LIMIT','TIMEOUT','PROVIDER_UNAVAILABLE'].includes(errorCode(error)))throw error}";
-          const next="catch(error){firstProxyError=error;lastError=error;if(['INVALID_ATTACHMENT','RATE_LIMIT'].includes(errorCode(error)))throw error}";
-          if(!src.includes(old))throw new Error('No se encontró el bloque exacto de fallback esperado.');
-          src=src.replace(old,next);
-          fs.writeFileSync(path,src);
-          const test=`'use strict';\n\nconst test=require('node:test');\nconst assert=require('node:assert/strict');\nconst prefill=require('../netlify/functions/payment-proof-prefill');\n\ntest('si el proxy expira, la prelectura cae a Gemini local en vez de mandar al usuario a carga manual',async()=>{\n  let directCalls=0;\n  const result=await prefill.analyzeWithFallback({\n    config:{primaryModel:'gemini-3.6-flash',secondaryModel:'gemini-3.5-flash'},\n    proof:{content:Buffer.from('proof'),contentType:'image/jpeg'},\n    report:{targetMode:''},\n    promptVersion:'test'\n  },{\n    proxyFirst:true,\n    localGeminiConfigured:()=>true,\n    analyzeViaProxy:async()=>{throw Object.assign(new Error('timeout'),{code:'TIMEOUT',status:504})},\n    discoverCompatibleModel:async()=>({model:'gemini-3.6-flash',models:['gemini-3.6-flash']}),\n    analyzeDirect:async()=>{directCalls++;return{provider:'direct',model:'gemini-3.6-flash',raw:JSON.stringify({amount:60,currency:'USD',reference:'',bank_or_platform:'Zelle',method:'ZELLE',transaction_date:'',transaction_time:'',transaction_status:'COMPLETED',recipient_name:'Enzo Jose Panarito Pernalete',recipient_phone:'',recipient_email:'',recipient_account_visible:'',confidence:0.99,warnings:[],possible_visual_modification:false})}}\n  });\n  assert.equal(directCalls,1);\n  assert.equal(result.provider,'direct');\n});\n\ntest('archivo inválido sigue fallando cerrado y no intenta IA local',async()=>{\n  let directCalls=0;\n  await assert.rejects(()=>prefill.analyzeWithFallback({config:{},proof:{},report:{},promptVersion:'test'},{\n    proxyFirst:true,\n    localGeminiConfigured:()=>true,\n    analyzeViaProxy:async()=>{throw Object.assign(new Error('bad proof'),{code:'INVALID_ATTACHMENT'})},\n    discoverCompatibleModel:async()=>({model:'gemini-3.6-flash'}),\n    analyzeDirect:async()=>{directCalls++;throw new Error('no debe ejecutarse')}\n  }),/bad proof/);\n  assert.equal(directCalls,0);\n});\n`;
-          fs.writeFileSync('tests/payment-prefill-provider-fallback.test.js',test);
+
+          const sourcePath='netlify/functions/payment-proof-prefill.js';
+          let source=fs.readFileSync(sourcePath,'utf8');
+          const sourceOld="catch(error){firstProxyError=error;lastError=error;if(['INVALID_ATTACHMENT','RATE_LIMIT','TIMEOUT','PROVIDER_UNAVAILABLE'].includes(errorCode(error)))throw error}";
+          const sourceNew="catch(error){firstProxyError=error;lastError=error;if(['INVALID_ATTACHMENT','RATE_LIMIT'].includes(errorCode(error)))throw error}";
+          if(!source.includes(sourceOld))throw new Error('No se encontró el bloque exacto de fallback esperado.');
+          source=source.replace(sourceOld,sourceNew);
+          fs.writeFileSync(sourcePath,source);
+
+          const testPath='tests/payment-proof-prefill-resilience.test.js';
+          let test=fs.readFileSync(testPath,'utf8');
+          const testOld=`test('timeout del proxy en prelectura termina de inmediato sin gastar otro intento directo',async()=>{\n let discoveryCalls=0,directCalls=0;\n await assert.rejects(\n  ()=>prefill.analyzeWithFallback(baseArgs,{\n   localGeminiConfigured:()=>true,\n   discoverCompatibleModel:async()=>{discoveryCalls+=1;return{model:'gemini-primary'}},\n   analyzeDirect:async()=>{directCalls+=1;return{raw:VALID_RAW,model:'gemini-primary',provider:'direct'}},\n   analyzeViaProxy:async()=>{throw coded('TIMEOUT',504)}\n  }),\n  error=>error?.code==='TIMEOUT'&&error?.status===504\n );\n assert.equal(discoveryCalls,0);\n assert.equal(directCalls,0);\n});`;
+          const testNew=`test('timeout del proxy cae a Gemini local y evita mandar al propietario a carga manual',async()=>{\n let discoveryCalls=0,directCalls=0;\n const result=await prefill.analyzeWithFallback(baseArgs,{\n  localGeminiConfigured:()=>true,\n  discoverCompatibleModel:async()=>{discoveryCalls+=1;return{model:'gemini-primary'}},\n  analyzeDirect:async()=>{directCalls+=1;return{raw:VALID_RAW,model:'gemini-primary',provider:'direct'}},\n  analyzeViaProxy:async()=>{throw coded('TIMEOUT',504)}\n });\n assert.equal(discoveryCalls,1);\n assert.equal(directCalls,1);\n assert.equal(result.provider,'direct');\n assert.equal(result.model,'gemini-primary');\n});`;
+          if(!test.includes(testOld))throw new Error('No se encontró la prueba antigua del timeout.');
+          test=test.replace(testOld,testNew);
+          fs.writeFileSync(testPath,test);
           NODE
           rm .github/workflows/patch-prefill-provider-fallback.yml
       - run: npm test
@@ -42,6 +49,6 @@ jobs:
         run: |
           git config user.name "VLA Automation"
           git config user.email "actions@users.noreply.github.com"
-          git add netlify/functions/payment-proof-prefill.js tests/payment-prefill-provider-fallback.test.js .github/workflows/patch-prefill-provider-fallback.yml
+          git add netlify/functions/payment-proof-prefill.js tests/payment-proof-prefill-resilience.test.js .github/workflows/patch-prefill-provider-fallback.yml
           git commit -m "Hacer resiliente la prelectura ante caídas del proveedor"
           git push origin HEAD:fix/prefill-provider-fallback-20260829
