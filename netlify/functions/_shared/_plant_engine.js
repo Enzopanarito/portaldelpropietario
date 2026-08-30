@@ -26,6 +26,12 @@ const PARTICIPATION_PLAN = Object.freeze({
   SPECIAL_EXEMPTION: 'EXENCION_ESPECIAL'
 });
 
+const SERVICE_SUSPENSION_REASON = Object.freeze({
+  NONE: 'NINGUNA',
+  NONPAYMENT: 'IMPAGO',
+  ADMINISTRATIVE: 'ADMINISTRATIVA'
+});
+
 const PARTICIPATION_PLAN_POLICY = Object.freeze({
   [PARTICIPATION_PLAN.ACTIVE_ALL]: Object.freeze({
     state: PROFILE_STATE.ACTIVE, participaReparaciones: true, participaMantenimiento: true,
@@ -150,11 +156,44 @@ function participationPlanId(profile) {
 
 function publicParticipationPlans() { return PUBLIC_PARTICIPATION_PLANS.map(plan => ({ ...plan, pays: [...plan.pays], accrues: [...plan.accrues] })); }
 
+function serviceSuspensionReason(profile) {
+  const value = clean(profile?.serviceSuspensionReason).toUpperCase();
+  return Object.values(SERVICE_SUSPENSION_REASON).includes(value) ? value : SERVICE_SUSPENSION_REASON.NONE;
+}
+
+function effectiveResidentialService(profile) {
+  return Boolean(profile?.servicioResidencialActivo) && serviceSuspensionReason(profile) === SERVICE_SUSPENSION_REASON.NONE;
+}
+
+function residentialServiceStatus(profile) {
+  const administrativeReason = serviceSuspensionReason(profile);
+  if (effectiveResidentialService(profile)) return {
+    active: true, code: 'ACTIVA', reasonCode: 'ACTIVA', label: 'Planta activa',
+    detail: 'Servicio residencial de planta habilitado.'
+  };
+  if (profile?.servicioResidencialActivo && administrativeReason === SERVICE_SUSPENSION_REASON.NONPAYMENT) return {
+    active: false, code: 'INACTIVA', reasonCode: SERVICE_SUSPENSION_REASON.NONPAYMENT,
+    label: 'Planta inactiva por impago', detail: 'Servicio suspendido por Administración debido a un pago pendiente.'
+  };
+  if (profile?.servicioResidencialActivo && administrativeReason === SERVICE_SUSPENSION_REASON.ADMINISTRATIVE) return {
+    active: false, code: 'INACTIVA', reasonCode: SERVICE_SUSPENSION_REASON.ADMINISTRATIVE,
+    label: 'Planta inactiva por Administración', detail: 'Servicio suspendido temporalmente por Administración.'
+  };
+  if (profile?.specialAgreement) return {
+    active: false, code: 'INACTIVA', reasonCode: 'ACUERDO_ESPECIAL',
+    label: 'Planta inactiva por acuerdo especial', detail: 'Esta casa mantiene una condición especial protegida.'
+  };
+  return {
+    active: false, code: 'INACTIVA', reasonCode: 'MODALIDAD', label: 'Planta inactiva',
+    detail: 'El servicio está suspendido por la modalidad de participación vigente.'
+  };
+}
+
 function requestTypeForParticipationPlan(currentProfile, requestedPlan) {
   participationPlanPolicy(requestedPlan);
   if (requestedPlan === PARTICIPATION_PLAN.ACTIVE_ALL) return 'REINCORPORACION';
   if (requestedPlan === PARTICIPATION_PLAN.SUSPEND_ALL) return 'RENUNCIA';
-  return (currentProfile?.servicioResidencialActivo || currentProfile?.residentialServiceActive) ? 'SUSPENSION' : 'CAMBIO_MODALIDAD';
+  return (currentProfile?.servicioResidencialActivo || currentProfile?.participationServiceEntitled || currentProfile?.residentialServiceActive) ? 'SUSPENSION' : 'CAMBIO_MODALIDAD';
 }
 
 function initialProfileForHouse({ ownerId, house, effectiveFrom, approvedBy = 'MIGRACION_INICIAL' }) {
@@ -163,7 +202,8 @@ function initialProfileForHouse({ ownerId, house, effectiveFrom, approvedBy = 'M
   const common = {
     ownerId: clean(ownerId), house: number, effectiveFrom: isoDay(effectiveFrom), effectiveTo: null,
     approvedBy: clean(approvedBy), approvedAt: new Date(`${isoDay(effectiveFrom)}T12:00:00.000Z`).toISOString(),
-    reason: 'Configuración inicial aprobada', observations: '', specialAgreement: false, active: true, version: 1
+    reason: 'Configuración inicial aprobada', observations: '', serviceSuspensionReason: SERVICE_SUSPENSION_REASON.NONE,
+    specialAgreement: false, active: true, version: 1
   };
   let policy;
   if ([2, 12].includes(number)) policy = {
@@ -198,6 +238,9 @@ function validateProfile(profile) {
   if (!Object.values(PROFILE_STATE).includes(profile.state)) throw new Error('PLANT_PROFILE_STATE_INVALID');
   if (!Object.values(REINSTATEMENT_MODE).includes(profile.reinstatementMode)) throw new Error('PLANT_REINSTATEMENT_MODE_INVALID');
   if (requiredBooleans.some(field => typeof profile[field] !== 'boolean')) throw new Error('PLANT_PROFILE_BOOLEAN_INVALID');
+  const suspensionReason = serviceSuspensionReason(profile);
+  if (clean(profile.serviceSuspensionReason) && suspensionReason !== clean(profile.serviceSuspensionReason).toUpperCase()) throw new Error('PLANT_SERVICE_SUSPENSION_REASON_INVALID');
+  if (!profile.servicioResidencialActivo && suspensionReason !== SERVICE_SUSPENSION_REASON.NONE) throw new Error('PLANT_SERVICE_SUSPENSION_REQUIRES_ACTIVE_PLAN');
   const planId = participationPlanId(profile);
   const ownerChoiceState = [PROFILE_STATE.ACTIVE, PROFILE_STATE.PARTIAL, PROFILE_STATE.WAIVER, PROFILE_STATE.SALE_RESERVE].includes(profile.state);
   if (ownerChoiceState && !planId) throw new Error('PLANT_PROFILE_COMBINATION_INVALID');
@@ -490,7 +533,9 @@ function ownerPlantView({ ownerId, profiles, interventions, recognizedPayments =
         repairs: profile.participaReparaciones, maintenance: profile.participaMantenimiento,
         residentialFuel: profile.participaGasoilResidencial, commonBenefit: profile.participaBeneficioComun
       },
-      residentialServiceActive: profile.servicioResidencialActivo,
+      participationServiceEntitled: profile.servicioResidencialActivo,
+      residentialServiceActive: effectiveResidentialService(profile),
+      serviceStatus: residentialServiceStatus(profile),
       reinstatementMode: profile.reinstatementMode,
       specialAgreement: Boolean(profile.specialAgreement)
     },
@@ -522,7 +567,7 @@ function participationSummary({ owners, profiles, at = new Date() }) {
     if (profile.participaMantenimiento) summary.maintenance += 1;
     if (profile.participaGasoilResidencial) summary.residentialFuel += 1;
     if (profile.participaBeneficioComun) summary.commonBenefit += 1;
-    if (profile.servicioResidencialActivo) summary.residentialServiceActive += 1;
+    if (effectiveResidentialService(profile)) summary.residentialServiceActive += 1;
     if (profile.specialAgreement) summary.specialAgreements += 1;
     summary.byState[profile.state] = Number(summary.byState[profile.state] || 0) + 1;
   }
@@ -530,9 +575,10 @@ function participationSummary({ owners, profiles, at = new Date() }) {
 }
 
 module.exports = {
-  PROFILE_STATE, REINSTATEMENT_MODE, PARTICIPATION_PLAN, PARTICIPATION_PLAN_POLICY, CATEGORY, PROFILE_FLAG_BY_CATEGORY, DEFAULT_RETROACTIVE,
+  PROFILE_STATE, REINSTATEMENT_MODE, PARTICIPATION_PLAN, PARTICIPATION_PLAN_POLICY, SERVICE_SUSPENSION_REASON, CATEGORY, PROFILE_FLAG_BY_CATEGORY, DEFAULT_RETROACTIVE,
   clean, money, normalize, isoDay, stable, hash, requestIdempotencyKey, initialProfileForHouse, validateProfile, profileAt, inactiveEpisodeStart,
   participationPlanPolicy, participationPlanId, publicParticipationPlans, requestTypeForParticipationPlan,
+  serviceSuspensionReason, effectiveResidentialService, residentialServiceStatus,
   inferPlantExpense, participantFlag, allocateEqual, buildExpenseSnapshot, verifySnapshot, parseSnapshot,
   buildConfirmedHistoricalSnapshot,
   calculateReinstatement, ownerPlantView, participationSummary

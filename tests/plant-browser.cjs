@@ -10,8 +10,9 @@ const engine = require('../netlify/functions/_shared/_plant_engine');
 const fixture = require('../netlify/functions/_shared/_plant_fixture').createPlantFixture(new Date('2026-08-21T16:00:00Z'));
 
 const ROOT = path.join(__dirname, '..');
-const owner = fixture.owners.find(item => item.house === 3);
-const ownerView = engine.ownerPlantView({ ownerId: owner.id, profiles: fixture.profiles, interventions: fixture.interventions, recognizedPayments: [], at: '2026-08-21' });
+const owner = fixture.owners.find(item => item.house === 1);
+const ownerProfiles = fixture.profiles.map(profile => profile.ownerId === owner.id ? { ...profile, serviceSuspensionReason: engine.SERVICE_SUSPENSION_REASON.NONPAYMENT } : profile);
+const ownerView = engine.ownerPlantView({ ownerId: owner.id, profiles: ownerProfiles, interventions: fixture.interventions, recognizedPayments: [], at: '2026-08-21' });
 const adminView = {
   success: true, moduleVersion: 2, ownerViewContract: 'plant-owner-view-v1', readOnly: true, asset: fixture.assets[0], interventionCount: fixture.interventions.length, requests: [],
   participationSummary: engine.participationSummary({ owners: fixture.owners, profiles: fixture.profiles, at: '2026-08-21' }),
@@ -20,7 +21,7 @@ const adminView = {
 };
 
 function ownerHtml() {
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><style>body{margin:0;background:#f4f7f5;font-family:Arial;color:#10251b}.shell{max-width:1050px;margin:auto;padding:20px}.card{background:#fff;border-radius:24px}.hidden{display:none}</style><link rel="stylesheet" href="/owner-plant-v1.css"></head><body><main class="shell"><select id="userSelector"><option value="${owner.id}">Casa 3</option></select><section id="desglose" class="card" style="height:80px;margin:18px 0"></section></main><script>let currentOwner={id:${JSON.stringify(owner.id)},Casa:3};function renderUser(id){currentOwner={id:id,Casa:3}}</script><script src="/owner-plant-v1.js"></script></body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><style>body{margin:0;background:#f4f7f5;font-family:Arial;color:#10251b}.shell{max-width:1050px;margin:auto;padding:20px}.card{background:#fff;border-radius:24px}.hidden{display:none}</style><link rel="stylesheet" href="/owner-plant-v1.css"></head><body><main class="shell"><select id="userSelector"><option value="${owner.id}">Casa ${owner.house}</option></select><section class="card"><div id="porton-pill"><div>Acceso Portón: Habilitado</div></div></section><section id="desglose" class="card" style="height:80px;margin:18px 0"></section></main><script>let currentOwner={id:${JSON.stringify(owner.id)},Casa:${owner.house}};function renderUser(id){currentOwner={id:id,Casa:${owner.house}}}</script><script src="/owner-plant-v1.js"></script></body></html>`;
 }
 function adminHtml() {
   const publicOwners = fixture.owners.map(item => ({ id: item.id, Casa: item.house, Propietario: `Propietario Casa ${item.house}` }));
@@ -38,7 +39,7 @@ test.before(async () => {
     if (url.pathname === '/api/vla/plant') {
       response.setHeader('content-type', 'application/json');
       if (request.method === 'POST') return response.end(JSON.stringify({ success: true, requestId: 'PLS-3-TEST', state: 'RECIBIDA', previewOnly: true, message: 'Solicitud recibida.' }));
-      return response.end(JSON.stringify({ success: true, dataEnvironment: 'preview-fixture', ...ownerView }));
+      return response.end(JSON.stringify({ success: true, dataEnvironment: 'preview-fixture', changeAuthorizationRequired: true, ...ownerView }));
     }
     if (url.pathname === '/api/vla/admin/plant') { response.setHeader('content-type', 'application/json'); return response.end(JSON.stringify(adminView)); }
     const allowed = new Set(['/owner-plant-v1.css', '/owner-plant-v1.js', '/admin-plant-v1.css', '/admin-plant-v1.js']);
@@ -56,10 +57,9 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 900 }, { name: '
     const page = await browser.newPage({ viewport });
     await page.goto(`${baseUrl}/owner`);
     await page.waitForSelector('#vla-owner-plant .vla-plant-status');
-    const result = await page.evaluate(() => ({ house: document.querySelector('.vla-plant-status span').textContent, history: document.querySelectorAll('.vla-plant-history-row').length, request: Boolean(document.querySelector('#vla-plant-request-form')), overflow: document.documentElement.scrollWidth - innerWidth }));
-    assert.equal(result.house, 'Casa 3'); assert.equal(result.history, 3); assert.equal(result.request, true); assert(result.overflow <= 1);
-    assert.equal(await page.locator('[name="requestedPlan"] option').count(), 3);
-    assert.match(await page.textContent('#vla-plant-plan-preview'), /servicio/i);
+    const result = await page.evaluate(() => ({ house: document.querySelector('.vla-plant-status span').textContent, indicator: document.querySelector('#vla-plant-indicator').textContent, history: document.querySelectorAll('.vla-plant-history-row').length, request: Boolean(document.querySelector('#vla-plant-request-form')), protectedChange: Boolean(document.querySelector('.vla-plant-change-lock')), overflow: document.documentElement.scrollWidth - innerWidth }));
+    assert.equal(result.house, `Casa ${owner.house}`); assert.match(result.indicator, /Planta inactiva por impago/i); assert.equal(result.history, 3); assert.equal(result.request, false); assert.equal(result.protectedChange, true); assert(result.overflow <= 1);
+    assert.match(await page.textContent('.vla-plant-change-lock'), /sin código/i);
     await page.screenshot({ path: `/tmp/vla-plant-owner-${viewport.name}.png`, fullPage: true }); await page.close();
   });
 }
@@ -78,6 +78,7 @@ for (const viewport of [{ name: 'desktop', width: 1365, height: 900 }, { name: '
     await page.click('.plant-profile-edit'); await page.waitForSelector('.plant-manual-control #plant-projected-counts');
     assert.match(await page.textContent('.plant-manual-control'), /Confirmar cambio y notificar/i);
     assert.equal(await page.locator('.plant-manual-control [name="planId"] option').count(), 4);
+    assert.equal(await page.locator('.plant-manual-control [name="serviceSuspensionReason"] option').count(), 3);
     await page.click('.plant-manual-control .plant-modal-x');
     await page.click('.plant-profile-simulate'); await page.waitForSelector('.plant-simulation-total');
     await page.screenshot({ path: `/tmp/vla-plant-admin-${viewport.name}.png`, fullPage: true }); await page.close();

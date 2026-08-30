@@ -49,6 +49,27 @@ test('las cuatro modalidades canónicas fijan servicio, cobros y acumulados sin 
   assert.throws(() => engine.validateProfile({ ...profiles[0], participaGasoilResidencial: false }), /PLANT_PROFILE_COMBINATION_INVALID|PLANT_SERVICE_PARTICIPATION_MISMATCH/);
 });
 
+test('suspensión administrativa por impago apaga el servicio sin cambiar la modalidad ni sus gastos', () => {
+  const owner = owners[0], suspended = engine.validateProfile({
+    ...profiles[0], serviceSuspensionReason: engine.SERVICE_SUSPENSION_REASON.NONPAYMENT
+  });
+  assert.equal(engine.participationPlanId(suspended), engine.PARTICIPATION_PLAN.ACTIVE_ALL);
+  assert.equal(engine.effectiveResidentialService(suspended), false);
+  assert.deepEqual(engine.residentialServiceStatus(suspended), {
+    active: false, code: 'INACTIVA', reasonCode: 'IMPAGO',
+    label: 'Planta inactiva por impago', detail: 'Servicio suspendido por Administración debido a un pago pendiente.'
+  });
+  const view = engine.ownerPlantView({ ownerId: owner.id, profiles: [suspended], interventions: [], at: '2026-08-21' });
+  assert.equal(view.current.residentialServiceActive, false);
+  assert.equal(view.current.participationServiceEntitled, true);
+  assert.equal(view.current.serviceStatus.reasonCode, 'IMPAGO');
+  const snapshot = engine.buildExpenseSnapshot({ owners: [owner], profiles: [suspended], effectiveDate: '2026-08-21', expense: { concept: 'Gasoil planta eléctrica', amount: 100, type: 'Gasto Especial' } });
+  assert.equal(snapshot.participants[0].included, true, 'La suspensión por impago no elimina las obligaciones de la modalidad activa.');
+  assert.throws(() => engine.validateProfile({
+    ...profiles[1], serviceSuspensionReason: engine.SERVICE_SUSPENSION_REASON.NONPAYMENT
+  }), /PLANT_SERVICE_SUSPENSION_REQUIRES_ACTIVE_PLAN/);
+});
+
 test('cada suspensión acumula exactamente lo que dejó de pagar y nunca gasoil', () => {
   const scenarioOwners = [1, 4, 5, 6].map(house => ({ id: `scenario-${house}`, house, alicuota: 0.25 }));
   const baseProfiles = scenarioOwners.map(owner => engine.initialProfileForHouse({ ownerId: owner.id, house: owner.house, effectiveFrom: '2026-08-01' }));

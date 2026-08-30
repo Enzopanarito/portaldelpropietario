@@ -17,8 +17,8 @@ test('los portales cargan el módulo de planta versionado y el build lo publica'
   for (const asset of ['admin-plant-v1.js', 'admin-plant-v1.css']) {
     assert(adminEdge.includes(asset)); assert(build.includes(asset));
   }
-  assert(ownerEdge.includes("x-vla-owner-plant','intelligent-v1"));
-  assert(adminEdge.includes("x-vla-admin-plant','intelligent-v1"));
+  assert(ownerEdge.includes("x-vla-owner-plant','service-status-v2"));
+  assert(adminEdge.includes("x-vla-admin-plant','service-status-v2"));
 });
 
 test('el portal propietario consulta solo la casa seleccionada y las solicitudes no cambian saldos', () => {
@@ -28,15 +28,16 @@ test('el portal propietario consulta solo la casa seleccionada y las solicitudes
   assert(source.includes('ACUMULA_REINCORPORACION'));
   assert(source.includes('SOLICITAR_CAMBIO_PLANTA'));
   for (const marker of ['requestedPlan', 'Cambiar modalidad de planta', 'Toda opción distinta del servicio completo suspende el servicio residencial', 'El gasoil nunca se acumula']) assert(source.includes(marker));
+  for (const marker of ['vla-plant-indicator', 'Planta activa', 'Planta inactiva', 'Verificar para cambiar condición', 'Consultar el estado de la planta no requiere código']) assert(source.includes(marker));
   const engine = read('netlify/functions/_shared/_plant_engine.js');
   for (const plan of ['ACTIVO_TODO', 'SUSPENDE_SOLO_GASOIL', 'SUSPENDE_GASOIL_MANTENIMIENTO', 'RENUNCIA_TOTAL']) assert(engine.includes(plan));
   assert(source.includes('payment-reports/session'));
-  assert(source.includes('Verifica esta casa'));
+  assert(source.includes('Cambio de condición protegido'));
   assert.doesNotMatch(source, /participants\s*:/);
   new vm.Script(source, { filename: 'owner-plant-v1.js' });
 });
 
-test('API privada de planta reutiliza la sesión firmada de la casa', () => {
+test('API de planta deja la consulta visible y protege únicamente los cambios con la sesión firmada', () => {
   const source = read('netlify/functions/public-plant.mjs');
   assert(source.includes("_owner_report_session.js"));
   assert(source.includes('sessionFromEvent'));
@@ -46,7 +47,8 @@ test('API privada de planta reutiliza la sesión firmada de la casa', () => {
   assert(source.includes('requestTypeForParticipationPlan'));
   assert(source.includes("Netlify.env.get('CONTEXT')"));
   assert(source.includes("/^deploy-preview-\\d+--/"));
-  assert(source.indexOf('sessionFromEvent') < source.indexOf('const data = await context(fixture)'));
+  assert(source.includes("request.method === 'POST' && !changeAuthorized"));
+  assert(source.includes('changeAuthorizationRequired: !changeAuthorized'));
 });
 
 test('preview propietario y Admin fuerzan fixture por contexto o hostname', () => {
@@ -63,6 +65,7 @@ test('preview propietario y Admin fuerzan fixture por contexto o hostname', () =
 test('el panel Admin confirma el snapshot antes de crear un gasto automático', () => {
   const source = read('admin-plant-v1.js');
   for (const marker of ['preview-expense', 'confirmPlantSnapshot', 'plantSnapshotHash', 'create-profile-version', 'CONFIRMAR_CAMBIO_PLANTA', 'confirm-reinstatement-payment', 'update-asset-profile', 'add-technical-history']) assert(source.includes(marker));
+  for (const marker of ['serviceSuspensionReason', 'Suspendido por impago', 'PLANTA INACTIVA POR IMPAGO']) assert(source.includes(marker));
   for (const section of ['Resumen', 'Intervenciones', 'Mantenimientos', 'Reparaciones', 'Combustible', 'Participación por casa', 'Solicitudes de cambio', 'Reincorporaciones', 'Historial', 'Documentos']) assert(source.includes(section));
   assert(source.includes('plant-profile-simulate'));
   assert(source.includes('Imprimir / exportar PDF'));

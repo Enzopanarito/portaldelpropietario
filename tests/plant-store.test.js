@@ -15,6 +15,22 @@ test('adaptador de perfiles conserva todas las dimensiones históricas', () => {
   assert.equal(roundtrip.participaReparaciones, true);
   assert.equal(roundtrip.participaMantenimiento, false);
   assert.equal(roundtrip.servicioResidencialActivo, false);
+  assert.equal(roundtrip.serviceSuspensionReason, engine.SERVICE_SUSPENSION_REASON.NONE);
+});
+
+test('adaptador conserva una suspensión por impago sin crear campos nuevos en Airtable', () => {
+  const profile = {
+    ...engine.initialProfileForHouse({ ownerId: 'rec12345678901234', house: 1, effectiveFrom: '2026-08-21' }),
+    serviceSuspensionReason: engine.SERVICE_SUSPENSION_REASON.NONPAYMENT,
+    observations: 'Pago pendiente verificado por Administración'
+  };
+  const fields = store.profileFields(profile);
+  assert.match(fields.Observaciones, /^\[\[VLA:PLANT_SERVICE_SUSPENSION:IMPAGO\]\]/);
+  const roundtrip = store.profileFromRecord({ id: 'recProfile0000001', fields });
+  assert.equal(roundtrip.serviceSuspensionReason, engine.SERVICE_SUSPENSION_REASON.NONPAYMENT);
+  assert.equal(roundtrip.observations, profile.observations);
+  assert.equal(engine.residentialServiceStatus(roundtrip).label, 'Planta inactiva por impago');
+  assert.equal(engine.participationPlanId(roundtrip), engine.PARTICIPATION_PLAN.ACTIVE_ALL);
 });
 
 test('gasto de planta se normaliza como intervención sin recalcular su snapshot', () => {
@@ -98,6 +114,29 @@ test('crear versión de perfil en preview no escribe y prohíbe exclusiones retr
   assert.equal(accepted.statusCode, 201);
   assert.equal(JSON.parse(accepted.body).previewOnly, true);
   assert.equal(writes.length, 0);
+});
+
+test('Admin puede suspender por impago sin retirar gasoil, mantenimiento ni reparaciones', async () => {
+  const owner = { id: 'rec12345678901234', house: 1, alicuota: 1 };
+  const current = engine.initialProfileForHouse({ ownerId: owner.id, house: 1, effectiveFrom: '2026-08-21' });
+  const handler = admin.createHandler({
+    env: { VLA_DATA_ENVIRONMENT: 'staging' }, requireAdmin: () => ({ ok: true, claims: { jti: 'test-admin' } }),
+    loadContext: async () => ({ owners: [owner], profiles: [current], interventions: [], recognizedPayments: [], requests: [], payments: [], assets: [] })
+  });
+  const response = await handler({ httpMethod: 'POST', body: JSON.stringify({
+    action: 'create-profile-version', confirmation: 'CONFIRMAR_CAMBIO_PLANTA', ownerId: owner.id,
+    effectiveFrom: '2099-01-01', reason: 'Suspensión administrativa por impago confirmado',
+    planId: engine.PARTICIPATION_PLAN.ACTIVE_ALL, serviceSuspensionReason: engine.SERVICE_SUSPENSION_REASON.NONPAYMENT,
+    profile: { participationPlan: engine.PARTICIPATION_PLAN.ACTIVE_ALL, serviceSuspensionReason: engine.SERVICE_SUSPENSION_REASON.NONPAYMENT }
+  }) });
+  const body = JSON.parse(response.body);
+  assert.equal(response.statusCode, 201);
+  assert.equal(body.profile.serviceSuspensionReason, engine.SERVICE_SUSPENSION_REASON.NONPAYMENT);
+  assert.equal(body.profile.servicioResidencialActivo, true, 'La modalidad sigue obligada a todos los gastos.');
+  assert.equal(body.profile.participaGasoilResidencial, true);
+  assert.equal(body.profile.participaMantenimiento, true);
+  assert.equal(body.profile.participaReparaciones, true);
+  assert.equal(engine.residentialServiceStatus(body.profile).label, 'Planta inactiva por impago');
 });
 
 test('reincorporación exige solicitud y permite volver sin pago cuando solo se suspendió gasoil', async () => {
