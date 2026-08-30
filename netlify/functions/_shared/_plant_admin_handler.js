@@ -100,7 +100,8 @@ function createHandler(deps = {}) {
         const existingVersion = context.profiles.find(item => item.ownerId === ownerId && item.effectiveFrom === effectiveFrom);
         if (existingVersion) {
           const requestedExistingPlan = String(body.planId || body.profile?.participationPlan || engine.participationPlanId(body.profile || {}) || '').trim().toUpperCase();
-          if (requestedExistingPlan && requestedExistingPlan !== engine.participationPlanId(existingVersion)) return json(409, { message: 'Ya existe otra modalidad programada para esa fecha. Elija una fecha posterior o revise la versión existente.' });
+          const requestedExistingSuspension = String(body.serviceSuspensionReason || body.profile?.serviceSuspensionReason || engine.SERVICE_SUSPENSION_REASON.NONE).trim().toUpperCase();
+          if ((requestedExistingPlan && requestedExistingPlan !== engine.participationPlanId(existingVersion)) || requestedExistingSuspension !== engine.serviceSuspensionReason(existingVersion)) return json(409, { message: 'Ya existe otra modalidad o suspensión administrativa programada para esa fecha. Elija una fecha posterior o revise la versión existente.' });
           return json(200, { success: true, idempotent: true, previewOnly: fixture, profile: existingVersion, message: 'Ya existe esa versión programada para la fecha. No se duplicó.' });
         }
         const current = engine.profileAt(context.profiles, ownerId, effectiveFrom);
@@ -109,6 +110,9 @@ function createHandler(deps = {}) {
         const planId = String(body.planId || submitted.participationPlan || engine.participationPlanId(submitted) || '').trim().toUpperCase();
         let policy;
         try { policy = engine.participationPlanPolicy(planId); } catch (_) { return json(400, { message: 'Seleccione una de las modalidades económicas válidas de la planta.' }); }
+        const requestedSuspension = String(body.serviceSuspensionReason || submitted.serviceSuspensionReason || engine.SERVICE_SUSPENSION_REASON.NONE).trim().toUpperCase();
+        if (!Object.values(engine.SERVICE_SUSPENSION_REASON).includes(requestedSuspension)) return json(400, { message: 'Seleccione un motivo administrativo válido para el estado del servicio.' });
+        if (!policy.servicioResidencialActivo && requestedSuspension !== engine.SERVICE_SUSPENSION_REASON.NONE) return json(400, { message: 'Una modalidad que ya suspende el servicio no puede marcarse además como suspensión administrativa por impago.' });
         const version = Math.max(0, ...context.profiles.filter(item => item.ownerId === ownerId).map(item => Number(item.version || 0))) + 1;
         const nextProfile = context.profiles.filter(item => item.ownerId === ownerId && engine.isoDay(item.effectiveFrom) > effectiveFrom)
           .sort((left, right) => engine.isoDay(left.effectiveFrom).localeCompare(engine.isoDay(right.effectiveFrom)))[0] || null;
@@ -116,9 +120,10 @@ function createHandler(deps = {}) {
           ...current, ...policy, ownerId, house: owner.house, effectiveFrom, effectiveTo: nextProfile ? previousDay(nextProfile.effectiveFrom) : null,
           profileId: `PLP-${owner.house}-${effectiveFrom}-V${version}`, reason, approvedBy: actor, approvedAt: now,
           observations: safeDisplayText(submitted.observations, 1000),
+          serviceSuspensionReason: requestedSuspension,
           active: true, version, replacesProfileId: current.profileId
         });
-        const conditionFields = ['state', 'reinstatementMode', 'participaReparaciones', 'participaMantenimiento', 'participaGasoilResidencial', 'participaBeneficioComun', 'servicioResidencialActivo', 'specialAgreement', 'observations'];
+        const conditionFields = ['state', 'reinstatementMode', 'participaReparaciones', 'participaMantenimiento', 'participaGasoilResidencial', 'participaBeneficioComun', 'servicioResidencialActivo', 'serviceSuspensionReason', 'specialAgreement', 'observations'];
         if (conditionFields.every(field => profile[field] === current[field])) return json(400, { message: 'No hay ningún cambio de condición para confirmar.' });
         const sourceRequestId = String(body.sourceRequestId || body.reinstatementRequestId || '').trim();
         const sourceRequest = sourceRequestId ? (context.requests || []).find(item => item.requestId === sourceRequestId && item.ownerId === ownerId) : null;

@@ -43,12 +43,13 @@ export default async function handler(request) {
   }
   const ownerId = String(request.method === 'GET' ? url.searchParams.get('ownerId') : body.ownerId || '').trim();
   if (!storeModule.validRecordId(ownerId)) return http.json(400, { message: 'Debe indicar un propietario válido.' });
-  if (!fixture && !ownerSession.sessionFromEvent(sessionEvent(request), ownerId)) {
+  const changeAuthorized = fixture || Boolean(ownerSession.sessionFromEvent(sessionEvent(request), ownerId));
+  if (request.method === 'POST' && !changeAuthorized) {
     return http.json(401, {
       success: false,
       code: 'OWNER_VERIFICATION_REQUIRED',
       verificationRequired: true,
-      message: 'Verifica esta casa con el código enviado al correo registrado para consultar su información privada.'
+      message: 'Verifica esta casa con el código enviado al correo registrado antes de solicitar un cambio de condición.'
     });
   }
   let requestOperation = null, requestCreated = false, requestId = '', requestGuardKey = '';
@@ -108,7 +109,10 @@ export default async function handler(request) {
         message: 'Solicitud recibida con la modalidad exacta. No cambia saldos ni servicio hasta la confirmación administrativa.'
       }, fixture ? { 'X-Preview-Isolated': 'true' } : {});
     }
-    return http.json(200, { success: true, dataEnvironment: fixture ? 'preview-fixture' : 'production', ...view }, fixture ? { 'X-Preview-Isolated': 'true' } : {});
+    return http.json(200, {
+      success: true, dataEnvironment: fixture ? 'preview-fixture' : 'production',
+      changeAuthorizationRequired: !changeAuthorized, ...view
+    }, fixture ? { 'X-Preview-Isolated': 'true' } : {});
   } catch (error) {
     if (requestOperation) await operationGuard.setState(requestOperation, 'PLANT_OWNER_REQUEST', requestGuardKey, requestCreated ? 'PARTIAL' : 'ERROR', requestId).catch(() => null);
     const notReady = /NOT_FOUND|UNKNOWN_FIELD|UNKNOWN_TABLE|PLANT_PROFILE_MISSING/i.test(http.safeError(error));

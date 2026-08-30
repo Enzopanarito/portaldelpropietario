@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var VERSION = 'owner-plant-v3-2026-08-29-participation-plans';
+  var VERSION = 'owner-plant-v4-2026-08-30-visible-service-status';
   var requestSerial = 0;
   var activeChallenge = '';
   var stateLabels = {
@@ -23,6 +23,29 @@
     var selector = document.getElementById('userSelector');
     return selector && selector.value || '';
   }
+  function ensureIndicator() {
+    var indicator = document.getElementById('vla-plant-indicator');
+    if (indicator) return indicator;
+    var gate = document.getElementById('porton-pill');
+    if (!gate || !gate.parentNode) return null;
+    var group = document.getElementById('vla-owner-service-indicators');
+    if (!group) {
+      group = document.createElement('div'); group.id = 'vla-owner-service-indicators'; group.className = 'vla-owner-service-indicators self-start';
+      gate.parentNode.insertBefore(group, gate); group.appendChild(gate);
+    }
+    indicator = document.createElement('div'); indicator.id = 'vla-plant-indicator'; indicator.setAttribute('role', 'status'); indicator.setAttribute('aria-live', 'polite');
+    group.appendChild(indicator); return indicator;
+  }
+  function renderIndicator(current) {
+    var indicator = ensureIndicator(); if (!indicator) return;
+    var status = current && current.serviceStatus || {}, active = status.active === true;
+    indicator.innerHTML = '<div class="vla-plant-indicator-pill ' + (active ? 'is-on' : 'is-off') + '"><span class="vla-plant-indicator-icon">⚡</span><span><small>Planta eléctrica</small><strong>' + esc(status.label || (active ? 'Planta activa' : 'Planta inactiva')) + '</strong></span></div>';
+    indicator.title = status.detail || '';
+  }
+  function renderIndicatorLoading(error) {
+    var indicator = ensureIndicator(); if (!indicator) return;
+    indicator.innerHTML = '<div class="vla-plant-indicator-pill is-pending"><span class="vla-plant-indicator-icon">⚡</span><span><small>Planta eléctrica</small><strong>' + (error ? 'Estado no disponible' : 'Consultando…') + '</strong></span></div>';
+  }
   function ensureSection() {
     var section = document.getElementById('vla-owner-plant');
     if (section) return section;
@@ -35,14 +58,15 @@
     return section;
   }
   function renderError(message) {
+    renderIndicatorLoading(true);
     ensureSection().querySelector('#vla-owner-plant-body').innerHTML = '<div class="vla-plant-alert"><b>Información temporalmente no disponible.</b><br>' + esc(message) + '</div>';
   }
   function renderVerification(message) {
-    ensureSection().querySelector('#vla-owner-plant-body').innerHTML = '<div class="vla-plant-verify"><b>Verifica esta casa</b><p>' + esc(message || 'Para proteger el historial, enviaremos un código al correo registrado del propietario.') + '</p><button id="vla-plant-send-code" type="button">Enviar código</button><small>La misma verificación protege “Mis reportes” y dura 30 días en este dispositivo.</small><div id="vla-plant-verify-result" aria-live="polite"></div></div>';
+    ensureSection().querySelector('#vla-owner-plant-body').innerHTML = '<div class="vla-plant-verify"><b>Cambio de condición protegido</b><p>' + esc(message || 'Para solicitar un cambio enviaremos un código al correo registrado del propietario.') + '</p><button id="vla-plant-send-code" type="button">Enviar código para cambiar</button><small>Consultar el estado de la planta no requiere código. La verificación se exige únicamente para cambiar la condición.</small><div id="vla-plant-verify-result" aria-live="polite"></div></div>';
     document.getElementById('vla-plant-send-code').addEventListener('click', requestVerificationCode);
   }
   function renderCodeForm(message) {
-    ensureSection().querySelector('#vla-owner-plant-body').innerHTML = '<form id="vla-plant-code-form" class="vla-plant-verify"><b>Revisa tu correo</b><p>' + esc(message || 'Escribe el código de 6 dígitos.') + '</p><input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="000000" required><button type="submit">Verificar y mostrar historial</button><button id="vla-plant-resend-code" type="button" class="is-secondary">Enviar otro código</button><div id="vla-plant-verify-result" aria-live="polite"></div></form>';
+    ensureSection().querySelector('#vla-owner-plant-body').innerHTML = '<form id="vla-plant-code-form" class="vla-plant-verify"><b>Revisa tu correo</b><p>' + esc(message || 'Escribe el código de 6 dígitos.') + '</p><input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="000000" required><button type="submit">Verificar y habilitar cambios</button><button id="vla-plant-resend-code" type="button" class="is-secondary">Enviar otro código</button><div id="vla-plant-verify-result" aria-live="polite"></div></form>';
     document.getElementById('vla-plant-code-form').addEventListener('submit', verifyCode);
     document.getElementById('vla-plant-resend-code').addEventListener('click', requestVerificationCode);
   }
@@ -72,6 +96,7 @@
   }
   function render(data) {
     var current = data.current || {}, participation = current.participates || {}, reinstatement = data.reinstatement || {}, history = data.history || [], plans = data.availablePlans || [];
+    renderIndicator(current);
     var rows = history.length ? history.map(function (item) {
       var informational = item.status === 'SOLO_INFORMATIVO', corresponding = item.status === 'CORRESPONDIA', accumulating = item.status === 'ACUMULA_REINCORPORACION';
       var documentLink = /^https:\/\//i.test(item.publicDocumentUrl || '') ? '<a class="vla-plant-doc" href="' + esc(item.publicDocumentUrl) + '" target="_blank" rel="noopener">Documento</a>' : '';
@@ -84,6 +109,8 @@
     var planOptions = selectablePlans.map(function (plan) { return '<option value="' + esc(plan.id) + '">' + esc(plan.label) + '</option>'; }).join('');
     var changeForm = current.specialAgreement
       ? '<div class="vla-plant-alert"><b>Condición especial protegida.</b><br>Esta casa debe gestionar cualquier cambio directamente con Administración.</div>'
+      : data.changeAuthorizationRequired
+        ? '<div class="vla-plant-change-lock"><b>Cambio de condición protegido</b><p>El estado, la modalidad y el historial pueden consultarse sin código. Para solicitar un cambio debes verificar el correo registrado.</p><button id="vla-plant-send-code" type="button">Verificar para cambiar condición</button><div id="vla-plant-verify-result" aria-live="polite"></div></div>'
       : '<form id="vla-plant-request-form" class="vla-plant-request"><h3>Cambiar modalidad de planta</h3><p>Elige exactamente cuáles gastos mantendrás. Toda opción distinta del servicio completo suspende el servicio residencial.</p><label>Modalidad solicitada<select name="requestedPlan" required>' + planOptions + '</select></label><div id="vla-plant-plan-preview" class="vla-plant-alert"></div><div class="vla-plant-request-grid"><input name="proposedEffectiveDate" type="date" required></div><textarea name="reason" minlength="10" maxlength="1000" required placeholder="Explique el motivo del cambio"></textarea><input name="website" tabindex="-1" autocomplete="off" class="vla-plant-honeypot"><button type="submit">Enviar modalidad para confirmación</button><div class="vla-plant-request-result" aria-live="polite"></div></form>';
     var accumulatedExplanation = current.participationPlan === 'SUSPENDE_SOLO_GASOIL'
       ? 'Mantienes mantenimiento y reparaciones, por eso esta modalidad no genera deuda para volver. El gasoil no se acumula.'
@@ -94,6 +121,8 @@
       '<div class="vla-plant-retro"><div><span>Acumulado para reincorporarse</span><strong>' + reinstatementTotal + '</strong><small>' + esc(accumulatedExplanation) + '</small></div>' + retroLines + '</div>' +
       '<div class="vla-plant-history"><h3>Historial técnico y económico</h3>' + rows + '</div>' +
       changeForm;
+    var unlock = document.getElementById('vla-plant-send-code');
+    if (unlock) unlock.addEventListener('click', requestVerificationCode);
     var form = document.getElementById('vla-plant-request-form');
     if (!form) return;
     form.proposedEffectiveDate.min = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Caracas' });
@@ -116,6 +145,7 @@
     try {
       var response = await fetch('/api/vla/plant', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ownerId: id, requestedPlan: fields.get('requestedPlan'), proposedEffectiveDate: fields.get('proposedEffectiveDate'), reason: fields.get('reason'), website: fields.get('website'), confirmation: 'SOLICITAR_CAMBIO_PLANTA' }) });
       var data = await response.json().catch(function () { return {}; });
+      if (response.status === 401 && data.verificationRequired) { renderVerification(data.message); return; }
       if (!response.ok) throw new Error(data.message || 'No se pudo enviar la solicitud.');
       result.innerHTML = '<b>Solicitud ' + esc(data.requestId || '') + '</b><br>' + esc(data.message || 'Recibida.');
       form.reason.value = '';
@@ -126,6 +156,7 @@
     ensureSection();
     if (!id) return;
     var serial = ++requestSerial, host = document.getElementById('vla-owner-plant-body');
+    renderIndicatorLoading(false);
     host.innerHTML = '<div class="vla-plant-loading">Consultando modalidad e historial…</div>';
     try {
       var response = await fetch('/api/vla/plant?ownerId=' + encodeURIComponent(id), { cache: 'no-store' });
@@ -137,7 +168,7 @@
     } catch (error) { if (serial === requestSerial) renderError(error.message); }
   }
   function boot() {
-    ensureSection();
+    ensureSection(); ensureIndicator();
     var original = window.renderUser;
     if (typeof original === 'function' && !original.__vlaPlantWrapped) {
       var wrapped = function (id) { var result = original.apply(this, arguments); setTimeout(function () { load(id); }, 0); return result; };

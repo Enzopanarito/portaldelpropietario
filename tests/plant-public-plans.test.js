@@ -23,6 +23,19 @@ function request(ownerId, body) {
   });
 }
 
+function readRequest(ownerId) {
+  return new Request(`https://deploy-preview-999--vla-test.netlify.app/api/vla/plant?ownerId=${encodeURIComponent(ownerId)}`);
+}
+
+test('consulta el estado visible sin código y reserva la autorización para cambiar', async () => {
+  const response = await handler(readRequest('recPreviewHouse01'));
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.current.serviceStatus.label, 'Planta activa');
+  assert.equal(body.current.serviceStatus.active, true);
+  assert.equal(body.changeAuthorizationRequired, false, 'El fixture aislado representa una sesión autorizada para probar cambios.');
+});
+
 test('API propietario guarda la modalidad exacta y deriva el tipo sin confiar en el cliente', async () => {
   const response = await handler(request('recPreviewHouse01', { requestedPlan: 'SUSPENDE_SOLO_GASOIL', type: 'REINCORPORACION' }));
   const body = await response.json();

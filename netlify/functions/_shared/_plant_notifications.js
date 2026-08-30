@@ -2,6 +2,7 @@
 
 const { sendMail } = require('./_mailer');
 const { escapeHtml } = require('./_security_utils');
+const { residentialServiceStatus } = require('./_plant_engine');
 
 function clean(value) { return String(value ?? '').trim(); }
 function yesNo(value) { return value ? 'Sí' : 'No'; }
@@ -13,6 +14,7 @@ async function sendPlantProfileChange({ owner, profile, previousProfile, portalU
   const name = escapeHtml(owner?.name || `Propietario de la Casa ${house}`);
   const state = escapeHtml(profile?.state || 'SIN ESTADO');
   const previousState = escapeHtml(previousProfile?.state || 'SIN ESTADO');
+  const serviceStatus = residentialServiceStatus(profile);
   const subject = `Actualización de condición de planta · Casa ${house}`;
   const result = await sendMail({
     to,
@@ -28,7 +30,8 @@ async function sendPlantProfileChange({ owner, profile, previousProfile, portalU
         <tr><td style="padding:8px;border-bottom:1px solid #e2e8f0"><b>Reparaciones</b></td><td style="padding:8px;border-bottom:1px solid #e2e8f0">${yesNo(profile?.participaReparaciones)}</td></tr>
         <tr><td style="padding:8px;border-bottom:1px solid #e2e8f0"><b>Mantenimiento</b></td><td style="padding:8px;border-bottom:1px solid #e2e8f0">${yesNo(profile?.participaMantenimiento)}</td></tr>
         <tr><td style="padding:8px;border-bottom:1px solid #e2e8f0"><b>Gasoil residencial</b></td><td style="padding:8px;border-bottom:1px solid #e2e8f0">${yesNo(profile?.participaGasoilResidencial)}</td></tr>
-        <tr><td style="padding:8px;border-bottom:1px solid #e2e8f0"><b>Servicio residencial activo</b></td><td style="padding:8px;border-bottom:1px solid #e2e8f0">${yesNo(profile?.servicioResidencialActivo)}</td></tr>
+        <tr><td style="padding:8px;border-bottom:1px solid #e2e8f0"><b>Modalidad con derecho a servicio</b></td><td style="padding:8px;border-bottom:1px solid #e2e8f0">${yesNo(profile?.servicioResidencialActivo)}</td></tr>
+        <tr><td style="padding:8px;border-bottom:1px solid #e2e8f0"><b>Estado visible en el portal</b></td><td style="padding:8px;border-bottom:1px solid #e2e8f0">${escapeHtml(serviceStatus.label)}</td></tr>
       </table>
       <p><b>Motivo administrativo:</b> ${escapeHtml(profile?.reason || '')}</p>
       <p>Este cambio crea una nueva versión de la condición de planta y <b>no recalcula gastos ni saldos anteriores</b>.</p>

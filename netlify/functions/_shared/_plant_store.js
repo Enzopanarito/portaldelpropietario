@@ -25,6 +25,19 @@ function selected(value) { return value && typeof value === 'object' && value.na
 function bool(value) { return value === true || ['true', '1', 'si', 'sí'].includes(clean(selected(value)).toLowerCase()); }
 function link(value) { return Array.isArray(value) ? clean(value[0]) : clean(value); }
 function validRecordId(value) { return /^rec[A-Za-z0-9]{14}$/.test(clean(value)); }
+const SERVICE_SUSPENSION_MARKER = /^\[\[VLA:PLANT_SERVICE_SUSPENSION:(IMPAGO|ADMINISTRATIVA)\]\]\s*/i;
+function decodedProfileObservations(value) {
+  const raw = clean(value), match = SERVICE_SUSPENSION_MARKER.exec(raw);
+  return {
+    observations: match ? clean(raw.slice(match[0].length)) : raw,
+    serviceSuspensionReason: match ? String(match[1]).toUpperCase() : 'NINGUNA'
+  };
+}
+function encodedProfileObservations(value, reason) {
+  const observations = clean(value), normalized = clean(reason).toUpperCase();
+  if (!['IMPAGO', 'ADMINISTRATIVA'].includes(normalized)) return observations;
+  return `[[VLA:PLANT_SERVICE_SUSPENSION:${normalized}]]${observations ? `\n${observations}` : ''}`;
+}
 
 function createPlantStore({ token, baseId, fetchImpl = globalThis.fetch }) {
   if (!clean(token) || !clean(baseId)) throw new Error('PLANT_STORE_NOT_CONFIGURED');
@@ -72,7 +85,7 @@ function createPlantStore({ token, baseId, fetchImpl = globalThis.fetch }) {
 }
 
 function profileFromRecord(record) {
-  const f = fieldsOf(record);
+  const f = fieldsOf(record), metadata = decodedProfileObservations(f.Observaciones);
   return {
     recordId: clean(record.id), profileId: clean(f['Perfil ID']), ownerId: link(f.Propietario), house: Number(f.Casa),
     state: clean(selected(f['Estado Planta'])), participaReparaciones: bool(f['Participa Reparaciones']),
@@ -80,7 +93,8 @@ function profileFromRecord(record) {
     participaBeneficioComun: bool(f['Participa Beneficio Común']), servicioResidencialActivo: bool(f['Servicio Residencial Activo']),
     reinstatementMode: clean(selected(f['Modalidad Reincorporación'])), effectiveFrom: clean(f['Fecha Inicio Estado']),
     effectiveTo: clean(f['Fecha Fin Estado']) || null, reason: clean(f.Motivo), approvedBy: clean(f['Aprobado Por']),
-    approvedAt: clean(f['Fecha Aprobación']), observations: clean(f.Observaciones), specialAgreement: bool(f['Acuerdo Especial']),
+    approvedAt: clean(f['Fecha Aprobación']), observations: metadata.observations, serviceSuspensionReason: metadata.serviceSuspensionReason,
+    specialAgreement: bool(f['Acuerdo Especial']),
     active: f.Activo !== false, version: Number(f['Versión'] || 1), replacesProfileId: clean(f['Reemplaza Perfil ID']),
     reinstatementRequestId: clean(f['Solicitud Reincorporación ID'])
   };
@@ -94,7 +108,7 @@ function profileFields(profile) {
     'Servicio Residencial Activo': profile.servicioResidencialActivo, 'Modalidad Reincorporación': profile.reinstatementMode,
     'Fecha Inicio Estado': profile.effectiveFrom, ...(profile.effectiveTo ? { 'Fecha Fin Estado': profile.effectiveTo } : {}),
     Motivo: profile.reason || '', 'Aprobado Por': profile.approvedBy || '', 'Fecha Aprobación': profile.approvedAt || new Date().toISOString(),
-    Observaciones: profile.observations || '', 'Acuerdo Especial': Boolean(profile.specialAgreement), Activo: profile.active !== false,
+    Observaciones: encodedProfileObservations(profile.observations, profile.serviceSuspensionReason), 'Acuerdo Especial': Boolean(profile.specialAgreement), Activo: profile.active !== false,
     'Versión': Number(profile.version || 1), 'Reemplaza Perfil ID': profile.replacesProfileId || '',
     'Solicitud Reincorporación ID': profile.reinstatementRequestId || '', 'Creado En': new Date().toISOString()
   };
@@ -243,7 +257,7 @@ async function loadPlantContext(store) {
 }
 
 module.exports = {
-  TABLES, EXPENSE_FIELDS, fieldsOf, selected, bool, link, validRecordId, createPlantStore,
+  TABLES, EXPENSE_FIELDS, fieldsOf, selected, bool, link, validRecordId, decodedProfileObservations, encodedProfileObservations, createPlantStore,
   profileFromRecord, profileFields, assetFromRecord, assetFields, paymentFromRecord,
   expenseIntervention, interventionFromRecord, recognizedPaymentFromRequest, requestFromRecord, requestFields, auditFields, loadPlantContext
 };
