@@ -46,6 +46,12 @@ function safeModel(value){
  if(!MODEL_PATTERN.test(model))throw codedError('El modelo de análisis configurado no es válido.','AI_MODEL_INVALID');
  return model;
 }
+function thinkingConfigFor(model){
+ const id=clean(model).toLowerCase();
+ if(/^gemini-(?:[3-9]|[1-9]\d)(?:\.|-)/.test(id))return{thinkingLevel:'minimal'};
+ if(/^gemini-2\.5(?:\.|-)/.test(id))return{thinkingBudget:0};
+ return null;
+}
 function extractionPrompt({promptVersion='',report={}}={}){
  const fields=report&&report.fields?report.fields:report||{};
  const reportedMode=clean(report.targetMode||fields['Forma de Pago Reportada']);
@@ -94,7 +100,7 @@ function createGeminiAnalysisRunner({fetchFn=global.fetch,apiKey=process.env.GEM
  return async function run({model,proof,report,promptVersion,timeoutMs:requestTimeoutMs}={}){
   const key=clean(apiKey);
   if(!key)throw codedError('El proveedor de análisis no está configurado.','AI_NOT_CONFIGURED');
-  const selectedModel=safeModel(model),content=Buffer.isBuffer(proof?.content)?proof.content:null,mimeType=clean(proof?.contentType);
+  const selectedModel=safeModel(model),thinkingConfig=thinkingConfigFor(selectedModel),content=Buffer.isBuffer(proof?.content)?proof.content:null,mimeType=clean(proof?.contentType);
   if(!content||!content.length||!mimeType)throw codedError('El comprobante no está disponible para análisis.','INVALID_ATTACHMENT');
   const configured=Math.max(5000,Math.min(120000,Number(requestTimeoutMs)||Number(timeoutMs)||DEFAULT_TIMEOUT_MS));
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),configured);
@@ -108,7 +114,8 @@ function createGeminiAnalysisRunner({fetchFn=global.fetch,apiKey=process.env.GEM
      generationConfig:{
       maxOutputTokens:Math.max(512,Math.min(8192,Number(maxOutputTokens)||DEFAULT_MAX_OUTPUT_TOKENS)),
       responseMimeType:'application/json',
-      responseJsonSchema:RESPONSE_JSON_SCHEMA
+      responseJsonSchema:RESPONSE_JSON_SCHEMA,
+      ...(thinkingConfig?{thinkingConfig}:{})
      }
     })
    });
@@ -122,4 +129,4 @@ function createGeminiAnalysisRunner({fetchFn=global.fetch,apiKey=process.env.GEM
  };
 }
 
-module.exports={API_ROOT,DEFAULT_TIMEOUT_MS,DEFAULT_MAX_OUTPUT_TOKENS,MODEL_PATTERN,METHODS,CURRENCIES,STATUSES,REQUIRED,RESPONSE_JSON_SCHEMA,clean,codedError,safeModel,extractionPrompt,responseText,providerError,createGeminiAnalysisRunner};
+module.exports={API_ROOT,DEFAULT_TIMEOUT_MS,DEFAULT_MAX_OUTPUT_TOKENS,MODEL_PATTERN,METHODS,CURRENCIES,STATUSES,REQUIRED,RESPONSE_JSON_SCHEMA,clean,codedError,safeModel,thinkingConfigFor,extractionPrompt,responseText,providerError,createGeminiAnalysisRunner};
