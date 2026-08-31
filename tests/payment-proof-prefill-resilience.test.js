@@ -2,6 +2,8 @@
 
 const test=require('node:test');
 const assert=require('node:assert/strict');
+const fs=require('fs');
+const path=require('path');
 const prefill=require('../netlify/functions/payment-proof-prefill');
 const gemini=require('../netlify/functions/_shared/_payment_ai_gemini');
 const discovery=require('../netlify/functions/_shared/_payment_ai_model_discovery');
@@ -54,19 +56,30 @@ test('prelectura prioriza el proxy y no desperdicia tiempo en Gemini directo',as
  assert.equal(result.provider,'proxy');
 });
 
-test('timeout del proxy en prelectura termina de inmediato sin gastar otro intento directo',async()=>{
+test('timeout del proxy cae a Gemini local y evita mandar al propietario a carga manual',async()=>{
  let discoveryCalls=0,directCalls=0;
- await assert.rejects(
-  ()=>prefill.analyzeWithFallback(baseArgs,{
-   localGeminiConfigured:()=>true,
-   discoverCompatibleModel:async()=>{discoveryCalls+=1;return{model:'gemini-primary'}},
-   analyzeDirect:async()=>{directCalls+=1;return{raw:VALID_RAW,model:'gemini-primary',provider:'direct'}},
-   analyzeViaProxy:async()=>{throw coded('TIMEOUT',504)}
-  }),
-  error=>error?.code==='TIMEOUT'&&error?.status===504
- );
- assert.equal(discoveryCalls,0);
- assert.equal(directCalls,0);
+ const result=await prefill.analyzeWithFallback(baseArgs,{
+  localGeminiConfigured:()=>true,
+  discoverCompatibleModel:async()=>{discoveryCalls+=1;return{model:'gemini-primary'}},
+  analyzeDirect:async()=>{directCalls+=1;return{raw:VALID_RAW,model:'gemini-primary',provider:'direct'}},
+  analyzeViaProxy:async()=>{throw coded('TIMEOUT',504)}
+ });
+ assert.equal(discoveryCalls,1);
+ assert.equal(directCalls,1);
+ assert.equal(result.provider,'direct');
+ assert.equal(result.model,'gemini-primary');
+});
+
+for(const code of ['PROVIDER_UNAVAILABLE','RATE_LIMIT'])test(`${code} del proxy también usa el proveedor local independiente`,async()=>{
+ let directCalls=0;
+ const result=await prefill.analyzeWithFallback(baseArgs,{
+  localGeminiConfigured:()=>true,
+  discoverCompatibleModel:async()=>({model:'gemini-primary'}),
+  analyzeDirect:async()=>{directCalls+=1;return{raw:VALID_RAW,model:'gemini-primary',provider:'direct'}},
+  analyzeViaProxy:async()=>{throw coded(code,code==='RATE_LIMIT'?429:503)}
+ });
+ assert.equal(directCalls,1);
+ assert.equal(result.provider,'direct');
 });
 
 test('la prelectura reserva 20 segundos al proxy para fotos reales',()=>{
@@ -165,6 +178,14 @@ test('Gemini clasifica HTTP 404 como modelo no disponible',()=>{
  const error=gemini.providerError({error:{status:'NOT_FOUND',message:'model not found'}},404);
  assert.equal(error.code,'AI_MODEL_NOT_FOUND');
  assert.equal(error.status,404);
+});
+
+test('el diagnóstico end-to-end prueba y registra todos los días el modelo saludable',()=>{
+ const workflow=fs.readFileSync(path.join(__dirname,'..','.github','workflows','diagnose-payment-prefill-production.yml'),'utf8');
+ assert.match(workflow,/cron:\s*'10 10 \* \* \*'/);
+ assert.match(workflow,/analysisProvider/);
+ assert.match(workflow,/detectedAmount/);
+ assert.match(workflow,/Production prefill returned HTTP/);
 });
 
 test('el catálogo usa la firma oficial de Netlify Blobs y persiste candidatos',async()=>{
