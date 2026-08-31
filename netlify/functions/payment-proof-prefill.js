@@ -122,7 +122,7 @@ async function analyzeWithFallback({config,proof,report,promptVersion}={},deps={
 
  if(proxyFirst){
   try{const result=await proxy({proof,promptVersion}),quality=consider(result);if(quality.usable&&quality.complete)return result;lastError=Object.assign(new Error('La primera lectura quedó incompleta.'),{code:'LOW_QUALITY_OUTPUT',quality})}
-  catch(error){firstProxyError=error;lastError=error;if(['INVALID_ATTACHMENT','RATE_LIMIT','TIMEOUT','PROVIDER_UNAVAILABLE'].includes(errorCode(error)))throw error}
+  catch(error){firstProxyError=error;lastError=error;if(errorCode(error)==='INVALID_ATTACHMENT')throw error}
  }
 
  if(hasLocal()){

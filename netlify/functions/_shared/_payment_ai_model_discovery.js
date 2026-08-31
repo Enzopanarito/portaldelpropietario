@@ -22,7 +22,7 @@ function score(model){
  if(/(?:embedding|embed|aqa|tts|live|image|imagen|robotics|computer-use|deep-research)/.test(id))return-1;
  if(/(?:preview|experimental|exp)/.test(id))return-1;
  let value=180;
- if(/flash-lite/.test(id))value+=420;
+ if(/flash-lite/.test(id))value+=760;
  else if(/flash/.test(id))value+=560;
  else if(/pro/.test(id))value+=300;
  else value+=120;
