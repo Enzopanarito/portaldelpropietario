@@ -5,6 +5,9 @@ on:
     workflows: ["Deploy Netlify Production"]
     types: [completed]
   workflow_dispatch:
+  schedule:
+    # 06:10 a. m. de Venezuela: prueba OCR real y registra el modelo saludable.
+    - cron: '10 10 * * *'
 
 permissions:
   contents: read
