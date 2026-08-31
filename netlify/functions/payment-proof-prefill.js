@@ -11,6 +11,7 @@ const {consume}=require('./_shared/_persistent_rate_limit');
 const {safeDisplayText}=require('./_shared/_security_utils');
 const {mergeConfig}=require('./_shared/_automation_rules');
 const {listAll,TABLES,aiConfig}=require('./_shared/_payment_report_automation');
+const {loadPaymentAiConfig}=require('./_shared/_payment_ai_config_cache');
 const {resolvePrefillDate}=require('./_shared/_payment_date_resolver');
 const {signDateAttestation}=require('./_shared/_payment_date_attestation');
 const {METHOD_ACCOUNT_MAP,accountActive,findAuthorizedRecipient}=require('./_shared/_payment_deterministic_arbiter');
@@ -43,7 +44,8 @@ function missingFields(analysis){
  if(required.has('method')&&!analysis?.bank_or_platform&&!methodLabel(analysis?.method))missing.push({field:'bank',label:'banco o método'});
  return missing;
 }
-async function loadAiConfig(){const records=await listAll(TABLES.config,'?maxRecords=1'),record=records[0]||{fields:{}},rules=mergeConfig(record);return aiConfig(record,rules)}
+async function fetchAiConfig(){const records=await listAll(TABLES.config,'?maxRecords=1'),record=records[0]||{fields:{}},rules=mergeConfig(record);return aiConfig(record,rules)}
+async function loadAiConfig(){return loadPaymentAiConfig({loader:fetchAiConfig})}
 async function loadAuthorizedAccounts(){
  if(!TABLES.accounts)return{available:false,records:[]};
  try{return{available:true,records:await listAll(TABLES.accounts)}}
