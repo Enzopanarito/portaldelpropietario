@@ -3,6 +3,7 @@ const http=require('http');
 const fs=require('fs');
 const path=require('path');
 const {chromium}=require('playwright');
+const finance=require('../vla-finance-v7');
 const ROOT=path.join(__dirname,'..');
 const PORT=4173;
 const TOKEN='browser-test-admin-token';
@@ -23,7 +24,7 @@ const owners=Array.from({length:15},(_,i)=>{
     saldoFavorUsd:Math.max(0,-saldoUsd),saldoFavorBs:Math.max(0,-saldoBsRef),
     deudaVencidaUsd:Math.max(0,saldoUsd),deudaVencidaBs:Math.max(0,saldoBsRef),mesCorrienteUsd:0,mesCorrienteBs:0,
     estadoMorosidad:total>0?'PENDIENTE':'SOLVENTE',accesoEsperado:total>0?'Limitado':'Habilitado',
-    balanceEngineVersion:'vla-balance-contract-v7'
+    balanceEngineVersion:finance.VERSION
   };
 });
 const gastos=[];
