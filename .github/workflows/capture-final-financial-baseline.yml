@@ -46,3 +46,58 @@ jobs:
             console.log(`VLA_FINAL_BASELINE_FIELDS=${baseline.houses.length*fields.length}`);
           })().catch(error=>{console.error(error.stack||error);process.exit(1)});
           NODE
+
+      - name: Audit every house against actual monthly expenses
+        run: |
+          node <<'NODE'
+          const https=require('https');
+          const target='https://villalosapamates.netlify.app';
+          function money(value){const n=Number(value||0);if(Math.abs(n)<0.005)return 0;const scaled=n*100;return (scaled>=0?Math.floor(scaled+0.5+1e-9):Math.ceil(scaled-0.5-1e-9))/100}
+          function requestJson(url){return new Promise((resolve,reject)=>{const req=https.get(url,{headers:{'Cache-Control':'no-cache','User-Agent':'VLA-Expense-Audit/1.0'}},res=>{let raw='';res.setEncoding('utf8');res.on('data',chunk=>raw+=chunk);res.on('end',()=>{if(res.statusCode<200||res.statusCode>=300)return reject(new Error('HTTP '+res.statusCode+' '+url+' '+raw.slice(0,300)));try{resolve(JSON.parse(raw))}catch(error){reject(error)}})});req.setTimeout(30000,()=>req.destroy(new Error('timeout '+url)));req.on('error',reject)});}
+          function linkedIds(value){return Array.isArray(value)?value.map(item=>typeof item==='string'?item:item&&item.id).filter(Boolean):[]}
+          function expectedCharges(owner,expenses){
+            const ownerId=String(owner.id||'');
+            const aliquot=Number(owner.Alicuota||0);
+            const commonRaw={USD:0,'Bs BCV':0};
+            const specials={USD:0,'Bs BCV':0};
+            const lines=[];
+            for(const expense of expenses){
+              const f=expense.fields||{};
+              const mode=String(f['Forma de Pago']||'')==='USD'?'USD':'Bs BCV';
+              const type=String(f['Tipo de Gasto']||'');
+              const participants=linkedIds(f.Propietarios);
+              const amount=Number(f.Monto||0);
+              if(type==='Gasto Común'){
+                if(participants.length&&!participants.includes(ownerId))continue;
+                const raw=amount*aliquot;
+                commonRaw[mode]+=raw;
+                lines.push({id:expense.id,concept:String(f.Concepto||'Gasto'),type,mode,share:money(raw)});
+              }else if(type==='Gasto Especial'&&participants.includes(ownerId)){
+                const share=money(amount/Math.max(1,participants.length));
+                specials[mode]=money(specials[mode]+share);
+                lines.push({id:expense.id,concept:String(f.Concepto||'Gasto'),type,mode,share});
+              }
+            }
+            return{usd:money(commonRaw.USD+specials.USD),bsRef:money(commonRaw['Bs BCV']+specials['Bs BCV']),lines};
+          }
+          (async()=>{
+            const data=await requestJson(target+'/api/vla/public-data?force=1&expense-audit='+Date.now());
+            const owners=Array.isArray(data.propietarios)?data.propietarios.slice().sort((a,b)=>Number(a.Casa)-Number(b.Casa)):[];
+            const expenses=Array.isArray(data.gastos)?data.gastos:[];
+            if(owners.length!==15)throw new Error(`Auditoría recibió ${owners.length}/15 casas.`);
+            if(owners.some((owner,index)=>Number(owner.Casa)!==index+1))throw new Error('Secuencia canónica 1..15 inválida.');
+            const rows=owners.map(owner=>{
+              const expected=expectedCharges(owner,expenses);
+              const actualUsd=money(owner['Cargos Mes USD']);
+              const actualBsRef=money(owner['Cargos Mes Bs Ref']);
+              return{Casa:Number(owner.Casa),aliquota:Number(owner.Alicuota||0),expectedUsd:expected.usd,actualUsd,expectedBsRef:expected.bsRef,actualBsRef,deltaUsd:money(actualUsd-expected.usd),deltaBsRef:money(actualBsRef-expected.bsRef),lines:expected.lines};
+            });
+            const mismatches=rows.filter(row=>Math.abs(row.deltaUsd)>0.001||Math.abs(row.deltaBsRef)>0.001);
+            console.log('VLA_EXPENSE_AUDIT_MONTH='+(data.accountingTransition&&data.accountingTransition.accountingMonth||owners[0]&&owners[0]['Mes Calculo']||'unknown'));
+            console.log('VLA_EXPENSE_AUDIT_EXPENSES='+expenses.length);
+            console.log('VLA_EXPENSE_AUDIT_HOUSES='+rows.length);
+            console.log('VLA_EXPENSE_AUDIT_JSON='+JSON.stringify(rows));
+            if(mismatches.length)throw new Error('Reparto de gastos no coincide en: '+mismatches.map(row=>`Casa ${row.Casa} USD Δ${row.deltaUsd} Bs Δ${row.deltaBsRef}`).join('; '));
+            console.log('VLA_EXPENSE_AUDIT_OK=15/15');
+          })().catch(error=>{console.error(error.stack||error);process.exit(1)});
+          NODE
