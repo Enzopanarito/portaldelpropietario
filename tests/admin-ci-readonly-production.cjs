@@ -153,12 +153,18 @@ function canonicalOwnerPlan(plan){
       closeWindow:close.closeWindow,
       closeStatus:String(close.closeStatus||''),
       canExecute:Boolean(close.canExecute),
+      closeCertification:close.closeCertification||null,
       ownerPlan:close.ownerPlan
     }
   };
   fs.writeFileSync('admin-authenticated-readonly-result.json',JSON.stringify(evidence,null,2));
   console.log(JSON.stringify(evidence,null,2));
 
+  if(close.closeStatus==='already-closed-unverified'){
+    const reason=String(close.closeCertification?.reason||'UNKNOWN');
+    throw new Error(`Cierre ${close.month||''} marcado DONE pero no certificado: ${reason}.`);
+  }
+  if(close.closeStatus==='already-closed'&&close.closeCertification&&close.closeCertification.ok!==true)throw new Error(`Cierre ${close.month||''} no presentó certificación histórica válida.`);
   if(healthFailureMessage)throw new Error(healthFailureMessage);
   if(mkjClassification.identityRows.length)throw new Error(`MKJ tiene ${mkjClassification.identityRows.length} casa(s) con problemas de identidad/lectura: ${mkjClassification.identityRows.map(row=>`Casa ${row.casa} [${[...row.identityIssues,...row.otherIssues].join(',')}] stored=${row.storedMkjUserId||'none'} resolved=${row.resolvedMkjUserId||'none'}`).join('; ')}`);
   if(mode.mode==='Automático'&&mkjClassification.stateRows.length)throw new Error(`MKJ automático tiene ${mkjClassification.stateRows.length} discrepancia(s) de estado.`);
