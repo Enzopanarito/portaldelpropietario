@@ -25,6 +25,35 @@
  async function runAction(reportId,decision,reason='',corrections){const result=await adminFetch('/.netlify/functions/process-payment-report',{method:'POST',body:JSON.stringify({reportId,decision,reason,...(corrections?{corrections}:{})})});toast(result.message||'Decisión guardada.');await loadAll(true);return result}
  async function submitDialog(event){event.preventDefault();if(!dialogContext||window.vlaReportBusy)return;const button=byId('vla-review-submit');try{window.vlaReportBusy=true;button.disabled=true;button.textContent='Procesando…';await runAction(dialogContext.report.id,dialogContext.action,'',correctionsFromDialog());byId('vla-payment-review-dialog').close()}catch(error){toast(error.message,true)}finally{window.vlaReportBusy=false;button.disabled=false;button.textContent='Guardar y aprobar'}}
  async function handleReportV10(event){const button=event.target.closest('button[data-action]');if(!button||window.vlaReportBusy)return;const action=button.dataset.action,id=button.dataset.id,report=currentReports().find(item=>item.id===id);if(!report)return;if(action==='proof'){try{await openPaymentProof(id,button.dataset.kind||'original')}catch(error){toast(error.message,true)}return}if(action==='correct_and_approve')return openDialog(report);let reason='';if(action==='request_information'){reason=(prompt('¿Qué información debe enviar el propietario?')||'').trim();if(reason.length<5)return toast('Escriba el mensaje que recibirá el propietario.',true)}else{const confirmations={approve:'¿Aprobar este pago y crear el pago definitivo?',approve_exception:report.fields?.['Archivo Obligatorio']===false?'¿Confirmar que el efectivo fue recibido y crear el pago definitivo?':'El sistema detectó alertas. ¿Ya revisaste el comprobante y quieres aprobarlo?',mark_duplicate:'¿Confirmas que este reporte es un duplicado?',reject:'¿Rechazar este reporte? No se modificará el saldo ni el acceso.'};if(!confirm(confirmations[action]||'¿Confirmar esta acción?'))return}const original=button.textContent;try{window.vlaReportBusy=true;button.disabled=true;button.textContent='Procesando…';await runAction(id,action,reason)}catch(error){toast(error.message,true)}finally{window.vlaReportBusy=false;button.disabled=false;button.textContent=original}}
- function install(){ensureDialog();try{renderReports=renderReportsV10;handleReport=handleReportV10;handleReport.__vlaTen=true}catch(_){window.renderReports=renderReportsV10;window.handleReport=handleReportV10;window.handleReport.__vlaTen=true}const body=byId('reports-body');if(body)body.onclick=handleReportV10;renderReportsV10();document.documentElement.dataset.vlaPaymentReview='v12'}
+ async function syncMonthlyCloseControl(force=false){
+  const button=byId('close-btn'),app=byId('app');
+  if(!button||!app||app.classList.contains('hidden')||typeof adminFetch!=='function')return false;
+  const now=Date.now(),last=Number(button.dataset.vlaCloseCheckedAt||0);
+  if(!force&&last&&now-last<30000)return button.dataset.vlaCloseDone==='1';
+  button.dataset.vlaCloseCheckedAt=String(now);
+  try{
+   const dry=await adminFetch('/.netlify/functions/monthly-close',{method:'POST',body:JSON.stringify({dryRun:true})});
+   const done=dry&&dry.closeStatus==='already-closed';
+   button.dataset.vlaCloseDone=done?'1':'0';
+   button.hidden=done;
+   button.setAttribute('aria-hidden',done?'true':'false');
+   if(!done)button.removeAttribute('aria-hidden');
+   return done;
+  }catch(error){console.warn('VLA_CLOSE_STATUS_CHECK_UNAVAILABLE',String(error&&error.message||error));return false}
+ }
+ function installMonthlyCloseGuard(){
+  const button=byId('close-btn');if(!button||button.dataset.vlaCloseGuard==='1')return false;
+  button.dataset.vlaCloseGuard='1';
+  const attach=()=>{
+   if(typeof button.onclick!=='function'){setTimeout(attach,100);return}
+   const original=button.onclick;
+   button.onclick=async function(event){if(await syncMonthlyCloseControl(true))return;return original.call(this,event)};
+   syncMonthlyCloseControl(true);
+  };
+  attach();
+  const app=byId('app');if(app&&window.MutationObserver)new MutationObserver(()=>{if(!app.classList.contains('hidden'))syncMonthlyCloseControl(true)}).observe(app,{attributes:true,attributeFilter:['class']});
+  return true;
+ }
+ function install(){ensureDialog();try{renderReports=renderReportsV10;handleReport=handleReportV10;handleReport.__vlaTen=true}catch(_){window.renderReports=renderReportsV10;window.handleReport=handleReportV10;window.handleReport.__vlaTen=true}const body=byId('reports-body');if(body)body.onclick=handleReportV10;renderReportsV10();installMonthlyCloseGuard();document.documentElement.dataset.vlaPaymentReview='v13'}
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
 })();
