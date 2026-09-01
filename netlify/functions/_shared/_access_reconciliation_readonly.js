@@ -6,24 +6,77 @@ const ENABLED='Habilitado';
 const LIMITED='Limitado';
 const UNKNOWN='Desconocido';
 
-function remoteAccessState(user){
-  const sources=[user?.membership,user?.organization_membership,user?.organizationMembership,user?.user,user].filter(Boolean);
-  for(const source of sources){
-    for(const [key,value] of Object.entries(source)){
-      const normalizedKey=String(key).toLowerCase();
-      if(!/(?:active|enabled|disabled|status|state)/.test(normalizedKey))continue;
-      if(typeof value==='boolean'){
-        if(normalizedKey.includes('disabled'))return value?LIMITED:ENABLED;
-        return value?ENABLED:LIMITED;
-      }
-      const text=String(value||'').trim().toLowerCase();
-      if(/^(?:active|enabled|habilitado|authorized|authorised|1)$/.test(text))return ENABLED;
-      if(/^(?:inactive|disabled|limited|blocked|suspended|deshabilitado|0)$/.test(text))return LIMITED;
+function stateFromSource(source){
+  if(!source||typeof source!=='object')return UNKNOWN;
+  for(const [key,value] of Object.entries(source)){
+    const normalizedKey=String(key).toLowerCase();
+    if(!/(?:active|enabled|disabled|status|state)/.test(normalizedKey))continue;
+    if(typeof value==='boolean'){
+      if(normalizedKey.includes('disabled'))return value?LIMITED:ENABLED;
+      return value?ENABLED:LIMITED;
     }
+    const text=String(value||'').trim().toLowerCase();
+    if(/^(?:active|enabled|habilitado|authorized|authorised|1)$/.test(text))return ENABLED;
+    if(/^(?:inactive|disabled|limited|blocked|suspended|deshabilitado|0)$/.test(text))return LIMITED;
   }
   return UNKNOWN;
 }
-function remoteUpdatedAt(user){return String(user?.membership?.updated_at||user?.membership?.updatedAt||user?.updated_at||user?.updatedAt||'').trim()||null}
+
+function remoteAccessState(user){
+  if(!user||typeof user!=='object')return UNKNOWN;
+  const sources=[
+    user.membership,
+    user.organization_membership,
+    user.organizationMembership,
+    user.user?user:null,
+    user.user,
+    user.user?null:user
+  ].filter(Boolean);
+  const seen=new Set();
+  for(const source of sources){
+    if(seen.has(source))continue;
+    seen.add(source);
+    const state=stateFromSource(source);
+    if(state!==UNKNOWN)return state;
+  }
+  return UNKNOWN;
+}
+
+function membershipArrayPriority(key){
+  const normalized=String(key||'').toLowerCase();
+  if(['members','memberships','organization_members','organizationmembers'].includes(normalized))return 100;
+  if(['organization_users','organizationusers'].includes(normalized))return 70;
+  if(normalized==='users')return 20;
+  if(normalized==='items')return 10;
+  return 0;
+}
+function looksLikeOrganizationRecord(value){
+  return Boolean(value&&typeof value==='object'&&(value.user||value.membership||value.user_id||value.user_email||value.email||value.id));
+}
+function authoritativeMembershipRecords(data){
+  if(!data||typeof data!=='object')return[];
+  const queue=[{value:data,depth:0,key:''}],candidates=[];
+  while(queue.length){
+    const current=queue.shift(),value=current.value;
+    if(!value||typeof value!=='object'||current.depth>6)continue;
+    if(Array.isArray(value)){
+      if(value.length&&value.some(looksLikeOrganizationRecord)){
+        const priority=membershipArrayPriority(current.key);
+        if(priority>0)candidates.push({records:value,priority,depth:current.depth});
+      }
+      for(const item of value)queue.push({value:item,depth:current.depth+1,key:current.key});
+      continue;
+    }
+    for(const [key,nested] of Object.entries(value)){
+      if(!nested||typeof nested!=='object')continue;
+      queue.push({value:nested,depth:current.depth+1,key});
+    }
+  }
+  candidates.sort((left,right)=>right.priority-left.priority||left.depth-right.depth);
+  return candidates[0]?.records||[];
+}
+
+function remoteUpdatedAt(user){return String(user?.membership?.updated_at||user?.membership?.updatedAt||user?.updated_at||user?.updatedAt||user?.user?.updated_at||user?.user?.updatedAt||'').trim()||null}
 function uniqueUsers(users){const result=[],seen=new Set();for(const user of users||[]){const id=mkj.organizationUserId(user),email=mkj.organizationUserEmail(user),key=id?`id:${id}`:`email:${email}`;if(!key||seen.has(key))continue;seen.add(key);result.push(user)}return result}
 function desiredStates(fields,calc){const exception=fields['Excepción Acceso']===true;const physical=exception?ENABLED:(calc.hasExpiredDebt?LIMITED:ENABLED);return{airtable:exception?'Excepción Manual':physical,remote:physical,exception}}
 function recommendation(reasons){
@@ -46,7 +99,9 @@ async function runReadOnlyReconciliation(deps={}){
   const available=lookups.filter(item=>item.status==='fulfilled').map(item=>item.value);
   if(!available.length)throw Object.assign(new Error('MKJ no devolvió la lista ni el detalle de la organización.'),{code:'MKJ_READONLY_LOOKUP_FAILED'});
   const organizationUsers=lookups[0].status==='fulfilled'?(lookups[0].value.users||[]):[];
-  const detailUsers=lookups[1].status==='fulfilled'?(lookups[1].value.users||[]):[];
+  const detailResult=lookups[1].status==='fulfilled'?lookups[1].value:null;
+  const authoritativeDetail=authoritativeMembershipRecords(detailResult?.data);
+  const detailUsers=authoritativeDetail.length?authoritativeDetail:(detailResult?.users||[]);
   const users=uniqueUsers([...detailUsers,...organizationUsers]);
   const rows=(context.owners||[]).slice().sort((left,right)=>Number(left?.fields?.Casa||0)-Number(right?.fields?.Casa||0)).map(owner=>{
     const fields=owner.fields||{},memberId=String(fields['MKJ User ID']||'').trim(),email=String(fields['MKJ Email']||fields.Email||'').trim().toLowerCase();
@@ -61,4 +116,4 @@ async function runReadOnlyReconciliation(deps={}){
   return{success:true,readOnly:true,mode:modeInfo.mode,total:rows.length,reconciled,coherent,discrepancyCount:discrepancies.length,remoteSources:available.length,lookupWarnings:lookups.filter(item=>item.status==='rejected').map(item=>String(item.reason?.code||item.reason?.message||'MKJ_LOOKUP_WARNING')),rows,discrepancies};
 }
 
-module.exports={ENABLED,LIMITED,UNKNOWN,remoteAccessState,remoteUpdatedAt,uniqueUsers,desiredStates,recommendation,runReadOnlyReconciliation};
+module.exports={ENABLED,LIMITED,UNKNOWN,stateFromSource,remoteAccessState,authoritativeMembershipRecords,remoteUpdatedAt,uniqueUsers,desiredStates,recommendation,runReadOnlyReconciliation};
