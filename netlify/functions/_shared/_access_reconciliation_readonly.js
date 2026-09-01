@@ -42,6 +42,33 @@ function remoteAccessState(user){
   return UNKNOWN;
 }
 
+function safeStatePrimitive(value){
+  if(typeof value==='boolean'||typeof value==='number')return value;
+  if(typeof value==='string')return value.replace(/\s+/g,' ').trim().slice(0,80);
+  return null;
+}
+function collectStateEvidence(root,maxDepth=5){
+  const results=[],seen=new Set(),queue=[{value:root,path:'root',depth:0}];
+  while(queue.length&&results.length<40){
+    const current=queue.shift(),value=current.value;
+    if(!value||typeof value!=='object'||current.depth>maxDepth||seen.has(value))continue;
+    seen.add(value);
+    if(Array.isArray(value)){
+      value.slice(0,20).forEach((nested,index)=>{if(nested&&typeof nested==='object')queue.push({value:nested,path:`${current.path}[${index}]`,depth:current.depth+1})});
+      continue;
+    }
+    for(const [key,nested] of Object.entries(value)){
+      const normalized=String(key).toLowerCase(),path=`${current.path}.${key}`;
+      if(/(?:active|enabled|disabled|status|state|access|limit|block|suspend|authoriz)/.test(normalized)){
+        const primitive=safeStatePrimitive(nested);
+        if(primitive!==null&&primitive!=='')results.push({path,value:primitive});
+      }
+      if(nested&&typeof nested==='object')queue.push({value:nested,path,depth:current.depth+1});
+    }
+  }
+  return results;
+}
+
 function membershipArrayPriority(key){
   const normalized=String(key||'').toLowerCase();
   if(['members','memberships','organization_members','organizationmembers'].includes(normalized))return 100;
@@ -106,14 +133,20 @@ async function runReadOnlyReconciliation(deps={}){
   const rows=(context.owners||[]).slice().sort((left,right)=>Number(left?.fields?.Casa||0)-Number(right?.fields?.Casa||0)).map(owner=>{
     const fields=owner.fields||{},memberId=String(fields['MKJ User ID']||'').trim(),email=String(fields['MKJ Email']||fields.Email||'').trim().toLowerCase();
     const calc=calculateExpiredAccessDebt(owner,context.pagos||[],context.reportes||[],{expenses:context.gastos||[],dueDay:automation?.rules?.payment?.dueDay||10,surchargeRate:automation?.rules?.payment?.surchargeRate??0.10});
-    const expected=desiredStates(fields,calc),matched=resolveUser(users,memberId,email),resolvedId=mkj.organizationUserId(matched),resolvedEmail=mkj.organizationUserEmail(matched),remoteState=matched?remoteAccessState(matched):UNKNOWN,airtableState=String(fields['Estado Acceso Portón']||'Sin configurar').trim(),reasons=[];
+    const expected=desiredStates(fields,calc),matched=resolveUser(users,memberId,email),detailMatched=resolveUser(detailUsers,memberId,email),listMatched=resolveUser(organizationUsers,memberId,email),resolvedId=mkj.organizationUserId(matched),resolvedEmail=mkj.organizationUserEmail(matched),remoteState=matched?remoteAccessState(matched):UNKNOWN,airtableState=String(fields['Estado Acceso Portón']||'Sin configurar').trim(),reasons=[];
     if(!matched)reasons.push('MKJ_MEMBER_NOT_FOUND');
     else{if(resolvedId&&memberId&&resolvedId!==memberId)reasons.push('STALE_MEMBER_ID');if(email&&resolvedEmail&&email!==resolvedEmail)reasons.push('EMAIL_MISMATCH');if(remoteState===UNKNOWN)reasons.push('MKJ_STATE_UNKNOWN');else if(remoteState!==expected.remote)reasons.push('MKJ_EXPECTATION_MISMATCH')}
     if(airtableState!==expected.airtable)reasons.push('AIRTABLE_EXPECTATION_MISMATCH');
-    return{casa:Number(fields.Casa),propietario:String(fields.Propietario||''),mkjUserId:memberId||null,mkjResolvedUserId:resolvedId||null,email:email||null,mkjResolvedEmail:resolvedEmail||null,estadoEsperadoVla:expected.airtable,estadoFisicoEsperado:expected.remote,estadoAirtable:airtableState,estadoMkj:remoteState,excepcionAdministrativa:expected.exception,modo:modeInfo.mode,ultimaSincronizacion:String(fields['Última Sync MKJ']||'').trim()||null,ultimaActualizacionMkj:remoteUpdatedAt(matched),reconciliada:Boolean(matched)&&remoteState!==UNKNOWN,coherente:reasons.length===0,discrepancias:reasons,accionRecomendada:recommendation(reasons)};
+    const stateMismatch=reasons.includes('MKJ_EXPECTATION_MISMATCH')||reasons.includes('MKJ_STATE_UNKNOWN');
+    const mkjStateEvidence=stateMismatch?{
+      chosen:{state:remoteState,fields:collectStateEvidence(matched)},
+      organizationDetail:{state:detailMatched?remoteAccessState(detailMatched):UNKNOWN,fields:collectStateEvidence(detailMatched)},
+      organizationUsers:{state:listMatched?remoteAccessState(listMatched):UNKNOWN,fields:collectStateEvidence(listMatched)}
+    }:undefined;
+    return{casa:Number(fields.Casa),propietario:String(fields.Propietario||''),mkjUserId:memberId||null,mkjResolvedUserId:resolvedId||null,email:email||null,mkjResolvedEmail:resolvedEmail||null,estadoEsperadoVla:expected.airtable,estadoFisicoEsperado:expected.remote,estadoAirtable:airtableState,estadoMkj:remoteState,excepcionAdministrativa:expected.exception,modo:modeInfo.mode,ultimaSincronizacion:String(fields['Última Sync MKJ']||'').trim()||null,ultimaActualizacionMkj:remoteUpdatedAt(matched),reconciliada:Boolean(matched)&&remoteState!==UNKNOWN,coherente:reasons.length===0,discrepancias:reasons,accionRecomendada:recommendation(reasons),...(mkjStateEvidence?{mkjStateEvidence}:{})};
   });
   const discrepancies=rows.filter(row=>!row.coherente),reconciled=rows.filter(row=>row.reconciliada).length,coherent=rows.filter(row=>row.coherente).length;
   return{success:true,readOnly:true,mode:modeInfo.mode,total:rows.length,reconciled,coherent,discrepancyCount:discrepancies.length,remoteSources:available.length,lookupWarnings:lookups.filter(item=>item.status==='rejected').map(item=>String(item.reason?.code||item.reason?.message||'MKJ_LOOKUP_WARNING')),rows,discrepancies};
 }
 
-module.exports={ENABLED,LIMITED,UNKNOWN,stateFromSource,remoteAccessState,authoritativeMembershipRecords,remoteUpdatedAt,uniqueUsers,desiredStates,recommendation,runReadOnlyReconciliation};
+module.exports={ENABLED,LIMITED,UNKNOWN,stateFromSource,remoteAccessState,collectStateEvidence,authoritativeMembershipRecords,remoteUpdatedAt,uniqueUsers,desiredStates,recommendation,runReadOnlyReconciliation};
