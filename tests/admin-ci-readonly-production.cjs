@@ -98,7 +98,7 @@ function canonicalOwnerPlan(plan){
 
   const health=await adminFetch(token,'/.netlify/functions/system-health-advanced');
   const activeErrors=Array.isArray(health.checks)?health.checks.filter(check=>check.severity==='error'):[];
-  if(health.status==='error'||activeErrors.length)throw new Error(`Health reportó fallas activas: ${activeErrors.map(check=>check.name).join(', ')||health.status}`);
+  const healthFailureMessage=(health.status==='error'||activeErrors.length)?`Health reportó fallas activas: ${activeErrors.map(check=>check.name).join(', ')||health.status}`:'';
 
   const mode=await adminFetch(token,'/.netlify/functions/access-mode');
   if(!mode.mode)throw new Error('No se pudo leer el modo del portón.');
@@ -127,6 +127,7 @@ function canonicalOwnerPlan(plan){
     canonicalOwners:owners.length-invalid.length,
     health:health.status,
     healthErrors:activeErrors.length,
+    healthFailureMessage,
     accessMode:mode.mode,
     mkj:{readOnly:mkj.readOnly,total:Number(mkj.total),reconciled:Number(mkj.reconciled),coherent:Number(mkj.coherent||0),discrepancies:Number(mkj.discrepancyCount||0),identityIssueRows:mkjClassification.identityRows.length,stateDivergenceRows:mkjClassification.stateRows.length,manualStateDivergences:mode.mode==='Manual'?mkjClassification.stateRows.length:0,discrepancyDetails:mkjClassification.details},
     closeDryRun:{
@@ -158,6 +159,7 @@ function canonicalOwnerPlan(plan){
   fs.writeFileSync('admin-authenticated-readonly-result.json',JSON.stringify(evidence,null,2));
   console.log(JSON.stringify(evidence,null,2));
 
+  if(healthFailureMessage)throw new Error(healthFailureMessage);
   if(mkjClassification.identityRows.length)throw new Error(`MKJ tiene ${mkjClassification.identityRows.length} casa(s) con problemas de identidad/lectura: ${mkjClassification.identityRows.map(row=>`Casa ${row.casa} [${[...row.identityIssues,...row.otherIssues].join(',')}] stored=${row.storedMkjUserId||'none'} resolved=${row.resolvedMkjUserId||'none'}`).join('; ')}`);
   if(mode.mode==='Automático'&&mkjClassification.stateRows.length)throw new Error(`MKJ automático tiene ${mkjClassification.stateRows.length} discrepancia(s) de estado.`);
 })().catch(error=>{
