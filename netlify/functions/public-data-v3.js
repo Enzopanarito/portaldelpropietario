@@ -1,6 +1,6 @@
 'use strict';
 
-const previous=require('./public-data-v2');
+const previous=require('./public-data-v4');
 const snapshotStore=require('./_shared/_public_snapshot_store');
 const previewFixture=require('./_shared/_public_preview_fixture');
 
