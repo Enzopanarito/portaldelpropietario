@@ -53,12 +53,20 @@ test('un pago sin fecha vuelve insegura la transición y nunca entra silenciosam
  assert.equal(scope.invalid.length,1);
 });
 
-test('la certificación post-cierre exige el plan histórico completo y su huella',()=>{
- const good={month:'2026-08',planHash:'a'.repeat(64),sourceHash:'b'.repeat(64),ownerUpdates:[{id:'owner-1'}],paymentIds:['pay-1']};
+test('la certificación post-cierre exige el plan histórico completo de las 15 casas y sus huellas',()=>{
+ const ownerUpdates=Array.from({length:15},(_,index)=>({
+  id:`owner-${index+1}`,
+  casa:index+1,
+  before:{deudaAnterior:0},
+  target:{deudaAnterior:index+1}
+ }));
+ const good={month:'2026-08',planHash:'a'.repeat(64),sourceHash:'b'.repeat(64),ownerUpdates,paymentIds:['pay-1']};
  assert.equal(validStoredPlan(good,'2026-08'),true);
  assert.equal(validStoredPlan({...good,month:'2026-09'},'2026-08'),false);
  assert.equal(validStoredPlan({...good,planHash:'mala'},'2026-08'),false);
- assert.equal(validStoredPlan({...good,ownerUpdates:[]},'2026-08'),false);
+ assert.equal(validStoredPlan({...good,ownerUpdates:ownerUpdates.slice(0,14)},'2026-08'),false);
+ assert.equal(validStoredPlan({...good,ownerUpdates:ownerUpdates.map((item,index)=>index===14?{...item,casa:14}:item)},'2026-08'),false);
+ assert.equal(validStoredPlan({...good,ownerUpdates:ownerUpdates.map((item,index)=>index===0?{...item,target:null}:item)},'2026-08'),false);
 });
 
 test('el contrato público conserva v3 y v3 usa internamente la contabilidad endurecida',()=>{
