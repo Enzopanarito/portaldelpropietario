@@ -10,6 +10,7 @@ const { mergeConfig, publicRules } = require('./_shared/_automation_rules');
 
 let publicCache = null;
 const PUBLIC_CACHE_TTL_MS = 2 * 60 * 1000;
+const FINANCIAL_MONTH_BOUNDARY_GUARD_START = '2026-08';
 const TABLES = {
   propietarios: 'Propietarios',
   gastos: 'Gastos del Mes',
@@ -47,6 +48,33 @@ async function airtableGetAll(tableName, query, token, baseId, counter) {
     offset = data.offset;
   } while (offset);
   return records;
+}
+function previousMonth(month) {
+  const match = /^(\d{4})-(\d{2})$/.exec(String(month || '').trim());
+  if (!match) return '';
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 2, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+function closePrefix(month) { return `MONTHLY_CLOSE|${month}|`; }
+function closeGuardQuery(month) {
+  const prefix = closePrefix(month);
+  const formula = encodeURIComponent(`LEFT({Key}, ${prefix.length})='${prefix}'`);
+  return `?filterByFormula=${formula}&fields%5B%5D=${encodeURIComponent('Key')}&fields%5B%5D=${encodeURIComponent('Version')}`;
+}
+function isDoneClose(record, month) {
+  return String(record?.fields?.Key || '').startsWith(`${closePrefix(month)}DONE|`);
+}
+function accountingTransitionState(currentMonth, closeRecords) {
+  const closingMonth = previousMonth(currentMonth);
+  const enforced = !!closingMonth && closingMonth >= FINANCIAL_MONTH_BOUNDARY_GUARD_START;
+  const done = !enforced || (closeRecords || []).some(record => isDoneClose(record, closingMonth));
+  return {
+    enforced,
+    pending: enforced && !done,
+    currentMonth,
+    closingMonth,
+    closeCertified: done
+  };
 }
 function compactOwner(record, balance) {
   const f = record.fields || {};
@@ -115,30 +143,48 @@ const handler = async function(event) {
   const { AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID } = process.env;
   if (!AIRTABLE_API_TOKEN || !AIRTABLE_BASE_ID) return { statusCode: 500, headers: responseHeaders(0, 'ERROR'), body: JSON.stringify({ message: 'Airtable no está configurado.' }) };
   const force = event.queryStringParameters?.force === '1';
-  if (!force && publicCache && publicCache.expiresAt > Date.now()) return { statusCode: 200, headers: responseHeaders(0, 'HIT'), body: JSON.stringify(publicCache.payload) };
+  const currentMonth = currentMonthCaracas();
+  if (!force && publicCache && publicCache.month === currentMonth && publicCache.expiresAt > Date.now()) return { statusCode: 200, headers: responseHeaders(0, 'HIT'), body: JSON.stringify(publicCache.payload) };
   const counter = { calls: 0 };
   try {
-    const [owners, expenses, payments, control,config] = await Promise.all([
+    const closingMonth = previousMonth(currentMonth);
+    const guardEnabled = !!closingMonth && closingMonth >= FINANCIAL_MONTH_BOUNDARY_GUARD_START;
+    const [owners, expenses, payments, control, config, previousCloseMarkers] = await Promise.all([
       airtableGetAll(TABLES.propietarios, '', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter),
       // No depender de una vista de Airtable: se leen todos los gastos y el
       // ciclo contable filtra por mes y estado Activo de forma determinista.
       airtableGetAll(TABLES.gastos, '', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter),
       airtableGetAll(TABLES.pagos, '', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter),
       airtableGetAll(TABLES.control, officialControlQuery(), AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter),
-      airtableGetAll(TABLES.config,'?maxRecords=1',AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID,counter)
+      airtableGetAll(TABLES.config,'?maxRecords=1',AIRTABLE_API_TOKEN,AIRTABLE_BASE_ID,counter),
+      guardEnabled ? airtableGetAll(TABLES.control, closeGuardQuery(closingMonth), AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter) : Promise.resolve([])
     ]);
+    const accountingTransition = accountingTransitionState(currentMonth, previousCloseMarkers);
+    if (accountingTransition.pending) {
+      return {
+        statusCode: 503,
+        headers: { ...responseHeaders(counter.calls, 'ACCOUNTING_TRANSITION'), 'Retry-After':'60', 'X-VLA-Accounting-Transition':'1' },
+        body: JSON.stringify({
+          code:'ACCOUNTING_TRANSITION_PENDING',
+          message:`El cierre de ${accountingTransition.closingMonth} aún no está certificado. Se bloqueó el cálculo de ${accountingTransition.currentMonth} para evitar reutilizar pagos o saldos del mes anterior.`,
+          accountingTransition
+        })
+      };
+    }
     const officialOwners = attachOfficialBalances(owners, control),rules=mergeConfig(config[0]||{});
-    const activeExpenses=filterActiveExpenses(expenses,currentMonthCaracas());
+    const activeExpenses=filterActiveExpenses(expenses,currentMonth);
     const balances = calculateAllOwners(officialOwners, activeExpenses, payments,{dueDay:rules.payment.dueDay,surchargeRate:rules.payment.surchargeRate});
     const payload = deepEscapeStrings({
       generatedAt: new Date().toISOString(), generatedAtCaracas: nowCaracasLabel(),
+      accountingMonth: currentMonth,
       balanceEngineVersion: 5,
       officialBalanceSource: 'ControlVersiones',
+      accountingTransition,
       automation:publicRules(rules),
       propietarios: officialOwners.map(record => compactOwner(record, balances.get(record.id))).sort((a,b)=>(a.Casa||0)-(b.Casa||0)),
       gastos: activeExpenses.map(compactGasto), pagos: payments.map(compactPago)
     });
-    publicCache = { payload, expiresAt: Date.now() + PUBLIC_CACHE_TTL_MS };
+    publicCache = { payload, month: currentMonth, expiresAt: Date.now() + PUBLIC_CACHE_TTL_MS };
     return { statusCode: 200, headers: responseHeaders(counter.calls, 'MISS'), body: JSON.stringify(payload) };
   } catch (error) {
     return { statusCode: 500, headers: responseHeaders(counter.calls, 'ERROR'), body: JSON.stringify({ message: 'Error cargando datos públicos.', detail: String(error.message || '').slice(0,500) }) };
@@ -147,3 +193,7 @@ const handler = async function(event) {
 
 exports.handler = withAirtableUsage('public-data-v2', handler);
 exports.compactOwner = compactOwner;
+exports.previousMonth = previousMonth;
+exports.closeGuardQuery = closeGuardQuery;
+exports.accountingTransitionState = accountingTransitionState;
+exports.FINANCIAL_MONTH_BOUNDARY_GUARD_START = FINANCIAL_MONTH_BOUNDARY_GUARD_START;
