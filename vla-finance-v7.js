@@ -6,7 +6,7 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(){
   'use strict';
 
-  const VERSION='vla-balance-contract-v7';
+  const VERSION='vla-balance-contract-v8';
   const TOLERANCE=0.009;
 
   function money(value){
