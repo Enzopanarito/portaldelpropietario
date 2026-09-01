@@ -12,7 +12,6 @@ const {evaluateClosePreflight}=require('./_shared/_autopilot_preflight');
 const {sendOwnerDebtReminder,sendAdminAutopilotAlert}=require('./_shared/_automation_notifications');
 const {ensureFinancialWritesAllowed}=require('./_shared/_financial_write_lock');
 const {verify}=require('./_shared/_internal_job_auth');
-const {listCloseMarkers}=require('./_shared/_monthly_close_store');
 const auditSnapshot=require('./audit-snapshot');
 const monthlyClose=require('./monthly-close');
 const bcvRate=require('./bcv-rate');
@@ -74,7 +73,11 @@ async function executeAutomaticClose({rules,cycle,context,adminToken}){
   const blockers=[{code:'AUDIT_SNAPSHOT',detail:audit.detail||audit.message||'Corte de auditoría incompleto.'}];await alertOnce(cycle.clock.date,'AUDIT_SNAPSHOT',blockers);return{success:false,blocked:true,blockers};
  }
  const dryResult=await monthlyClose.handler(internalEvent(adminToken,{dryRun:true,month:closingMonth})),dryRun=parse(dryResult);
- if(dryResult.statusCode===200&&dryRun.closeStatus==='already-closed')return{success:true,skipped:true,reason:'already-closed',month:closingMonth};
+ if(dryResult.statusCode===200&&dryRun.closeStatus==='already-closed'&&dryRun.closeCertification?.ok===true){return{success:true,skipped:true,reason:'already-closed',month:closingMonth,certified:true,closeCertification:dryRun.closeCertification}}
+ if(dryRun.closeStatus==='already-closed-unverified'){
+  const blockers=[{code:'CLOSE_CERTIFICATION',detail:dryRun.closeCertification?.detail||dryRun.closeCertification?.reason||'El cierre existente no pudo certificarse contra su evidencia histórica.'}];
+  await alertOnce(cycle.clock.date,'CLOSE_CERTIFICATION',blockers);return{success:false,blocked:true,blockers,response:dryRun};
+ }
  const bcvResult=await bcvRate.handler({httpMethod:'GET',headers:{},queryStringParameters:{force:'1'}}),bcv=parse(bcvResult);
  const preflight=evaluateClosePreflight({rules,dryRun,pendingReports,bcv,pendingFinancialOperations,now:new Date()});
  if(!preflight.ok){await alertOnce(cycle.clock.date,'MONTHLY_CLOSE',preflight.blockers);return{success:false,blocked:true,preflight}}
@@ -87,14 +90,11 @@ async function executeAutomaticClose({rules,cycle,context,adminToken}){
  return close;
 }
 function closeResultAllowsContinuation(result){
- return result?.success===true&&(!result.skipped||result.reason==='already-closed');
+ return result?.success===true&&(!result.skipped||(result.reason==='already-closed'&&result.certified===true));
 }
-async function resolveCloseGate({month,closeResult,token,baseId,counter}){
- if(closeResultAllowsContinuation(closeResult))return{ok:true,month,source:closeResult.reason==='already-closed'?'close-response-existing':'close-response-complete'};
- const markers=await listCloseMarkers(month,token,baseId,counter),done=markers.find(marker=>marker.status==='DONE');
- return done
-  ?{ok:true,month,source:'verified-done-marker',operationId:done.operationId}
-  :{ok:false,blocked:true,month,reason:'monthly-close-not-complete',message:`El cierre ${month} no está completo; no se rotan gastos, no se envían recordatorios y no se modifica el portón.`};
+async function resolveCloseGate({month,closeResult}){
+ if(closeResultAllowsContinuation(closeResult))return{ok:true,month,source:closeResult.reason==='already-closed'?'close-response-certified-existing':'close-response-complete'};
+ return{ok:false,blocked:true,month,reason:'monthly-close-not-certified',message:`El cierre ${month} no está certificado; no se rotan gastos, no se envían recordatorios y no se modifica el portón.`};
 }
 const handler=async function(event){
  const rawBody=event?.body||'{}';
@@ -117,20 +117,20 @@ const handler=async function(event){
   const adminToken=issueAdminToken({authVersion:0});
   results.actions.monthlyClose=await executeAutomaticClose({rules,cycle,context,adminToken});
   const closingMonth=previousMonth(cycle.clock.monthKey);
-  results.actions.closeGate=await resolveCloseGate({month:closingMonth,closeResult:results.actions.monthlyClose,token,baseId,counter});
+  results.actions.closeGate=await resolveCloseGate({month:closingMonth,closeResult:results.actions.monthlyClose});
   if(cycle.clock.day<=3&&rules.expensePreload.automaticEnabled){
    results.actions.rotationRetry=results.actions.closeGate.ok
     ?await rotateExpenses({closingMonth,targetMonth:cycle.clock.monthKey,token,baseId,counter}).catch(error=>({success:false,error:error.message,retryable:true}))
-    :{success:false,skipped:true,blocked:true,reason:'monthly-close-not-complete'};
+    :{success:false,skipped:true,blocked:true,reason:'monthly-close-not-certified'};
    if(results.actions.rotationRetry?.success===true)await require('./_shared/_public_snapshot_store').invalidatePublicSnapshot('automation-rotation-retry',process.env).catch(()=>null);
   }
   if((results.actions.monthlyClose&&!results.actions.monthlyClose.skipped)||results.actions.rotationRetry?.success===true)context=await loadAccessContext();
   results.actions.reminders=results.actions.closeGate.ok
    ?await sendScheduledReminders(rules,cycle,context)
-   :{skipped:true,blocked:true,reason:'monthly-close-not-complete'};
+   :{skipped:true,blocked:true,reason:'monthly-close-not-certified'};
   results.actions.access=results.actions.closeGate.ok
    ?await syncAccessCycle(rules,cycle,context).catch(async error=>{await alertOnce(cycle.clock.date,'ACCESS_SYNC',[{code:'ACCESS_SYNC',detail:error.message}]);return{success:false,error:error.message}})
-   :{skipped:true,blocked:true,reason:'monthly-close-not-complete'};
+   :{skipped:true,blocked:true,reason:'monthly-close-not-certified'};
   if(runGuard.ok)await setState(runGuard.marker,'AUTOPILOT_RUN',runDate,'DONE',modeInfo.mode==='Manual'?'manual-safe':'completed').catch(()=>null);
   return response(200,{success:true,...results,airtableCalls:counter.calls,heartbeat:runGuard.ok?'recorded':runGuard.reason});
  }catch(error){
