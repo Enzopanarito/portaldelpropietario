@@ -284,7 +284,7 @@ const handler = async function(event) {
     closeLock = lockResult.marker;
     const context = await loadContext(month, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
     if (!context.owners.length) throw new Error('No se encontraron propietarios para cerrar el mes.');
-    const plan = buildPlan({ owners:context.owners, expenses:context.expenses, payments:context.payments, month, dueDay:context.automationRules?.payment?.dueDay, surchargeRate:context.automationRules?.payment.surchargeRate });
+    const plan = buildPlan({ owners:context.owners, expenses:context.expenses, payments:context.payments, month, dueDay:context.automationRules?.payment?.dueDay, surchargeRate:context.automationRules?.payment?.surchargeRate });
 
     if (plan.validation?.closeScopeReady === false) {
       await setCloseMarker(closeLock, month, 'ABORTED', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter).catch(() => null);
