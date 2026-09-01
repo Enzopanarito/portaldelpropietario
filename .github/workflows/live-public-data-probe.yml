@@ -1,0 +1,31 @@
+name: Live Public Data Probe
+
+on:
+  push:
+    branches:
+      - diagnostic-mkj-state-evidence-20260901
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Probe production public-data read-only
+        shell: bash
+        run: |
+          set -u
+          url='https://villalosapamates.netlify.app/api/vla/public-data?force=1'
+          headers="${RUNNER_TEMP}/headers.txt"
+          body="${RUNNER_TEMP}/body.txt"
+          code="$(curl --silent --show-error --location --max-time 30 --dump-header "$headers" --output "$body" --write-out '%{http_code}' "$url" || printf '000')"
+          echo "PUBLIC_DATA_HTTP=$code"
+          echo '--- HEADERS ---'
+          sed -n '1,80p' "$headers" || true
+          echo '--- BODY ---'
+          head -c 6000 "$body" || true
+          echo
+          exit 0
