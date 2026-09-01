@@ -1,6 +1,7 @@
 'use strict';
 
 const assert=require('assert');
+const{PUBLIC_DATA_ENGINE_VERSION,OFFICIAL_BALANCE_SOURCE}=require('../netlify/functions/_shared/_public_financial_contract');
 
 const ENDPOINT=process.env.PUBLIC_DATA_ENDPOINT||'https://villalosapamates.netlify.app/api/vla/public-data';
 const MAX_ATTEMPTS=Number(process.env.PUBLIC_SNAPSHOT_MAX_ATTEMPTS||48);
@@ -11,8 +12,8 @@ const HIT_DELAY_MS=Number(process.env.PUBLIC_SNAPSHOT_HIT_DELAY_MS||5000);
 function sleep(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
 function balanceSnapshot(payload){return payload.propietarios.map(owner=>({Casa:owner.Casa,usd:owner['Saldo USD Actual'],bs:owner['Saldo Bs Ref Actual'],total:owner['Saldo Total Actual']}))}
 function validatePayload(payload){
- assert.strictEqual(Number(payload&&payload.balanceEngineVersion),5,'El endpoint debe usar el motor financiero v5.');
- assert.strictEqual(String(payload&&payload.officialBalanceSource||''),'ControlVersiones','El endpoint debe declarar ControlVersiones.');
+ assert.strictEqual(Number(payload&&payload.balanceEngineVersion),PUBLIC_DATA_ENGINE_VERSION,`El endpoint debe usar el motor financiero v${PUBLIC_DATA_ENGINE_VERSION}.`);
+ assert.strictEqual(String(payload&&payload.officialBalanceSource||''),OFFICIAL_BALANCE_SOURCE,`El endpoint debe declarar ${OFFICIAL_BALANCE_SOURCE}.`);
  const owners=Array.isArray(payload&&payload.propietarios)?payload.propietarios:[];
  assert.strictEqual(owners.length,15,'Deben existir exactamente 15 casas.');
  assert.deepStrictEqual(owners.map(item=>Number(item.Casa)),Array.from({length:15},(_,index)=>index+1),'Las casas deben estar ordenadas del 1 al 15.');
@@ -39,7 +40,7 @@ async function request(label){
  const url=new URL(ENDPOINT);
  url.searchParams.set('force','1');
  url.searchParams.set('production_cache_verify',`${Date.now()}-${label}`);
- const response=await fetch(url,{headers:{'User-Agent':'VLA-Public-Snapshot-Production-Smoke/1.1','Cache-Control':'no-cache'}});
+ const response=await fetch(url,{headers:{'User-Agent':'VLA-Public-Snapshot-Production-Smoke/1.2','Cache-Control':'no-cache'}});
  const text=await response.text();
  let payload={};try{payload=JSON.parse(text)}catch(_){throw new Error(`Respuesta no JSON (${response.status}): ${text.slice(0,160)}`)}
  return{response,payload,state:String(response.headers.get('x-public-snapshot')||''),airtableCalls:String(response.headers.get('x-airtable-calls')||''),warning:String(response.headers.get('x-public-snapshot-error')||response.headers.get('x-public-snapshot-warning')||response.headers.get('warning')||'')};
