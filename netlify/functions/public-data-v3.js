@@ -10,6 +10,8 @@ function cachedResponse(snapshot,state,extra={}){return response(200,snapshot.pa
 function forceEvent(event){return{...event,queryStringParameters:{...(event.queryStringParameters||{}),force:'1'}}}
 function sleep(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
 function blobErrorCode(error){const code=String(error?.code||'');if(/^BLOBS_[A-Z0-9_]+$/.test(code))return code;if(error?.name==='MissingBlobsEnvironmentError')return'BLOBS_CONTEXT_MISSING';return'BLOBS_UNAVAILABLE'}
+function requestHeader(event,name){const headers=event?.headers||{},wanted=String(name||'').toLowerCase();for(const[key,value]of Object.entries(headers)){if(String(key).toLowerCase()===wanted)return String(value||'')}return''}
+function whatsappFinancialPaused(event,env=process.env){return String(env?.VLA_WHATSAPP_FINANCIAL_PAUSE||'').trim().toLowerCase()==='true'&&/VLA-WhatsApp-Agent\//i.test(requestHeader(event,'user-agent'))}
 async function waitForSnapshot(readSnapshot=snapshotStore.readPublicSnapshot,sleepFn=sleep,env=process.env){for(let attempt=0;attempt<12;attempt+=1){await sleepFn(250);const current=await readSnapshot(env).catch(()=>null);if(current&&current.ok&&current.fresh)return current}return null}
 
 function createHandler(deps={}){
@@ -27,6 +29,7 @@ function createHandler(deps={}){
  const createPreviewPayload=deps.createPreviewPayload||previewFixture.createPayload;
  const previewHeaders=deps.previewHeaders||previewFixture.headers;
  const now=deps.now||(()=>new Date());
+ const financialPause=deps.whatsappFinancialPaused||whatsappFinancialPaused;
 
  return async function handler(event){
   const host=eventHost(event);
@@ -41,6 +44,14 @@ function createHandler(deps={}){
     ...previewHeaders(),
     'X-Public-Snapshot':'PREVIEW_FIXTURE'
    });
+  }
+
+  // Cortacircuito financiero: el portal sigue disponible para propietarios,
+  // pero el agente de WhatsApp no puede consumir saldos mientras exista una
+  // incidencia contable activa. El agente aborta el ciclo ante cualquier HTTP
+  // distinto de 2xx, evitando enviar datos no certificados.
+  if(financialPause(event,process.env)){
+   return response(503,{message:'Envíos financieros de WhatsApp pausados hasta certificar el cierre contable.'},{'Retry-After':'300','X-VLA-WhatsApp-Financial-Pause':'1'});
   }
 
   if(!isEnabled(snapshotEnv,snapshotStore.runtimeConfig,host))return previousHandler(event);
@@ -77,4 +88,4 @@ function createHandler(deps={}){
 
 const handler=createHandler();
 exports.handler=handler;
-module.exports={handler,createHandler,response,parseBody,forceEvent,cachedResponse,waitForSnapshot,blobErrorCode};
+module.exports={handler,createHandler,response,parseBody,forceEvent,cachedResponse,waitForSnapshot,blobErrorCode,requestHeader,whatsappFinancialPaused};
