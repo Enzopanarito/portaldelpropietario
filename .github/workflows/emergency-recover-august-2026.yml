@@ -1,0 +1,177 @@
+name: Emergency Recover August 2026 Close
+
+on:
+  push:
+    branches:
+      - emergency/august-close-recovery-20260901
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      NETLIFY_AUTH_TOKEN_PRIMARY: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_AUTH_TOKEN_FALLBACK: ${{ secrets.NETLIFY_TOKEN }}
+      NETLIFY_SITE_ID_PRIMARY: ${{ secrets.NETLIFY_SITE_ID }}
+      NETLIFY_SITE_ID_FALLBACK: ${{ secrets.NETLIFY_SITE_ID_VILLALOSAPAMATES }}
+      EXPECTED_PLAN_HASH: 69365ce1334bbd28f9f9e766c2165809363a7dde9a37e11e26bbf571d1499816
+      EXPECTED_SOURCE_HASH: fd4e3eabb9eb7238888aafeae8a38438970b9ca6e2ccd504508530099a75eae4
+      EXPECTED_PAYMENTS: '48'
+      TARGET_URL: https://villalosapamates.netlify.app
+    steps:
+      - name: Checkout certified production code
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Recover August close through protected production endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          AUTH_TOKEN="${NETLIFY_AUTH_TOKEN_PRIMARY:-${NETLIFY_AUTH_TOKEN_FALLBACK:-}}"
+          SITE_ID="${NETLIFY_SITE_ID_PRIMARY:-${NETLIFY_SITE_ID_FALLBACK:-}}"
+          [ -n "$AUTH_TOKEN" ] || { echo 'RECOVERY_BLOCKED: Netlify auth token unavailable'; exit 1; }
+          [ -n "$SITE_ID" ] || { echo 'RECOVERY_BLOCKED: Netlify site id unavailable'; exit 1; }
+          echo "::add-mask::$AUTH_TOKEN"
+          export NETLIFY_AUTH_TOKEN="$AUTH_TOKEN"
+          export NETLIFY_SITE_ID="$SITE_ID"
+          node <<'NODE'
+          'use strict';
+          const target = process.env.TARGET_URL;
+          const expectedPlanHash = process.env.EXPECTED_PLAN_HASH;
+          const expectedSourceHash = process.env.EXPECTED_SOURCE_HASH;
+          const expectedPayments = Number(process.env.EXPECTED_PAYMENTS || 0);
+          const api = 'https://api.netlify.com/api/v1';
+          const netlifyToken = process.env.NETLIFY_AUTH_TOKEN;
+          const siteId = process.env.NETLIFY_SITE_ID;
+          const clean = value => String(value ?? '').trim();
+          const headers = { Authorization:`Bearer ${netlifyToken}`, 'User-Agent':'VLA-emergency-close-recovery' };
+
+          async function getJson(url, options = {}) {
+            const response = await fetch(url, options);
+            const text = await response.text();
+            let data = {};
+            try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { raw:text.slice(0,500) }; }
+            if (!response.ok) throw new Error(`HTTP ${response.status} ${url}: ${JSON.stringify(data).slice(0,700)}`);
+            return data;
+          }
+
+          function effective(variable) {
+            const values = Array.isArray(variable?.values) ? variable.values : [];
+            const production = values.find(item => item.context === 'production' && clean(item.value));
+            const all = values.find(item => item.context === 'all' && clean(item.value));
+            return clean(production?.value || all?.value || '');
+          }
+
+          async function netlifyEnv(accountId, key, required = false) {
+            const url = `${api}/accounts/${encodeURIComponent(accountId)}/env/${encodeURIComponent(key)}?site_id=${encodeURIComponent(siteId)}`;
+            const response = await fetch(url, { headers });
+            if (response.status === 404 && !required) return '';
+            const text = await response.text();
+            let variable = {};
+            try { variable = text ? JSON.parse(text) : {}; } catch (_) {}
+            if (!response.ok) throw new Error(`No se pudo leer ${key}: HTTP ${response.status}`);
+            const value = effective(variable);
+            if (required && !value) throw new Error(`${key} no tiene valor efectivo production/all.`);
+            if (value) console.log(`::add-mask::${value}`);
+            return value;
+          }
+
+          async function post(path, body, adminToken) {
+            const response = await fetch(`${target}${path}`, {
+              method:'POST',
+              headers:{ Authorization:`Bearer ${adminToken}`, 'Content-Type':'application/json', 'Cache-Control':'no-cache' },
+              body:JSON.stringify(body)
+            });
+            const text = await response.text();
+            let data = {};
+            try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { raw:text.slice(0,700) }; }
+            return { status:response.status, ok:response.ok, data };
+          }
+
+          (async()=>{
+            const site = await getJson(`${api}/sites/${encodeURIComponent(siteId)}`, { headers });
+            const accountId = clean(site.account_id);
+            if (!accountId) throw new Error('Netlify no devolvió account_id.');
+
+            process.env.ADMIN_SESSION_SIGNING_KEY = await netlifyEnv(accountId, 'ADMIN_SESSION_SIGNING_KEY', false);
+            process.env.ADMIN_TOKEN_SECRET = await netlifyEnv(accountId, 'ADMIN_TOKEN_SECRET', true);
+            process.env.PAYMENT_PROOF_ENCRYPTION_KEY = await netlifyEnv(accountId, 'PAYMENT_PROOF_ENCRYPTION_KEY', false);
+            process.env.VLA_DATA_ENVIRONMENT = 'production';
+            process.env.CONTEXT = 'production';
+
+            const { issueAdminToken } = require('./netlify/functions/_shared/_auth');
+            const adminToken = issueAdminToken({ authVersion:999 });
+            console.log(`::add-mask::${adminToken}`);
+
+            // 1) Certify/create the exact 150-row audit snapshot.
+            const snapshot = await post('/.netlify/functions/audit-snapshot', { month:'2026-08' }, adminToken);
+            if (!snapshot.ok || snapshot.data?.success !== true || snapshot.data?.complete !== true) {
+              throw new Error(`SNAPSHOT_BLOCKED status=${snapshot.status} body=${JSON.stringify(snapshot.data).slice(0,1200)}`);
+            }
+            const snapshotCount = Number(snapshot.data.finalCount ?? snapshot.data.existingCount ?? snapshot.data.expectedCount ?? 0);
+            if (snapshotCount !== 150 && Number(snapshot.data.expectedCount || 0) !== 150) {
+              throw new Error(`SNAPSHOT_NOT_150 body=${JSON.stringify(snapshot.data).slice(0,1000)}`);
+            }
+            console.log('SNAPSHOT_CERTIFIED=150/150');
+
+            // 2) Re-simulate after snapshot and refuse any drift from the certified morning plan.
+            const dry = await post('/.netlify/functions/monthly-close', { dryRun:true, month:'2026-08' }, adminToken);
+            if (!dry.ok || dry.data?.success !== true) throw new Error(`DRY_RUN_FAILED ${JSON.stringify(dry.data).slice(0,1200)}`);
+            if (dry.data.closeStatus === 'already-closed') {
+              console.log('AUGUST_ALREADY_CLOSED=1');
+              return;
+            }
+            if (dry.data.planHash !== expectedPlanHash) throw new Error(`PLAN_HASH_DRIFT expected=${expectedPlanHash} actual=${dry.data.planHash}`);
+            if (dry.data.sourceHash !== expectedSourceHash) throw new Error(`SOURCE_HASH_DRIFT expected=${expectedSourceHash} actual=${dry.data.sourceHash}`);
+            if (dry.data.snapshot?.complete !== true || Number(dry.data.snapshot?.count || 0) !== 150) throw new Error('DRY_RUN_SNAPSHOT_NOT_COMPLETE');
+            if (dry.data.closeStatus !== 'ready' || dry.data.canExecute !== true) throw new Error(`CLOSE_NOT_READY status=${dry.data.closeStatus}`);
+            if (Number(dry.data.validation?.pendingPaymentsCount ?? expectedPayments) !== expectedPayments) {
+              throw new Error(`PAYMENT_COUNT_DRIFT expected=${expectedPayments} actual=${dry.data.validation?.pendingPaymentsCount}`);
+            }
+            console.log(`DRY_RUN_CERTIFIED plan=${dry.data.planHash} source=${dry.data.sourceHash}`);
+
+            // 3) Execute the official protected close. This writes balances first,
+            // marks the 48 August payments only afterwards, verifies both, writes DONE,
+            // and rotates recurring expenses. Internal rollback remains active.
+            const close = await post('/.netlify/functions/monthly-close', {
+              dryRun:false,
+              confirmed:true,
+              month:'2026-08',
+              planHash:dry.data.planHash,
+              sourceHash:dry.data.sourceHash
+            }, adminToken);
+            if (!close.ok || close.data?.success !== true) throw new Error(`CLOSE_FAILED status=${close.status} body=${JSON.stringify(close.data).slice(0,1800)}`);
+            if (Number(close.data.updatedCount || 0) !== 15) throw new Error(`OWNER_UPDATE_COUNT=${close.data.updatedCount}`);
+            if (Number(close.data.paymentsClosedCount || 0) !== expectedPayments) throw new Error(`PAYMENTS_CLOSED_COUNT=${close.data.paymentsClosedCount}`);
+            if (close.data.verification?.ok !== true || (close.data.verification?.ownerDifferences || []).length || (close.data.verification?.paymentDifferences || []).length) {
+              throw new Error(`POST_CLOSE_VERIFICATION_FAILED ${JSON.stringify(close.data.verification).slice(0,1200)}`);
+            }
+            console.log(`CLOSE_EXECUTED owners=${close.data.updatedCount} payments=${close.data.paymentsClosedCount}`);
+
+            // 4) Confirm immutable DONE state using a fresh dry run.
+            const verify = await post('/.netlify/functions/monthly-close', { dryRun:true, month:'2026-08' }, adminToken);
+            if (!verify.ok || verify.data?.success !== true || verify.data.closeStatus !== 'already-closed') {
+              throw new Error(`DONE_NOT_CONFIRMED ${JSON.stringify(verify.data).slice(0,1400)}`);
+            }
+            console.log('MONTHLY_CLOSE_2026_08_DONE=1');
+
+            // 5) Smoke-test the public owner data after cache bypass. Never accept a 15/15 credit hallucination.
+            const publicData = await getJson(`${target}/api/vla/public-data?force=1&recovery=${Date.now()}`);
+            const owners = Array.isArray(publicData.propietarios) ? publicData.propietarios : [];
+            if (owners.length !== 15) throw new Error(`PUBLIC_OWNERS=${owners.length}/15`);
+            const obviousCredits = owners.filter(owner => Number(owner.saldoNetoReferencial ?? owner.totalPagadero ?? 0) < -0.01).length;
+            if (obviousCredits >= 10) throw new Error(`PUBLIC_CREDIT_HALLUCINATION persists: ${obviousCredits}/15`);
+            console.log(`PUBLIC_POST_CLOSE_OK owners=15 apparentCredits=${obviousCredits}`);
+          })().catch(error=>{
+            console.error(`RECOVERY_FAILED: ${String(error?.message || error)}`);
+            process.exit(1);
+          });
+          NODE
