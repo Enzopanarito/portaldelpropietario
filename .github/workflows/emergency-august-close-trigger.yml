@@ -1,0 +1,25 @@
+name: Emergency August Close Trigger
+
+on:
+  push:
+    branches:
+      - emergency-august-close-trigger-20260901
+
+permissions:
+  contents: read
+
+jobs:
+  trigger-protected-autopilot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Queue protected VLA autopilot
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="https://villalosapamates.netlify.app/.netlify/functions/condo-autopilot-scheduled"
+          code="$(curl --silent --show-error --location --output response.json --write-out '%{http_code}' --max-time 30 "$target")"
+          cat response.json
+          test "$code" = "202"
+          node -e "const fs=require('fs');const x=JSON.parse(fs.readFileSync('response.json','utf8'));if(x.success!==true||x.queued!==true)process.exit(1)"
+          echo "VLA_PROTECTED_AUTOPILOT_QUEUED"
