@@ -6,7 +6,7 @@ const previewFixture=require('./_shared/_public_preview_fixture');
 
 function response(statusCode,payload,headers={}){return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...headers},body:JSON.stringify(payload)}}
 function parseBody(result){try{return JSON.parse(result&&result.body||'{}')}catch(_){return{}}}
-function cachedResponse(snapshot,state,extra={}){return response(200,snapshot.payload,{'X-Public-Snapshot':state,'X-Airtable-Calls':'0','X-Balance-Engine':'5',...extra})}
+function cachedResponse(snapshot,state,extra={}){return response(200,snapshot.payload,{'X-Public-Snapshot':state,'X-Airtable-Calls':'0','X-Balance-Engine':String(snapshot?.payload?.balanceEngineVersion??snapshotStore.PUBLIC_DATA_ENGINE_VERSION),...extra})}
 function forceEvent(event){return{...event,queryStringParameters:{...(event.queryStringParameters||{}),force:'1'}}}
 function sleep(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
 function blobErrorCode(error){const code=String(error?.code||'');if(/^BLOBS_[A-Z0-9_]+$/.test(code))return code;if(error?.name==='MissingBlobsEnvironmentError')return'BLOBS_CONTEXT_MISSING';return'BLOBS_UNAVAILABLE'}
