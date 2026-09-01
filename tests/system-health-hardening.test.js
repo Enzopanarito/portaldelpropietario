@@ -28,14 +28,19 @@ test('los recibos fallidos tienen recuperación firmada e idempotente',()=>{
  assert.match(background,/auditPatchPending/);
 });
 
-test('el portón se reconcilia cada hora y la salud detecta contradicciones',()=>{
+test('el portón se reconcilia cada hora, verifica MKJ físicamente y solo repara deriva inequívoca',()=>{
  const scheduled=read('netlify/functions/access-reconciliation-modern-scheduled.mjs');
  const background=read('netlify/functions/access-reconciliation-background.js');
  const health=read('netlify/functions/system-health.js');
  assert(!health.includes("getAtomicStore('vla-system-health-v1',{consistency:'strong'})"),'La sonda Lambda de salud debe usar la lectura compatible con su contexto Blobs.');
  assert.match(scheduled,/schedule:'5 \* \* \* \*'/);
  assert.match(background,/verify\(rawBody/);
- assert.match(background,/autoSyncAll\(\{forceMkj:false/);
+ assert.match(background,/runReadOnlyReconciliation\(\)/);
+ assert.match(background,/repairableRemoteDrift/);
+ assert.match(background,/syncOwnerAccess\(owner\.id/);
+ assert.match(background,/forceMkj:true/);
+ assert.match(background,/sendEmail:false/);
+ assert.match(background,/unsafeDiscrepancies/);
  assert.match(health,/Coherencia financiera del portón/);
  assert.match(health,/accessMismatches/);
 });
