@@ -3,7 +3,15 @@
 const { withAirtableUsage } = require('./_shared/_airtable_meter');
 const { requireAdmin, requireFreshAdmin } = require('./_shared/_auth');
 const { buildPlan } = require('./_shared/_monthly_close_core_v4');
-const { loadContext, listCloseMarkers, oldestLocked, acquireCloseLock, setCloseMarker } = require('./_shared/_monthly_close_store_v5');
+const {
+  loadContext,
+  listCloseMarkers,
+  oldestLocked,
+  acquireCloseLock,
+  setCloseMarker,
+  findOperationLog,
+  parseOperationPayload
+} = require('./_shared/_monthly_close_store_v5');
 const { repairOperation } = require('./_shared/_monthly_close_repair');
 const { executeClose } = require('./_shared/_monthly_close_execute');
 const { isValidMonth, defaultDryRunMonth, closeWindowForMonth } = require('./_shared/_monthly_close_window');
@@ -42,6 +50,113 @@ function snapshotStatus(check) {
   return 'incomplete';
 }
 
+function validExecutedPlan(payload, done, month) {
+  return !!(
+    payload &&
+    payload.kind === 'monthly-close-operation' &&
+    payload.month === month &&
+    payload.operationId === done?.operationId &&
+    payload.plan &&
+    payload.planHash &&
+    payload.plan.planHash === payload.planHash
+  );
+}
+
+async function historicalCertification({ done, month, context, livePlan, token, baseId, counter }) {
+  if (!done) {
+    const snapshot = validateSnapshotRecords(context.snapshotRecords || [], livePlan);
+    return {
+      snapshot,
+      snapshotValidationMode: 'live-plan',
+      closeCertification: null
+    };
+  }
+
+  let log = null;
+  let payload = null;
+  try {
+    log = await findOperationLog(month, done.operationId, token, baseId, counter);
+    if (log) payload = parseOperationPayload(log);
+  } catch (error) {
+    return {
+      snapshot: {
+        complete:false,
+        count:Number(context.snapshotRecords?.length || 0),
+        expected:Number(context.owners?.length || 0) * 10,
+        expectedHash:null,
+        actualHash:null,
+        missing:[],
+        mismatched:[],
+        duplicates:[],
+        unexpected:[]
+      },
+      snapshotValidationMode:'historical-operation-error',
+      closeCertification:{
+        certified:false,
+        operationId:done.operationId,
+        historyStatus:'error',
+        detail:String(error.message||error).slice(0,300)
+      }
+    };
+  }
+
+  if (!log || !validExecutedPlan(payload, done, month)) {
+    return {
+      snapshot: {
+        complete:false,
+        count:Number(context.snapshotRecords?.length || 0),
+        expected:Number(context.owners?.length || 0) * 10,
+        expectedHash:null,
+        actualHash:null,
+        missing:[],
+        mismatched:[],
+        duplicates:[],
+        unexpected:[]
+      },
+      snapshotValidationMode:'historical-operation-missing',
+      closeCertification:{
+        certified:false,
+        operationId:done.operationId,
+        historyStatus:log?'invalid':'missing'
+      }
+    };
+  }
+
+  const snapshot = validateSnapshotRecords(context.snapshotRecords || [], payload.plan);
+  const progress = payload.progress || {};
+  const verification = payload.verification || {};
+  const ownersVerified = progress.ownersVerified === true && (!Array.isArray(verification.ownerDifferences) || verification.ownerDifferences.length === 0);
+  const paymentsVerified = progress.paymentsVerified === true && (!Array.isArray(verification.paymentDifferences) || verification.paymentDifferences.length === 0);
+  const expectedPayments = Array.isArray(payload.plan.paymentIds) ? payload.plan.paymentIds.length : 0;
+  const appliedPayments = Array.isArray(progress.paymentsApplied) ? new Set(progress.paymentsApplied).size : 0;
+  const ownersExpected = Array.isArray(payload.plan.ownerUpdates) ? payload.plan.ownerUpdates.length : 0;
+  const ownersApplied = Array.isArray(progress.ownersApplied) ? new Set(progress.ownersApplied).size : 0;
+  const certified = snapshot.complete && ownersVerified && paymentsVerified && appliedPayments === expectedPayments && ownersApplied === ownersExpected;
+
+  return {
+    snapshot,
+    snapshotValidationMode:'executed-plan',
+    closeCertification:{
+      certified,
+      operationId:done.operationId,
+      historyStatus:'verified',
+      planHash:payload.planHash,
+      sourceHash:payload.plan.sourceHash || null,
+      operationState:payload.state || null,
+      ownerCount:ownersExpected,
+      ownersApplied,
+      ownersVerified,
+      paymentsCount:expectedPayments,
+      paymentsApplied:appliedPayments,
+      paymentsVerified,
+      snapshotHash:snapshot.actualHash,
+      snapshotExpectedHash:snapshot.expectedHash,
+      snapshotComplete:snapshot.complete,
+      completedAt:payload.completedAt || null
+    }
+  };
+}
+
 const handler = async function(event) {
   const auth = requireAdmin(event);
   if (!auth.ok) return auth.response;
@@ -76,12 +191,21 @@ const handler = async function(event) {
       const context = await loadContext(month, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
       if (!context.owners.length) throw new Error('No se encontraron propietarios para cerrar el mes.');
       const plan = buildPlan({ owners:context.owners, expenses:context.expenses, payments:context.payments, month, dueDay:context.automationRules?.payment?.dueDay, surchargeRate:context.automationRules?.payment?.surchargeRate });
-      const snapshot = validateSnapshotRecords(context.snapshotRecords || [], plan);
       const window = closeWindowForMonth(month);
       const markers = await listCloseMarkers(month, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
       const done = markers.find(marker => marker.status === 'DONE');
       const partial = markers.find(marker => marker.status === 'ERROR_PARTIAL');
       const running = oldestLocked(markers);
+      const certification = await historicalCertification({
+        done,
+        month,
+        context,
+        livePlan:plan,
+        token:AIRTABLE_API_TOKEN,
+        baseId:AIRTABLE_BASE_ID,
+        counter
+      });
+      const snapshot = certification.snapshot;
       const paymentScopeReady = plan.validation?.closeScopeReady !== false;
       const canExecute = !done && !partial && !running && paymentScopeReady && snapshot.complete && window.ok;
       const closeStatus = done ? 'already-closed'
@@ -96,11 +220,17 @@ const handler = async function(event) {
         dryRun:true,
         month,
         monthDefaulted:monthResult.defaulted,
-        planHash:plan.planHash,
-        sourceHash:plan.sourceHash,
+        // Para un mes ya cerrado, planHash representa el plan que realmente se
+        // ejecutó. currentPlanHash conserva la recomputación diagnóstica actual.
+        planHash:done && certification.closeCertification?.planHash ? certification.closeCertification.planHash : plan.planHash,
+        currentPlanHash:plan.planHash,
+        sourceHash:done && certification.closeCertification?.sourceHash ? certification.closeCertification.sourceHash : plan.sourceHash,
+        currentSourceHash:plan.sourceHash,
         validation:plan.validation,
         ownerPlan:plan.ownerUpdates,
         snapshot,
+        snapshotValidationMode:certification.snapshotValidationMode,
+        closeCertification:certification.closeCertification,
         closeWindow:window,
         closeStatus,
         staleLock:running?.stale === true,
@@ -154,7 +284,7 @@ const handler = async function(event) {
     closeLock = lockResult.marker;
     const context = await loadContext(month, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter);
     if (!context.owners.length) throw new Error('No se encontraron propietarios para cerrar el mes.');
-    const plan = buildPlan({ owners:context.owners, expenses:context.expenses, payments:context.payments, month, dueDay:context.automationRules?.payment?.dueDay, surchargeRate:context.automationRules?.payment?.surchargeRate });
+    const plan = buildPlan({ owners:context.owners, expenses:context.expenses, payments:context.payments, month, dueDay:context.automationRules?.payment?.dueDay, surchargeRate:context.automationRules?.payment.surchargeRate });
 
     if (plan.validation?.closeScopeReady === false) {
       await setCloseMarker(closeLock, month, 'ABORTED', AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter).catch(() => null);
@@ -189,3 +319,5 @@ const handler = async function(event) {
 };
 
 exports.handler = withAirtableUsage('monthly-close-v4', handler);
+exports.validExecutedPlan = validExecutedPlan;
+exports.historicalCertification = historicalCertification;
