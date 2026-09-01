@@ -1,4 +1,4 @@
-name: Emergency Recover August 2026 Close
+name: Emergency Reconcile Access After August Close
 
 on:
   push:
@@ -9,235 +9,23 @@ permissions:
   contents: read
 
 jobs:
-  recover:
+  reconcile-access:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      AIRTABLE_API_TOKEN: ${{ secrets.AIRTABLE_API_TOKEN }}
-      AIRTABLE_BASE_ID: app4nE4ReGRi2SuP2
-      EXPECTED_PLAN_HASH: 69365ce1334bbd28f9f9e766c2165809363a7dde9a37e11e26bbf571d1499816
-      EXPECTED_SOURCE_HASH: fd4e3eabb9eb7238888aafeae8a38438970b9ca6e2ccd504508530099a75eae4
-      EXPECTED_SNAPSHOT_HASH: 31ad7bbda9e612b582a0713e5cb63464b290eb30c8bfa5db7d9e0a6b0f7b227b
-      EXPECTED_PAYMENTS: '48'
-      TARGET_URL: https://villalosapamates.netlify.app
-      VLA_DATA_ENVIRONMENT: production
-      CONTEXT: production
+    timeout-minutes: 5
     steps:
-      - name: Checkout certified production code
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-
-      - name: Use Node.js 24
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: '24'
-          package-manager-cache: false
-
-      - name: Install exact dependencies
-        run: npm ci --ignore-scripts --no-audit --no-fund
-
-      - name: Recover certified August close with production core
+      - name: Trigger Netlify-signed production access reconciliation
         shell: bash
         run: |
           set -euo pipefail
-          [ -n "${AIRTABLE_API_TOKEN:-}" ] || { echo 'RECOVERY_BLOCKED: AIRTABLE_API_TOKEN GitHub secret unavailable'; exit 1; }
-          echo "::add-mask::$AIRTABLE_API_TOKEN"
-          node <<'NODE'
-          'use strict';
-
-          const month = '2026-08';
-          const token = String(process.env.AIRTABLE_API_TOKEN || '').trim();
-          const baseId = String(process.env.AIRTABLE_BASE_ID || '').trim();
-          const expectedPlanHash = process.env.EXPECTED_PLAN_HASH;
-          const expectedSourceHash = process.env.EXPECTED_SOURCE_HASH;
-          const expectedSnapshotHash = process.env.EXPECTED_SNAPSHOT_HASH;
-          const expectedPayments = Number(process.env.EXPECTED_PAYMENTS || 0);
-          const target = process.env.TARGET_URL;
-          const counter = { calls:0 };
-
-          if (token.length < 20) throw new Error('AIRTABLE_API_TOKEN no parece una credencial real.');
-          if (baseId !== 'app4nE4ReGRi2SuP2') throw new Error('BASE_ID_UNEXPECTED');
-
-          const { buildPlan } = require('./netlify/functions/_shared/_monthly_close_core_v4');
-          const store = require('./netlify/functions/_shared/_monthly_close_store_v5');
-          const { expectedSnapshotEntries, validateSnapshotRecords } = require('./netlify/functions/_shared/_monthly_close_snapshot');
-          const { closeWindowForMonth } = require('./netlify/functions/_shared/_monthly_close_window');
-          const { executeClose } = require('./netlify/functions/_shared/_monthly_close_execute');
-          const { verifyPlan } = require('./netlify/functions/_shared/_monthly_close_verify');
-
-          const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-          const money = value => Math.round((Number(value) || 0) * 100) / 100;
-          function json(statusCode, body) { return { statusCode, headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) }; }
-          function todayCaracasISO() {
-            return new Intl.DateTimeFormat('en-CA', { timeZone:'America/Caracas', year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date());
-          }
-          function airtableUrl(table) { return `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`; }
-
-          async function airtableBatch(method, table, records) {
-            const out=[];
-            for (let i=0;i<records.length;i+=10) {
-              const batch=records.slice(i,i+10);
-              let lastError=null;
-              for (let attempt=1;attempt<=5;attempt++) {
-                counter.calls += 1;
-                const response=await fetch(airtableUrl(table), {
-                  method,
-                  headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
-                  body:JSON.stringify({ records:batch, typecast:true })
-                });
-                const data=await response.json().catch(()=>({}));
-                if (response.ok) { out.push(...(data.records||[])); lastError=null; break; }
-                lastError=new Error(data.error?.message || `Airtable HTTP ${response.status}`);
-                if (![429,500,502,503,504].includes(response.status)) throw lastError;
-                await sleep(350 * attempt);
-              }
-              if (lastError) throw lastError;
-              await sleep(240);
-            }
-            return out;
-          }
-
-          function buildCurrentPlan(context) {
-            return buildPlan({
-              owners:context.owners,
-              expenses:context.expenses,
-              payments:context.payments,
-              month,
-              dueDay:context.automationRules?.payment?.dueDay,
-              surchargeRate:context.automationRules?.payment?.surchargeRate
-            });
-          }
-
-          function assertCertifiedPlan(plan, label) {
-            if (plan.planHash !== expectedPlanHash) throw new Error(`${label}_PLAN_HASH_DRIFT expected=${expectedPlanHash} actual=${plan.planHash}`);
-            if (plan.sourceHash !== expectedSourceHash) throw new Error(`${label}_SOURCE_HASH_DRIFT expected=${expectedSourceHash} actual=${plan.sourceHash}`);
-            if (plan.validation?.closeScopeReady === false) throw new Error(`${label}_INVALID_PAYMENT_DATES count=${plan.validation?.invalidPaymentDatesCount}`);
-            if ((plan.paymentIds || []).length !== expectedPayments) throw new Error(`${label}_PAYMENT_COUNT expected=${expectedPayments} actual=${(plan.paymentIds||[]).length}`);
-            if ((plan.ownerUpdates || []).length !== 15) throw new Error(`${label}_OWNER_COUNT=${(plan.ownerUpdates||[]).length}`);
-          }
-
-          async function ensureSnapshot(plan, context) {
-            let check=validateSnapshotRecords(context.snapshotRecords||[], plan);
-            if (check.complete) {
-              if (check.actualHash !== expectedSnapshotHash) throw new Error(`EXISTING_SNAPSHOT_HASH_DRIFT actual=${check.actualHash}`);
-              console.log('SNAPSHOT_ALREADY_CERTIFIED=150/150');
-              return check;
-            }
-            if (check.duplicates.length || check.unexpected.length) throw new Error(`SNAPSHOT_CONFLICT duplicates=${check.duplicates.length} unexpected=${check.unexpected.length}`);
-
-            const expected=expectedSnapshotEntries(plan);
-            const byConcept=new Map((context.snapshotRecords||[]).map(record=>[String(record?.fields?.Concepto||''),record]));
-            const mismatch=new Set((check.mismatched||[]).map(item=>item.concept));
-            const date=todayCaracasISO();
-            const creates=[];
-            const updates=[];
-            for (const entry of expected) {
-              const fields={ Propietario:[entry.ownerId], Fecha:date, Concepto:entry.concept, 'Monto Cargado':entry.amount };
-              const current=byConcept.get(entry.concept);
-              if (!current) creates.push({ fields });
-              else if (mismatch.has(entry.concept)) updates.push({ id:current.id, fields });
-            }
-            console.log(`SNAPSHOT_REPAIR creates=${creates.length} updates=${updates.length}`);
-            if (creates.length) await airtableBatch('POST','Historial de Cargos',creates);
-            if (updates.length) await airtableBatch('PATCH','Historial de Cargos',updates);
-
-            const reread=await store.loadContext(month,token,baseId,counter);
-            const rereadPlan=buildCurrentPlan(reread);
-            assertCertifiedPlan(rereadPlan,'POST_SNAPSHOT');
-            check=validateSnapshotRecords(reread.snapshotRecords||[],rereadPlan);
-            if (!check.complete || check.count!==150 || check.expected!==150) throw new Error(`SNAPSHOT_NOT_COMPLETE count=${check.count}/${check.expected}`);
-            if (check.actualHash!==expectedSnapshotHash || check.expectedHash!==expectedSnapshotHash) throw new Error(`SNAPSHOT_HASH_MISMATCH actual=${check.actualHash} expected=${check.expectedHash}`);
-            console.log('SNAPSHOT_CERTIFIED=150/150');
-            return check;
-          }
-
-          async function publicSmoke() {
-            const response=await fetch(`${target}/api/vla/public-data?force=1&recovery=${Date.now()}`, { headers:{'Cache-Control':'no-cache'} });
-            const data=await response.json().catch(()=>({}));
-            if (!response.ok) throw new Error(`PUBLIC_HTTP_${response.status}`);
-            const owners=Array.isArray(data.propietarios)?data.propietarios:[];
-            if (owners.length!==15) throw new Error(`PUBLIC_OWNERS=${owners.length}/15`);
-            const obviousCredits=owners.filter(owner=>Number(owner.saldoNetoReferencial ?? owner.totalPagadero ?? 0)<-0.01).length;
-            console.log(`PUBLIC_SMOKE owners=15 apparentCredits=${obviousCredits}`);
-            if (obviousCredits>=10) throw new Error(`PUBLIC_CREDIT_HALLUCINATION persists=${obviousCredits}/15`);
-          }
-
-          (async()=>{
-            const window=closeWindowForMonth(month);
-            if (!window.ok) throw new Error(`OUTSIDE_CLOSE_WINDOW ${window.message||''}`);
-
-            let context=await store.loadContext(month,token,baseId,counter);
-            if ((context.owners||[]).length!==15) throw new Error(`OWNERS=${(context.owners||[]).length}/15`);
-            let plan=buildCurrentPlan(context);
-            assertCertifiedPlan(plan,'INITIAL');
-            console.log(`CERTIFIED_PLAN total=${money(plan.validation?.totalRef)} payments=${plan.paymentIds.length}`);
-
-            let markers=await store.listCloseMarkers(month,token,baseId,counter);
-            if (markers.some(marker=>marker.status==='DONE')) {
-              console.log('AUGUST_ALREADY_CLOSED=1');
-              await publicSmoke();
-              return;
-            }
-            const partial=markers.find(marker=>marker.status==='ERROR_PARTIAL');
-            const running=store.oldestLocked(markers);
-            if (partial) throw new Error(`PARTIAL_CLOSE_PRESENT operation=${partial.operationId}`);
-            if (running) throw new Error(`CLOSE_LOCK_PRESENT operation=${running.operationId} stale=${running.stale}`);
-
-            await ensureSnapshot(plan,context);
-
-            // Re-read after all snapshot writes and certify once more before lock.
-            context=await store.loadContext(month,token,baseId,counter);
-            plan=buildCurrentPlan(context);
-            assertCertifiedPlan(plan,'PRE_LOCK');
-            const snapshot=validateSnapshotRecords(context.snapshotRecords||[],plan);
-            if (!snapshot.complete || snapshot.actualHash!==expectedSnapshotHash) throw new Error('PRE_LOCK_SNAPSHOT_NOT_CERTIFIED');
-
-            const lockResult=await store.acquireCloseLock(month,token,baseId,counter);
-            if (!lockResult.ok) throw new Error(`LOCK_ACQUIRE_FAILED status=${lockResult.status}`);
-            const closeLock=lockResult.marker;
-            let handedOff=false;
-            try {
-              context=await store.loadContext(month,token,baseId,counter);
-              plan=buildCurrentPlan(context);
-              assertCertifiedPlan(plan,'POST_LOCK');
-              const lockedSnapshot=validateSnapshotRecords(context.snapshotRecords||[],plan);
-              if (!lockedSnapshot.complete || lockedSnapshot.actualHash!==expectedSnapshotHash) throw new Error('POST_LOCK_SNAPSHOT_NOT_CERTIFIED');
-
-              handedOff=true;
-              const result=await executeClose({
-                month,
-                closeLock,
-                plan,
-                context:Object.assign({},context,{snapshotCount:lockedSnapshot.count,expectedSnapshotCount:lockedSnapshot.expected,snapshotComplete:true}),
-                token,
-                baseId,
-                counter,
-                json
-              });
-              const body=JSON.parse(result.body||'{}');
-              if (Number(result.statusCode)!==200 || body.success!==true) throw new Error(`EXECUTE_CLOSE_FAILED status=${result.statusCode} body=${JSON.stringify(body).slice(0,1600)}`);
-              if (Number(body.updatedCount||0)!==15) throw new Error(`UPDATED_COUNT=${body.updatedCount}`);
-              if (Number(body.paymentsClosedCount||0)!==expectedPayments) throw new Error(`PAYMENTS_CLOSED=${body.paymentsClosedCount}`);
-              if (body.verification?.ok!==true || (body.verification?.ownerDifferences||[]).length || (body.verification?.paymentDifferences||[]).length) throw new Error(`EXECUTION_VERIFICATION_FAILED ${JSON.stringify(body.verification).slice(0,1200)}`);
-              console.log(`CLOSE_EXECUTED owners=15 payments=${expectedPayments}`);
-              if (body.expenseRotation?.success===false) console.log(`EXPENSE_ROTATION_WARNING=${String(body.expenseRotation.error||'retryable')}`);
-              else console.log('EXPENSE_ROTATION_OK=1');
-            } catch (error) {
-              if (!handedOff) await store.setCloseMarker(closeLock,month,'ERROR_SAFE',token,baseId,counter).catch(()=>null);
-              throw error;
-            }
-
-            markers=await store.listCloseMarkers(month,token,baseId,counter);
-            if (!markers.some(marker=>marker.status==='DONE')) throw new Error('DONE_MARKER_MISSING');
-            const verify=await verifyPlan(plan,'target',token,baseId,counter);
-            if (!verify.ok) throw new Error(`FINAL_VERIFY_FAILED ${JSON.stringify(verify).slice(0,1300)}`);
-            console.log('MONTHLY_CLOSE_2026_08_DONE=1');
-            console.log(`FINAL_VERIFY ownersDiff=${verify.ownerDifferences.length} paymentsDiff=${verify.paymentDifferences.length}`);
-
-            await sleep(1200);
-            await publicSmoke();
-            console.log(`AIRTABLE_CALLS=${counter.calls}`);
-          })().catch(error=>{
-            console.error(`RECOVERY_FAILED: ${String(error?.message||error)}`);
-            process.exit(1);
-          });
-          NODE
+          url='https://villalosapamates.netlify.app/.netlify/functions/access-reconciliation-scheduled'
+          code="$(curl --silent --show-error --location --request POST \
+            --header 'Content-Type: application/json' \
+            --data '{"source":"august-close-recovery","force":true}' \
+            --output /tmp/result.json --write-out '%{http_code}' --max-time 30 "$url")"
+          cat /tmp/result.json
+          case "$code" in
+            200|202) ;;
+            *) echo "ACCESS_RECONCILIATION_TRIGGER_FAILED HTTP $code"; exit 1;;
+          esac
+          sleep 20
+          echo 'ACCESS_RECONCILIATION_TRIGGERED=1'
