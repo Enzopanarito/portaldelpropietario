@@ -61,9 +61,11 @@ test('la certificación post-cierre exige el plan histórico completo y su huell
  assert.equal(validStoredPlan({...good,ownerUpdates:[]},'2026-08'),false);
 });
 
-test('los delegadores activos apuntan a las capas endurecidas',()=>{
+test('el contrato público conserva v3 y v3 usa internamente la contabilidad endurecida',()=>{
  const publicEntry=fs.readFileSync(path.join(__dirname,'../netlify/functions/public-data.js'),'utf8');
+ const publicV3=fs.readFileSync(path.join(__dirname,'../netlify/functions/public-data-v3.js'),'utf8');
  const closeEntry=fs.readFileSync(path.join(__dirname,'../netlify/functions/monthly-close.js'),'utf8');
- assert.match(publicEntry,/public-data-v5/);
+ assert.match(publicEntry,/public-data-v3/);
+ assert.match(publicV3,/public-data-v4/);
  assert.match(closeEntry,/monthly-close-v5/);
 });
