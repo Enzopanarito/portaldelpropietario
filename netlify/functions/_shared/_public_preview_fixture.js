@@ -1,6 +1,7 @@
 'use strict';
 
 const { publicRules, defaults, caracasParts } = require('./_automation_rules');
+const {PUBLIC_DATA_ENGINE_VERSION,OWNER_BALANCE_CONTRACT,OFFICIAL_BALANCE_SOURCE}=require('./_public_financial_contract');
 
 const PREVIEW_SOURCE = 'vla-public-preview-fixture-v1';
 const PREVIEW_ENVIRONMENTS = new Set(['staging', 'local', 'preview', 'deploy-preview', 'branch-deploy']);
@@ -98,7 +99,7 @@ function buildOwner(item, now) {
     mesCorrienteBs: money(item.bsRef),
     estadoMorosidad: totalPagadero>0.009?'PENDIENTE':'SOLVENTE',
     accesoEsperado: 'Habilitado',
-    balanceEngineVersion: 'vla-balance-contract-v7'
+    balanceEngineVersion: OWNER_BALANCE_CONTRACT
   };
 }
 
@@ -128,8 +129,8 @@ function createPayload(now = new Date()) {
       year: 'numeric', month: '2-digit', day: '2-digit',
       hour: '2-digit', minute: '2-digit', second: '2-digit'
     }).format(instant),
-    balanceEngineVersion: 5,
-    officialBalanceSource: 'ControlVersiones',
+    balanceEngineVersion: PUBLIC_DATA_ENGINE_VERSION,
+    officialBalanceSource: OFFICIAL_BALANCE_SOURCE,
     dataEnvironment: 'preview-fixture',
     previewFixtureVersion: PREVIEW_SOURCE,
     automation: publicRules(defaults, instant),
@@ -144,7 +145,7 @@ function headers() {
     'X-Public-Data-Source': 'PREVIEW_FIXTURE',
     'X-Preview-Isolated': 'true',
     'X-Airtable-Calls': '0',
-    'X-Balance-Engine': '5'
+    'X-Balance-Engine': String(PUBLIC_DATA_ENGINE_VERSION)
   };
 }
 
