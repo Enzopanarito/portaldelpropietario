@@ -1,2 +1,2 @@
 'use strict';
-module.exports = require('./public-data-v5');
+module.exports = require('./public-data-v3');
