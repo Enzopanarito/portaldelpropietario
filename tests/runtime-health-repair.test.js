@@ -38,13 +38,35 @@ test('wrappers legacy y funciones modernas nativas conservan contratos separados
  for(const {name,source} of wrappers){
   assert.match(source,/invokeLegacy\(/,`${name} debe conservar el contrato legacy.`);
  }
- assert.deepEqual(native.map(item=>item.name).sort(),['public-plant.mjs','whatsapp-external-health.mjs','whatsapp-external-monitor.mjs']);
+ assert.deepEqual(native.map(item=>item.name).sort(),[
+  'public-plant.mjs',
+  'whatsapp-external-health.mjs',
+  'whatsapp-external-monitor.mjs',
+  'whatsapp-manual-send-once.mjs',
+  'whatsapp-manual-send-status.mjs'
+ ]);
  for(const {name,source} of native){
   assert.match(source,/export\s+default/,`${name} debe usar el contrato moderno nativo.`);
   assert.doesNotMatch(source,/invokeLegacy\(/,`${name} no debe simular ser wrapper legacy.`);
  }
  const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
  assert.equal(pkg.dependencies?.['@netlify/aws-lambda-compat'],undefined);
+});
+
+test('la operación temporal de WhatsApp es fail-closed, idempotente y expira hoy',()=>{
+ const send=fs.readFileSync(path.join(functionsDir,'whatsapp-manual-send-once.mjs'),'utf8');
+ const status=fs.readFileSync(path.join(functionsDir,'whatsapp-manual-send-status.mjs'),'utf8');
+ assert.match(send,/TARGET_DAY\s*=\s*'2026-09-02'/);
+ assert.match(send,/EXPECTED_HOUSES\s*=\s*15/);
+ assert.match(send,/accountingTransition\?\.pending\s*===\s*true/);
+ assert.match(send,/manualSendV136/);
+ assert.match(send,/sessionLinked/);
+ assert.match(send,/agentMode\s*!==\s*'real'/);
+ assert.match(send,/getStore\(STORE_NAME,\s*\{\s*consistency:\s*'strong'\s*\}\)/);
+ assert.match(send,/\?force=1&whatsapp_preflight=/);
+ assert.match(send,/schedule:\s*'\* \* \* \* \*'/);
+ assert.doesNotMatch(send,/VLA_WHATSAPP_CONTROL_SECRET\s*=\s*['"][^'"]+['"]/);
+ assert.doesNotMatch(status,/relay\(|run-now|set-config|pause|resume/,'El endpoint de estado temporal debe ser estrictamente de lectura.');
 });
 
 test('los helpers internos no se publican como funciones invocables',()=>{
