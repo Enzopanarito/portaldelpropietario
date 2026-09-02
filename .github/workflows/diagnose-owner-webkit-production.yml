@@ -1,0 +1,70 @@
+name: Diagnose Owner WebKit Production
+
+on:
+  push:
+    branches:
+      - diagnostic-owner-endpoints-prod-20260902
+
+permissions:
+  contents: read
+
+jobs:
+  webkit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout diagnostic branch
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Use Node.js 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install WebKit
+        run: npx playwright install --with-deps webkit
+      - name: Diagnose iPhone-like WebKit owner flow
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { webkit, devices } = require('playwright');
+          const BASE='https://villalosapamates.netlify.app';
+          const safePath=value=>{try{return new URL(value).pathname}catch{return String(value||'').split('?')[0]}};
+          (async()=>{
+            const device=devices['iPhone 15 Pro Max']||devices['iPhone 14 Pro Max']||{viewport:{width:430,height:932},userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1'};
+            const browser=await webkit.launch({headless:true});
+            const context=await browser.newContext({...device});
+            const page=await context.newPage();
+            const failures=[];
+            page.on('response',res=>{if(res.status()>=400){const req=res.request();const row={status:res.status(),method:req.method(),path:safePath(res.url()),type:req.resourceType()};failures.push(row);console.log('HTTP_FAIL '+JSON.stringify(row))}});
+            page.on('requestfailed',req=>{const row={status:0,method:req.method(),path:safePath(req.url()),type:req.resourceType(),failure:req.failure()?.errorText||''};failures.push(row);console.log('REQUEST_FAIL '+JSON.stringify(row))});
+            page.on('pageerror',err=>console.log('PAGE_ERROR '+String(err.message||err)));
+            page.on('console',msg=>{if(['error','warning'].includes(msg.type()))console.log('CONSOLE_'+msg.type().toUpperCase()+' '+String(msg.text()).slice(0,500))});
+            await page.goto(BASE+'/?webkit-owner-diagnostic=1',{waitUntil:'domcontentloaded',timeout:30000});
+            await page.waitForFunction(()=>{const s=document.getElementById('welcomeSelector');return s&&[...s.options].filter(o=>/^rec[A-Za-z0-9]{14}$/.test(String(o.value||''))).length===15},null,{timeout:30000});
+            await page.evaluate(()=>{const s=document.getElementById('welcomeSelector');const o=[...s.options].find(x=>/^rec[A-Za-z0-9]{14}$/.test(String(x.value||'')));if(o){s.value=o.value;s.dispatchEvent(new Event('change',{bubbles:true}))}});
+            await page.locator('#enterBtn').click();
+            await page.locator('#main').waitFor({state:'visible',timeout:30000});
+            await page.waitForFunction(()=>/^\$\d/.test(String(document.getElementById('m-total')?.textContent||'').trim()),null,{timeout:30000});
+            await page.locator('#vla-owner-plant-body .vla-plant-status, #vla-owner-plant-body .vla-plant-alert, #vla-owner-plant-body .vla-plant-verify').first().waitFor({state:'visible',timeout:30000});
+            await page.locator('#vla-punctuality-score').waitFor({state:'visible',timeout:30000});
+            await page.waitForFunction(()=>{const h=document.getElementById('vla-punctuality-score');return h&&(h.querySelector('.vla-score-gauge')||h.querySelector('.vla-punctuality-error'))},null,{timeout:30000});
+            const state=await page.evaluate(()=>({
+              mainVisible:!document.getElementById('main')?.classList.contains('hidden'),
+              total:String(document.getElementById('m-total')?.textContent||'').trim(),
+              houseOptions:[...document.querySelectorAll('#welcomeSelector option')].filter(o=>/^rec[A-Za-z0-9]{14}$/.test(String(o.value||''))).length,
+              breakdown:Boolean(document.querySelector('#breakdown > *')),
+              plantStatus:Boolean(document.querySelector('#vla-owner-plant-body .vla-plant-status')),
+              plantAlert:Boolean(document.querySelector('#vla-owner-plant-body .vla-plant-alert')),
+              punctualityGauge:Boolean(document.querySelector('#vla-punctuality-score .vla-score-gauge')),
+              punctualityError:Boolean(document.querySelector('#vla-punctuality-score .vla-punctuality-error')),
+              contractError:Boolean(document.querySelector('[data-vla-financial-error],.vla-financial-error')),
+              viewport:{w:innerWidth,h:innerHeight}
+            }));
+            console.log('OWNER_WEBKIT_STATE '+JSON.stringify(state));
+            console.log('OWNER_WEBKIT_FAILURES '+JSON.stringify(failures));
+            if(!state.mainVisible||state.houseOptions!==15||!state.total||!state.breakdown||!state.plantStatus||!state.punctualityGauge||state.contractError||failures.some(x=>x.status>=500))process.exitCode=3;
+            await browser.close();
+          })().catch(err=>{console.error('OWNER_WEBKIT_FATAL '+String(err.stack||err));process.exit(2)});
+          NODE
