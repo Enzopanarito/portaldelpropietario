@@ -1,0 +1,7 @@
+'use strict';
+
+const PUBLIC_DATA_ENGINE_VERSION=6;
+const OWNER_BALANCE_CONTRACT='vla-balance-contract-v8';
+const OFFICIAL_BALANCE_SOURCE='ControlVersiones';
+
+module.exports={PUBLIC_DATA_ENGINE_VERSION,OWNER_BALANCE_CONTRACT,OFFICIAL_BALANCE_SOURCE};
