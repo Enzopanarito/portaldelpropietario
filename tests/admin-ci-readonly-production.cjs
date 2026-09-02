@@ -1,6 +1,7 @@
 'use strict';
 
 const fs=require('fs');
+const {OWNER_BALANCE_CONTRACT}=require('../netlify/functions/_shared/_public_financial_contract');
 const target=String(process.env.TARGET_URL||'https://villalosapamates.netlify.app').replace(/\/$/,'');
 const oidcToken=String(process.env.VLA_ADMIN_OIDC_TOKEN||'');
 if(!oidcToken)throw new Error('Falta VLA_ADMIN_OIDC_TOKEN.');
@@ -93,7 +94,7 @@ function canonicalOwnerPlan(plan){
   const admin=await adminFetch(token,'/.netlify/functions/admin-data');
   const owners=Array.isArray(admin.propietarios)?admin.propietarios:[];
   if(owners.length!==15)throw new Error(`Admin protegido devolvió ${owners.length}/15 propietarios.`);
-  const invalid=owners.filter(owner=>owner.balanceEngineVersion!=='vla-balance-contract-v7');
+  const invalid=owners.filter(owner=>owner.balanceEngineVersion!==OWNER_BALANCE_CONTRACT);
   if(invalid.length)throw new Error(`Contrato financiero no canónico en ${invalid.length} propietarios.`);
 
   const health=await adminFetch(token,'/.netlify/functions/system-health-advanced');

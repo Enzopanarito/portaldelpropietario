@@ -8,6 +8,7 @@ const { calculateExpiredAccessDebt, getAccessMode, getAutomationRules } = requir
 const { OFFICIAL_EMAIL } = require('./_shared/_mailer');
 const { filterActiveExpenses, currentMonthCaracas } = require('./_shared/_expense_lifecycle');
 const { connectLambdaEvent, getAtomicStore } = require('./_shared/_blobs_compat');
+const { OWNER_BALANCE_CONTRACT } = require('./_shared/_public_financial_contract');
 
 const TABLES = {
   propietarios: 'Propietarios',
@@ -84,7 +85,7 @@ function canonicalFinancialState(payload){
   const owners=Array.isArray(payload?.propietarios)?payload.propietarios:[],houses=owners.map(owner=>Number(owner?.Casa)).sort((a,b)=>a-b),expected=Array.from({length:15},(_,index)=>index+1);
   const invalid=owners.filter(owner=>{
     const usd=Number(owner?.saldoUsd),bs=Number(owner?.saldoBsRef),payable=Number(owner?.totalPagadero),net=Number(owner?.saldoNetoReferencial);
-    return owner?.balanceEngineVersion!=='vla-balance-contract-v7'||![usd,bs,payable,net].every(Number.isFinite)||money(Math.max(0,usd)+Math.max(0,bs))!==money(payable)||money(usd+bs)!==money(net);
+    return owner?.balanceEngineVersion!==OWNER_BALANCE_CONTRACT||![usd,bs,payable,net].every(Number.isFinite)||money(Math.max(0,usd)+Math.max(0,bs))!==money(payable)||money(usd+bs)!==money(net);
   }).map(owner=>Number(owner?.Casa)||'?');
   return{ok:owners.length===15&&JSON.stringify(houses)===JSON.stringify(expected)&&invalid.length===0,count:owners.length,invalid};
 }
@@ -270,7 +271,7 @@ const handler = async function(event) {
     try {
       counter.external += 1;
       const origin=`${event.headers['x-forwarded-proto'] || 'https'}://${event.headers.host}`,publicResponse=await fetch(`${origin}/api/vla/public-data`),publicPayload=await publicResponse.json(),financial=canonicalFinancialState(publicPayload),snapshot=String(publicResponse.headers.get('x-public-snapshot')||'DIRECT');
-      add('Contabilidad canónica',financial.ok,financial.ok?'Contrato v7 consistente: total pagadero separa USD y Bs en las 15 casas.':`Contrato financiero incompleto o inconsistente en: ${financial.invalid.length?financial.invalid.map(casa=>`Casa ${casa}`).join(', '):'respuesta pública'}.`,financial.ok?'ok':'error',{invalidHouses:financial.invalid});
+      add('Contabilidad canónica',financial.ok,financial.ok?`Contrato ${OWNER_BALANCE_CONTRACT} consistente: total pagadero separa USD y Bs en las 15 casas.`:`Contrato financiero incompleto o inconsistente en: ${financial.invalid.length?financial.invalid.map(casa=>`Casa ${casa}`).join(', '):'respuesta pública'}.`,financial.ok?'ok':'error',{invalidHouses:financial.invalid});
       add('Casas financieras 15/15',financial.count===15,`${financial.count}/15 casas recibidas desde la fuente pública oficial.`,financial.count===15?'ok':'error');
       const snapshotOk=publicResponse.ok&&!['ERROR','REFRESH_BUSY','STALE','STALE_FALLBACK','STALE_EXCEPTION','BLOB_UNAVAILABLE','WRITE_WARNING'].includes(snapshot);
       add('Snapshot público',snapshotOk,`Estado: ${snapshot}.`,snapshotOk?'ok':'warning',{state:snapshot});

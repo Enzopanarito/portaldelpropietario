@@ -4,6 +4,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { OWNER_BALANCE_CONTRACT } = require('../netlify/functions/_shared/_public_financial_contract');
 
 function loadEdgeHandler(relativePath) {
   const filename = path.join(__dirname, '..', relativePath);
@@ -51,7 +52,7 @@ function scriptById(html, idPrefix) {
   const pwa = await renderEdge('netlify/edge-functions/pwa-head.js', '/');
   const bcv = scriptById(pwa.html, 'vla-bcv-official-logo-fix');
   assert.doesNotThrow(() => new vm.Script(bcv.source), 'El script visual del BCV debe ser JavaScript válido');
-  assert.strictEqual(pwa.response.headers.get('x-vla-balance-contract'), 'vla-balance-contract-v7');
+  assert.strictEqual(pwa.response.headers.get('x-vla-balance-contract'), OWNER_BALANCE_CONTRACT);
   assert.strictEqual(pwa.response.headers.get('x-vla-breakdown-presentation'), 'owner-breakdown-v7');
   assert(!pwa.html.includes('vla-visual-breakdown-2026-07-11-photo-v6'), 'No debe inyectarse el desglose histórico');
 
