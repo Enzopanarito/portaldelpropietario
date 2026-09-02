@@ -1,0 +1,90 @@
+name: Diagnose Owner Single Browser Production
+
+on:
+  push:
+    branches:
+      - diagnostic-owner-endpoints-prod-20260902
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout diagnostic branch
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Use Node.js 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Diagnose one real owner flow
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { chromium } = require('playwright');
+          const BASE='https://villalosapamates.netlify.app';
+          const safePath=value=>{try{const u=new URL(value);return u.pathname}catch{return String(value||'').split('?')[0]}};
+          (async()=>{
+            const root=await fetch(BASE+'/',{cache:'no-store'});
+            const finance=await fetch(BASE+'/vla-finance-v7.js',{cache:'no-store'});
+            console.log(JSON.stringify({probe:'cache',rootStatus:root.status,rootCache:root.headers.get('cache-control'),rootEtag:Boolean(root.headers.get('etag')),financeStatus:finance.status,financeCache:finance.headers.get('cache-control'),financeEtag:Boolean(finance.headers.get('etag'))}));
+            const browser=await chromium.launch({headless:true});
+            const page=await browser.newPage({viewport:{width:390,height:844}});
+            const failures=[];
+            page.on('response',res=>{
+              if(res.status()>=400){
+                const req=res.request();
+                const row={status:res.status(),method:req.method(),path:safePath(res.url()),type:req.resourceType()};
+                failures.push(row);console.log('HTTP_FAIL '+JSON.stringify(row));
+              }
+            });
+            page.on('requestfailed',req=>{const row={status:0,method:req.method(),path:safePath(req.url()),type:req.resourceType(),failure:req.failure()?.errorText||''};failures.push(row);console.log('REQUEST_FAIL '+JSON.stringify(row))});
+            page.on('pageerror',err=>console.log('PAGE_ERROR '+String(err.message||err)));
+            page.on('console',msg=>{if(['error','warning'].includes(msg.type())) console.log('CONSOLE_'+msg.type().toUpperCase()+' '+String(msg.text()).slice(0,400))});
+            await page.goto(BASE+'/?owner-single-diagnostic=1',{waitUntil:'domcontentloaded',timeout:30000});
+            await page.waitForFunction(()=>{
+              const s=document.getElementById('welcomeSelector');
+              return s && [...s.options].filter(o=>/^rec[A-Za-z0-9]{14}$/.test(String(o.value||''))).length===15;
+            },null,{timeout:30000});
+            const selected=await page.evaluate(()=>{
+              const s=document.getElementById('welcomeSelector');
+              const options=[...s.options].filter(o=>/^rec[A-Za-z0-9]{14}$/.test(String(o.value||'')));
+              if(!options.length)return false;s.value=options[0].value;s.dispatchEvent(new Event('change',{bubbles:true}));return true;
+            });
+            if(!selected)throw new Error('No se pudo seleccionar una casa real.');
+            await page.locator('#enterBtn').click();
+            await page.locator('#main').waitFor({state:'visible',timeout:30000});
+            await page.waitForFunction(()=>{
+              const n=document.getElementById('m-total');
+              return n && /^\$\d/.test(String(n.textContent||'').trim());
+            },null,{timeout:30000});
+            await page.locator('#vla-owner-plant-body .vla-plant-status, #vla-owner-plant-body .vla-plant-alert, #vla-owner-plant-body .vla-plant-verify').first().waitFor({state:'visible',timeout:30000});
+            await page.locator('#vla-punctuality-score').waitFor({state:'visible',timeout:30000});
+            await page.waitForFunction(()=>{
+              const h=document.getElementById('vla-punctuality-score');
+              return h && (h.querySelector('.vla-score-gauge')||h.querySelector('.vla-punctuality-error'));
+            },null,{timeout:30000});
+            const state=await page.evaluate(()=>({
+              mainVisible:!document.getElementById('main')?.classList.contains('hidden'),
+              total:String(document.getElementById('m-total')?.textContent||'').trim(),
+              breakdown:Boolean(document.querySelector('#breakdown [data-vla-owner-breakdown],#breakdown .vla-breakdown-account,#breakdown > *')),
+              plantStatus:Boolean(document.querySelector('#vla-owner-plant-body .vla-plant-status')),
+              plantAlert:Boolean(document.querySelector('#vla-owner-plant-body .vla-plant-alert')),
+              punctualityGauge:Boolean(document.querySelector('#vla-punctuality-score .vla-score-gauge')),
+              punctualityError:Boolean(document.querySelector('#vla-punctuality-score .vla-punctuality-error')),
+              contractError:Boolean(document.querySelector('[data-vla-financial-error],.vla-financial-error')),
+              financeDataset:{...document.documentElement.dataset}
+            }));
+            console.log('OWNER_SINGLE_STATE '+JSON.stringify(state));
+            console.log('OWNER_SINGLE_FAILURES '+JSON.stringify(failures));
+            if(!state.mainVisible||!state.total||state.contractError||!state.plantStatus||!state.punctualityGauge||failures.some(x=>x.status>=500)) process.exitCode=3;
+            await browser.close();
+          })().catch(err=>{console.error('OWNER_SINGLE_FATAL '+String(err.stack||err));process.exit(2)});
+          NODE
