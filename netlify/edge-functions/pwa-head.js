@@ -69,7 +69,7 @@ export default async (request, context) => {
   headers.set('cache-control', 'no-store, no-cache, must-revalidate');
   headers.set('content-type', 'text/html; charset=utf-8');
   if (isOwnerPortal) {
-    headers.set('x-vla-balance-contract', 'vla-balance-contract-v7');
+    headers.set('x-vla-balance-contract', 'vla-balance-contract-v8');
     headers.set('x-vla-breakdown-presentation', 'owner-breakdown-v7');
   }
   return new Response(html, { status: response.status, statusText: response.statusText, headers });

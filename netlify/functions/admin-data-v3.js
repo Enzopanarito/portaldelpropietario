@@ -5,6 +5,11 @@ const { withAirtableUsage } = require('./_shared/_airtable_meter');
 const previous = require('./admin-data-v2');
 const { calculateAllOwners, calculatedFields } = require('./_shared/_balance_engine_v4');
 const { attachOfficialBalances, officialControlQuery } = require('./_shared/_official_balances');
+const {
+  PUBLIC_DATA_ENGINE_VERSION,
+  OWNER_BALANCE_CONTRACT,
+  OFFICIAL_BALANCE_SOURCE
+} = require('./_shared/_public_financial_contract');
 
 const NO_STORE_HEADERS = {
   'Content-Type': 'application/json',
@@ -55,7 +60,7 @@ function canonicalFields(balance,record){
     mesCorrienteBs:money(balance.currentBsRef),
     estadoMorosidad:money(Math.max(0,saldoUsd)+Math.max(0,saldoBsRef))>0.009?'PENDIENTE':'SOLVENTE',
     accesoEsperado:(record.fields||{})['Estado Acceso Portón']||'Sin configurar',
-    balanceEngineVersion:'vla-balance-contract-v7'
+    balanceEngineVersion:OWNER_BALANCE_CONTRACT
   };
 }
 
@@ -72,8 +77,8 @@ function synchronizePayload(payload, controlRecords) {
     ))
     .sort((left, right) => Number(left.Casa || 0) - Number(right.Casa || 0));
   return Object.assign({}, payload, {
-    balanceEngineVersion: 5,
-    officialBalanceSource: 'ControlVersiones',
+    balanceEngineVersion: PUBLIC_DATA_ENGINE_VERSION,
+    officialBalanceSource: OFFICIAL_BALANCE_SOURCE,
     propietarios
   });
 }
@@ -86,7 +91,7 @@ const handler = async function handler(event) {
     const controlRecords = await loadOfficialControl();
     return {
       statusCode: 200,
-      headers: Object.assign({}, NO_STORE_HEADERS, response.headers || {}, { 'X-Balance-Engine': '5' }),
+      headers: Object.assign({}, NO_STORE_HEADERS, response.headers || {}, { 'X-Balance-Engine': String(PUBLIC_DATA_ENGINE_VERSION) }),
       body: JSON.stringify(synchronizePayload(payload, controlRecords))
     };
   } catch (error) {
