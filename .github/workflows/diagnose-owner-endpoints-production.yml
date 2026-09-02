@@ -1,0 +1,66 @@
+name: Diagnose Owner Endpoints Production
+
+on:
+  push:
+    branches:
+      - diagnostic-owner-endpoints-prod-20260902
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Use Node.js 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Probe owner read-only endpoints without exposing owner ids
+        shell: bash
+        run: |
+          node <<'NODE'
+          const BASE='https://villalosapamates.netlify.app';
+          const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+          const classifyDetail=value=>{
+            const s=String(value||'');
+            if(/UNKNOWN_TABLE/i.test(s)) return 'UNKNOWN_TABLE';
+            if(/UNKNOWN_FIELD/i.test(s)) return 'UNKNOWN_FIELD';
+            if(/PLANT_PROFILE_MISSING/i.test(s)) return 'PLANT_PROFILE_MISSING';
+            if(/NOT_FOUND/i.test(s)) return 'NOT_FOUND';
+            if(/RATE|429|THROTTL/i.test(s)) return 'RATE_LIMIT';
+            if(/TIMEOUT/i.test(s)) return 'TIMEOUT';
+            return s ? 'OTHER' : '';
+          };
+          async function getJson(url, options={}) {
+            const started=Date.now();
+            try {
+              const res=await fetch(url,{redirect:'manual',...options});
+              const text=await res.text();
+              let data={}; try { data=JSON.parse(text); } catch {}
+              return {status:res.status, ms:Date.now()-started, data, bytes:text.length};
+            } catch (error) {
+              return {status:0, ms:Date.now()-started, data:{message:String(error&&error.message||error)}, bytes:0};
+            }
+          }
+          const direct=await getJson(BASE+'/.netlify/functions/public-data?production-source=owner-endpoint-diagnostic');
+          const routed=await getJson(BASE+'/api/vla/public-data?force=1');
+          console.log(JSON.stringify({probe:'public-data-direct',status:direct.status,ms:direct.ms,rows:Array.isArray(direct.data?.propietarios)?direct.data.propietarios.length:null,contract:direct.data?.balanceContractVersion||direct.data?.contractVersion||null}));
+          console.log(JSON.stringify({probe:'public-data-route',status:routed.status,ms:routed.ms,rows:Array.isArray(routed.data?.propietarios)?routed.data.propietarios.length:null,contract:routed.data?.balanceContractVersion||routed.data?.contractVersion||null}));
+          if(direct.status!==200 || !Array.isArray(direct.data?.propietarios) || direct.data.propietarios.length!==15) process.exit(2);
+          const owners=[...direct.data.propietarios].sort((a,b)=>Number(a.Casa||a.casa||0)-Number(b.Casa||b.casa||0));
+          for (const owner of owners) {
+            const house=Number(owner.Casa||owner.casa||0);
+            const id=String(owner.id||'');
+            if(!/^rec[A-Za-z0-9]{14}$/.test(id)) { console.log(JSON.stringify({house,probe:'owner-id',status:'INVALID'})); continue; }
+            const plant=await getJson(BASE+'/api/vla/plant?ownerId='+encodeURIComponent(id),{headers:{Accept:'application/json'}});
+            console.log(JSON.stringify({house,probe:'plant',status:plant.status,ms:plant.ms,moduleReady:plant.data?.moduleReady,verificationRequired:plant.data?.verificationRequired===true,message:plant.data?.message||'',detailClass:classifyDetail(plant.data?.detail)}));
+            await sleep(300);
+            const punctuality=await getJson(BASE+'/api/vla/punctuality-score?ownerId='+encodeURIComponent(id),{headers:{Accept:'application/json'}});
+            console.log(JSON.stringify({house,probe:'punctuality',status:punctuality.status,ms:punctuality.ms,readOnly:punctuality.data?.readOnly===true,message:punctuality.data?.message||'',detailClass:classifyDetail(punctuality.data?.detail)}));
+            await sleep(500);
+          }
+          NODE
