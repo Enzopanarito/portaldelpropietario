@@ -1,0 +1,77 @@
+name: Diagnose August Close Current Target
+
+on:
+  push:
+    branches: [diagnostic-august-close-backup-proof-20260901]
+    paths:
+      - '.github/workflows/diagnose-august-close-current-target.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Fetch production public data exactly once
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl --silent --show-error --location --max-time 45 \
+            --output /tmp/public-data.json --write-out '%{http_code}' \
+            'https://villalosapamates.netlify.app/api/vla/public-data?force=1')"
+          test "$code" = '200'
+          test -s /tmp/public-data.json
+
+      - name: Verify 15 owner targets and 48 applied payments
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs=require('fs');
+          const data=JSON.parse(fs.readFileSync('/tmp/public-data.json','utf8'));
+          const targets={
+            rec5z2pY1lFljVjnt:[14,0,0,0],rec9pzoVmBB5DYeH2:[10,0,100,100],recAPrULe1J6m1Sxt:[4,50,-55.1,-5.1],recbGcb2sjI5ItE33:[3,50,50.02,100.02],recDHPQpoWr3CnM4X:[8,0,0,0],recDK2IAorB4mjbp3:[2,0,0,0],recEudX0CRFI68WS1:[7,0,0,0],recgTGvQXCRHEGL1m:[9,0,0,0],recIRW9YDT7P6OHpK:[5,0,-0.24,-0.24],recLJ3hwq3HFvAPKQ:[11,0,-294.76,-294.76],recmCUCnMGkaIL3qk:[13,0,0,0],recPmcfgGfrtRrLXP:[6,0,-0.49,-0.49],recsaXce3Xyt8Z2UI:[15,0,0,0],recSyiBwanGzzUk42:[1,0,0,0],recX94UnGvU9VRDsu:[12,-10,246.06,236.06]
+          };
+          const paymentIds=["rec1qnVW4Um3LDa1I","rec1uFt5dKnLL9obJ","rec28C7uolLrTuEqt","rec2rqCkbH5VIplSo","rec7B0Tll3CcOkECd","rec7uLUVguG5uhIm0","rec8SrQKla7CeXG7c","recaqHXCV8f3cC814","recC2Y3pDpfLmYuMY","recC7ifQkqS7NJIxM","recChAdvlNd1cOUro","reccsr03cF07fUTUM","recd25rRHqbH8CXEQ","recdIwJ2nL3ulLt2V","recDRVUOLBnji7s4R","recDYCD5REaAP3Osf","recFARrrzz6lYre6j","recFxCeG1tKXILku8","recg44sRyySEHl05w","recGg2J8iE81ywPuk","recH6aA1GITPZgMBd","recHQZPWolxaiGCwQ","recj9UcRLmiARChhQ","recjdGhdmKmbre5ni","recJiJ0oAi9HxNCvU","recjlEom7a24pNhOv","recJPdgRQjJagX3JD","recK1T4V0io7CYCOW","reckmvcbz5Fbps3mS","recKPtcbBFCDu9FPz","reclrVdT2zogLBGBS","recN17V7MZqbE3YEV","recnVGWHS9i1EZ8k5","recObtaQZUb4fG9C8","recP1SRWwyfN9Tucx","recq4iGT5S7QEsUZb","recQZ4ZAU0WCbzgIo","recshUDEfup8tYftN","recT304MgINoKKQ8b","recTeXH229hvBNWlC","recun8G1NUcfhaOpx","recvGkziEIejWPyFT","recvxS81rucy7hsSa","recwxeqT43pByDiE4","recXhWriRgFjIx4Jl","recXrVhA54hqR6LXA","recY8XlG9yioKxSQw","recYZ1GiOBcXERPqA"];
+          const owners=Array.isArray(data.propietarios)?data.propietarios:[];
+          const ownerById=new Map(owners.map(o=>[String(o.id),o]));
+          const ownerDiffs=[];
+          const near=(a,b)=>Math.abs(Number(a||0)-Number(b||0))<=0.01;
+          for(const [id,[casa,usd,bs,total]] of Object.entries(targets)){
+            const o=ownerById.get(id);
+            if(!o){ownerDiffs.push({id,casa,reason:'missing'});continue;}
+            const actual=[Number(o['Deuda Anterior USD']||0),Number(o['Deuda Anterior Bs Ref']||0),Number(o['Deuda Anterior']||0)];
+            if(!near(actual[0],usd)||!near(actual[1],bs)||!near(actual[2],total))ownerDiffs.push({id,casa,expected:[usd,bs,total],actual});
+          }
+          const payments=Array.isArray(data.pagos)?data.pagos:[];
+          const paymentById=new Map(payments.map(p=>[String(p.id),p]));
+          const paymentDiffs=[];
+          for(const id of paymentIds){
+            const p=paymentById.get(id);
+            if(!p){paymentDiffs.push({id,reason:'missing'});continue;}
+            if(p.fields?.['[x] Aplicado al Cierre']!==true)paymentDiffs.push({id,reason:'not-applied'});
+          }
+          const evidence={
+            capturedAt:new Date().toISOString(),
+            generatedAt:data.generatedAt||null,
+            ownersExpected:15,ownersMatched:15-ownerDiffs.length,ownerDiffs,
+            paymentsExpected:48,paymentsApplied:48-paymentDiffs.length,paymentDiffs,
+            historicalPlanHash:'69365ce1334bbd28f9f9e766c2165809363a7dde9a37e11e26bbf571d1499816',
+            historicalSourceHash:'fd4e3eabb9eb7238888aafeae8a38438970b9ca6e2ccd504508530099a75eae4'
+          };
+          fs.writeFileSync('august-close-current-target-proof.json',JSON.stringify(evidence,null,2));
+          console.log(JSON.stringify(evidence));
+          if(ownerDiffs.length||paymentDiffs.length)throw new Error(`CURRENT_TARGET_MISMATCH owners=${ownerDiffs.length} payments=${paymentDiffs.length}`);
+          NODE
+          rm -f /tmp/public-data.json
+
+      - name: Upload sanitized current-state proof
+        uses: actions/upload-artifact@v7
+        with:
+          name: august-close-current-target-proof
+          path: august-close-current-target-proof.json
+          if-no-files-found: error
+          retention-days: 30
