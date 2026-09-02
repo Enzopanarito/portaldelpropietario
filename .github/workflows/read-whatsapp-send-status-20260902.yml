@@ -1,0 +1,27 @@
+name: Read WhatsApp Send Status 20260902
+
+on:
+  push:
+    branches:
+      - ops/manual-whatsapp-send-20260902
+    paths:
+      - .github/workflows/read-whatsapp-send-status-20260902.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  status:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Read sanitized production status
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error --location --max-time 30 \
+            'https://villalosapamates.netlify.app/.netlify/functions/whatsapp-manual-send-status' \
+            -H 'Accept: application/json' \
+            -H 'User-Agent: VLA-GitHub-ReadOnly-Status/1.0' \
+            | tee /tmp/status.json
+          node -e "const fs=require('fs');const x=JSON.parse(fs.readFileSync('/tmp/status.json','utf8'));console.log('\nSTATUS='+String(x.status||''));console.log('OK='+String(x.ok===true));console.log('RECIPIENTS='+String(x.recipientCount??''));console.log('AUTOMATIC_RESTORED='+String(x.automaticRestored===true));console.log('LAST_ERROR='+String(x.lastError||''));"
