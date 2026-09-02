@@ -1,0 +1,129 @@
+name: Diagnose August Close Backup Proof
+
+on:
+  push:
+    branches: [diagnostic-august-close-backup-proof-20260901]
+    paths:
+      - '.github/workflows/diagnose-august-close-backup-proof.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  VLA_BACKUP_ENCRYPTION_KEY: ${{ secrets.VLA_BACKUP_ENCRYPTION_KEY }}
+  HISTORICAL_ARTIFACT_ID: '9798993246'
+  EXPECTED_PLAN_HASH: '69365ce1334bbd28f9f9e766c2165809363a7dde9a37e11e26bbf571d1499816'
+  EXPECTED_SOURCE_HASH: 'fd4e3eabb9eb7238888aafeae8a38438970b9ca6e2ccd504508530099a75eae4'
+
+jobs:
+  prove:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout historical production code
+        uses: actions/checkout@v6
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Verify encryption key without exposing it
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$VLA_BACKUP_ENCRYPTION_KEY" | grep -Eq '^[A-Fa-f0-9]{64}$'
+
+      - name: Download exact pre-close encrypted backup artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/vla-backup
+          curl --fail-with-body --silent --show-error --location \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${HISTORICAL_ARTIFACT_ID}/zip" \
+            -o /tmp/vla-backup.zip
+          unzip -q /tmp/vla-backup.zip -d /tmp/vla-backup
+          test -s /tmp/vla-backup/vla-airtable-backup.enc.json
+
+      - name: Decrypt only inside runner
+        run: node scripts/vla-backup-crypto.mjs decrypt /tmp/vla-backup/vla-airtable-backup.enc.json /tmp/vla-preclose.json
+
+      - name: Rebuild historical August plan and require exact hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs=require('fs');
+          const {attachOfficialBalances}=require('./netlify/functions/_shared/_official_balances');
+          const {filterClosingExpenses}=require('./netlify/functions/_shared/_expense_lifecycle');
+          const {mergeConfig}=require('./netlify/functions/_shared/_automation_rules');
+          const {buildPlan}=require('./netlify/functions/_shared/_monthly_close_core_v4');
+          const backup=JSON.parse(fs.readFileSync('/tmp/vla-preclose.json','utf8'));
+          const month='2026-08';
+          function records(name){
+            const table=backup.tables&&backup.tables[name];
+            if(!table||!Array.isArray(table.records))throw new Error(`BACKUP_TABLE_MISSING:${name}`);
+            return table.records;
+          }
+          const rawOwners=records('Propietarios');
+          const control=records('ControlVersiones');
+          const owners=attachOfficialBalances(rawOwners,control,month);
+          const expenses=filterClosingExpenses(records('Gastos del Mes'),month);
+          const payments=records('Pagos');
+          const config=records('Configuración');
+          const rules=mergeConfig(config[0]||{});
+          const plan=buildPlan({owners,expenses,payments,month,dueDay:rules.payment.dueDay,surchargeRate:rules.payment.surchargeRate});
+          const expectedPlan=process.env.EXPECTED_PLAN_HASH;
+          const expectedSource=process.env.EXPECTED_SOURCE_HASH;
+          if(plan.paymentIds.length!==48)throw new Error(`PAYMENT_COUNT_MISMATCH:${plan.paymentIds.length}`);
+          if(plan.planHash!==expectedPlan)throw new Error(`PLAN_HASH_MISMATCH:${plan.planHash}`);
+          if(plan.sourceHash!==expectedSource)throw new Error(`SOURCE_HASH_MISMATCH:${plan.sourceHash}`);
+          const houses=plan.ownerUpdates.map(item=>Number(item.casa)).sort((a,b)=>a-b);
+          if(houses.length!==15||houses.some((house,index)=>house!==index+1))throw new Error('OWNER_PLAN_NOT_15_15');
+          const evidence={
+            source:'encrypted-preclose-backup-artifact',
+            historicalArtifactId:Number(process.env.HISTORICAL_ARTIFACT_ID),
+            backupGeneratedAt:backup.generatedAt,
+            month,
+            planHash:plan.planHash,
+            sourceHash:plan.sourceHash,
+            normalizedRules:plan.normalizedRules,
+            paymentCount:plan.paymentIds.length,
+            paymentIds:plan.paymentIds,
+            validation:{
+              paymentCutoff:plan.validation.paymentCutoff,
+              invalidPaymentDatesCount:plan.validation.invalidPaymentDatesCount,
+              futurePaymentsExcludedCount:plan.validation.futurePaymentsExcludedCount,
+              ownerCount:plan.validation.ownerCount,
+              totalUsd:plan.validation.totalUsd,
+              totalBsRef:plan.validation.totalBsRef,
+              totalRef:plan.validation.totalRef,
+              creditBalanceCount:plan.validation.creditBalanceCount,
+              currencyCreditComponentCount:plan.validation.currencyCreditComponentCount
+            },
+            ownerPlan:plan.ownerUpdates.map(item=>({id:item.id,casa:item.casa,before:item.before,target:item.target}))
+          };
+          fs.writeFileSync('august-close-backup-proof.json',JSON.stringify(evidence,null,2));
+          console.log(`VLA_AUGUST_CLOSE_BACKUP_PROOF_OK payments=${plan.paymentIds.length} planHash=${plan.planHash} sourceHash=${plan.sourceHash}`);
+          NODE
+
+      - name: Destroy decrypted backup
+        if: always()
+        shell: bash
+        run: rm -f /tmp/vla-preclose.json /tmp/vla-backup.zip /tmp/vla-backup/vla-airtable-backup.enc.json
+
+      - name: Upload sanitized historical proof
+        uses: actions/upload-artifact@v7
+        with:
+          name: august-close-backup-proof
+          path: august-close-backup-proof.json
+          if-no-files-found: error
+          retention-days: 30
