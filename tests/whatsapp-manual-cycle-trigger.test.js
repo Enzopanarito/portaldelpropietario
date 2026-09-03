@@ -24,11 +24,12 @@ test('agente mantiene ventana, ciclo e idempotencia por casa al refrescar plan',
 
   assert.match(agent, /if \(!plan\.allowed\)/);
   assert.match(agent, /if \(!plan\.cycle\)/);
-  assert.match(agent, /if \(cs\.completedAt && !forcePlan\)/);
+  assert.match(agent, /existingCycle\?\.completedAt && !forcePlan/);
   assert.match(agent, /if \(rec\.confirmedAt\)/);
   assert.match(agent, /ALREADY_CONFIRMED/);
   assert.match(agent, /if \(rec\.dispatchAttemptedAt\)/);
   assert.match(agent, /ALREADY_QUARANTINED/);
-  assert.match(agent, /const latestData = await fetchPublicData\(\)/);
-  assert.match(agent, /if \(!latestPlan\.allowed \|\| !latestPlan\.cycle \|\| latestPlan\.cycle\.id !== plan\.cycle\.id\)/);
+  assert.match(agent, /const livePlan = activeCycle\(new Date\(\)\)/);
+  assert.match(agent, /if \(!livePlan\.allowed \|\| !livePlan\.cycle \|\| livePlan\.cycle\.id !== plan\.cycle\.id\)/);
+  assert.match(agent, /const liveData = await fetchPublicData\(\)/);
 });
