@@ -1,7 +1,7 @@
 const { withAirtableUsage } = require('./_shared/_airtable_meter');
 // netlify/functions/audit-history.js
 // Consulta historial auditable con separación USD / Bs BCV.
-// No crea registros técnicos API_USAGE para no consumir el límite de Airtable.
+// La consulta no crea registros técnicos de medición en Airtable.
 
 const { requireAdmin } = require('./_shared/_auth');
 const TABLES={propietarios:'Propietarios',historial:'Historial de Cargos',pagos:'Pagos'};

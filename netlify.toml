@@ -30,9 +30,6 @@
   PUBLIC_BLOB_CACHE_MAX_AGE_MS = "120000"
   VLA_DATA_ENVIRONMENT = "local"
 
-[functions."airtable-usage-rollup-scheduled"]
-  schedule = "30 4 * * *"
-
 [functions."provisional-access-expiration-scheduled"]
   schedule = "*/15 * * * *"
 

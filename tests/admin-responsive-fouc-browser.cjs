@@ -47,7 +47,6 @@ const server=http.createServer((req,res)=>{
     if(name==='admin-data')return reply(res,200,{propietarios:owners,gastos:[],pagos:[],reportes:[],generatedAtCaracas:'12/07/2026 12:00'});
     if(name==='public-data')return reply(res,200,{propietarios:owners,gastos:[],pagos:[],reportes:[]});
     if(name==='bcv-rate')return reply(res,200,{rate:150.25,rateFormatted:'150.25'});
-    if(name==='api-usage')return reply(res,200,{ok:true,total:120,limit:1000,remaining:880,percent:12,coverage:'interno-auditado',lastEvent:'2026-07-12T12:00:00.000Z',note:'Texto auxiliar largo para comprobar que permanece visualmente dentro de la tarjeta en todos los tamaños.'});
     if(name==='system-health'||name==='system-health-advanced')return reply(res,200,{ok:true,status:'ok',checks:[]});
     if(name==='access-mode')return reply(res,200,{mode:'Automático'});
     return reply(res,200,{ok:true});
@@ -90,7 +89,7 @@ async function bootDiagnostic(page){
     await page.waitForFunction(()=>document.documentElement.dataset.vlaAdminReady==='1',null,{timeout:30000});
     await page.locator('#app').waitFor({state:'visible',timeout:30000});
     await page.waitForFunction(()=>document.getElementById('vla-sum-owners')?.textContent==='15',null,{timeout:30000});
-    await page.waitForFunction(()=>document.getElementById('kpi-api')?.dataset.vlaFittedSize&&document.getElementById('vla-porton-value')?.dataset.vlaFittedSize,null,{timeout:10000});
+    await page.waitForFunction(()=>document.getElementById('kpi-total')?.dataset.vlaFittedSize&&document.getElementById('vla-porton-value')?.dataset.vlaFittedSize,null,{timeout:10000});
   }catch(error){throw new Error(`${error.message}\nDiagnóstico: ${JSON.stringify(await bootDiagnostic(page))}`)}
   const samples=await page.evaluate(()=>{clearInterval(window.__sampleTimer);return window.__samples});
   if(samples.some(s=>s.loginHidden&&s.appVisible&&!s.shell))throw new Error('Se detectó un fotograma del diseño heredado durante recuperación de sesión vencida.');
@@ -105,19 +104,18 @@ async function bootDiagnostic(page){
     await page.setViewportSize({width:viewport.width,height:viewport.height});
     await page.waitForTimeout(360);
     const metrics=await page.evaluate(()=>{
-      const selector='#kpi-total,#kpi-usd,#kpi-bs,#kpi-morosos,#kpi-bcv,#kpi-api,#vla-porton-value,#vla-reports-value';
+      const selector='#kpi-total,#kpi-usd,#kpi-bs,#kpi-morosos,#kpi-bcv,#vla-porton-value,#vla-reports-value';
       const values=[...document.querySelectorAll(selector)],cards=[...document.querySelectorAll('#dashboard>.bg-white>.grid>div')];
-      const rect=node=>node&&node.getBoundingClientRect(),api=document.getElementById('api-restan'),apiCard=document.getElementById('kpi-api')?.parentElement;
+      const rect=node=>node&&node.getBoundingClientRect();
       const visualOverflow=cards.map(card=>{const box=rect(card);return{label:card.querySelector('p')?.textContent?.trim()||card.id||'KPI',overflow:[...card.children].filter(n=>getComputedStyle(n).display!=='none').some(n=>{const child=rect(n);return child.bottom>box.bottom+3||child.right>box.right+3||child.left<box.left-3})}}).filter(x=>x.overflow);
-      const apiBox=rect(api),cardBox=rect(apiCard),login=document.getElementById('login'),app=document.getElementById('app'),shell=document.getElementById('vla-premium-shell'),dashboard=document.getElementById('dashboard'),donut=document.getElementById('vla-donut'),menu=document.getElementById('vla-mobile-menu');
-      return{viewport:innerWidth,documentWidth:document.documentElement.scrollWidth,shellWidth:shell&&rect(shell).width,donutWidth:donut&&rect(donut).width,valueFonts:values.map(n=>parseFloat(getComputedStyle(n).fontSize)),overflowingValues:values.filter(n=>n.scrollWidth>n.clientWidth+3).length,wrappedValues:values.filter(n=>getComputedStyle(n).whiteSpace!=='nowrap').length,unfittedValues:values.filter(n=>!n.dataset.vlaFittedSize).length,overflowingCards:visualOverflow,apiHelperFont:api&&parseFloat(getComputedStyle(api).fontSize),apiHelperWithinCard:Boolean(apiBox&&cardBox&&apiBox.bottom<=cardBox.bottom+3&&apiBox.right<=cardBox.right+3),apiHelperLineClamp:api&&getComputedStyle(api).webkitLineClamp,apiHelperRect:apiBox&&{top:apiBox.top,right:apiBox.right,bottom:apiBox.bottom,left:apiBox.left,width:apiBox.width,height:apiBox.height},apiCardRect:cardBox&&{top:cardBox.top,right:cardBox.right,bottom:cardBox.bottom,left:cardBox.left,width:cardBox.width,height:cardBox.height},mobileMenu:menu&&getComputedStyle(menu).display!=='none',loginDisplay:login&&getComputedStyle(login).display,appDisplay:app&&getComputedStyle(app).display,appVisibility:app&&getComputedStyle(app).visibility,appOpacity:app&&Number(getComputedStyle(app).opacity||1),dashboardVisible:Boolean(dashboard&&getComputedStyle(dashboard).display!=='none'&&dashboard.classList.contains('active')),shellReady:Boolean(shell&&shell.dataset.vlaLayoutReady==='1')};
+      const login=document.getElementById('login'),app=document.getElementById('app'),shell=document.getElementById('vla-premium-shell'),dashboard=document.getElementById('dashboard'),donut=document.getElementById('vla-donut'),menu=document.getElementById('vla-mobile-menu');
+      return{viewport:innerWidth,documentWidth:document.documentElement.scrollWidth,shellWidth:shell&&rect(shell).width,donutWidth:donut&&rect(donut).width,valueFonts:values.map(n=>parseFloat(getComputedStyle(n).fontSize)),overflowingValues:values.filter(n=>n.scrollWidth>n.clientWidth+3).length,wrappedValues:values.filter(n=>getComputedStyle(n).whiteSpace!=='nowrap').length,unfittedValues:values.filter(n=>!n.dataset.vlaFittedSize).length,overflowingCards:visualOverflow,mobileMenu:menu&&getComputedStyle(menu).display!=='none',loginDisplay:login&&getComputedStyle(login).display,appDisplay:app&&getComputedStyle(app).display,appVisibility:app&&getComputedStyle(app).visibility,appOpacity:app&&Number(getComputedStyle(app).opacity||1),dashboardVisible:Boolean(dashboard&&getComputedStyle(dashboard).display!=='none'&&dashboard.classList.contains('active')),shellReady:Boolean(shell&&shell.dataset.vlaLayoutReady==='1')};
     });
     if(metrics.loginDisplay!=='none')throw new Error(`${viewport.name}: el login sigue visible.`);
     if(metrics.appDisplay==='none'||metrics.appVisibility==='hidden'||metrics.appOpacity<=.01||!metrics.dashboardVisible||!metrics.shellReady)throw new Error(`${viewport.name}: el dashboard no terminó de mostrarse.`);
     if(metrics.documentWidth>viewport.width+3||metrics.shellWidth>viewport.width+3)throw new Error(`${viewport.name}: desbordamiento horizontal del portal.`);
     if(metrics.overflowingValues||metrics.wrappedValues||metrics.unfittedValues)throw new Error(`${viewport.name}: KPI sin ajuste correcto: ${JSON.stringify({overflowingValues:metrics.overflowingValues,wrappedValues:metrics.wrappedValues,unfittedValues:metrics.unfittedValues})}`);
     if(metrics.overflowingCards.length)throw new Error(`${viewport.name}: contenido visual fuera de tarjeta: ${JSON.stringify(metrics.overflowingCards)}.`);
-    if(!(metrics.apiHelperFont>0&&metrics.apiHelperFont<=16)||!metrics.apiHelperWithinCard||String(metrics.apiHelperLineClamp)!=='3')throw new Error(`${viewport.name}: texto auxiliar Airtable fuera de escala o tarjeta: ${JSON.stringify({font:metrics.apiHelperFont,within:metrics.apiHelperWithinCard,lineClamp:metrics.apiHelperLineClamp,helper:metrics.apiHelperRect,card:metrics.apiCardRect})}`);
     if(Math.min(...metrics.valueFonts)<22)throw new Error(`${viewport.name}: texto KPI demasiado pequeño.`);
     if(viewport.width<=760&&!metrics.mobileMenu)throw new Error('El menú móvil no aparece.');
     if(viewport.width>=1920&&metrics.donutWidth<180)throw new Error(`${viewport.name}: gráfico circular demasiado pequeño.`);

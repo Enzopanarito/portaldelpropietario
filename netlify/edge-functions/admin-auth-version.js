@@ -2,7 +2,7 @@ const CONFIG_PREFIX='ADMIN_AUTH_CONFIG|';
 const VERSION_CHECK_ENDPOINTS=new Set([
   'admin-data','admin-expense','admin-manual-payment','process-payment-report',
   'batch-delete-records','monthly-close','audit-snapshot','admin-security',
-  'access-mode','access-sync','api-usage','system-health','system-health-advanced',
+  'access-mode','access-sync','system-health','system-health-advanced',
   'whatsapp-jobs','backup','admin-backup'
 ]);
 let versionCache={value:null,expiresAt:0};

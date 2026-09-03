@@ -58,7 +58,6 @@ const server=http.createServer((req,res)=>{
     if(name==='admin-data')return json(res,200,{propietarios:owners,gastos,gastosProgramados,pagos,reportes,generatedAtCaracas:'12/07/2026 00:15'});
     if(name==='public-data')return json(res,200,{propietarios:owners,gastos,pagos,reportes});
     if(name==='bcv-rate')return json(res,200,{rate:150.25,rateFormatted:'150.25'});
-    if(name==='api-usage')return json(res,200,{ok:true,total:245,limit:1000,remaining:755,percent:24.5,lastEvent:new Date().toISOString(),coverage:'interno-auditado'});
     if(name==='system-health'||name==='system-health-advanced')return json(res,200,health);
     if(name==='access-mode')return json(res,200,{mode:'Automático'});
     if(name==='automation-settings')return json(res,200,{success:true,rules:{masterEnabled:false,rulesConfirmed:false,payment:{dueDay:10,surchargeRate:.1,minimumAutomaticConfidence:.97,automaticApprovalEnabled:false},access:{restrictionDay:1,automaticEnabled:false},monthlyClose:{automaticEnabled:false},expensePreload:{automaticEnabled:false,requireApprovalOfVariableExpenses:true},notifications:{automaticEnabled:false}},validation:{ok:true,issues:[]},paymentPreflight:{ok:true,blockers:[]},cycle:{clock:{monthKey:'2026-07'},dueDate:'2026-07-10',restrictionDate:'2026-07-01',nextRestrictionDate:'2026-08-01',daysUntilRestriction:-11,nextMonth:'2026-08'},ai:{enabled:false,primaryModel:'gemini-2.5-flash',minimumConfidence:.85}});

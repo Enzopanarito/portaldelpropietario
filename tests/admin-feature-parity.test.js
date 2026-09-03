@@ -5,7 +5,7 @@ const vm=require('vm');
 const source=fs.readFileSync('admin-feature-parity.js','utf8');
 assert(source.includes('airtable.com/app4nE4ReGRi2SuP2'),'El acceso directo a Airtable debe conservarse.');
 assert(source.includes('/verificar-respaldo.html'),'La verificación de respaldo debe conservarse.');
-assert(source.includes('loadUsage'),'El contador API debe poder actualizarse manualmente.');
+assert(!source.includes('loadUsage')&&!source.includes('vla-api-usage'),'El contador API retirado no debe reaparecer en la barra lateral.');
 assert(source.includes('vla-feature-parity'));
 new vm.Script(source,{filename:'admin-feature-parity.js'});
 console.log('ADMIN_FEATURE_PARITY_OK');
