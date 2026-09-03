@@ -20,6 +20,11 @@ const LOOP_MS = 15000;
 const RETRY_MS = 5 * 60 * 1000;
 const MAX_QR_BYTES = 512 * 1024;
 const LINK_TTL_MS = 10 * 60 * 1000;
+const MANUAL_FORCE_PLAN = true;
+const AUTOMATIC_RUN_OPTIONS = Object.freeze({ forcePlan: false });
+const MANUAL_RUN_OPTIONS = Object.freeze({ forcePlan: MANUAL_FORCE_PLAN });
+// VLA_MANUAL_CYCLE_TRIGGER_V1: el disparo manual relee el ciclo vigente sin saltarse
+// ventana horaria, ciclo activo ni la idempotencia por propietario del Agent.
 // VLA_CONTROLLER_RELINK_V1: re-vinculación segura y efímera desde Admin.
 
 const DEFAULT_CONFIG = Object.freeze({
@@ -424,11 +429,12 @@ function createControllerState() {
     if (config.mode === 'paused') throw conflict('La automatización está pausada.');
     if (!inAllowedWindow()) throw conflict('Fuera de la ventana permitida 08:00–21:00.');
   }
-  async function runCore(reason = 'manual') {
+  async function runCore(reason = 'manual', options = AUTOMATIC_RUN_OPTIONS) {
     return locked(async () => {
       assertRunAllowed();
       try {
-        const result = await agent('/tick', { method: 'POST', body: JSON.stringify({ forcePlan: false }) });
+        const forcePlan = options?.forcePlan === true;
+        const result = await agent('/tick', { method: 'POST', body: JSON.stringify({ forcePlan }) });
         runtime.lastRunAt = nowIso();
         runtime.lastResult = result.action || 'OK';
         // Una incertidumbre POST-DISPATCH es una cuarentena POR PROPIETARIO,
@@ -451,7 +457,8 @@ function createControllerState() {
           });
         }
         persistRuntime();
-        appendAudit({ action: 'run', result: result.action || 'OK', detail: auditDetail(result, reason) });
+        const runReason = forcePlan ? `${reason} · refresh-cycle-plan` : reason;
+        appendAudit({ action: 'run', result: result.action || 'OK', detail: auditDetail(result, runReason) });
         return result;
       } catch (error) {
         runtime.lastError = String(error.message || error);
@@ -473,8 +480,8 @@ function createControllerState() {
     appendAudit({ action: 'queue-run', result: 'ACCEPTED', detail: `${reason} · ${requestId}` });
     return requestId;
   }
-  async function performReservedRun(reason, requestId) {
-    try { return await runCore(reason); }
+  async function performReservedRun(reason, requestId, options = AUTOMATIC_RUN_OPTIONS) {
+    try { return await runCore(reason, options); }
     finally {
       if (runtime.runRequestId === requestId) {
         runtime.runInProgress = false;
@@ -483,15 +490,15 @@ function createControllerState() {
       }
     }
   }
-  function queueRun(reason = 'admin-manual') {
+  function queueRun(reason = 'admin-manual', options = MANUAL_RUN_OPTIONS) {
     const requestId = reserveRun(reason);
     const startedAt = runtime.runStartedAt;
-    setImmediate(() => performReservedRun(reason, requestId).catch(() => {}));
+    setImmediate(() => performReservedRun(reason, requestId, options).catch(() => {}));
     return { accepted: true, requestId, startedAt };
   }
   async function executeRun(reason = 'automatic') {
     const requestId = reserveRun(reason);
-    return performReservedRun(reason, requestId);
+    return performReservedRun(reason, requestId, AUTOMATIC_RUN_OPTIONS);
   }
 
   async function status() {

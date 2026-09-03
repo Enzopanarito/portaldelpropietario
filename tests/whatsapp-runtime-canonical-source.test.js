@@ -10,7 +10,7 @@ const ROOT = path.join(__dirname, '..');
 const read = rel => fs.readFileSync(path.join(ROOT, rel));
 const sha256 = rel => crypto.createHash('sha256').update(read(rel)).digest('hex');
 
-test('runtime canónico coincide byte-a-byte con la captura certificada', () => {
+test('runtime canónico coincide byte-a-byte con la captura certificada y hotfix registrado', () => {
   assert.equal(sha256('ops/whatsapp-runtime/agent/server.js'),
     'a4705ff28b52337597b8bf42ac15949acedc74798f62360f284fa758fdf3eee4');
   assert.equal(sha256('ops/whatsapp-runtime/agent/lib/message.js'),
@@ -18,7 +18,7 @@ test('runtime canónico coincide byte-a-byte con la captura certificada', () => 
   assert.equal(sha256('ops/whatsapp-runtime/agent/package.json'),
     '85c25a5478dca33a27abf4d4b9844ba370090f9b3eaea0d01e69d98007df2ab8');
   assert.equal(sha256('ops/whatsapp-control/controller.js'),
-    'b79e29f126d15f9d0a590d49bc9be48ac1b52715c59e9b8b7f3bbed89aacff67');
+    '215ece473acc52f44c6d7ddfd9c2df35d943db105d16e85e8238ee49d85b0879');
 });
 
 test('versiones y fail-closed del runtime canónico', () => {
@@ -32,6 +32,7 @@ test('versiones y fail-closed del runtime canónico', () => {
   assert.match(controller, /failed-closed/);
   assert.match(controller, /interrupted-closed/);
   assert.match(controller, /mode:\s*'paused'/);
+  assert.match(controller, /VLA_MANUAL_CYCLE_TRIGGER_V1/);
   assert.match(controller, /setInterval\(\(\) => state\.schedulerStep\(\)/);
 });
 
@@ -50,7 +51,8 @@ test('manifiesto fija hashes y habilita activation solo después de certificaci�
   assert.equal(m.runtime.agent.sha256,
     'a4705ff28b52337597b8bf42ac15949acedc74798f62360f284fa758fdf3eee4');
   assert.equal(m.runtime.controller.sha256,
-    'b79e29f126d15f9d0a590d49bc9be48ac1b52715c59e9b8b7f3bbed89aacff67');
+    '215ece473acc52f44c6d7ddfd9c2df35d943db105d16e85e8238ee49d85b0879');
+  assert.equal(m.runtime.controller.hotfix, 'VLA_MANUAL_CYCLE_TRIGGER_V1');
   assert.equal(m.runtime.messageLibrary.sha256,
     '021ecea597b23ecacace73baedb08d1171f4b318fae721dce486cb2762867f38');
   assert.equal(m.scheduler.authority, 'controller');
