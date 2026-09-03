@@ -12,6 +12,8 @@ import {
 const STORE_NAME = 'vla-whatsapp-monitor-v1';
 const STATE_KEY = 'state';
 const OFFICIAL_EMAIL = 'villalosapamates@gmail.com';
+const FAILURES_BEFORE_ALERT = 2;
+const REMINDER_MS = 12 * 60 * 60 * 1000;
 
 function env(name) {
   return String(Netlify.env.get(name) || '').trim();
@@ -57,7 +59,7 @@ function emailPayload(action, health, state, nowIso) {
   const heading = isRecovery ? 'WhatsApp volvió a estar operativo' : 'El sistema WhatsApp requiere atención';
   const intro = isRecovery
     ? 'El monitor externo confirmó nuevamente el estado saludable del sistema.'
-    : 'La revisión externa programada detectó una falla. No se ejecutó ningún envío ni acción correctiva automática.';
+    : 'Dos revisiones externas consecutivas detectaron una falla. No se ejecutó ningún envío ni acción correctiva automática.';
   const firstFailure = state?.firstFailureAt ? `<p><b>Primer fallo:</b> ${htmlEscape(state.firstFailureAt)}</p>` : '';
   const detail = isRecovery ? '' : `<h3>Motivos detectados</h3><ul>${list}</ul>${firstFailure}`;
   return {
@@ -111,8 +113,8 @@ export default async () => {
   }
 
   const transition = planTransition(previous, health, nowMs, {
-    failuresBeforeAlert: 1,
-    reminderMs: 12 * 60 * 60 * 1000
+    failuresBeforeAlert: FAILURES_BEFORE_ALERT,
+    reminderMs: REMINDER_MS
   });
   const next = { ...transition.next, lastCheckedAt: nowIso, lastHealthStatus: health.status };
 
@@ -147,5 +149,5 @@ export default async () => {
 };
 
 export const config = {
-  schedule: '0 0,12 * * *'
+  schedule: '*/15 * * * *'
 };

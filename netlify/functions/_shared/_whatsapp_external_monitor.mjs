@@ -7,6 +7,8 @@ const REASON_LABELS = Object.freeze({
   CONTROLLER_NOT_OK: 'El Controller de WhatsApp no reporta estado saludable.',
   AGENT_NOT_OK: 'El Agent de WhatsApp no reporta estado saludable.',
   AGENT_NOT_REAL: 'El Agent no está en modo REAL.',
+  AGENT_READINESS_MISSING: 'El Agent responde, pero no entregó una prueba de preparación real de WhatsApp.',
+  AGENT_READINESS_NOT_HEALTHY: 'El Agent está vivo, pero WhatsApp no está realmente listo para enviar.',
   SESSION_NOT_LINKED: 'La sesión de WhatsApp no aparece vinculada.',
   MODE_NOT_AUTOMATIC: 'El Controller no está en modo AUTOMATIC.',
   SCHEDULE_DRIFT: 'Los horarios configurados ya no son 09:00 y 18:00.',
@@ -28,16 +30,25 @@ function sameSchedules(left, right = EXPECTED_SCHEDULES) {
   return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
+function readinessFrom(data = {}, agent = {}) {
+  const direct = data?.readiness && typeof data.readiness === 'object' ? data.readiness : null;
+  const nested = agent?.readiness && typeof agent.readiness === 'object' ? agent.readiness : null;
+  return direct || nested;
+}
+
 function evaluateStatus(data = {}) {
   const config = data?.config && typeof data.config === 'object' ? data.config : {};
   const agent = data?.agent && typeof data.agent === 'object' ? data.agent : {};
   const session = data?.session && typeof data.session === 'object' ? data.session : {};
   const runtime = data?.runtime && typeof data.runtime === 'object' ? data.runtime : {};
+  const readiness = readinessFrom(data, agent);
   const reasons = [];
 
   if (data?.ok !== true) reasons.push('CONTROLLER_NOT_OK');
   if (agent.ok === false) reasons.push('AGENT_NOT_OK');
   if (clean(agent.mode).toLowerCase() !== 'real') reasons.push('AGENT_NOT_REAL');
+  if (!readiness) reasons.push('AGENT_READINESS_MISSING');
+  else if (readiness.ready !== true || clean(readiness.code).toUpperCase() !== 'READY') reasons.push('AGENT_READINESS_NOT_HEALTHY');
   if (session.loggedIn !== true) reasons.push('SESSION_NOT_LINKED');
   if (clean(config.mode).toLowerCase() !== 'automatic') reasons.push('MODE_NOT_AUTOMATIC');
   if (!sameSchedules(config.schedules)) reasons.push('SCHEDULE_DRIFT');
@@ -51,6 +62,8 @@ function evaluateStatus(data = {}) {
     components: {
       controller: data?.ok === true,
       agent: agent.ok !== false && clean(agent.mode).toLowerCase() === 'real',
+      readiness: Boolean(readiness && readiness.ready === true && clean(readiness.code).toUpperCase() === 'READY'),
+      readinessCode: clean(readiness?.code) || null,
       whatsappSession: session.loggedIn === true,
       automatic: clean(config.mode).toLowerCase() === 'automatic',
       schedule: sameSchedules(config.schedules),
@@ -70,6 +83,8 @@ function unreachableHealth(reason = 'MAC_OR_GATEWAY_UNREACHABLE') {
     components: {
       controller: false,
       agent: false,
+      readiness: false,
+      readinessCode: null,
       whatsappSession: false,
       automatic: false,
       schedule: false,
@@ -99,7 +114,7 @@ async function relayStatus({ url, secret, fetchImpl = fetch, timeoutMs = 15000 }
         'Content-Type': 'application/json',
         Accept: 'application/json',
         'X-VLA-Control-Secret': token,
-        'User-Agent': 'VLA-External-WhatsApp-Monitor/1.0'
+        'User-Agent': 'VLA-External-WhatsApp-Monitor/1.1'
       },
       body: JSON.stringify({
         action: 'status',
@@ -126,7 +141,7 @@ async function relayStatus({ url, secret, fetchImpl = fetch, timeoutMs = 15000 }
 
 function defaultState() {
   return {
-    version: 1,
+    version: 2,
     alertActive: false,
     consecutiveFailures: 0,
     firstFailureAt: null,
@@ -185,6 +200,7 @@ export {
   clean,
   normalizeSchedules,
   sameSchedules,
+  readinessFrom,
   evaluateStatus,
   unreachableHealth,
   relayStatus,
