@@ -2,7 +2,7 @@ name: Monitor VLA WhatsApp External
 
 on:
   schedule:
-    - cron: '35 0,12 * * *'
+    - cron: '7,37 * * * *'
   workflow_dispatch:
 
 permissions:
