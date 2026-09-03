@@ -16,7 +16,6 @@ const CI_SAFE_GET_PATHS = new Set([
   '/.netlify/functions/admin-data',
   '/.netlify/functions/admin-data-v2',
   '/.netlify/functions/admin-data-v3',
-  '/.netlify/functions/api-usage',
   '/.netlify/functions/system-health',
   '/.netlify/functions/system-health-advanced',
   '/.netlify/functions/access-mode',

@@ -28,8 +28,7 @@ assert(css.includes('.vla-brand-logo'),'Falta estilo para el logo oficial.');
 assert(css.includes('overflow-wrap:anywhere'),'Los valores largos podrían desbordar sus tarjetas.');
 assert(css.includes('#owners table{min-width:900px}'),'La tabla de propietarios debe conservar legibilidad con desplazamiento interno.');
 assert(css.includes('clamp(180px,11vw,270px)'),'El gráfico circular debe conservar un mínimo legible de 180 px.');
-assert(css.includes('#api-restan'),'Falta controlar el texto auxiliar de Airtable API.');
-assert(css.includes('-webkit-line-clamp:3'),'El texto auxiliar de Airtable debe limitarse a tres líneas.');
+assert(!css.includes('#api-restan')&&!css.includes('#kpi-api'),'El CSS no debe conservar la tarjeta retirada del contador API.');
 assert(css.includes('white-space:nowrap!important'),'Los valores principales no deben partirse en varias líneas.');
 
 assert(js.includes("const ICON='/.netlify/functions/app-icon?app=portal&size=180'"),'El encabezado no reutiliza el logo oficial VLA.');

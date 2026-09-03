@@ -1,7 +1,7 @@
 (function(){
   'use strict';
   const ICON='/.netlify/functions/app-icon?app=portal&size=180';
-  const KPI_SELECTOR='#kpi-total,#kpi-usd,#kpi-bs,#kpi-morosos,#kpi-bcv,#kpi-api,#vla-porton-value,#vla-reports-value';
+  const KPI_SELECTOR='#kpi-total,#kpi-usd,#kpi-bs,#kpi-morosos,#kpi-bcv,#vla-porton-value,#vla-reports-value';
   let revealed=false;
   let fitFrame=0;
 

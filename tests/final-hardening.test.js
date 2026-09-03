@@ -100,12 +100,10 @@ assert(!adminHtml.includes("/.netlify/functions/airtable/'+encodeURIComponent(TA
 assert(!adminEdge.includes('oldExpenseCall'));
 assert(!adminEdge.includes('manualOld'));
 assert(!adminEdge.includes('reportOld'));
-assert(!source('netlify/edge-functions/admin-links.js').includes("renderAll();loadUsage();', 'renderAll();"));
-const usage = source('netlify/functions/api-usage.js');
-assert(usage.includes('withAirtableUsage'));
-assert(usage.includes('flushCurrentUsage'));
-assert(usage.includes('officialCounterAvailableByApi: false'));
-assert(adminHtml.includes('interno auditado'));
+assert(!adminHtml.includes('loadUsage'));
+assert(!adminHtml.includes('/.netlify/functions/api-usage'));
+assert(!fs.existsSync(path.join(__dirname, '..', 'netlify', 'functions', 'api-usage.js')));
+assert(!fs.existsSync(path.join(__dirname, '..', 'netlify', 'functions', 'airtable-usage-rollup-scheduled.js')));
 assert(!adminHtml.includes('catch(e){}'));
 
 const securityPage = source('seguridad.html');
