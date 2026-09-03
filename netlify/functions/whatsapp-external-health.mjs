@@ -2,8 +2,8 @@ import { getStore } from '@netlify/blobs';
 
 const STORE_NAME = 'vla-whatsapp-monitor-v1';
 const STATE_KEY = 'state';
-const MAX_AGE_MS = (12 * 60 + 30) * 60 * 1000;
-const FAILURES_BEFORE_ALERT = 1;
+const MAX_AGE_MS = 25 * 60 * 1000;
+const FAILURES_BEFORE_ALERT = 2;
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -62,6 +62,7 @@ export default async (req) => {
     return json({
       ok: true,
       status: 'degraded',
+      reasons: safeReasons(state.lastReasons),
       consecutiveFailures: failures,
       checkedAt: state.lastCheckedAt
     }, 200);
