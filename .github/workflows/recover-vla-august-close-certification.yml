@@ -1,0 +1,90 @@
+name: Recover VLA August Close Certification
+
+on:
+  workflow_run:
+    workflows: ['Deploy Netlify Production']
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+jobs:
+  recover:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Download proven historical payment IDs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROOF_ARTIFACT_ID: '9828773426'
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/vla-proof
+          curl --fail-with-body --silent --show-error --location \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${PROOF_ARTIFACT_ID}/zip" \
+            -o /tmp/vla-proof.zip
+          unzip -q /tmp/vla-proof.zip -d /tmp/vla-proof
+          test -s /tmp/vla-proof/august-close-backup-proof.json
+          jq -e '.planHash == "69365ce1334bbd28f9f9e766c2165809363a7dde9a37e11e26bbf571d1499816"' /tmp/vla-proof/august-close-backup-proof.json >/dev/null
+          jq -e '.sourceHash == "fd4e3eabb9eb7238888aafeae8a38438970b9ca6e2ccd504508530099a75eae4"' /tmp/vla-proof/august-close-backup-proof.json >/dev/null
+          jq -e '.paymentCount == 48 and (.paymentIds | length == 48)' /tmp/vla-proof/august-close-backup-proof.json >/dev/null
+          jq -c '.paymentIds' /tmp/vla-proof/august-close-backup-proof.json > /tmp/payment-ids.json
+
+      - name: Obtain short-lived GitHub OIDC identity
+        id: oidc
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=vla-close-recovery-production")"
+          token="$(printf '%s' "$response" | jq -r '.value')"
+          test -n "$token"
+          test "$token" != 'null'
+          printf 'token=%s\n' "$token" >> "$GITHUB_OUTPUT"
+
+      - name: Repair audit metadata only
+        id: repair
+        shell: bash
+        env:
+          OIDC_TOKEN: ${{ steps.oidc.outputs.token }}
+        run: |
+          set -euo pipefail
+          payment_ids="$(cat /tmp/payment-ids.json)"
+          jq -n --arg oidcToken "$OIDC_TOKEN" --argjson paymentIds "$payment_ids" \
+            '{oidcToken:$oidcToken,paymentIds:$paymentIds}' > /tmp/recovery-request.json
+          code="$(curl --silent --show-error --location --max-time 90 \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --data-binary @/tmp/recovery-request.json \
+            --output /tmp/recovery-result.json \
+            --write-out '%{http_code}' \
+            'https://villalosapamates.netlify.app/.netlify/functions/recover-august-close-certification')"
+          cat /tmp/recovery-result.json | jq .
+          test "$code" = '200'
+          jq -e '.success == true' /tmp/recovery-result.json >/dev/null
+          jq -e '.planHash == "69365ce1334bbd28f9f9e766c2165809363a7dde9a37e11e26bbf571d1499816"' /tmp/recovery-result.json >/dev/null
+          jq -e '.sourceHash == "fd4e3eabb9eb7238888aafeae8a38438970b9ca6e2ccd504508530099a75eae4"' /tmp/recovery-result.json >/dev/null
+
+      - name: Remove sensitive transient files
+        if: always()
+        shell: bash
+        run: rm -rf /tmp/vla-proof /tmp/vla-proof.zip /tmp/payment-ids.json /tmp/recovery-request.json
+
+      - name: Upload sanitized recovery evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: august-close-certification-recovery
+          path: /tmp/recovery-result.json
+          if-no-files-found: warn
+          retention-days: 30
