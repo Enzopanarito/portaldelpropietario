@@ -74,5 +74,26 @@
   "activation": {
     "automaticAllowed": true,
     "blockedUntil": []
+  },
+  "communicationsCandidate": {
+    "status": "pending-local-installation-and-verification",
+    "createdAt": "2026-09-06T00:00:00Z",
+    "doesNotReplaceObservedRuntime": true,
+    "agent": {
+      "targetVersion": "1.4.0",
+      "sha256": "1b43b2656195a31d4e6742f9cbb3de71057baf1823d0120bb4423ac1b555785d",
+      "broadcastLibrarySha256": "008c74342d2c8d796d88bb7d8dbfae7c29ebcdb2ec996998ae58db73c21b8201"
+    },
+    "controller": {
+      "targetVersion": "1.4.0",
+      "sha256": "66ff4bf2203fa7d6384e34c6fbd64591d0c697b231db1330a326b774e047297f"
+    },
+    "preserved": {
+      "financialMessageLibrarySha256": "021ecea597b23ecacace73baedb08d1171f4b318fae721dce486cb2762867f38",
+      "legacyFinancialJobSha256": "ccbb196a365c0f23e897e48ab612f966a92d69294f02f4f05120c5add94e1cfc",
+      "credentialsModified": false,
+      "schedulerConfigurationModified": false,
+      "automaticScheduleDefinitionsModified": false
+    }
   }
 }

@@ -51,6 +51,10 @@ const DEFAULT_RUNTIME = Object.freeze({
   linkInProgress: false,
   linkStartedAt: null,
   linkLastStatus: 'idle',
+  broadcastInProgress: false,
+  broadcastStartedAt: null,
+  broadcastJobId: null,
+  communications: {},
   ledger: {}
 });
 
@@ -195,6 +199,16 @@ function createControllerState() {
     runtime.linkLastStatus = 'idle';
     interrupted = true;
   }
+  if (runtime.broadcastInProgress) {
+    const interruptedJobId = clean(runtime.broadcastJobId);
+    runtime.broadcastInProgress = false;
+    runtime.broadcastStartedAt = null;
+    runtime.broadcastJobId = null;
+    if (interruptedJobId && runtime.communications?.[interruptedJobId]) {
+      runtime.communications[interruptedJobId] = { ...runtime.communications[interruptedJobId], status: 'INTERRUPTED_CLOSED', completedAt: nowIso(), error: 'El controlador se reinició durante el comunicado. No se reenvía automáticamente.' };
+    }
+    interrupted = true;
+  }
   for (const [key, value] of Object.entries(runtime.ledger)) {
     const wasRunning = (typeof value === 'string' && value.startsWith('running:')) || value?.status === 'running';
     if (!wasRunning) continue;
@@ -224,8 +238,9 @@ function createControllerState() {
     runtime.lastError = 'El código de vinculación expiró. Puede iniciar uno nuevo.'; persistRuntime();
     appendAudit({ action:'link-expired', result:'ATTENTION', detail:'admin' }); return true;
   }
-  function busy() { expireStaleLink(); return runtime.runInProgress || runtime.warmupInProgress || runtime.linkInProgress; }
-  function busyWithoutLink() { return runtime.runInProgress || runtime.warmupInProgress; }
+  runtime.communications = runtime.communications && typeof runtime.communications === 'object' ? runtime.communications : {};
+  function busy() { expireStaleLink(); return runtime.runInProgress || runtime.warmupInProgress || runtime.linkInProgress || runtime.broadcastInProgress; }
+  function busyWithoutLink() { return runtime.runInProgress || runtime.warmupInProgress || runtime.broadcastInProgress; }
   function markLedger(key, status, extra = {}) {
     runtime.ledger[key] = { status, at: nowIso(), ...extra };
     persistRuntime();
@@ -310,7 +325,7 @@ function createControllerState() {
 
   async function agent(pathname, options = {}) {
     const controller = new AbortController();
-    const timeoutMs = pathname === '/tick'
+    const timeoutMs = pathname === '/tick' || pathname === '/broadcast'
       ? 45 * 60 * 1000
       : 240000;
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -496,6 +511,62 @@ function createControllerState() {
     setImmediate(() => performReservedRun(reason, requestId, options).catch(() => {}));
     return { accepted: true, requestId, startedAt };
   }
+
+  function normalizeBroadcast(input = {}) {
+    const jobId = clean(input.jobId).toUpperCase();
+    if (!/^COM-\d{8}-[A-F0-9]{12}$/.test(jobId)) throw conflict('Identificador de comunicado inválido.');
+    if (!Array.isArray(input.recipients) || !input.recipients.length || input.recipients.length > 15) throw conflict('Destinatarios del comunicado inválidos.');
+    const houses = new Set();
+    const recipients = input.recipients.map(item => {
+      const house = Number(item?.house), message = String(item?.message || '').trim();
+      if (!Number.isInteger(house) || house < 1 || house > 15 || houses.has(house)) throw conflict('Casa duplicada o inválida en el comunicado.');
+      if (message.length < 20 || message.length > 3500) throw conflict(`Mensaje inválido para la Casa ${house}.`);
+      if (!message.includes(`VLA-${jobId}-C${String(house).padStart(2, '0')}`)) throw conflict(`Falta la referencia de la Casa ${house}.`);
+      houses.add(house);
+      return { house, message };
+    });
+    return { jobId, recipients };
+  }
+  function pruneCommunications() {
+    const entries = Object.entries(runtime.communications || {}).sort((a, b) => Date.parse(b[1]?.createdAt || 0) - Date.parse(a[1]?.createdAt || 0));
+    runtime.communications = Object.fromEntries(entries.slice(0, 30));
+  }
+  async function performBroadcast(payload) {
+    try {
+      const result = await agent('/broadcast', { method: 'POST', body: JSON.stringify(payload) });
+      runtime.communications[payload.jobId] = {
+        ...runtime.communications[payload.jobId], status: result.status || 'COMPLETED', completedAt: nowIso(),
+        recipientCount: Number(result.recipientCount || payload.recipients.length), confirmedCount: Number(result.confirmedCount || 0),
+        quarantinedCount: Number(result.quarantinedCount || 0), failedSafeCount: Number(result.failedSafeCount || 0), results: Array.isArray(result.results) ? result.results.slice(0, 15) : []
+      };
+      appendAudit({ action: 'informational-broadcast', result: result.status || 'COMPLETED', detail: `${payload.jobId} · destinatarios=${payload.recipients.length}` });
+    } catch (error) {
+      runtime.communications[payload.jobId] = { ...runtime.communications[payload.jobId], status: 'FAILED_SAFE', completedAt: nowIso(), error: String(error.message || error).slice(0, 240) };
+      appendAudit({ action: 'informational-broadcast', result: 'FAILED_SAFE', detail: payload.jobId });
+    } finally {
+      if (runtime.broadcastJobId === payload.jobId) {
+        runtime.broadcastInProgress = false; runtime.broadcastStartedAt = null; runtime.broadcastJobId = null;
+      }
+      pruneCommunications(); persistRuntime();
+    }
+  }
+  function queueBroadcast(input = {}) {
+    if (!inAllowedWindow()) throw conflict('Los comunicados por WhatsApp solo pueden comenzar entre 08:00 y 20:59, hora Venezuela.');
+    if (busy()) throw conflict('Ya existe una operación WhatsApp en curso. Espere a que finalice.');
+    const payload = normalizeBroadcast(input);
+    const existing = runtime.communications[payload.jobId];
+    if (existing) return { accepted: false, idempotent: true, jobId: payload.jobId, status: existing.status };
+    runtime.broadcastInProgress = true; runtime.broadcastStartedAt = nowIso(); runtime.broadcastJobId = payload.jobId;
+    runtime.communications[payload.jobId] = { jobId: payload.jobId, status: 'QUEUED', createdAt: nowIso(), recipientCount: payload.recipients.length, confirmedCount: 0, quarantinedCount: 0, failedSafeCount: 0 };
+    persistRuntime(); appendAudit({ action: 'queue-informational-broadcast', result: 'ACCEPTED', detail: `${payload.jobId} · destinatarios=${payload.recipients.length}` });
+    setImmediate(() => performBroadcast(payload).catch(() => {}));
+    return { accepted: true, jobId: payload.jobId, startedAt: runtime.broadcastStartedAt };
+  }
+  function communicationStatus(jobId) {
+    const id = clean(jobId).toUpperCase();
+    const item = runtime.communications?.[id];
+    return item ? clone(item) : null;
+  }
   async function executeRun(reason = 'automatic') {
     const requestId = reserveRun(reason);
     return performReservedRun(reason, requestId, AUTOMATIC_RUN_OPTIONS);
@@ -523,8 +594,12 @@ function createControllerState() {
         linkInProgress: runtime.linkInProgress,
         linkStartedAt: runtime.linkStartedAt,
         linkLastStatus: runtime.linkLastStatus,
+        broadcastInProgress: runtime.broadcastInProgress,
+        broadcastStartedAt: runtime.broadcastStartedAt,
+        broadcastJobId: runtime.broadcastJobId,
         nextRunAt: runtime.linkInProgress ? null : nextRunAt(config)
       },
+      communications: Object.values(runtime.communications || {}).sort((a, b) => Date.parse(b.createdAt || 0) - Date.parse(a.createdAt || 0)).slice(0, 10),
       history: recentHistory(AUDIT_FILE, 30)
     };
   }
@@ -597,6 +672,8 @@ function createControllerState() {
     cancelLink,
     runCore,
     queueRun,
+    queueBroadcast,
+    communicationStatus,
     schedulerStep,
     seedPastSchedules,
     ledgerBlocks
@@ -631,6 +708,11 @@ async function dispatchControl(state, action, payload = {}) {
     const queued = state.queueRun('admin-manual');
     return { ...(await state.status()), queued, message: 'Ejecución manual aceptada. El resultado aparecerá en el historial.' };
   }
+  if (normalized === 'broadcast') {
+    const queued = state.queueBroadcast(payload);
+    return { ok: true, queued, message: queued.accepted ? 'Comunicado informativo aceptado.' : 'El comunicado ya estaba registrado.' };
+  }
+  if (normalized === 'broadcast-status') return { ok: true, communication: state.communicationStatus(payload.jobId) };
   if (normalized === 'warmup') {
     const queued = state.queueWarmup('admin');
     return { ...(await state.status()), queued, message: 'Verificación de WhatsApp aceptada. El estado se actualizará automáticamente.' };
@@ -655,7 +737,7 @@ function startServer() {
   const state = createControllerState();
   const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && req.url === '/health') {
-      return send(res, 200, { ok: true, service: 'vla-whatsapp-controller', version: '1.3.4', mode: state.getConfig().mode });
+      return send(res, 200, { ok: true, service: 'vla-whatsapp-controller', version: '1.4.0', mode: state.getConfig().mode });
     }
     if (!timingSafeToken(req.headers['x-agent-token'])) return send(res, 401, { ok: false, message: 'Token inválido o ausente.' });
     try {
@@ -682,7 +764,7 @@ function startServer() {
 
   setInterval(() => state.schedulerStep().catch(() => {}), LOOP_MS).unref();
   setTimeout(() => state.schedulerStep().catch(() => {}), 15000).unref();
-  server.listen(PORT, '0.0.0.0', () => console.log(`VLA WhatsApp Controller v1.3.4 escuchando en :${PORT} · modo=${state.getConfig().mode}`));
+  server.listen(PORT, '0.0.0.0', () => console.log(`VLA WhatsApp Controller v1.4.0 escuchando en :${PORT} · modo=${state.getConfig().mode}`));
   return { server, state };
 }
 

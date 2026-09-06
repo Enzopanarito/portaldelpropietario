@@ -7,6 +7,7 @@ const path = require('path');
 const { chromium } = require('playwright');
 const { activeCycle, scheduleSummary, zonedParts } = require('./lib/schedule');
 const { buildMessage, normalizeRenderedMessage, messageAnchors } = require('./lib/message');
+const { normalizeBroadcastPayload, summarizeBroadcast } = require('./lib/broadcast');
 const { StateStore } = require('./lib/state');
 
 const PORT = Number(process.env.PORT || 8787);
@@ -311,7 +312,7 @@ function compactMessageV134(value) {
   return canonicalMessageV134(value).replace(/\s+/g, ' ').trim();
 }
 function messageReferenceV134(message) {
-  return canonicalMessageV134(message).match(/VLA-\d{12}-C\d{2}/)?.[0] || null;
+  return canonicalMessageV134(message).match(/VLA-(?:\d{12}|COM-\d{8}-[A-F0-9]{12})-C\d{2}/)?.[0] || null;
 }
 async function composerVariantsV134(composer) {
   const inner = await composer.innerText().catch(() => '');
@@ -610,6 +611,50 @@ async function fetchPublicData() {
   const data = await response.json();
   if (!Array.isArray(data.propietarios) || data.propietarios.length !== 15) throw new Error(`VLA devolvió ${data.propietarios?.length || 0}/15 casas.`);
   return data;
+}
+
+// VLA_INFORMATIONAL_BROADCAST_V1
+// Canal manual aislado: no consulta saldos, no crea ciclos y no modifica las
+// reglas de recordatorios. Reutiliza exclusivamente la entrega verificada.
+async function broadcast(input = {}) {
+  return serial('tick', async () => {
+    const payload = normalizeBroadcastPayload(input, sha), contacts = loadContacts(), state = store.read();
+    state.broadcasts ||= {};
+    const existing = state.broadcasts[payload.jobId];
+    if (existing?.payloadHash && existing.payloadHash !== payload.payloadHash) throw new Error('El identificador del comunicado ya pertenece a otro contenido.');
+    const bs = state.broadcasts[payload.jobId] ||= { createdAt: nowIso(), status: 'RUNNING', recipients: {}, payloadHash: payload.payloadHash };
+    const results = [];
+    for (const planned of payload.recipients) {
+      const contact = contacts.get(planned.house);
+      const rec = bs.recipients[String(planned.house)] ||= { status: 'PENDING', attempts: 0, messageHash: planned.messageHash, messageReference: planned.messageReference };
+      if (rec.messageHash !== planned.messageHash) throw new Error(`El contenido de la Casa ${planned.house} cambió después de iniciar el envío.`);
+      if (rec.confirmedAt) { results.push({ house: planned.house, status: 'ALREADY_CONFIRMED' }); continue; }
+      if (rec.dispatchAttemptedAt) { rec.status = 'ALREADY_QUARANTINED'; results.push({ house: planned.house, status: rec.status }); continue; }
+      if (!contact?.phone) { rec.status = 'NO_PHONE'; rec.completedAt = nowIso(); results.push({ house: planned.house, status: rec.status }); store.write(state); continue; }
+      rec.attempts += 1;
+      try {
+        const outcome = await sendVerified(contact.phone, planned.message, {
+          beforeDispatch: async () => {
+            rec.dispatchAttemptedAt = nowIso(); rec.status = 'DISPATCHING'; store.write(state);
+          }
+        });
+        if (outcome.reconciled && !rec.dispatchAttemptedAt) rec.dispatchAttemptedAt = nowIso();
+        if (outcome.ok) { rec.status = 'SENT_CONFIRMED'; rec.confirmedAt = nowIso(); rec.ack = outcome.ack || 'acknowledged'; }
+        else if (rec.dispatchAttemptedAt) { rec.status = 'DISPATCHED_UNVERIFIED'; rec.lastError = safeError(outcome.code || outcome.ack || 'Sin confirmación'); }
+        else { rec.status = outcome.code === 'AUTH_REQUIRED' ? 'AUTH_REQUIRED' : 'ERROR_PRE_DISPATCH'; rec.lastError = safeError(outcome.code || 'No enviado'); }
+        results.push({ house: planned.house, status: rec.status, ack: rec.ack || outcome.ack || null });
+      } catch (error) {
+        rec.lastError = safeError(error);
+        rec.status = rec.dispatchAttemptedAt ? 'DISPATCHED_UNVERIFIED' : 'ERROR_PRE_DISPATCH';
+        results.push({ house: planned.house, status: rec.status, error: rec.lastError });
+      }
+      store.write(state);
+      await sleep(BETWEEN_MESSAGES_MS);
+    }
+    Object.assign(bs, summarizeBroadcast(bs), { completedAt: nowIso() });
+    store.write(state);
+    return { ok: true, action: 'INFORMATIONAL_BROADCAST', jobId: payload.jobId, status: bs.status, recipientCount: payload.recipients.length, confirmedCount: bs.confirmedCount, quarantinedCount: bs.quarantinedCount, failedSafeCount: bs.failedSafeCount, results };
+  });
 }
 
 function buildRecipients(data, cycle, parts) {
@@ -975,7 +1020,7 @@ async function diagnosticReconcileV135() {
 
 app.get('/health', (_req,res) => {
   const p = zonedParts(new Date());
-  res.json({ ok: true, service: 'vla-whatsapp-agent', version: '1.3.5', mode: MODE, caracas: p, stateFile: STATE_FILE, capabilities: { relink: true, diagnosticNoSendV134: true, uniqueDeliveryReference: true, referenceReconciliationV135: true } });
+  res.json({ ok: true, service: 'vla-whatsapp-agent', version: '1.4.0', mode: MODE, caracas: p, stateFile: STATE_FILE, capabilities: { relink: true, diagnosticNoSendV134: true, uniqueDeliveryReference: true, referenceReconciliationV135: true, informationalBroadcastV1: true } });
 });
 app.get('/schedule/:year/:month', (req,res) => {
   res.json({ year:Number(req.params.year), month:Number(req.params.month), schedule:scheduleSummary(Number(req.params.year),Number(req.params.month)) });
@@ -984,6 +1029,11 @@ app.get('/state', (_req,res) => res.json(store.read()));
 app.post('/tick', async (req,res) => {
   if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
   try { res.json(await tick({ forcePlan: req.body?.forcePlan === true })); }
+  catch (error) { res.status(500).json({ ok:false, error:safeError(error) }); }
+});
+app.post('/broadcast', async (req,res) => {
+  if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
+  try { res.json(await broadcast(req.body || {})); }
   catch (error) { res.status(500).json({ ok:false, error:safeError(error) }); }
 });
 app.post('/diagnostic/reconcile-v135', async (req,res) => {
@@ -1027,7 +1077,7 @@ app.get('/session/screenshot', async (_req,res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`VLA WhatsApp Agent v1.3.1 escuchando en :${PORT} · modo=${MODE}`);
+  console.log(`VLA WhatsApp Agent v1.4.0 escuchando en :${PORT} · modo=${MODE}`);
   // Recuperación extraordinaria solo al arrancar en modo REAL. No es polling.
   // Si la Mac estuvo apagada y vuelve dentro de la ventana permitida, intenta retomar
   // únicamente el ciclo vigente; la idempotencia evita repetir casas ya confirmadas.

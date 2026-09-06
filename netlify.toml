@@ -121,6 +121,12 @@ path = "/admin*"
 function = "admin-whatsapp-relink"
 path = "/admin*"
 
+# Comunicaciones manuales se inyecta al final y no sustituye ni modifica el
+# controlador visual de recordatorios automáticos.
+[[edge_functions]]
+function = "admin-communications"
+path = "/admin*"
+
 [[headers]]
 for = "/*"
   [headers.values]
