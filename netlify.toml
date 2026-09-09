@@ -110,7 +110,13 @@ path = "/admin*"
 function = "admin-monthly-close"
 path = "/admin*"
 
-# WhatsApp se declara al final del pipeline admin para que solo añada su
+# context.next() procesa la respuesta en orden inverso: comunicaciones debe
+# envolver al control para encontrar su sección ya insertada, sin modificarlo.
+[[edge_functions]]
+function = "admin-communications"
+path = "/admin*"
+
+# WhatsApp conserva su posición respecto de los middlewares existentes y su
 # interfaz/control y nunca altere los middlewares financieros ya existentes.
 [[edge_functions]]
 function = "admin-whatsapp-control"

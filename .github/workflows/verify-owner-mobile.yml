@@ -90,6 +90,9 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund
           npx playwright install --with-deps chromium
 
+      - name: Verify manual communications with isolated fixtures (no real sends)
+        run: node tests/communications-browser.cjs
+
       - name: Verify mobile layout without Tailwind CDN
         env:
           TARGET_URL: ${{ steps.target.outputs.url }}

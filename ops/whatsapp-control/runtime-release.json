@@ -7,7 +7,7 @@
     "bundleSha256": "394f1eb3a9f4f267c9315b864e66acfb108d0f97e05813832b0aaa8ce57a55b4",
     "financialDeltaUsd": "0.00",
     "financialSha256": "dcbca7c8d8381ccda8b2165b9741ff5e9c6fe54d1ea9a6f79544ee5bafdc6aff",
-    "notes": "Certificación base del runtime Mac mini conservada. El Controller incorpora el hotfix VLA_MANUAL_CYCLE_TRIGGER_V1 del 2026-09-03: solo el disparo manual refresca el plan del ciclo vigente; el automático, la ventana horaria y la idempotencia por propietario permanecen sin cambios."
+    "notes": "Runtime real del Mac mini auditado el 2026-09-09 y conservado como partida: Agent 1.3.6 con revisión financiera y readiness; Controller 1.3.5 con reintentos fail-closed. Las comunicaciones son una extensión aislada y no sustituyen esas protecciones."
   },
   "architecture": {
     "path": [
@@ -28,8 +28,8 @@
   },
   "runtime": {
     "agent": {
-      "observedVersion": "1.3.5",
-      "sha256": "a4705ff28b52337597b8bf42ac15949acedc74798f62360f284fa758fdf3eee4",
+      "observedVersion": "1.3.6",
+      "sha256": "7a6bd6a1d0bd6af1244ae57ab017101b114ca7183017aebf2fb3345925c7f050",
       "packageSha256": "85c25a5478dca33a27abf4d4b9844ba370090f9b3eaea0d01e69d98007df2ab8",
       "dockerfileSha256": "c4ac2d02eed6d66e67ad59727a28130a42afa39fccaa675f21b40b6f9c78dc2d",
       "node": "v24.18.0",
@@ -37,8 +37,8 @@
       "canonicalPath": "ops/whatsapp-runtime/agent"
     },
     "controller": {
-      "observedVersion": "1.3.4",
-      "sha256": "215ece473acc52f44c6d7ddfd9c2df35d943db105d16e85e8238ee49d85b0879",
+      "observedVersion": "1.3.5",
+      "sha256": "ce6fa2a322f9decdc2d533caec87ddb73082b97241ed5da6e0e8afcac22e9a42",
       "dockerfileSha256": "37e9f89187184605a5e3093c4365afede1af2c8c290de7a357f22b1469a8610f",
       "node": "v22.23.2",
       "canonicalPath": "ops/whatsapp-control/controller.js",
@@ -74,5 +74,26 @@
   "activation": {
     "automaticAllowed": true,
     "blockedUntil": []
+  },
+  "communicationsCandidate": {
+    "status": "pending-local-installation-and-verification",
+    "createdAt": "2026-09-06T00:00:00Z",
+    "doesNotReplaceObservedRuntime": true,
+    "agent": {
+      "targetVersion": "1.4.1",
+      "sha256": "fd2ffd692eb15a6f2329406461b16016fb94ff7d6f0ca92dd10bbc8d89abbc18",
+      "broadcastLibrarySha256": "008c74342d2c8d796d88bb7d8dbfae7c29ebcdb2ec996998ae58db73c21b8201"
+    },
+    "controller": {
+      "targetVersion": "1.4.1",
+      "sha256": "80265db7ffbe6c1338c9e95df921beeef940f340abb4428671d83f0ed0288a25"
+    },
+    "preserved": {
+      "financialMessageLibrarySha256": "021ecea597b23ecacace73baedb08d1171f4b318fae721dce486cb2762867f38",
+      "legacyFinancialJobSha256": "ccbb196a365c0f23e897e48ab612f966a92d69294f02f4f05120c5add94e1cfc",
+      "credentialsModified": false,
+      "schedulerConfigurationModified": false,
+      "automaticScheduleDefinitionsModified": false
+    }
   }
 }
