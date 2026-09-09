@@ -2,6 +2,7 @@
 const {chromium}=require('playwright');
 const path=require('path');
 const fs=require('fs');
+const {suppressPreviewToolbar}=require('./helpers/preview-toolbar.cjs');
 
 const ignored=/favicon|permissions policy|app\.netlify\.com/i;
 const privatePlant401=/Failed to load resource: the server responded with a status of 401/i;
@@ -61,6 +62,7 @@ async function loadStableLivePortal(page,target,errors){
 async function live(browser,target){
   if(!target)return null;
   const page=await browser.newPage({viewport:{width:390,height:844}}),errors=watch(page);
+  await suppressPreviewToolbar(page,target);
   const response=await loadStableLivePortal(page,target,errors);
   assert(response.headers()['x-vla-owner-payment-report']==='progressive-v13','Falta marcador progressive-v13.');
   await page.addStyleTag({content:'[data-netlify-deploy-id],iframe[title="Netlify Drawer"]{display:none!important;pointer-events:none!important}'})

@@ -2,10 +2,12 @@
 const fs=require('fs');
 const {chromium}=require('playwright');
 const assert=require('node:assert/strict');
+const {suppressPreviewToolbar}=require('./helpers/preview-toolbar.cjs');
 const TARGET_URL=process.env.TARGET_URL||'http://127.0.0.1:8888';
 
 async function openOwner(page){
-  await page.goto(TARGET_URL+'/?punctuality-browser='+Date.now(),{waitUntil:'domcontentloaded',timeout:45000});
+  await suppressPreviewToolbar(page,TARGET_URL);
+  await page.goto(TARGET_URL+'/?punctuality-browser='+Date.now(),{waitUntil:'load',timeout:45000});
   await page.waitForFunction(()=>{const s=document.getElementById('welcomeSelector');return s&&!s.disabled&&s.options.length>1},{timeout:30000});
   const value=await page.locator('#welcomeSelector option').nth(1).getAttribute('value');
   assert.ok(value,'La primera casa del selector debe tener ownerId.');
