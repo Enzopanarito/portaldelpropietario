@@ -103,19 +103,20 @@ test('IA solo redacta: la interfaz exige una segunda acción y confirmación par
 });
 
 test('instalador local crea respaldo verificable, restaura en error y nunca dispara WhatsApp', () => {
-  const relative = 'ops/whatsapp-control/INSTALAR_COMUNICACIONES_SEGURAS.command';
+  const relative = 'ops/whatsapp-control/INSTALAR_COMUNICACIONES_SEGURAS_V2.command';
   const installer = source(relative);
   const checked = spawnSync('bash', ['-n', path.join(ROOT, relative)], { encoding: 'utf8' });
   assert.equal(checked.status, 0, checked.stderr || checked.stdout);
   for (const marker of [
     'communications-preinstall-', 'SHA256SUMS.txt', 'RESTAURAR_COMUNICACIONES.command',
-    'agent-state.json', 'CONTROL_BEFORE_SHA', 'rollback_on_error',
-    'state.json cambió', 'control.json cambió'
+    'agent-state.json', 'agent-message.js', 'CONTROL_BEFORE_SHA', 'rollback_on_error',
+    'Integridad del respaldo verificada', 'state.json cambió', 'control.json cambió',
+    'plantilla financiera automática cambió'
   ]) assert.match(installer, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  assert.match(installer, /OLD_AGENT_SHA="a4705ff/);
-  assert.match(installer, /OLD_CONTROLLER_SHA="215ece/);
-  assert.match(installer, /NEW_AGENT_SHA="1b43b265/);
-  assert.match(installer, /NEW_CONTROLLER_SHA="66ff4bf2/);
+  assert.match(installer, /OLD_AGENT_SHA="7a6bd6a1/);
+  assert.match(installer, /OLD_CONTROLLER_SHA="ce6fa2a3/);
+  assert.match(installer, /NEW_AGENT_SHA="fd2ffd69/);
+  assert.match(installer, /NEW_CONTROLLER_SHA="80265db7/);
   assert.doesNotMatch(installer, /curl[^\n]*(?:\/tick|\/warmup|\/session\/link)/i);
   assert.doesNotMatch(installer, /docker\s+compose[^\n]+\bdown\b/i);
   assert.doesNotMatch(installer, /(?:cp|mv|rm)[^\n]*(?:\.env|credentials?\.json|whatsapp-agent-data\/profile)/i);

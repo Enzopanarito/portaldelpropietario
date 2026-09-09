@@ -195,25 +195,72 @@ async function firstVisible(locators, timeout = 90000) {
   return null;
 }
 
-async function sessionStatus({ navigate = true } = {}) {
+// VLA_SESSION_READINESS_V137
+async function detectBrowserDatabaseErrorV137(p) {
+  const body = await p.locator('body').innerText({ timeout: 2500 }).catch(() => '');
+  return /(ocurri[oó].{0,120}error.{0,120}base de datos.{0,120}navegador|error.{0,120}base de datos.{0,120}navegador|browser.{0,120}database.{0,120}error|database.{0,120}browser.{0,120}error)/i.test(String(body || ''));
+}
+
+async function sessionReadinessV137({ navigate = false } = {}) {
   const { page } = await ensureBrowser();
-  if (navigate && !String(page.url()).startsWith('https://web.whatsapp.com')) {
-    await page.goto('https://web.whatsapp.com/', { waitUntil: 'domcontentloaded', timeout: 120000 }).catch(()=>{});
+  if (navigate) {
+    try {
+      await page.goto('https://web.whatsapp.com/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    } catch (error) {
+      return {
+        healthy: false, ready: false, loggedIn: null, qrVisible: false,
+        code: 'WHATSAPP_NAVIGATION_FAILED', status: 'degraded',
+        observedAt: nowIso(), url: page.url(), detail: safeError(error)
+      };
+    }
   }
+
+  if (await detectBrowserDatabaseErrorV137(page)) {
+    return {
+      healthy: false, ready: false, loggedIn: false, qrVisible: false,
+      code: 'BROWSER_DATABASE_ERROR', status: 'down', observedAt: nowIso(), url: page.url()
+    };
+  }
+
   const ready = await firstVisible([
     page.locator('#pane-side'),
     page.locator('[aria-label="Chat list"]'),
     page.locator('[aria-label="Lista de chats"]')
-  ], 8000);
-  if (ready) return { loggedIn: true, url: page.url() };
+  ], 4000);
+  if (ready) {
+    return {
+      healthy: true, ready: true, loggedIn: true, qrVisible: false,
+      code: 'READY', status: 'healthy', observedAt: nowIso(), url: page.url()
+    };
+  }
+
   const qr = await firstVisible([
-    page.locator('canvas'),
     page.locator('[data-testid="qrcode"]'),
-    page.locator('div[data-ref] canvas')
-  ], 3000);
-  const shot = screenshotPath(qr ? 'qr' : 'session');
-  await page.screenshot({ path: shot, fullPage: false }).catch(()=>{});
-  return { loggedIn: false, qrVisible: !!qr, screenshot: shot, url: page.url() };
+    page.locator('div[data-ref] canvas'),
+    page.locator('div[data-ref]')
+  ], 1500);
+  const body = await page.locator('body').innerText({ timeout: 1500 }).catch(() => '');
+  const explicitLogin = /(escanea.{0,80}(qr|c[oó]digo)|scan.{0,80}qr|vincular.{0,80}dispositivo|link.{0,80}device)/i.test(String(body || ''));
+  if (qr || explicitLogin) {
+    return {
+      healthy: false, ready: false, loggedIn: false, qrVisible: !!qr,
+      code: 'AUTH_REQUIRED', status: 'down', observedAt: nowIso(), url: page.url()
+    };
+  }
+
+  return {
+    healthy: false, ready: false, loggedIn: null, qrVisible: false,
+    code: 'SESSION_NOT_READY', status: 'degraded', observedAt: nowIso(), url: page.url()
+  };
+}
+
+async function sessionStatus({ navigate = true } = {}) {
+  const probe = await sessionReadinessV137({ navigate });
+  if (probe.ready) return probe;
+  const shot = screenshotPath(String(probe.code || 'session').toLowerCase());
+  const { page } = await ensureBrowser();
+  await page.screenshot({ path: shot, fullPage: false }).catch(() => {});
+  return { ...probe, screenshot: shot };
 }
 
 function linkQrLocators(p) {
@@ -229,6 +276,12 @@ async function linkSessionStatus({ start = false } = {}) {
   const { page } = await ensureBrowser();
   if (!String(page.url()).startsWith('https://web.whatsapp.com')) {
     await page.goto('https://web.whatsapp.com/', { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(()=>{});
+  }
+
+  if (await detectBrowserDatabaseErrorV137(page)) {
+    linkState.active = false;
+    linkState.lastStatus = 'error';
+    return { status: 'error', code: 'BROWSER_DATABASE_ERROR', loggedIn: false, qrVisible: false, startedAt: linkState.startedAt, observedAt: nowIso() };
   }
 
   if (start) {
@@ -312,7 +365,7 @@ function compactMessageV134(value) {
   return canonicalMessageV134(value).replace(/\s+/g, ' ').trim();
 }
 function messageReferenceV134(message) {
-  return canonicalMessageV134(message).match(/VLA-(?:\d{12}|COM-\d{8}-[A-F0-9]{12})-C\d{2}/)?.[0] || null;
+  return canonicalMessageV134(message).match(/VLA-(?:\d{12}-C\d{2}(?:-R\d{2})?|COM-\d{8}-[A-F0-9]{12}-C\d{2})/)?.[0] || null;
 }
 async function composerVariantsV134(composer) {
   const inner = await composer.innerText().catch(() => '');
@@ -404,6 +457,7 @@ async function matchingOutgoingBubble(p, message) {
   const target = canonicalMessageV134(message);
   const compactTarget = compactMessageV134(message);
   const reference = messageReferenceV134(message);
+  const requiresExactReference = /(?:-R\d{2}$|^VLA-COM-)/.test(reference || '');
   const anchors = messageAnchors(message);
   let visibleHistoryFallback = null;
 
@@ -489,6 +543,7 @@ async function matchingOutgoingBubble(p, message) {
       if (!text) continue;
       let matchedBy = null;
       if (reference && text.includes(reference)) matchedBy = 'reference';
+      else if (requiresExactReference) continue;
       else if (text === target || text.includes(target) || target.includes(text)) matchedBy = 'canonical-text';
       else if (compactTarget && compact.includes(compactTarget)) matchedBy = 'compact-text';
       else if (anchors.length >= 3 && anchors.every(anchor => text.includes(anchor))) matchedBy = 'anchors';
@@ -518,8 +573,17 @@ async function bubbleAckState(bubble) {
 }
 
 async function openConversationV134(page, phone) {
-  await page.goto(`https://web.whatsapp.com/send?phone=${encodeURIComponent(digitsPhone(phone))}`, { waitUntil: 'domcontentloaded', timeout: 120000 }).catch(() => {});
-  return firstVisible(composerLocators(page), 120000);
+  try {
+    await page.goto(`https://web.whatsapp.com/send?phone=${encodeURIComponent(digitsPhone(phone))}`, {
+      waitUntil: 'domcontentloaded', timeout: 60000
+    });
+  } catch (error) {
+    const navigationError = new Error(`WHATSAPP_NAVIGATION_FAILED: ${safeError(error)}`);
+    navigationError.code = 'WHATSAPP_NAVIGATION_FAILED';
+    throw navigationError;
+  }
+  if (await detectBrowserDatabaseErrorV137(page)) return null;
+  return firstVisible(composerLocators(page), 45000);
 }
 
 async function reconcileExisting(phone, message) {
@@ -551,10 +615,17 @@ async function sendVerified(phone, message, hooks = {}) {
         selectorSource: existing.selectorSource
       };
     }
-    if (existing.session && existing.session.loggedIn === false) return { ok: false, code: 'AUTH_REQUIRED', ...existing.session };
+    if (existing.session) {
+      const code = String(existing.session.code || '').toUpperCase();
+      if (code === 'BROWSER_DATABASE_ERROR') return { ok: false, code, ...existing.session };
+      if (code === 'AUTH_REQUIRED') return { ok: false, code, ...existing.session };
+      if (existing.session.loggedIn === false) return { ok: false, code: 'SESSION_NOT_READY', ...existing.session };
+      if (existing.session.loggedIn === true) return { ok: false, code: 'CHAT_NOT_READY', ...existing.session };
+      return { ok: false, code: code || 'SESSION_NOT_READY', ...existing.session };
+    }
 
-    const composer = await firstVisible(composerLocators(page), 120000);
-    if (!composer) throw new Error('WhatsApp no cargó el compositor después de 120 segundos.');
+    const composer = await firstVisible(composerLocators(page), 15000);
+    if (!composer) return { ok: false, code: 'CHAT_NOT_READY', ack: 'no_composer' };
     const staged = await stageComposerV134(page, composer, message);
     if (!staged.ok) {
       const shot = screenshotPath('composer-text-mismatch-v134');
@@ -657,18 +728,20 @@ async function broadcast(input = {}) {
   });
 }
 
-function buildRecipients(data, cycle, parts) {
+function buildRecipients(data, cycle, parts, revisionNumber = 0) {
   const contacts = loadContacts();
   const owners = [...data.propietarios].sort((a,b)=>Number(a.Casa)-Number(b.Casa));
   const recipients = [];
   const cycleStamp = String(cycle?.id || '').replace(/\D/g, '').slice(0, 12);
   if (!/^\d{12}$/.test(cycleStamp)) throw new Error(`Cycle ID inválido para referencia: ${cycle?.id || 'ausente'}`);
+  const revision = Math.max(0, Number(revisionNumber) || 0);
+  const revisionSuffix = revision > 0 ? `-R${String(revision).padStart(2, '0')}` : '';
   for (const owner of owners) {
     if (Number(owner.totalPagadero || 0) <= 0.009) continue;
     const contact = contacts.get(Number(owner.Casa));
     if (!contact?.phone) continue;
     const built = buildMessage({ owner, expenses: data.gastos || [], nowParts: parts, cycle, hint: contact.breakdownHint || {} });
-    const messageReference = `VLA-${cycleStamp}-C${String(Number(owner.Casa)).padStart(2, '0')}`;
+    const messageReference = `VLA-${cycleStamp}-C${String(Number(owner.Casa)).padStart(2, '0')}${revisionSuffix}`;
     const baseMessage = built.text;
     const message = `${baseMessage}\n\nReferencia de envío: ${messageReference}`;
     recipients.push({
@@ -686,7 +759,36 @@ function cycleState(state, cycleId) {
   return state.cycles[cycleId];
 }
 
-async function tick({ forcePlan = false } = {}) {
+function stableFinancialValue(value) {
+  if (Array.isArray(value)) return value.map(stableFinancialValue);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.keys(value).sort().map(key => [key, stableFinancialValue(value[key])])
+    );
+  }
+  return value;
+}
+
+function expenseFingerprint(data) {
+  const rows = (Array.isArray(data?.gastos) ? data.gastos : [])
+    .map(item => JSON.stringify(stableFinancialValue(item)))
+    .sort();
+  return sha(JSON.stringify(rows));
+}
+
+function archiveCompletedRevision(cs) {
+  cs.revisionHistory ||= [];
+  cs.revisionHistory.push({
+    archivedAt: nowIso(),
+    revisionNumber: Number(cs.revisionNumber || 0),
+    expenseFingerprint: cs.expenseFingerprint || null,
+    completedAt: cs.completedAt || null,
+    recipients: JSON.parse(JSON.stringify(cs.recipients || {}))
+  });
+  if (cs.revisionHistory.length > 12) cs.revisionHistory = cs.revisionHistory.slice(-12);
+}
+
+async function tick({ forcePlan = false, financialRevision = false } = {}) {
   return serial('tick', async () => {
     const plan = activeCycle(new Date());
     const base = { mode: MODE, checkedAt: nowIso(), caracas: plan.parts, allowedWindow: plan.allowed, cycle: plan.cycle, next: plan.next };
@@ -695,21 +797,58 @@ async function tick({ forcePlan = false } = {}) {
 
     const state = store.read();
     const existingCycle = state.cycles?.[plan.cycle.id];
-    // En modo real, si el ciclo vigente ya quedó completamente confirmado, no consultamos
-    // VLA/Airtable otra vez. El próximo ciclo programado volverá a consultar datos frescos.
-    if (MODE === 'real' && existingCycle?.completedAt && !forcePlan) {
+    let revisionNumber = Number(existingCycle?.revisionNumber || 0);
+    let data = null;
+    let recipients = null;
+
+    // Automático conserva el comportamiento histórico: no reabre ciclos completos.
+    if (MODE === 'real' && existingCycle?.completedAt && !forcePlan && !financialRevision) {
       return {
         ...base,
         action: 'ALREADY_COMPLETED',
         recipientCount: Number(existingCycle.lastRecipientCount || 0),
         completedAt: existingCycle.completedAt,
-        message: 'El ciclo vigente ya fue completado. No se consultó VLA nuevamente.'
+        revisionNumber,
+        message: 'El ciclo vigente ya fue completado.'
       };
     }
 
-    const data = await fetchPublicData();
-    const recipients = buildRecipients(data, plan.cycle, plan.parts);
+    // Manual desde Admin: solo abre una nueva revisión si cambiaron LOS GASTOS.
+    // Pagos o abonos por sí solos no disparan otro recordatorio.
+    if (MODE === 'real' && existingCycle?.completedAt && financialRevision) {
+      data = await fetchPublicData();
+      const currentExpenseFingerprint = expenseFingerprint(data);
+      const previousExpenseFingerprint = existingCycle.expenseFingerprint || null;
+
+      if (previousExpenseFingerprint && previousExpenseFingerprint === currentExpenseFingerprint) {
+        return {
+          ...base,
+          action: 'ALREADY_COMPLETED',
+          recipientCount: 0,
+          completedAt: existingCycle.completedAt,
+          revisionNumber,
+          message: 'No hay gastos nuevos ni modificados desde el último recordatorio. No se reenvía nada.'
+        };
+      }
+
+      // Migración segura del ciclo que ya estaba completado antes de v1.3.6:
+      // el primer click manual abre UNA revisión y desde allí queda fingerprint persistente.
+      archiveCompletedRevision(existingCycle);
+      revisionNumber += 1;
+      existingCycle.revisionNumber = revisionNumber;
+      existingCycle.recipients = {};
+      existingCycle.completedAt = null;
+      existingCycle.expenseFingerprint = currentExpenseFingerprint;
+      existingCycle.revisionOpenedAt = nowIso();
+      existingCycle.revisionReason = previousExpenseFingerprint ? 'EXPENSES_CHANGED' : 'LEGACY_BASELINE_REFRESH';
+      store.write(state);
+    }
+
+    if (!data) data = await fetchPublicData();
+    if (!recipients) recipients = buildRecipients(data, plan.cycle, plan.parts, revisionNumber);
     const cs = cycleState(state, plan.cycle.id);
+    cs.revisionNumber = Math.max(Number(cs.revisionNumber || 0), revisionNumber);
+    cs.expenseFingerprint ||= expenseFingerprint(data);
 
     if (MODE === 'real' && cs.blockedAt) {
       return { ...base, action: 'CYCLE_BLOCKED_INCIDENT', recipientCount: Number(cs.lastRecipientCount || recipients.length || 0), blockedAt: cs.blockedAt, blockReason: cs.blockReason || 'INCIDENT_BLOCK', deliveryHold: false, message: 'El ciclo vigente está bloqueado por un incidente administrativo. No se envía nada.' };
@@ -728,6 +867,7 @@ async function tick({ forcePlan = false } = {}) {
     }
 
     const results = [];
+    let fatalSessionCodeV137 = null;
     const liveHouses = new Set(recipients.map(r => r.house));
     for (const [house, rec] of Object.entries(cs.recipients || {})) {
       if (!liveHouses.has(Number(house)) && !rec.confirmedAt) {
@@ -779,7 +919,7 @@ async function tick({ forcePlan = false } = {}) {
       let recipient = plannedRecipient;
       try {
         const liveData = await fetchPublicData();
-        const liveRecipients = buildRecipients(liveData, plan.cycle, livePlan.parts);
+        const liveRecipients = buildRecipients(liveData, plan.cycle, livePlan.parts, revisionNumber);
         const fresh = liveRecipients.find(r => r.house === plannedRecipient.house);
 
         if (!fresh) {
@@ -849,6 +989,19 @@ async function tick({ forcePlan = false } = {}) {
         results.push({ house: recipient.house, status: rec.status, error: rec.lastError });
       }
       store.write(state);
+      const fatalSessionCode = [
+        'BROWSER_DATABASE_ERROR',
+        'AUTH_REQUIRED',
+        'SESSION_NOT_READY',
+        'WHATSAPP_NAVIGATION_FAILED'
+      ].find(code => String(rec.lastError || rec.lastOutcome?.code || '').includes(code));
+      if (!rec.dispatchAttemptedAt && fatalSessionCode) {
+        fatalSessionCodeV137 = fatalSessionCode;
+        cs.lastSessionAbortAt = nowIso();
+        cs.lastSessionAbortCode = fatalSessionCode;
+        store.write(state);
+        break;
+      }
       await sleep(BETWEEN_MESSAGES_MS);
     }
 
@@ -879,8 +1032,11 @@ async function tick({ forcePlan = false } = {}) {
       confirmedCount,
       quarantinedCount,
       recoverablePreDispatchCount,
+      fatalPreDispatchCode: fatalSessionCodeV137,
       results,
       completedAt: cs.completedAt,
+      revisionNumber: Number(cs.revisionNumber || 0),
+      expenseFingerprintStored: true,
       deliveryHold: false
     };
   });
@@ -1018,9 +1174,28 @@ async function diagnosticReconcileV135() {
   });
 }
 
+// VLA_READINESS_ENDPOINT_V137: liveness != capacidad real de enviar.
+app.get('/readiness', async (req,res) => {
+  if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
+  try {
+    const readiness = await serial('browser', async () => {
+      const { page } = await ensureBrowser();
+      const navigate = !String(page.url()).startsWith('https://web.whatsapp.com');
+      return sessionReadinessV137({ navigate });
+    });
+    // HTTP 200 significa que el probe respondió. `ready` es la verdad operativa.
+    res.json({ ok:true, ...readiness });
+  } catch (error) {
+    res.status(200).json({
+      ok:true, healthy:false, ready:false, loggedIn:null, code:'READINESS_PROBE_FAILED',
+      status:'down', observedAt:nowIso(), detail:safeError(error)
+    });
+  }
+});
+
 app.get('/health', (_req,res) => {
   const p = zonedParts(new Date());
-  res.json({ ok: true, service: 'vla-whatsapp-agent', version: '1.4.0', mode: MODE, caracas: p, stateFile: STATE_FILE, capabilities: { relink: true, diagnosticNoSendV134: true, uniqueDeliveryReference: true, referenceReconciliationV135: true, informationalBroadcastV1: true } });
+  res.json({ ok: true, service: 'vla-whatsapp-agent', version: '1.4.1', mode: MODE, caracas: p, stateFile: STATE_FILE, capabilities: { relink: true, diagnosticNoSendV134: true, uniqueDeliveryReference: true, referenceReconciliationV135: true, financialRevisionV136: true, informationalBroadcastV1: true } });
 });
 app.get('/schedule/:year/:month', (req,res) => {
   res.json({ year:Number(req.params.year), month:Number(req.params.month), schedule:scheduleSummary(Number(req.params.year),Number(req.params.month)) });
@@ -1028,7 +1203,7 @@ app.get('/schedule/:year/:month', (req,res) => {
 app.get('/state', (_req,res) => res.json(store.read()));
 app.post('/tick', async (req,res) => {
   if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
-  try { res.json(await tick({ forcePlan: req.body?.forcePlan === true })); }
+  try { res.json(await tick({ forcePlan: req.body?.forcePlan === true, financialRevision: req.body?.financialRevision === true })); }
   catch (error) { res.status(500).json({ ok:false, error:safeError(error) }); }
 });
 app.post('/broadcast', async (req,res) => {
@@ -1077,7 +1252,7 @@ app.get('/session/screenshot', async (_req,res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`VLA WhatsApp Agent v1.4.0 escuchando en :${PORT} · modo=${MODE}`);
+  console.log(`VLA WhatsApp Agent v1.4.1 escuchando en :${PORT} · modo=${MODE}`);
   // Recuperación extraordinaria solo al arrancar en modo REAL. No es polling.
   // Si la Mac estuvo apagada y vuelve dentro de la ventana permitida, intenta retomar
   // únicamente el ciclo vigente; la idempotencia evita repetir casas ya confirmadas.

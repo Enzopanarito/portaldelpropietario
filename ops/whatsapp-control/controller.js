@@ -23,8 +23,7 @@ const LINK_TTL_MS = 10 * 60 * 1000;
 const MANUAL_FORCE_PLAN = true;
 const AUTOMATIC_RUN_OPTIONS = Object.freeze({ forcePlan: false });
 const MANUAL_RUN_OPTIONS = Object.freeze({ forcePlan: MANUAL_FORCE_PLAN });
-// VLA_MANUAL_CYCLE_TRIGGER_V1: el disparo manual relee el ciclo vigente sin saltarse
-// ventana horaria, ciclo activo ni la idempotencia por propietario del Agent.
+// VLA_MANUAL_CYCLE_TRIGGER_V1: manual relee el ciclo vigente conservando idempotencia.
 // VLA_CONTROLLER_RELINK_V1: re-vinculación segura y efímera desde Admin.
 
 const DEFAULT_CONFIG = Object.freeze({
@@ -152,6 +151,25 @@ function conflict(message) {
   const error = new Error(message);
   error.status = 409;
   return error;
+}
+
+
+// VLA_REAL_READINESS_HEALTH_V2
+function readinessCodeOf(health = {}) {
+  return clean(health?.readiness?.code || health?.code || 'READINESS_UNKNOWN').toUpperCase();
+}
+function isIncompleteRecoverableRun(result = {}) {
+  return clean(result.action).toUpperCase() === 'REAL_RUN'
+    && !result.completedAt
+    && Number(result.recoverablePreDispatchCount || 0) > 0;
+}
+function isRetryableRunFailure(error) {
+  const text = String(error?.code || error?.message || error || '').toUpperCase();
+  return [
+    'WHATSAPP_NOT_READY', 'BROWSER_DATABASE_ERROR', 'AUTH_REQUIRED',
+    'SESSION_NOT_READY', 'READINESS_PROBE_FAILED', 'WHATSAPP_NAVIGATION_FAILED',
+    'AGENT TIMEOUT', 'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT'
+  ].some(code => text.includes(code));
 }
 
 function safeLinkStatus(value) {
@@ -345,8 +363,18 @@ function createControllerState() {
     } finally { clearTimeout(timeout); }
   }
   async function health() {
-    try { return await agent('/health', { method: 'GET' }); }
-    catch (error) { return { ok: false, error: String(error.message || error) }; }
+    let liveness;
+    try { liveness = await agent('/health', { method: 'GET' }); }
+    catch (error) {
+      return { ok:false, livenessOk:false, readiness:{ ready:false, code:'AGENT_UNREACHABLE', loggedIn:null }, error:String(error.message || error) };
+    }
+    let readiness;
+    try { readiness = await agent('/readiness', { method: 'GET' }); }
+    catch (error) {
+      readiness = { ready:false, healthy:false, loggedIn:null, code:'READINESS_UNREACHABLE', detail:String(error.message || error) };
+    }
+    const ready = liveness?.ok === true && readiness?.ready === true && readiness?.loggedIn === true && clean(readiness?.code).toUpperCase() === 'READY';
+    return { ...liveness, livenessOk:liveness?.ok===true, readiness, ok:ready };
   }
 
   async function warmupCore(reason = 'manual') {
@@ -355,12 +383,17 @@ function createControllerState() {
         const session = await agent('/session/warmup', { method: 'POST', body: '{}' });
         runtime.session = session;
         runtime.lastWarmupAt = nowIso();
+        if (session.loggedIn !== true || session.ready === false || (session.code && clean(session.code).toUpperCase() !== 'READY')) {
+          const code = clean(session.code || 'SESSION_NOT_READY').toUpperCase();
+          const error = new Error(`WHATSAPP_NOT_READY:${code}`);
+          error.code = 'WHATSAPP_NOT_READY';
+          throw error;
+        }
         runtime.lastError = null;
         persistRuntime();
-        appendAudit({ action: 'warmup', result: session.loggedIn ? 'OK' : 'ATTENTION', detail: reason });
+        appendAudit({ action: 'warmup', result: 'OK', detail: `${reason} · READY` });
         return session;
       } catch (error) {
-        runtime.session = null;
         runtime.lastError = String(error.message || error);
         persistRuntime();
         appendAudit({ action: 'warmup', result: 'ERROR', detail: runtime.lastError });
@@ -448,8 +481,16 @@ function createControllerState() {
     return locked(async () => {
       assertRunAllowed();
       try {
+        const preflight = await health();
+        if (preflight.ok !== true) {
+          const code = readinessCodeOf(preflight);
+          const error = new Error(`WHATSAPP_NOT_READY:${code}`);
+          error.code = 'WHATSAPP_NOT_READY';
+          throw error;
+        }
+        const manualFinancialRevision = reason === 'admin-manual';
         const forcePlan = options?.forcePlan === true;
-        const result = await agent('/tick', { method: 'POST', body: JSON.stringify({ forcePlan }) });
+        const result = await agent('/tick', { method: 'POST', body: JSON.stringify({ forcePlan, financialRevision: manualFinancialRevision }) });
         runtime.lastRunAt = nowIso();
         runtime.lastResult = result.action || 'OK';
         // Una incertidumbre POST-DISPATCH es una cuarentena POR PROPIETARIO,
@@ -462,7 +503,12 @@ function createControllerState() {
             )
           : [];
 
-        runtime.lastError = null;
+        const incompleteRecoverable = isIncompleteRecoverableRun(result);
+        runtime.lastError = incompleteRecoverable
+          ? `Ciclo incompleto recuperable: pendientes=${Number(result.recoverablePreDispatchCount || 0)} · ${clean(result.fatalPreDispatchCode || 'PRE_DISPATCH_FAILURE')}`
+          : quarantined.length
+            ? `Entrega incierta en ${quarantined.length} casa(s); protegidas contra reenvío.`
+            : null;
 
         if (quarantined.length) {
           appendAudit({
@@ -575,11 +621,21 @@ function createControllerState() {
   async function status() {
     expireStaleLink();
     const agentHealth = await health();
+    const readiness = agentHealth?.readiness && typeof agentHealth.readiness === 'object'
+      ? agentHealth.readiness
+      : { ready:false, loggedIn:null, code:'READINESS_UNKNOWN', observedAt:null };
+    const effectiveSession = {
+      loggedIn: readiness.loggedIn === true,
+      ready: readiness.ready === true,
+      code: readiness.code || null,
+      observedAt: readiness.observedAt || null
+    };
     return {
       ok: agentHealth.ok === true,
       config,
       agent: agentHealth,
-      session: runtime.session,
+      readiness: effectiveSession,
+      session: effectiveSession,
       runtime: {
         lastWarmupAt: runtime.lastWarmupAt,
         lastRunAt: runtime.lastRunAt,
@@ -616,13 +672,29 @@ function createControllerState() {
     if (busy() || ledgerBlocks(key)) return false;
     markLedger(key, 'running', { reason });
     try {
-      if (kind === 'warmup') await executeWarmup(reason);
-      else await executeRun(reason);
+      let result = null;
+      if (kind === 'warmup') result = await executeWarmup(reason);
+      else result = await executeRun(reason);
+
+      if (kind === 'run' && isIncompleteRecoverableRun(result)) {
+        const detail = `Ciclo incompleto recuperable: pendientes=${Number(result.recoverablePreDispatchCount || 0)} · ${clean(result.fatalPreDispatchCode || 'PRE_DISPATCH_FAILURE')}`;
+        markLedger(key, 'retry', { reason, retryAt: new Date(Date.now() + RETRY_MS).toISOString(), error: detail });
+        runtime.lastError = detail;
+        persistRuntime();
+        appendAudit({ action:'run-retry', result:'RETRY', detail });
+        return false;
+      }
+
       markLedger(key, 'done', { reason });
       return true;
     } catch (error) {
       const detail = String(error.message || error).slice(0, 240);
-      if (kind === 'run') {
+      if (kind === 'run' && isRetryableRunFailure(error)) {
+        markLedger(key, 'retry', { reason, retryAt: new Date(Date.now() + RETRY_MS).toISOString(), error: detail });
+        runtime.lastError = `Reintento automático pendiente: ${detail}`;
+        persistRuntime();
+        appendAudit({ action:'run-retry', result:'RETRY', detail:runtime.lastError });
+      } else if (kind === 'run') {
         markLedger(key, 'failed-closed', { reason, error: detail });
         config = { ...config, mode: 'paused', updatedAt: nowIso(), updatedBy: 'auto-circuit-breaker' };
         writeJson(CONFIG_FILE, config);
@@ -631,6 +703,8 @@ function createControllerState() {
         appendAudit({ action: 'circuit-breaker', result: 'PAUSED', detail: runtime.lastError });
       } else {
         markLedger(key, 'retry', { reason, retryAt: new Date(Date.now() + RETRY_MS).toISOString(), error: detail });
+        runtime.lastError = `Warmup pendiente de reintento: ${detail}`;
+        persistRuntime();
       }
       return false;
     }
@@ -737,7 +811,7 @@ function startServer() {
   const state = createControllerState();
   const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && req.url === '/health') {
-      return send(res, 200, { ok: true, service: 'vla-whatsapp-controller', version: '1.4.0', mode: state.getConfig().mode });
+      return send(res, 200, { ok: true, service: 'vla-whatsapp-controller', version: '1.4.1', mode: state.getConfig().mode });
     }
     if (!timingSafeToken(req.headers['x-agent-token'])) return send(res, 401, { ok: false, message: 'Token inválido o ausente.' });
     try {
@@ -764,7 +838,7 @@ function startServer() {
 
   setInterval(() => state.schedulerStep().catch(() => {}), LOOP_MS).unref();
   setTimeout(() => state.schedulerStep().catch(() => {}), 15000).unref();
-  server.listen(PORT, '0.0.0.0', () => console.log(`VLA WhatsApp Controller v1.4.0 escuchando en :${PORT} · modo=${state.getConfig().mode}`));
+  server.listen(PORT, '0.0.0.0', () => console.log(`VLA WhatsApp Controller v1.4.1 escuchando en :${PORT} · modo=${state.getConfig().mode}`));
   return { server, state };
 }
 

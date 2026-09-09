@@ -60,11 +60,11 @@ test('runtime local canónico habilita AUTOMATIC solo tras cerrar todos los gate
   assert.deepEqual(manifest.activation.blockedUntil, []);
   assert.equal(
     manifest.runtime.agent.sha256,
-    'a4705ff28b52337597b8bf42ac15949acedc74798f62360f284fa758fdf3eee4'
+    '7a6bd6a1d0bd6af1244ae57ab017101b114ca7183017aebf2fb3345925c7f050'
   );
   assert.equal(
     manifest.runtime.controller.sha256,
-    '215ece473acc52f44c6d7ddfd9c2df35d943db105d16e85e8238ee49d85b0879'
+    'ce6fa2a322f9decdc2d533caec87ddb73082b97241ed5da6e0e8afcac22e9a42'
   );
   assert.equal(manifest.runtime.controller.hotfix, 'VLA_MANUAL_CYCLE_TRIGGER_V1');
   assert.equal(
