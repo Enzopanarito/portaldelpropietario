@@ -54,7 +54,7 @@ export default async (request, context) => {
   const closeAt = html.indexOf('</section>', sectionAt);
   if (sectionAt < 0 || closeAt < 0) return new Response(html, response);
   html = html.slice(0, closeAt) + PANEL + html.slice(closeAt);
-  html = html.includes('</body>') ? html.replace('</body>', SCRIPT + '</body>') : html + SCRIPT;
+  html = html.includes('</body>') ? html.replace('</body>', () => SCRIPT + '</body>') : html + SCRIPT;
   const headers = new Headers(response.headers); headers.delete('content-length'); headers.delete('content-encoding');
   headers.set('cache-control', 'no-store, no-cache, must-revalidate'); headers.set('x-vla-communications', 'admin-v1');
   return new Response(html, { status: response.status, statusText: response.statusText, headers });

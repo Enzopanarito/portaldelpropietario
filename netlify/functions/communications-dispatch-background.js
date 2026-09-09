@@ -13,15 +13,18 @@ function response(statusCode, body) { return { statusCode, headers: { 'Content-T
 exports.handler = async function(event) {
   const auth = requireAdmin(event);
   if (!auth.ok) return auth.response;
+  if (event.httpMethod !== 'POST') return response(405, { message: 'Method Not Allowed' });
   let jobId = '';
+  let claimed = false;
   try {
     store.connect(event);
     const body = JSON.parse(event.body || '{}');
     jobId = String(body.jobId || '').trim();
-    const job = await store.readJob(jobId);
-    if (!job) return response(404, { message: 'El comunicado no existe.' });
-    if (!['QUEUED', 'RETRY_SAFE'].includes(job.status)) return response(200, { success: true, idempotent: true, jobId, status: job.status });
-    await store.updateJob(jobId, { status: 'RUNNING', startedAt: new Date().toISOString(), error: null });
+    if (!await store.readJob(jobId)) return response(404, { message: 'El comunicado no existe.' });
+    const claim = await store.claimJob(jobId);
+    if (!claim.claimed) return response(200, { success: true, idempotent: true, jobId, status: claim.job?.status });
+    claimed = true;
+    const job = claim.job;
     const catalog = await loadCatalog();
     const ownerSet = new Set(job.ownerIds || []);
     const owners = catalog.owners.filter(owner => ownerSet.has(owner.id));
@@ -67,7 +70,7 @@ exports.handler = async function(event) {
     const final = await store.updateJob(jobId, { status: hasWhatsapp ? 'DELIVERY_STARTED' : email?.status === 'DONE' ? 'DONE' : 'PARTIAL', email, whatsapp, completedAt });
     return response(200, { success: true, jobId, status: final.status });
   } catch (error) {
-    if (jobId) await store.updateJob(jobId, current => ({
+    if (claimed) await store.updateJob(jobId, current => ({
       status: current?.email?.sent > 0 ? 'PARTIAL' : 'FAILED_SAFE',
       error: safeDisplayText(error.message, 300), completedAt: new Date().toISOString()
     })).catch(() => null);

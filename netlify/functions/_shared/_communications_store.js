@@ -37,6 +37,22 @@ async function createJob(job) {
   return job;
 }
 async function readJob(jobId) { return readJson(jobKey(jobId)); }
+async function claimJob(jobId) {
+  try {
+    const job = await updateJob(jobId, current => {
+      if (!['QUEUED', 'RETRY_SAFE'].includes(current.status)) {
+        const error = new Error('El comunicado ya fue reclamado.');
+        error.code = 'COMMUNICATION_ALREADY_CLAIMED';
+        throw error;
+      }
+      return { status: 'RUNNING', startedAt: new Date().toISOString(), error: null };
+    });
+    return { claimed: true, job };
+  } catch (error) {
+    if (error.code !== 'COMMUNICATION_ALREADY_CLAIMED') throw error;
+    return { claimed: false, job: await readJob(jobId) };
+  }
+}
 async function updateJob(jobId, patch) {
   return updateJson(jobKey(jobId), current => {
     if (!current) throw new Error('El comunicado no existe.');
@@ -53,4 +69,4 @@ async function readNotice() { return readJson(NOTICE_KEY); }
 async function writeNotice(notice) { return updateJson(NOTICE_KEY, () => notice); }
 function connect(event) { return blobs.connectLambdaEvent(event); }
 
-module.exports = { STORE_NAME, INDEX_KEY, NOTICE_KEY, connect, readJob, createJob, updateJob, recentJobs, readNotice, writeNotice, updateJson };
+module.exports = { STORE_NAME, INDEX_KEY, NOTICE_KEY, connect, readJob, createJob, claimJob, updateJob, recentJobs, readNotice, writeNotice, updateJson };

@@ -110,7 +110,13 @@ path = "/admin*"
 function = "admin-monthly-close"
 path = "/admin*"
 
-# WhatsApp se declara al final del pipeline admin para que solo añada su
+# context.next() procesa la respuesta en orden inverso: comunicaciones debe
+# envolver al control para encontrar su sección ya insertada, sin modificarlo.
+[[edge_functions]]
+function = "admin-communications"
+path = "/admin*"
+
+# WhatsApp conserva su posición respecto de los middlewares existentes y su
 # interfaz/control y nunca altere los middlewares financieros ya existentes.
 [[edge_functions]]
 function = "admin-whatsapp-control"
@@ -119,12 +125,6 @@ path = "/admin*"
 # Re-vinculación se ejecuta después del control principal y solo extiende su UI.
 [[edge_functions]]
 function = "admin-whatsapp-relink"
-path = "/admin*"
-
-# Comunicaciones manuales se inyecta al final y no sustituye ni modifica el
-# controlador visual de recordatorios automáticos.
-[[edge_functions]]
-function = "admin-communications"
 path = "/admin*"
 
 [[headers]]
