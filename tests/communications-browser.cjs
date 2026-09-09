@@ -24,7 +24,7 @@ function edge(name) {
       page.on('pageerror', e => errors.push(e.message));
       await page.route('**/*', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><html><body></body></html>' }));
       await page.goto('https://vla.test/admin.html');
-      await page.setContent(`<style>.hidden{display:none}textarea{max-width:100%}</style>${panel}`);
+      await page.setContent(`<style>.hidden{display:none}.whitespace-pre-wrap{white-space:pre-wrap}textarea{max-width:100%}</style>${panel}`);
       await page.evaluate(() => {
         window.calls = [];
         window.toast = () => {};
@@ -48,7 +48,7 @@ function edge(name) {
       await page.click('#com-improve');
       await page.waitForFunction(() => document.getElementById('com-subject').value === 'Compra de gasoil');
       await page.click('#com-preview');
-      const preview = await page.locator('#com-preview-box').innerText();
+      const preview = await page.locator('#com-preview-box').textContent();
       assert.ok(preview.includes('\n\nEstimado(a)'));
       assert.ok(preview.includes('Informamos a Propietario de prueba de la casa 1'));
       await page.click('#com-send');
