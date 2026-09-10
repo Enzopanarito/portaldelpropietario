@@ -6,15 +6,24 @@ const {suppressPreviewToolbar}=require('./helpers/preview-toolbar.cjs');
 const TARGET_URL=process.env.TARGET_URL||'http://127.0.0.1:8888';
 
 async function openOwner(page){
+  const diagnostics=[];
+  page.on('response',response=>{if(/\/api\/vla\/(public-data|punctuality-score)/.test(response.url()))diagnostics.push({endpoint:new URL(response.url()).pathname,status:response.status()})});
+  page.on('pageerror',error=>diagnostics.push({error:error.message}));
   await suppressPreviewToolbar(page,TARGET_URL);
   await page.goto(TARGET_URL+'/?punctuality-browser='+Date.now(),{waitUntil:'load',timeout:45000});
-  await page.waitForFunction(()=>{const s=document.getElementById('welcomeSelector');return s&&!s.disabled&&s.options.length>1},{timeout:30000});
+  await page.locator('#welcomeSelector option').nth(15).waitFor({state:'attached',timeout:30000});
   const value=await page.locator('#welcomeSelector option').nth(1).getAttribute('value');
   assert.ok(value,'La primera casa del selector debe tener ownerId.');
   await page.selectOption('#welcomeSelector',value);
   await page.click('#enterBtn');
+  try{
   await page.waitForSelector('#main:not(.hidden)',{timeout:10000});
+  await page.locator('#welcome-msg').filter({hasText:/^Casa 1 ·/}).waitFor({state:'visible',timeout:15000});
   await page.waitForSelector('#vla-punctuality-score:not(.hidden) .vla-score-gauge',{timeout:30000});
+  }catch(error){
+    console.error('PUNCTUALITY_OPEN_DIAGNOSTIC',JSON.stringify({requests:diagnostics,dom:await page.evaluate(()=>({welcomeValue:!!document.getElementById('welcomeSelector').value,userValue:!!document.getElementById('userSelector').value,ownerSelected:typeof currentOwner!=='undefined'&&!!currentOwner,mainClass:document.getElementById('main').className,scoreText:document.getElementById('vla-punctuality-score')?.textContent}))}));
+    throw error;
+  }
   await page.waitForFunction(()=>{const h=document.querySelector('#vla-punctuality-score');return h&&/Índice de Puntualidad VLA/.test(h.textContent||'')},{timeout:10000});
 }
 async function inspect(page,kind){
