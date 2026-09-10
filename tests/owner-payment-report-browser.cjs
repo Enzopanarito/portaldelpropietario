@@ -73,7 +73,7 @@ async function live(browser,target){
   await page.selectOption('#welcomeSelector',value);
   await page.click('#enterBtn');
   await page.locator('#main').waitFor({state:'visible',timeout:15000});
-  await page.waitForFunction(()=>typeof currentOwner!=='undefined'&&Number(currentOwner?.Casa)===4,null,{timeout:15000});
+  await page.locator('#welcome-msg').filter({hasText:/^Casa 4 ·/}).waitFor({state:'visible',timeout:15000});
   // El formulario progresivo se instala después de cargar sus scripts externos.
   // Esperar su marcador evita pulsar el manejador anterior durante esa carga.
   await page.locator('html[data-vla-owner-payment-report="progressive-v13"]').waitFor({state:'attached',timeout:15000});
