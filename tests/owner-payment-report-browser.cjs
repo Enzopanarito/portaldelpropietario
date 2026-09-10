@@ -37,7 +37,7 @@ async function loadStableLivePortal(page,target,errors){
   for(let attempt=1;attempt<=3;attempt++){
     try{
       errors.length=0;
-      const response=await page.goto(`${target}/?payment-report=${Date.now()}-${attempt}`,{waitUntil:'domcontentloaded',timeout:60000});
+      const response=await page.goto(`${target}/?payment-report=${Date.now()}-${attempt}`,{waitUntil:'load',timeout:60000});
       assert(response&&response.status()===200,`Portal respondió ${response&&response.status()}.`);
       const deadline=Date.now()+30000;
       let houses=0;
@@ -73,6 +73,7 @@ async function live(browser,target){
   await page.selectOption('#welcomeSelector',value);
   await page.click('#enterBtn');
   await page.locator('#main').waitFor({state:'visible',timeout:15000});
+  await page.waitForFunction(()=>typeof currentOwner!=='undefined'&&Number(currentOwner?.Casa)===4,null,{timeout:15000});
   // El formulario progresivo se instala después de cargar sus scripts externos.
   // Esperar su marcador evita pulsar el manejador anterior durante esa carga.
   await page.locator('html[data-vla-owner-payment-report="progressive-v13"]').waitFor({state:'attached',timeout:15000});
