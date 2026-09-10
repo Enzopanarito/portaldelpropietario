@@ -76,8 +76,13 @@ async function live(browser,target){
   // El formulario progresivo se instala después de cargar sus scripts externos.
   // Esperar su marcador evita pulsar el manejador anterior durante esa carga.
   await page.locator('html[data-vla-owner-payment-report="progressive-v13"]').waitFor({state:'attached',timeout:15000});
+  await page.evaluate(()=>{window.__paymentTestClicks=[];document.addEventListener('click',event=>window.__paymentTestClicks.push({id:event.target.id,tag:event.target.tagName}),true)});
   await page.click('#reportBtn');
-  await page.locator('#vla-pay-title').waitFor({state:'visible',timeout:10000});
+  try{await page.locator('#vla-pay-title').waitFor({state:'visible',timeout:10000})}catch(error){
+    console.error('PAYMENT_OPEN_DIAGNOSTIC',JSON.stringify(await page.evaluate(()=>({clicks:window.__paymentTestClicks,ready:document.readyState,ownerSelected:typeof currentOwner!=='undefined'&&!!currentOwner,handler:document.getElementById('reportBtn').onclick?.name,modalClass:document.getElementById('modal').className,modalDisplay:getComputedStyle(document.getElementById('modal')).display,titleCount:document.querySelectorAll('#vla-pay-title').length,errors:window.__vlaFinancialFailClosed===true}))));
+    console.error('PAYMENT_OPEN_BROWSER_ERRORS',JSON.stringify(errors));
+    await page.screenshot({path:'owner-payment-report-live-casa4.png'});throw error;
+  }
   await chooseChannel(page,'Efectivo','#payChannelCash');
   await page.locator('#vla-pay-details').waitFor({state:'visible',timeout:10000});
   const accountModes=await page.locator('#payMode option').evaluateAll(options=>options.map(option=>option.value));
