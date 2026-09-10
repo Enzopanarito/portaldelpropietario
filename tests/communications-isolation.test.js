@@ -43,12 +43,12 @@ test('banner es accesorio: un fallo nunca entra al try financiero ni bloquea rep
 });
 
 test('comunicaciones no tiene permiso de escritura financiera ni acceso a credenciales del cliente', () => {
-  const files = ['netlify/functions/admin-communications.js', 'netlify/functions/communications-dispatch-background.js', 'netlify/edge-functions/admin-communications.js'];
+  const files = ['netlify/functions/_shared/_communications_admin_handler.js', 'netlify/functions/_shared/_communications_dispatch_handler.js', 'netlify/edge-functions/admin-communications.js'];
   const joined = files.map(source).join('\n');
   assert.doesNotMatch(joined, /monthly-close|admin-expense-action|admin-manual-payment|process-payment-report|access-mode|mkj-access/i);
   assert.doesNotMatch(source('netlify/edge-functions/admin-communications.js'), /AIRTABLE_API_TOKEN|SMTP_SECRET|GEMINI_API_KEY|WA_AGENT_TOKEN|VLA_WHATSAPP_CONTROL_SECRET/);
-  assert.match(source('netlify/functions/admin-communications.js'), /requireAdmin\(event\)/);
-  assert.match(source('netlify/functions/communications-dispatch-background.js'), /requireAdmin\(event\)/);
+  assert.match(source('netlify/functions/_shared/_communications_admin_handler.js'), /requireAdmin\(event\)/);
+  assert.match(source('netlify/functions/_shared/_communications_dispatch_handler.js'), /requireAdmin\(event\)/);
 });
 
 test('aviso dura exactamente 24 horas y expira del contrato público', () => {
@@ -94,7 +94,7 @@ test('una casa sin teléfono nunca se contabiliza como entrega completada', () =
 
 test('IA solo redacta: la interfaz exige una segunda acción y confirmación para enviar', () => {
   const ui = source('netlify/edge-functions/admin-communications.js');
-  const backend = source('netlify/functions/admin-communications.js');
+  const backend = source('netlify/functions/_shared/_communications_admin_handler.js');
   assert.match(ui, /Mejorar con IA/);
   assert.match(ui, /Revisar y enviar/);
   assert.match(ui, /confirm\('Se enviará este comunicado/);

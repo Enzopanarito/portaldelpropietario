@@ -1,12 +1,12 @@
 'use strict';
 
-const { requireAdmin } = require('./_shared/_auth');
-const { deepEscapeStrings, safeDisplayText } = require('./_shared/_security_utils');
-const contract = require('./_shared/_communications_contract');
-const store = require('./_shared/_communications_store');
-const { improveCommunication } = require('./_shared/_communications_ai');
-const { loadCatalog, publicCatalog } = require('./_shared/_communications_catalog');
-const { relayCommunication } = require('./_shared/_communications_relay');
+const { requireAdmin } = require('./_auth');
+const { deepEscapeStrings, safeDisplayText } = require('./_security_utils');
+const contract = require('./_communications_contract');
+const store = require('./_communications_store');
+const { improveCommunication } = require('./_communications_ai');
+const { loadCatalog, publicCatalog } = require('./_communications_catalog');
+const { relayCommunication } = require('./_communications_relay');
 
 function json(statusCode, body) { return { statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }, body: JSON.stringify(body) }; }
 function safeJob(job) {

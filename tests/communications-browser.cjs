@@ -24,7 +24,7 @@ function edge(name) {
       page.on('pageerror', e => errors.push(e.message));
       await page.route('**/*', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><html><body></body></html>' }));
       await page.goto('https://vla.test/admin.html');
-      await page.setContent(`<style>.hidden{display:none}.whitespace-pre-wrap{white-space:pre-wrap}textarea{max-width:100%}</style><div id="app" class="hidden">${panel}</div>`);
+      await page.setContent(`<style>.hidden{display:none}.whitespace-pre-wrap{white-space:pre-wrap}textarea{max-width:100%}</style><div id="app" class="hidden"><section id="communications" class="section active">${panel}</section></div>`);
       await page.evaluate(() => {
         window.calls = [];
         window.toast = () => {};
