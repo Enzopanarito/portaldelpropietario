@@ -3,6 +3,7 @@ const {chromium}=require('playwright');
 const path=require('path');
 const fs=require('fs');
 const {suppressPreviewToolbar}=require('./helpers/preview-toolbar.cjs');
+const {observePwaNavigation,waitForPwaNavigation}=require('./helpers/pwa-ready.cjs');
 
 const ignored=/favicon|permissions policy|app\.netlify\.com/i;
 const privatePlant401=/Failed to load resource: the server responded with a status of 401/i;
@@ -39,6 +40,7 @@ async function loadStableLivePortal(page,target,errors){
       errors.length=0;
       const response=await page.goto(`${target}/?payment-report=${Date.now()}-${attempt}`,{waitUntil:'load',timeout:60000});
       assert(response&&response.status()===200,`Portal respondió ${response&&response.status()}.`);
+      await waitForPwaNavigation(page);
       const deadline=Date.now()+30000;
       let houses=0;
       while(Date.now()<deadline){
@@ -63,6 +65,7 @@ async function live(browser,target){
   if(!target)return null;
   const page=await browser.newPage({viewport:{width:390,height:844}}),errors=watch(page);
   await suppressPreviewToolbar(page,target);
+  await observePwaNavigation(page);
   const response=await loadStableLivePortal(page,target,errors);
   assert(response.headers()['x-vla-owner-payment-report']==='progressive-v13','Falta marcador progressive-v13.');
   await page.addStyleTag({content:'[data-netlify-deploy-id],iframe[title="Netlify Drawer"]{display:none!important;pointer-events:none!important}'})

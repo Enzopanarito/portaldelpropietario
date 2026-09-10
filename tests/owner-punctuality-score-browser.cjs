@@ -3,6 +3,7 @@ const fs=require('fs');
 const {chromium}=require('playwright');
 const assert=require('node:assert/strict');
 const {suppressPreviewToolbar}=require('./helpers/preview-toolbar.cjs');
+const {observePwaNavigation,waitForPwaNavigation}=require('./helpers/pwa-ready.cjs');
 const TARGET_URL=process.env.TARGET_URL||'http://127.0.0.1:8888';
 
 async function openOwner(page){
@@ -10,7 +11,9 @@ async function openOwner(page){
   page.on('response',response=>{if(/\/api\/vla\/(public-data|punctuality-score)/.test(response.url()))diagnostics.push({endpoint:new URL(response.url()).pathname,status:response.status()})});
   page.on('pageerror',error=>diagnostics.push({error:error.message}));
   await suppressPreviewToolbar(page,TARGET_URL);
+  await observePwaNavigation(page);
   await page.goto(TARGET_URL+'/?punctuality-browser='+Date.now(),{waitUntil:'load',timeout:45000});
+  await waitForPwaNavigation(page);
   await page.locator('#welcomeSelector option').nth(15).waitFor({state:'attached',timeout:30000});
   const value=await page.locator('#welcomeSelector option').nth(1).getAttribute('value');
   assert.ok(value,'La primera casa del selector debe tener ownerId.');
