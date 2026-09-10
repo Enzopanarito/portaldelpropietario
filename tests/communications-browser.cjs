@@ -24,7 +24,7 @@ function edge(name) {
       page.on('pageerror', e => errors.push(e.message));
       await page.route('**/*', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><html><body></body></html>' }));
       await page.goto('https://vla.test/admin.html');
-      await page.setContent(`<style>.hidden{display:none}.whitespace-pre-wrap{white-space:pre-wrap}textarea{max-width:100%}</style>${panel}`);
+      await page.setContent(`<style>.hidden{display:none}.whitespace-pre-wrap{white-space:pre-wrap}textarea{max-width:100%}</style><div id="app" class="hidden">${panel}</div>`);
       await page.evaluate(() => {
         window.calls = [];
         window.toast = () => {};
@@ -40,6 +40,12 @@ function edge(name) {
         };
       });
       await page.addScriptTag({ content: script });
+      assert.equal(await page.evaluate(() => calls.length), 0, 'No debe llamar APIs antes del login');
+      await page.evaluate(() => {
+        sessionStorage.setItem('vla-admin-token', 'fixture-not-a-real-token');
+        sessionStorage.setItem('vla-admin-auth', 'true');
+        document.getElementById('app').classList.remove('hidden');
+      });
       await page.locator('.com-owner').waitFor();
       assert.ok(await page.locator('#com-body').isVisible());
       assert.ok(await page.locator('#notice-body').isVisible());

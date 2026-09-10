@@ -3,6 +3,7 @@ const {chromium}=require('playwright');
 const path=require('path');
 const fs=require('fs');
 const {suppressPreviewToolbar}=require('./helpers/preview-toolbar.cjs');
+const {observePwaNavigation,waitForPwaNavigation}=require('./helpers/pwa-ready.cjs');
 
 const ignored=/favicon|permissions policy|app\.netlify\.com/i;
 const privatePlant401=/Failed to load resource: the server responded with a status of 401/i;
@@ -37,8 +38,9 @@ async function loadStableLivePortal(page,target,errors){
   for(let attempt=1;attempt<=3;attempt++){
     try{
       errors.length=0;
-      const response=await page.goto(`${target}/?payment-report=${Date.now()}-${attempt}`,{waitUntil:'domcontentloaded',timeout:60000});
+      const response=await page.goto(`${target}/?payment-report=${Date.now()}-${attempt}`,{waitUntil:'load',timeout:60000});
       assert(response&&response.status()===200,`Portal respondió ${response&&response.status()}.`);
+      await waitForPwaNavigation(page);
       const deadline=Date.now()+30000;
       let houses=0;
       while(Date.now()<deadline){
@@ -63,6 +65,7 @@ async function live(browser,target){
   if(!target)return null;
   const page=await browser.newPage({viewport:{width:390,height:844}}),errors=watch(page);
   await suppressPreviewToolbar(page,target);
+  await observePwaNavigation(page);
   const response=await loadStableLivePortal(page,target,errors);
   assert(response.headers()['x-vla-owner-payment-report']==='progressive-v13','Falta marcador progressive-v13.');
   await page.addStyleTag({content:'[data-netlify-deploy-id],iframe[title="Netlify Drawer"]{display:none!important;pointer-events:none!important}'})
@@ -73,8 +76,17 @@ async function live(browser,target){
   await page.selectOption('#welcomeSelector',value);
   await page.click('#enterBtn');
   await page.locator('#main').waitFor({state:'visible',timeout:15000});
+  await page.locator('#welcome-msg').filter({hasText:/^Casa 4 ·/}).waitFor({state:'visible',timeout:15000});
+  // El formulario progresivo se instala después de cargar sus scripts externos.
+  // Esperar su marcador evita pulsar el manejador anterior durante esa carga.
+  await page.locator('html[data-vla-owner-payment-report="progressive-v13"]').waitFor({state:'attached',timeout:15000});
+  await page.evaluate(()=>{window.__paymentTestClicks=[];document.addEventListener('click',event=>window.__paymentTestClicks.push({id:event.target.id,tag:event.target.tagName}),true)});
   await page.click('#reportBtn');
-  await page.locator('#vla-pay-title').waitFor({state:'visible',timeout:10000});
+  try{await page.locator('#vla-pay-title').waitFor({state:'visible',timeout:10000})}catch(error){
+    console.error('PAYMENT_OPEN_DIAGNOSTIC',JSON.stringify(await page.evaluate(()=>({clicks:window.__paymentTestClicks,ready:document.readyState,ownerSelected:typeof currentOwner!=='undefined'&&!!currentOwner,handler:document.getElementById('reportBtn').onclick?.name,modalClass:document.getElementById('modal').className,modalDisplay:getComputedStyle(document.getElementById('modal')).display,titleCount:document.querySelectorAll('#vla-pay-title').length,errors:window.__vlaFinancialFailClosed===true}))));
+    console.error('PAYMENT_OPEN_BROWSER_ERRORS',JSON.stringify(errors));
+    await page.screenshot({path:'owner-payment-report-live-casa4.png'});throw error;
+  }
   await chooseChannel(page,'Efectivo','#payChannelCash');
   await page.locator('#vla-pay-details').waitFor({state:'visible',timeout:10000});
   const accountModes=await page.locator('#payMode option').evaluateAll(options=>options.map(option=>option.value));
