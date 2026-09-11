@@ -17,3 +17,10 @@ test('bloquea autopago, pero no reportes, cuando falta documento o Binance ID no
  const result=checkPaymentAutomation({rules:rules(),configFields:{'AI Enabled':true,'AI Primary Model':'gemini-2.5-flash'},authorizedAccounts:[{fields:{Identificador:'VE_MOBILE',Activo:true,Método:'Pago móvil Venezuela',Moneda:'VES','Teléfono Receptor':'04140000000'}},{fields:{Identificador:'BINANCE',Activo:true,Método:'Otro','Banco o Plataforma':'Binance Pay',Moneda:'USD','Correo Receptor':'pay@example.com'}}],env:{URL:'https://example.netlify.app',GEMINI_API_KEY:'x',PAYMENT_PROOF_ENCRYPTION_KEY:key,AUTOMATION_JOB_SECRET:'secret'}});
  assert.equal(result.ok,false);assert(result.blockers.some(item=>item.code==='NORMALIZED_RECIPIENT_IDENTIFIERS'));
 });
+test('readiness estricta no acepta raíces de compatibilidad como cifrado dedicado',()=>{
+ const env={URL:'https://example.netlify.app',GEMINI_API_KEY:'x',ADMIN_TOKEN_SECRET:'x'.repeat(40),AUTOMATION_JOB_SECRET:'y'.repeat(40)};
+ const result=checkPaymentAutomation({rules:mergeConfig({fields:{}}),configFields:{'AI Primary Model':'gemini-2.5-flash'},authorizedAccounts:[],env,strictReadiness:true});
+ assert.equal(result.ok,false);
+ assert(result.blockers.some(item=>item.code==='PROOF_ENCRYPTION'));
+ assert(result.blockers.some(item=>item.code==='AUTHORIZED_ACCOUNTS'));
+});

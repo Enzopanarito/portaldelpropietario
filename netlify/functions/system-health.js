@@ -111,7 +111,8 @@ const handler = async function(event) {
     AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, ADMIN_PASSWORD,
     SMTP_HOST, SMTP_USER, SMTP_SECRET, MAIL_FROM,
     MKJ_BASE_URL, MKJ_ORG_ID, MKJ_ADMIN_EMAIL, MKJ_ADMIN_PASSWORD,
-    GEMINI_API_KEY, PAYMENT_PROOF_ENCRYPTION_KEY, AUTOMATION_JOB_SECRET, ADMIN_TOKEN_SECRET, URL
+    GEMINI_API_KEY, PAYMENT_PROOF_ENCRYPTION_KEY, AUTOMATION_JOB_SECRET, ADMIN_TOKEN_SECRET, ADMIN_NOTIFY_EMAIL, URL,
+    VLA_WHATSAPP_CONTROL_URL, VLA_WHATSAPP_CONTROL_SECRET
   } = process.env;
 
   const checks = [];
@@ -130,13 +131,16 @@ const handler = async function(event) {
     add('Airtable', isConfigured(AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID), isConfigured(AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID) ? `Base conectada: ${AIRTABLE_BASE_ID}` : 'Faltan AIRTABLE_API_TOKEN o AIRTABLE_BASE_ID.');
     add('Correo SMTP', smtpConfigured, smtpConfigured ? 'Variables SMTP configuradas.' : 'Faltan variables SMTP. Las notificaciones no saldrán.', smtpConfigured ? 'ok' : 'warning');
     add('Remitente oficial', officialSender, officialSender ? `Bloqueado correctamente a ${OFFICIAL_EMAIL}.` : `El sistema solo debe enviar desde ${OFFICIAL_EMAIL}. Revise SMTP_USER o MAIL_FROM en Netlify.`, officialSender ? 'ok' : 'error');
+    add('Correo administrativo de alertas',hasValue(ADMIN_NOTIFY_EMAIL),hasValue(ADMIN_NOTIFY_EMAIL)?'Destinatario administrativo explícito configurado.':'Falta ADMIN_NOTIFY_EMAIL; no se activarán avisos administrativos con destino ambiguo.',hasValue(ADMIN_NOTIFY_EMAIL)?'ok':'warning');
     add('Variables MKJoules', isConfigured(MKJ_ADMIN_EMAIL, MKJ_ADMIN_PASSWORD, MKJ_ORG_ID), isConfigured(MKJ_ADMIN_EMAIL, MKJ_ADMIN_PASSWORD, MKJ_ORG_ID) ? `Configurado para org ${MKJ_ORG_ID}.` : 'Faltan variables MKJ. El portón no podrá sincronizarse.', isConfigured(MKJ_ADMIN_EMAIL, MKJ_ADMIN_PASSWORD, MKJ_ORG_ID) ? 'ok' : 'error');
     add('URL MKJoules', true, MKJ_BASE_URL || 'Usando valor por defecto: https://cloud.mkjoules.com');
     add('Analizador inteligente de pagos', !!GEMINI_API_KEY, GEMINI_API_KEY ? 'Proveedor configurado; la clave permanece oculta.' : 'Falta GEMINI_API_KEY. Los comprobantes pasarán a revisión manual.', GEMINI_API_KEY ? 'ok' : 'warning');
     let proofEncryptionOk=false;try{require('./_shared/_payment_proof_store').resolveEncryptionKey(process.env);proofEncryptionOk=true}catch(_){proofEncryptionOk=false}
     add('Cifrado de comprobantes', proofEncryptionOk, proofEncryptionOk ? 'AES-256-GCM listo para comprobantes.' : 'Configure una clave de 32 bytes o un secreto interno fuerte antes de activar autopago.', proofEncryptionOk ? 'ok' : 'warning');
-    const internalJobsReady=isConfigured(AUTOMATION_JOB_SECRET||ADMIN_TOKEN_SECRET||ADMIN_PASSWORD,URL);
-    add('Trabajos automáticos internos',internalJobsReady,internalJobsReady?'Cola asíncrona autenticada y URL de producción disponibles.':'Falta URL o secreto para autenticar la cola asíncrona.',internalJobsReady?'ok':'warning');
+    const internalJobsReady=isConfigured(AUTOMATION_JOB_SECRET,URL);
+    add('Trabajos automáticos internos',internalJobsReady,internalJobsReady?'Cola asíncrona autenticada con secreto dedicado y URL de producción disponibles.':'Falta AUTOMATION_JOB_SECRET dedicada o la URL de producción.',internalJobsReady?'ok':'warning');
+    const whatsappBridgeReady=isConfigured(VLA_WHATSAPP_CONTROL_URL,VLA_WHATSAPP_CONTROL_SECRET)&&/^https:\/\//i.test(String(VLA_WHATSAPP_CONTROL_URL||''));
+    add('WhatsApp opcional / control independiente',whatsappBridgeReady,whatsappBridgeReady?'Puente seguro configurado. El estado vivo del agente, sesión y última ejecución se comprueba en Comunicaciones.':'Puente no configurado. Comunicaciones debe mostrar el agente como no disponible y no simular actividad.',whatsappBridgeReady?'ok':'warning');
     try {
       const connection=connectLambdaEvent(event);
       await getAtomicStore('vla-system-health-v1').getWithMetadata('runtime-readiness-probe',{type:'json'});
@@ -149,14 +153,12 @@ const handler = async function(event) {
       return { statusCode: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify({ ok: false, status: 'error', checks, generatedAt: new Date().toISOString(), apiUsage: counter }) };
     }
 
-    const [propietarios, gastos, pagos, reportes, recibos, whatsappJobs, whatsappSchedules] = await Promise.all([
+    const [propietarios, gastos, pagos, reportes, recibos] = await Promise.all([
       getAll(TABLES.propietarios, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Propietario', 'Casa', 'Email', 'Deuda Anterior', 'Deuda Anterior USD', 'Deuda Anterior Bs Ref', 'Deuda Restante', 'MKJ User ID', 'MKJ Email', 'Estado Acceso Portón', 'Excepción Acceso', 'Última Sync MKJ', 'Motivo Limitación Acceso']),
       getAll(TABLES.gastos, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Concepto', 'Monto', 'Tipo de Gasto', 'Forma de Pago', 'Propietarios','Mes de Aplicación','Estado del Gasto']),
       getAll(TABLES.pagos, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Propietario que Paga', 'Forma de Pago', 'Monto Pagado', 'Equivalente USD Aplicado', '[x] Aplicado al Cierre']),
       getAll(TABLES.reportes, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Propietario que Reporta', 'Estado', 'Forma de Pago Reportada', 'Monto Reportado', 'Equivalente USD Reportado','Hash SHA-256','AI Confidence','AI Analysis Completed At','AI Failure Reason','Estado de Procesamiento']),
-      getAll(TABLES.recibos, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Nro Recibo', 'Fecha', 'Estado Email', 'Correo', 'Log', 'Enviado En']),
-      getAll(TABLES.whatsappJobs, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Job ID', 'Estado', 'Creado En', 'Finalizado En', 'Enviados', 'Simulados', 'Errores', 'Log']),
-      getAll(TABLES.whatsappSchedules, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Nombre', 'Activo', 'Hora', 'Día del Mes', 'Modo', 'Última Ejecución', 'Último Job ID'])
+      getAll(TABLES.recibos, AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID, counter, ['Nro Recibo', 'Fecha', 'Estado Email', 'Correo', 'Log', 'Enviado En'])
     ]);
 
     add('Tablas principales Airtable', true, `Propietarios: ${propietarios.length}; Gastos: ${gastos.length}; Pagos: ${pagos.length}; Reportes: ${reportes.length}; Recibos: ${recibos.length}.`);
@@ -245,16 +247,6 @@ const handler = async function(event) {
           ? `Sin errores detectados. ${legacyReceiptAudit} recibo(s) enviados recientes son anteriores a la auditoría nueva de PDF adjunto.`
           : 'Recibos recientes con auditoría de correo/PDF correcta.';
     add('Recibos y PDF por correo', receiptOk, receiptDetail, receiptErrors.length ? 'error' : suspiciousPdfAudit ? 'warning' : 'ok', { ultimo: lastReceipt ? (lastReceipt.fields || {})['Nro Recibo'] : null, legacyAuditCount: legacyReceiptAudit });
-
-    const activeSchedules = whatsappSchedules.filter(r => !!(r.fields || {}).Activo).length;
-    const pendingJobs = whatsappJobs.filter(r => selectName((r.fields || {}).Estado) === 'Pendiente').length;
-    const errorJobs = whatsappJobs.filter(r => Number((r.fields || {}).Errores || 0) > 0 || selectName((r.fields || {}).Estado) === 'Error').length;
-    const lastJob = latestByField(whatsappJobs, 'Creado En') || latestByField(whatsappJobs, 'Finalizado En');
-    const whatsappSafe=activeSchedules===0&&pendingJobs===0&&errorJobs===0;
-    add('WhatsApp opcional', whatsappSafe, whatsappSafe
-      ? 'Sin programaciones reales activas ni jobs pendientes. Los avisos críticos siguen por correo automático; WhatsApp queda disponible solo como conector manual.'
-      : `Requiere atención: programaciones activas ${activeSchedules}; jobs pendientes ${pendingJobs}; jobs con errores ${errorJobs}; último job ${lastJob ? ((lastJob.fields || {})['Job ID'] || 'sin ID') : 'ninguno'}. El envío real depende de un agente local y no debe considerarse autónomo.`,
-      whatsappSafe?'ok':'warning');
 
     add('Botón Portón en admin', true, 'Disponible en el panel Admin como 🚪 Portón; abre el selector Automático/Manual, Auto Sync y botones Habilitar/Limitar.');
     add('Botón Auto Sync', true, 'Disponible dentro del módulo Portón. En modo Manual queda bloqueado para evitar ejecuciones accidentales.');

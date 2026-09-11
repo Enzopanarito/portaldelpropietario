@@ -48,12 +48,18 @@
  }
  function setValue(id,value){const node=$(id);if(!node)return;if(node.type==='checkbox')node.checked=value===true;else node.value=value??''}
  function renderPreflight(data){
-  const rules=data.rules||{},cycle=data.cycle||{},validation=data.validation||{},activation=data.activationPreflight||{},preflight=data.paymentPreflight||{},issues=[...(validation.issues||[]),...(activation.blockers||[]),...(preflight.blockers||[])];
+  const rules=data.rules||{},cycle=data.cycle||{},validation=data.validation||{},activation=data.activationPreflight||{},preflight=data.paymentPreflight||{},readiness=data.readiness||{};
   $('vla-auto-status').innerHTML=`<div><span>Mes operativo</span><b>${esc(cycle.clock?.monthKey||'—')}</b></div><div><span>Pronto pago hasta</span><b>${esc(cycle.dueDate||'—')}</b></div><div><span>Próximo cierre y corte</span><b>${esc(cycle.daysUntilRestriction>=0?cycle.restrictionDate:cycle.nextRestrictionDate||'—')}</b></div><div><span>Próximo mes</span><b>${esc(cycle.nextMonth||'—')}</b></div>`;
-  const ok=validation.ok!==false&&activation.ok!==false&&preflight.ok!==false;
-  $('vla-auto-preflight').className='vla-auto-preflight '+(ok?'ok':'bad');
-  $('vla-auto-preflight').innerHTML=`<b>${ok?'✓ Preparación consistente':'⚠ Hay requisitos pendientes'}</b>${issues.length?`<ul>${issues.map(item=>`<li>${esc(item.message||item.detail||item.code)}</li>`).join('')}</ul>`:'<p>Las reglas actuales no presentan bloqueos conocidos.</p>'}`;
   const enabled=rules.masterEnabled===true;
+  const runtimeOk=validation.ok!==false&&activation.ok!==false&&preflight.ok!==false;
+  const issues=[...(validation.issues||[]),...(enabled?(activation.blockers||[]):(readiness.blockers||[])),...(enabled?(preflight.blockers||[]):[])];
+  const uniqueIssues=issues.filter((item,index,list)=>list.findIndex(other=>(other.code||other.message||other.detail)===(item.code||item.message||item.detail))===index);
+  let tone='bad',title='⚠ Bloqueado por dependencias faltantes',description='No active el piloto hasta resolver estos requisitos.';
+  if(enabled&&runtimeOk){tone='ok';title='✓ Piloto activo y verificado';description='Los motores habilitados cumplen el preflight de ejecución.'}
+  else if(!enabled&&readiness.ok===true){tone='ok';title='✓ Listo para activar';description='El piloto está apagado de forma segura y todas sus dependencias están preparadas.'}
+  else if(!enabled){tone='bad';title='Piloto apagado: configuración segura';description='Bloqueado para activación por dependencias faltantes; mientras permanezca apagado no ejecutará acciones.'}
+  $('vla-auto-preflight').className='vla-auto-preflight '+tone;
+  $('vla-auto-preflight').innerHTML=`<b>${title}</b><p>${description}</p>${uniqueIssues.length?`<ul>${uniqueIssues.map(item=>`<li>${esc(item.message||item.detail||item.code)}</li>`).join('')}</ul>`:''}`;
   const button=$('vla-autopilot-open');if(button){button.dataset.enabled=enabled?'1':'0';button.querySelector('.vla-auto-dot').className='vla-auto-dot '+(enabled?'on':'off')}
  }
  function fill(data){
@@ -87,7 +93,7 @@
  }
  function installExpensePreload(){
   const type=$('expense-type');if(!type||$('expense-month'))return false;
-  const select=document.createElement('select');select.id='expense-month';select.className='w-full p-3 border rounded-lg';select.innerHTML='<option value="current">Aplicar al mes actual</option><option value="next">Precargar para el mes siguiente</option>';type.insertAdjacentElement('beforebegin',select);
+  const field=document.createElement('div');field.id='expense-month-field';field.innerHTML='<label class="block text-sm font-semibold mb-1" for="expense-month">Mes del gasto</label><select id="expense-month" class="w-full p-3 border rounded-lg"><option value="current">Aplicar al mes actual</option><option value="next">Precargar para el mes siguiente</option></select><p id="expense-month-destination" class="text-xs text-slate-500 mt-1">El destino exacto se mostrará antes de guardar.</p>';type.insertAdjacentElement('beforebegin',field);
   const form=$('expense-form'),heading=form?.parentElement?.querySelector('h2');if(heading)heading.textContent='Añadir o precargar gasto';
   const registered=$('expenses')?.querySelector('h2:nth-of-type(1)');if(registered)registered.title='Incluye gastos activos y precargados para el próximo mes.';
   const body=$('expenses-body');if(body&&!body.dataset.vlaScheduledEdit){body.dataset.vlaScheduledEdit='1';body.addEventListener('click',event=>{const button=event.target.closest('.edit-scheduled');if(button)editScheduled(button.dataset.id)})}
