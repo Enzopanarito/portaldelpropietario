@@ -1,3 +1,5 @@
+import '@netlify/blobs';
+import 'nodemailer';
 import legacy from './_shared/_communications_dispatch_handler.js';
 import { invokeLegacy } from './_shared/legacy-function-bridge.mjs';
 

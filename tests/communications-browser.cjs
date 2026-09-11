@@ -63,7 +63,7 @@ function edge(name) {
       assert.equal(await page.evaluate(() => calls.filter(x => x.body.action === 'create-job').length), 0);
       await page.evaluate(() => { window.confirm = () => true; });
       await page.click('#com-send');
-      await page.waitForFunction(() => calls.some(x => x.url.includes('communications-dispatch-background')));
+      await page.waitForFunction(() => calls.some(x => x.url === '/api/vla/communications-dispatch'));
       assert.equal(await page.evaluate(() => calls.filter(x => x.body.action === 'create-job').length), 1);
       await page.fill('#notice-title', 'Información');
       await page.fill('#notice-body', 'Aviso de prueba');

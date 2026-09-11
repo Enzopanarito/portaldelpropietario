@@ -1,3 +1,4 @@
+import '@netlify/blobs';
 import legacy from './_shared/_communications_notice_handler.js';
 import { invokeLegacy } from './_shared/legacy-function-bridge.mjs';
 
