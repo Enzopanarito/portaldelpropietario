@@ -22,7 +22,7 @@ async function adminResponse() {
   return run(0);
 }
 
-test('pipeline admin real inserta ambos cuadros una vez dentro del control existente', async () => {
+test('pipeline admin real inserta ambos cuadros una vez en una sección separada del control automático', async () => {
   const response = await adminResponse();
   const html = await response.text();
   assert.equal(response.headers.get('x-vla-communications'), 'admin-v1');
@@ -32,7 +32,8 @@ test('pipeline admin real inserta ambos cuadros una vez dentro del control exist
   const begin = html.indexOf("<section id='whatsapp-control'");
   const end = html.indexOf('</section>', begin);
   assert.ok(html.indexOf('id="vla-communications"') > begin);
-  assert.ok(html.indexOf('id="notice-publish"') < end);
+  assert.ok(html.indexOf('id="vla-communications"') > end);
+  assert.match(html, /<section id="communications" class="section">/);
   for (const id of ['wa-mode', 'wa-save-config', 'wa-refresh']) assert.ok(html.includes(`id='${id}'`), id);
   const twice = await edge('admin-communications')(null, { next: async () => new Response(html, { headers: { 'content-type': 'text/html' } }) });
   assert.equal(await twice.text(), html);
@@ -75,15 +76,15 @@ test('dos invocaciones del despachador no duplican correo ni WhatsApp', async ()
   let mail = 0, whatsapp = 0;
   const exports = {};
   const dependencies = {
-    './_shared/_auth': { requireAdmin: () => ({ ok: true }) },
-    './_shared/_mailer': { sendMail: async () => { mail++; return { sent: true }; } },
-    './_shared/_security_utils': { safeDisplayText: x => x },
-    './_shared/_communications_contract': require('../netlify/functions/_shared/_communications_contract'),
-    './_shared/_communications_store': store,
-    './_shared/_communications_catalog': { loadCatalog: async () => ({ owners: [{ id: 'recABCDEFGHIJKLMN', Casa: 1, Propietario: 'Prueba', Email: 'fixture@example.invalid' }], expenses: [] }) },
-    './_shared/_communications_relay': { relayCommunication: async () => { whatsapp++; return { queued: { accepted: true } }; } }
+    './_auth': { requireAdmin: () => ({ ok: true }) },
+    './_mailer': { sendMail: async () => { mail++; return { sent: true }; } },
+    './_security_utils': { safeDisplayText: x => x },
+    './_communications_contract': require('../netlify/functions/_shared/_communications_contract'),
+    './_communications_store': store,
+    './_communications_catalog': { loadCatalog: async () => ({ owners: [{ id: 'recABCDEFGHIJKLMN', Casa: 1, Propietario: 'Prueba', Email: 'fixture@example.invalid' }], expenses: [] }) },
+    './_communications_relay': { relayCommunication: async () => { whatsapp++; return { queued: { accepted: true } }; } }
   };
-  vm.runInNewContext(source('netlify/functions/communications-dispatch-background.js'), { exports, require: name => { assert.ok(dependencies[name], name); return dependencies[name]; } });
+  vm.runInNewContext(source('netlify/functions/_shared/_communications_dispatch_handler.js'), { exports, require: name => { assert.ok(dependencies[name], name); return dependencies[name]; } });
   const event = { httpMethod: 'POST', body: JSON.stringify({ jobId }) };
   const results = await Promise.all([exports.handler(event), exports.handler(event)]);
   assert.ok(results.every(x => x.statusCode === 200));

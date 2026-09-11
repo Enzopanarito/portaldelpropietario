@@ -1,12 +1,12 @@
 'use strict';
 
-const { requireAdmin } = require('./_shared/_auth');
-const { sendMail } = require('./_shared/_mailer');
-const { safeDisplayText } = require('./_shared/_security_utils');
-const contract = require('./_shared/_communications_contract');
-const store = require('./_shared/_communications_store');
-const { loadCatalog } = require('./_shared/_communications_catalog');
-const { relayCommunication } = require('./_shared/_communications_relay');
+const { requireAdmin } = require('./_auth');
+const { sendMail } = require('./_mailer');
+const { safeDisplayText } = require('./_security_utils');
+const contract = require('./_communications_contract');
+const store = require('./_communications_store');
+const { loadCatalog } = require('./_communications_catalog');
+const { relayCommunication } = require('./_communications_relay');
 
 function response(statusCode, body) { return { statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify(body) }; }
 

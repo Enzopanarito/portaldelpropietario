@@ -6,7 +6,13 @@ const STORE_NAME = 'vla-communications-v1';
 const INDEX_KEY = 'jobs/index';
 const NOTICE_KEY = 'notice/current';
 
-function store() { return blobs.getAtomicStore(STORE_NAME, { consistency: 'strong' }); }
+let nativeGetStore = null;
+function configureNativeStore(getStore) { nativeGetStore = getStore; }
+function store() {
+  return nativeGetStore
+    ? blobs.wrapStore(nativeGetStore({ name: STORE_NAME, consistency: 'strong' }))
+    : blobs.getAtomicStore(STORE_NAME, { consistency: 'strong' });
+}
 function jobKey(jobId) { return `jobs/${String(jobId || '').replace(/[^A-Za-z0-9-]/g, '')}`; }
 async function readJson(key) {
   const result = await store().getWithMetadata(key, { type: 'json' });
@@ -69,4 +75,4 @@ async function readNotice() { return readJson(NOTICE_KEY); }
 async function writeNotice(notice) { return updateJson(NOTICE_KEY, () => notice); }
 function connect(event) { return blobs.connectLambdaEvent(event); }
 
-module.exports = { STORE_NAME, INDEX_KEY, NOTICE_KEY, connect, readJob, createJob, claimJob, updateJob, recentJobs, readNotice, writeNotice, updateJson };
+module.exports = { STORE_NAME, INDEX_KEY, NOTICE_KEY, configureNativeStore, connect, readJob, createJob, claimJob, updateJob, recentJobs, readNotice, writeNotice, updateJson };

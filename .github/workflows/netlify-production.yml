@@ -286,6 +286,21 @@ jobs:
           console.log('FINANCIAL_BEFORE_AFTER_OK 15/15 houses · 150/150 fields · $0.00');
           NODE
 
+      - name: Verify communications native storage without publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET_URL="https://villalosapamates.netlify.app" node - <<'NODE'
+          (async()=>{
+            const response=await fetch(process.env.TARGET_URL+'/api/vla/public-notice');
+            if(!response.ok||response.headers.get('x-vla-notice-storage')!=='strong-read-ok')
+              throw new Error('COMMUNICATIONS_STORAGE_NOT_READY: '+(response.headers.get('x-vla-notice-storage-error')||response.status));
+            const protectedResponse=await fetch(process.env.TARGET_URL+'/api/vla/communications');
+            if(protectedResponse.status!==401)throw new Error('COMMUNICATIONS_AUTH_NOT_ENFORCED');
+            console.log('COMMUNICATIONS_NATIVE_STORAGE_AND_AUTH_OK');
+          })().catch(error=>{console.error(error);process.exit(1)});
+          NODE
+
       - name: Report deployment result
         if: always()
         shell: bash

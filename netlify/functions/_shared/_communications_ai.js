@@ -36,7 +36,16 @@ async function improveCommunication({ subject, body, purpose = 'message' }, opti
       })
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw providerError(data, response.status);
+    if (!response.ok) {
+      const error = providerError(data, response.status);
+      error.message = error.code === 'AI_MODEL_INVALID'
+        ? 'El modelo de redacción configurado no está disponible.'
+        : response.status === 429
+          ? 'La IA alcanzó su límite de solicitudes. Intente nuevamente en unos minutos.'
+          : 'La IA no pudo mejorar el mensaje. Su texto se conserva.';
+      error.message += ` Código: ${error.code}; HTTP ${response.status}.`;
+      throw error;
+    }
     return { ...normalizeDraft(JSON.parse(responseText(data))), model };
   } catch (error) {
     if (error?.name === 'AbortError') throw Object.assign(new Error('La IA tardó demasiado en responder.'), { code: 'TIMEOUT' });

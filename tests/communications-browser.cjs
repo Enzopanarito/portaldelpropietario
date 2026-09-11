@@ -14,7 +14,7 @@ function edge(name) {
   const names = [...fs.readFileSync('netlify.toml', 'utf8').matchAll(/\[\[edge_functions\]\]\s*function = "([^"]+)"\s*path = "\/admin\*"/g)].map(x => x[1]);
   const run = i => i === names.length ? new Response(fs.readFileSync('admin.html', 'utf8'), { headers: { 'content-type': 'text/html' } }) : edge(names[i])(new Request('https://vla.test/admin.html'), { next: () => run(i + 1) });
   const html = await (await run(0)).text();
-  const script = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].map(x => x[1]).find(x => x.includes("const endpoint='/.netlify/functions/admin-communications'"));
+  const script = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].map(x => x[1]).find(x => x.includes("const endpoint='/api/vla/communications'"));
   const panel = html.slice(html.indexOf('<div id="vla-communications"'), html.indexOf('</section>', html.indexOf('<div id="vla-communications"')));
   const browser = await chromium.launch({ headless: true, executablePath: chromium.executablePath() });
   try {
@@ -24,7 +24,7 @@ function edge(name) {
       page.on('pageerror', e => errors.push(e.message));
       await page.route('**/*', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><html><body></body></html>' }));
       await page.goto('https://vla.test/admin.html');
-      await page.setContent(`<style>.hidden{display:none}.whitespace-pre-wrap{white-space:pre-wrap}textarea{max-width:100%}</style><div id="app" class="hidden">${panel}</div>`);
+      await page.setContent(`<style>.hidden,.section:not(.active){display:none}.whitespace-pre-wrap{white-space:pre-wrap}textarea{max-width:100%}</style><div id="app" class="hidden"><button data-target="communications">Comunicaciones</button><section id="communications" class="section">${panel}</section></div>`);
       await page.evaluate(() => {
         window.calls = [];
         window.toast = () => {};
@@ -34,7 +34,7 @@ function edge(name) {
           window.calls.push({ url, body });
           if (url.includes('action=catalog')) return { owners: [{ id: 'recABCDEFGHIJKLMN', house: 1, name: 'Propietario de prueba', emailConfigured: true }], expenses: [], notice: null, recent: [] };
           if (body.action === 'improve') return { subject: 'Compra de gasoil', body: 'Informamos a {{nombre}} de la casa {{casa}} sobre la compra.' };
-          if (body.action === 'create-job') return { job: { jobId: 'COM-20260909-ABCDEF123456' }, dispatchPath: '/.netlify/functions/communications-dispatch-background' };
+          if (body.action === 'create-job') return { job: { jobId: 'COM-20260909-ABCDEF123456' }, dispatchPath: '/api/vla/communications-dispatch' };
           if (body.action === 'publish-notice') return { notice: { title: 'Información', body: 'Aviso de prueba', level: 'info', expiresAt: new Date(Date.now() + 86400000).toISOString() } };
           return {};
         };
@@ -46,6 +46,8 @@ function edge(name) {
         sessionStorage.setItem('vla-admin-auth', 'true');
         document.getElementById('app').classList.remove('hidden');
       });
+      assert.equal(await page.evaluate(() => calls.length), 0, 'No debe cargar comunicaciones al entrar al administrador');
+      await page.click('[data-target="communications"]');
       await page.locator('.com-owner').waitFor();
       assert.ok(await page.locator('#com-body').isVisible());
       assert.ok(await page.locator('#notice-body').isVisible());
@@ -61,7 +63,7 @@ function edge(name) {
       assert.equal(await page.evaluate(() => calls.filter(x => x.body.action === 'create-job').length), 0);
       await page.evaluate(() => { window.confirm = () => true; });
       await page.click('#com-send');
-      await page.waitForFunction(() => calls.some(x => x.url.includes('communications-dispatch-background')));
+      await page.waitForFunction(() => calls.some(x => x.url === '/api/vla/communications-dispatch'));
       assert.equal(await page.evaluate(() => calls.filter(x => x.body.action === 'create-job').length), 1);
       await page.fill('#notice-title', 'Información');
       await page.fill('#notice-body', 'Aviso de prueba');
