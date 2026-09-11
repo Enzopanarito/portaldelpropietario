@@ -54,7 +54,15 @@ exports.handler = async function(event) {
     const action = String(body.action || '').toLowerCase();
     if (action === 'improve') {
       const improved = await improveCommunication({ subject: body.subject, body: body.body, purpose: body.purpose === 'banner' ? 'banner' : 'message' });
-      return json(200, deepEscapeStrings({ success: true, subject: improved.subject, body: improved.body, model: improved.model }));
+      return json(200, deepEscapeStrings({
+        success: true,
+        subject: improved.subject,
+        body: improved.body,
+        model: improved.model,
+        fallbackUsed: improved.fallbackUsed === true,
+        requestedModel: improved.requestedModel || null,
+        modelSource: improved.modelSource || null
+      }));
     }
     if (action === 'publish-notice') {
       if (body.confirm !== 'PUBLICAR') return json(400, { message: 'La publicación requiere confirmación explícita.' });
@@ -90,7 +98,7 @@ exports.handler = async function(event) {
     return json(400, { message: 'Acción no reconocida.' });
   } catch (error) {
     const code = String(error.code || 'COMMUNICATIONS_ERROR');
-    const statusCode = code.startsWith('AI_') || code === 'TIMEOUT' ? 502 : 500;
+    const statusCode = code.startsWith('AI_') || code === 'TIMEOUT' || code === 'RATE_LIMIT' || code === 'PROVIDER_UNAVAILABLE' ? 502 : 500;
     return json(statusCode, { message: safeDisplayText(error.message || 'No fue posible completar la comunicación.', 400), code });
   }
 };
