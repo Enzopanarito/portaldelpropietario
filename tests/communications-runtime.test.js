@@ -12,7 +12,7 @@ test('aviso moderno usa el endpoint fuerte real del SDK sin modificar el context
  global.fetch=async(url,options)=>{requests.push({url:String(url),method:options?.method});return new Response(null,{status:404})};
  try{
   const handler=(await import('../netlify/functions/public-notice.mjs')).default;
-  const response=await handler(new Request('https://vla.example.invalid/.netlify/functions/public-notice'),{});
+  const response=await handler(new Request('https://vla.example.invalid/api/vla/public-notice'),{});
   assert.equal(response.headers.get('X-VLA-Notice-Storage'),'strong-read-ok');
   assert.deepEqual(await response.json(),{notice:null});
   assert.equal(requests.length,1);

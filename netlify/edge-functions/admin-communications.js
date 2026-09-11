@@ -26,7 +26,7 @@ const PANEL = `
 
 const SCRIPT = `<script>
 (function(){
- const endpoint='/.netlify/functions/admin-communications';let catalog=null,currentJobId='',poll=null,loadedToken='',catalogLoading=false,operationId=localStorage.getItem('vla-communication-operation')||'';
+ const endpoint='/api/vla/communications';let catalog=null,currentJobId='',poll=null,loadedToken='',catalogLoading=false,operationId=localStorage.getItem('vla-communication-operation')||'';
  const el=id=>document.getElementById(id);const esc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  function checkedOwners(){return [...document.querySelectorAll('.com-owner:checked')].map(x=>x.value)}
  function renderOwners(selected){const set=new Set(selected||catalog.owners.map(x=>x.id));el('com-owners').innerHTML=catalog.owners.map(o=>'<label class="flex items-center gap-2 text-sm"><input class="com-owner" type="checkbox" value="'+esc(o.id)+'" '+(set.has(o.id)?'checked':'')+'><span><b>Casa '+o.house+'</b> · '+esc(o.name)+(o.emailConfigured?'':' <small class="text-amber-700">sin correo</small>')+'</span></label>').join('')}

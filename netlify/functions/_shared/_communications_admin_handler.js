@@ -85,7 +85,7 @@ exports.handler = async function(event) {
         email: channels.includes('email') ? { status: 'QUEUED', sent: 0, failed: 0, skipped: 0 } : null,
         whatsapp: channels.includes('whatsapp') ? { status: 'QUEUED', accepted: false } : null
       });
-      return json(200, { success: true, job: safeJob(job), dispatchPath: '/.netlify/functions/communications-dispatch-background' });
+      return json(200, { success: true, job: safeJob(job), dispatchPath: '/api/vla/communications-dispatch' });
     }
     return json(400, { message: 'Acción no reconocida.' });
   } catch (error) {
