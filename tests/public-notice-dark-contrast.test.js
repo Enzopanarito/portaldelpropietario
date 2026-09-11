@@ -14,6 +14,6 @@ test('el aviso publico conserva contraste alto en modo oscuro para todos los niv
   assert.match(css, /html\.dark #public-notice\.bg-amber-50\{background:#451a03!important;border-color:#fbbf24!important;/);
   assert.match(css, /html\.dark #public-notice\.bg-violet-50\{background:#2e1065!important;border-color:#c4b5fd!important;/);
   assert.match(css, /html\.dark #public-notice\.bg-red-50\{background:#450a0a!important;border-color:#f87171!important;/);
-  assert.match(css, /html\.dark #public-notice b\{color:#f8fafc!important;opacity:1!important;/);
-  assert.match(css, /html\.dark #public-notice p\{color:#e2e8f0!important;opacity:1!important;/);
+  assert.match(css, /html\.dark #public-notice b\{color:#f8fafc!important;opacity:1!important;?\}/);
+  assert.match(css, /html\.dark #public-notice p\{color:#e2e8f0!important;opacity:1!important;?\}/);
 });
