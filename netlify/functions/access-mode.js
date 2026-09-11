@@ -3,7 +3,7 @@ const { withAirtableUsage } = require('./_shared/_airtable_meter');
 // Lee o actualiza el modo del control de acceso del portón: Automático / Manual.
 
 const { requireAdmin } = require('./_shared/_auth');
-const { json, getAccessMode, setAccessMode, ACCESS_MODE_AUTO, ACCESS_MODE_MANUAL } = require('./_shared/_access_control');
+const { json, getAccessMode, getAutomationRules, setAccessMode, ACCESS_MODE_AUTO, ACCESS_MODE_MANUAL } = require('./_shared/_access_control');
 
 const handler = async function(event) {
   const auth = requireAdmin(event);
@@ -12,7 +12,14 @@ const handler = async function(event) {
   try {
     if (event.httpMethod === 'GET') {
       const current = await getAccessMode();
-      return json(200, { success: true, mode: current.mode });
+      const automation = await getAutomationRules(current);
+      return json(200, { success: true, mode: current.mode, automation: {
+        masterEnabled: automation.rules.masterEnabled === true,
+        accessEnabled: automation.rules.access.automaticEnabled === true,
+        closeEnabled: automation.rules.monthlyClose.automaticEnabled === true,
+        onlyExpiredDebt: automation.rules.access.onlyExpiredDebt === true,
+        restrictionDay: Number(automation.rules.access.restrictionDay)
+      } });
     }
 
     if (event.httpMethod !== 'POST') return json(405, { message: 'Method Not Allowed' });

@@ -9,11 +9,11 @@ const PORT=4173;
 const TOKEN='browser-test-admin-token';
 const read=file=>fs.readFileSync(path.join(ROOT,file));
 const json=(res,status,data)=>{res.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(data))};
-const balances=[85,0,-20,201.25,0,73,0,85,0,248.17,-378.89,109.99,298.17,-50,186.9];
+const balances=[85,0,-20,201.25,0,73,0,85,0,248.17,-378.89,109.99,298.17,35,186.9];
 const owners=Array.from({length:15},(_,i)=>{
   const total=balances[i];
-  const saldoUsd=total>0&&i%2===0?total:total<0?total:0;
-  const saldoBsRef=total>0&&i%2===1?total:0;
+  const saldoUsd=i===13?-30:total>0&&i%2===0?total:total<0?total:0;
+  const saldoBsRef=i===13?65:total>0&&i%2===1?total:0;
   return {
     id:`recOwner${String(i+1).padStart(8,'0')}`,Casa:i+1,Propietario:`Propietario ${i+1}`,Alicuota:1/15,
     'Deuda Anterior USD':saldoUsd,'Deuda Anterior Bs Ref':saldoBsRef,'Deuda Anterior':total,'Deuda Restante':total,
@@ -38,6 +38,7 @@ const health={ok:true,status:'ok',generatedAt:new Date().toISOString(),checks:[
 {name:'SMTP',ok:true,severity:'ok',detail:'Operativo'},
 {name:'Portón MKJ',ok:true,severity:'ok',detail:'Operativo'},
 {name:'Cobertura de respaldo',ok:true,severity:'ok',detail:'Operativo'}]};
+const requestCounts={};
 function inject(html,isAdmin){
   const bridge='<script src="/admin-session-bridge.js"></script>';
   let extra=bridge;
@@ -50,6 +51,7 @@ function inject(html,isAdmin){
 function fileType(file){if(file.endsWith('.js'))return'application/javascript';if(file.endsWith('.css'))return'text/css';if(file.endsWith('.html'))return'text/html; charset=utf-8';return'application/octet-stream'}
 const server=http.createServer((req,res)=>{
   const url=new URL(req.url,`http://127.0.0.1:${PORT}`);
+  requestCounts[url.pathname]=(requestCounts[url.pathname]||0)+1;
   if(url.pathname==='/api/vla/public-data')return json(res,200,{propietarios:owners,gastos,pagos,reportes});
   if(url.pathname.startsWith('/.netlify/functions/')){
     const name=url.pathname.split('/').pop();
@@ -59,8 +61,8 @@ const server=http.createServer((req,res)=>{
     if(name==='public-data')return json(res,200,{propietarios:owners,gastos,pagos,reportes});
     if(name==='bcv-rate')return json(res,200,{rate:150.25,rateFormatted:'150.25'});
     if(name==='system-health'||name==='system-health-advanced')return json(res,200,health);
-    if(name==='access-mode')return json(res,200,{mode:'Automático'});
-    if(name==='automation-settings')return json(res,200,{success:true,rules:{masterEnabled:false,rulesConfirmed:false,payment:{dueDay:10,surchargeRate:.1,minimumAutomaticConfidence:.97,automaticApprovalEnabled:false},access:{restrictionDay:1,automaticEnabled:false},monthlyClose:{automaticEnabled:false},expensePreload:{automaticEnabled:false,requireApprovalOfVariableExpenses:true},notifications:{automaticEnabled:false}},validation:{ok:true,issues:[]},paymentPreflight:{ok:true,blockers:[]},cycle:{clock:{monthKey:'2026-07'},dueDate:'2026-07-10',restrictionDate:'2026-07-01',nextRestrictionDate:'2026-08-01',daysUntilRestriction:-11,nextMonth:'2026-08'},ai:{enabled:false,primaryModel:'gemini-2.5-flash',minimumConfidence:.85}});
+    if(name==='access-mode')return json(res,200,{mode:'Automático',automation:{masterEnabled:true,accessEnabled:true,closeEnabled:true,onlyExpiredDebt:true,restrictionDay:1}});
+    if(name==='automation-settings')return json(res,200,{success:true,accessMode:'Automático',rules:{masterEnabled:false,rulesConfirmed:false,payment:{dueDay:10,surchargeRate:.1,minimumAutomaticConfidence:.97,automaticApprovalEnabled:false},access:{restrictionDay:1,automaticEnabled:false,onlyExpiredDebt:true},monthlyClose:{automaticEnabled:false},expensePreload:{automaticEnabled:false,requireApprovalOfVariableExpenses:true},notifications:{automaticEnabled:false}},validation:{ok:true,issues:[]},activationPreflight:{ok:true,blockers:[]},paymentPreflight:{ok:true,blockers:[]},readiness:{ok:true,blockers:[]},cycle:{clock:{monthKey:'2026-07'},dueDate:'2026-07-10',restrictionDate:'2026-07-01',nextRestrictionDate:'2026-08-01',daysUntilRestriction:-11,nextMonth:'2026-08'},ai:{enabled:false,primaryModel:'gemini-2.5-flash',minimumConfidence:.85}});
     if(name==='process-payment-report')return json(res,200,{success:true,message:'Pago procesado en prueba segura.'});
     if(name==='whatsapp-jobs')return json(res,200,url.searchParams.get('resource')==='schedules'?{schedules:[]}:{jobs:[]});
     return json(res,200,{ok:true,message:'Mock seguro'});
@@ -99,7 +101,10 @@ async function pageState(page,label){
   if(stored.local!==TOKEN||stored.session!==TOKEN)throw new Error('La sesión única no se sincronizó en ambos almacenamientos.');
   if(await page.locator('#vla-dashboard-panels').count()!==1)throw new Error('No apareció el tablero premium.');
   if(await page.locator('#vla-reports-value').innerText()!=='1')throw new Error('El KPI de pagos pendientes no coincide.');
-  if(!/Automático/.test(await page.locator('#vla-porton-value').innerText()))throw new Error('El estado del portón no se conectó.');
+  if((await page.locator('#vla-porton-value').innerText()).trim()!=='Activo')throw new Error('El estado real del portón no se conectó.');
+  if(!/Día 1 · solo deuda anterior; cuota nueva excluida/.test(await page.locator('#vla-porton-meta').innerText()))throw new Error('El portón no explica la regla de cambio de mes.');
+  if(requestCounts['/.netlify/functions/admin-data']!==1)throw new Error(`Admin duplicó su carga inicial: ${requestCounts['/.netlify/functions/admin-data']||0}.`);
+  if(requestCounts['/.netlify/functions/system-health-advanced'])throw new Error('Salud pesada se ejecutó sin solicitud del administrador.');
   const logo=page.locator('#vla-premium-sidebar .vla-brand-logo');
   await logo.waitFor({state:'visible'});
   if(!String(await logo.getAttribute('src')).includes('app-icon?app=portal'))throw new Error('El encabezado premium no usa el logo oficial VLA.');
@@ -125,6 +130,8 @@ async function pageState(page,label){
   const solventClass=await page.locator('#owners-body tr[data-vla-state="solvent"] td').nth(4).getAttribute('class');
   if(!String(debtClass).includes('vla-amount-debt'))throw new Error('El saldo pendiente no está identificado en rojo.');
   if(!String(solventClass).includes('vla-amount-ok'))throw new Error('El estado solvente no está identificado en verde.');
+  const mixedTotal=await page.locator('#owners-body tr').nth(13).locator('td').nth(4).innerText();
+  if(mixedTotal.trim()!=='$35.00')throw new Error(`La cuenta mixta no muestra saldo neto: ${mixedTotal}.`);
   await page.locator('.vla-owner-filter[data-filter="solvent"]').click();
   const wrongVisible=await page.locator('#owners-body tr[data-vla-state]:not([data-vla-state="solvent"]):visible').count();
   if(wrongVisible)throw new Error('El filtro de solventes muestra filas incorrectas.');
@@ -135,7 +142,9 @@ async function pageState(page,label){
 
   await page.locator('[data-vla-target="expenses"]').click();
   await page.locator('#expense-month').waitFor({state:'visible'});
-  if(!/PRECARGADO 2026-08/.test(await page.locator('#expenses-body').innerText()))throw new Error('La precarga del mes siguiente no aparece en Gastos.');
+  if(!/PRECARGADO Agosto de 2026/i.test(await page.locator('#expenses-body').innerText()))throw new Error('La precarga del mes siguiente no aparece en Gastos.');
+  if(!/Destino confirmado: .+ · se aplicará al mes operativo actual/i.test(await page.locator('#expense-month-destination').innerText()))throw new Error('El formulario no confirma el mes destino.');
+  if(await page.locator('#vla-expense-filter option').count()!==5)throw new Error('Faltan las vistas separadas de gastos.');
   await page.locator('[data-vla-target="reports"]').click();
   if(!await page.locator('#reports').evaluate(el=>el.classList.contains('active')))throw new Error('La navegación a Pagos falló.');
   await page.screenshot({path:'admin-premium-reports.png',fullPage:true});

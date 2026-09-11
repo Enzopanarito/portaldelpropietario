@@ -20,6 +20,15 @@ test('no permite portón automático sin cierre mensual',()=>{
 });
 
 test('autoriza la infraestructura base completa',()=>{
- const env={AUTOMATION_JOB_SECRET:'secret',URL:'https://villa.test',SMTP_HOST:'smtp.test',SMTP_USER:'villa@test',SMTP_SECRET:'mail-secret',MKJ_ORG_ID:'org',MKJ_ADMIN_EMAIL:'admin@test',MKJ_ADMIN_PASSWORD:'mkj-secret',AIRTABLE_API_TOKEN:'pat',AIRTABLE_BASE_ID:'app'};
+ const env={AUTOMATION_JOB_SECRET:'secret',URL:'https://villa.test',SMTP_HOST:'smtp.test',SMTP_USER:'villa@test',SMTP_SECRET:'mail-secret',ADMIN_NOTIFY_EMAIL:'alerts@test',MKJ_ORG_ID:'org',MKJ_ADMIN_EMAIL:'admin@test',MKJ_ADMIN_PASSWORD:'mkj-secret',AIRTABLE_API_TOKEN:'pat',AIRTABLE_BASE_ID:'app'};
  assert.equal(checkAutomationActivation({rules:enabled(),env}).ok,true);
+});
+
+test('readiness estricta revela dependencias aunque el piloto esté apagado',()=>{
+ const rules=mergeConfig({fields:{}}),fallbackOnly={ADMIN_TOKEN_SECRET:'x'.repeat(40),URL:'https://villa.test',SMTP_HOST:'smtp.test',SMTP_USER:'villa@test',SMTP_SECRET:'mail-secret',MKJ_ORG_ID:'org',MKJ_ADMIN_EMAIL:'admin@test',MKJ_ADMIN_PASSWORD:'mkj-secret',AIRTABLE_API_TOKEN:'pat',AIRTABLE_BASE_ID:'app'};
+ assert.equal(checkAutomationActivation({rules,env:fallbackOnly}).ok,true,'Apagado no debe fingir que hay una ejecución solicitada.');
+ const readiness=checkAutomationActivation({rules,env:fallbackOnly,strictReadiness:true});
+ assert.equal(readiness.ok,false);
+ assert(readiness.blockers.some(item=>item.code==='JOB_AUTH'));
+ assert(readiness.blockers.some(item=>item.code==='ADMIN_NOTIFY_EMAIL'));
 });

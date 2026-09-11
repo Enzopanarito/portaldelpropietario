@@ -25,3 +25,10 @@ test('un piloto autenticado y programado espera su primer ciclo sin falso negati
  const missing=advanced.autopilotHealthState(null,{URL:'https://villa.test'});
  assert.equal(missing.severity,'warning');
 });
+
+test('salud no consulta las tablas WhatsApp retiradas ni acepta secretos compartidos como dedicados',()=>{
+ const source=require('node:fs').readFileSync(require('node:path').join(__dirname,'../netlify/functions/system-health.js'),'utf8');
+ assert.doesNotMatch(source,/getAll\(TABLES\.whatsappJobs|getAll\(TABLES\.whatsappSchedules/);
+ assert.match(source,/isConfigured\(AUTOMATION_JOB_SECRET,URL\)/);
+ assert.match(source,/Correo administrativo de alertas/);
+});

@@ -16,20 +16,51 @@
   function currentMonth(){return typeof caracasDate==='function'?caracasDate().slice(0,7):new Date().toISOString().slice(0,7)}
   async function post(body){if(typeof adminFetch!=='function')throw new Error('Sesión administrativa no disponible.');return adminFetch('/.netlify/functions/admin-expense-action',{method:'POST',body:JSON.stringify(body)})}
   function announce(message,error=false){if(typeof toast==='function')toast(message,error)}
+  function titleMonth(ym){const label=monthLabel(ym);return label?label.charAt(0).toUpperCase()+label.slice(1):ym}
+
+  function updateMonthDestination(){
+    const select=document.getElementById('expense-month'),destination=document.getElementById('expense-month-destination');if(!select||!destination)return;
+    const current=currentMonth(),target=select.value==='next'?nextMonth(current):current;
+    destination.textContent=`Destino confirmado: ${titleMonth(target)} · ${select.value==='next'?'quedará precargado hasta el cierre':'se aplicará al mes operativo actual'}.`;
+  }
+
+  function installMonthField(frequency){
+    let select=document.getElementById('expense-month'),field=document.getElementById('expense-month-field');
+    if(!select){select=document.createElement('select');select.id='expense-month';select.className='w-full p-3 border rounded-lg'}
+    if(!field){field=document.createElement('div');field.id='expense-month-field';select.parentNode?.insertBefore(field,select);if(!select.parentNode)frequency.before(field);field.appendChild(select)}
+    if(!field.querySelector('label'))field.insertAdjacentHTML('afterbegin','<label class="block text-sm font-semibold mb-1" for="expense-month">Mes del gasto</label>');
+    const current=currentMonth(),following=nextMonth(current);
+    select.innerHTML=`<option value="current">Mes actual · ${titleMonth(current)}</option><option value="next">Precargar mes siguiente · ${titleMonth(following)}</option>`;
+    let destination=document.getElementById('expense-month-destination');if(!destination){destination=document.createElement('p');destination.id='expense-month-destination';destination.className='text-xs text-slate-500 mt-1';destination.setAttribute('aria-live','polite');field.appendChild(destination)}
+    select.removeEventListener('change',updateMonthDestination);select.addEventListener('change',updateMonthDestination);updateMonthDestination();
+  }
 
   function installForm(){
     const form=document.getElementById('expense-form'),frequency=document.getElementById('expense-frequency');
     if(!form||!frequency||document.getElementById('expense-repeat-monthly'))return;
-    if(!document.getElementById('expense-month')){
-      const current=currentMonth(),following=nextMonth(current);
-      const month=document.createElement('div');month.innerHTML=`<label class="block text-sm font-semibold mb-1" for="expense-month">Mes del gasto</label><select id="expense-month" class="w-full p-3 border rounded-lg"><option value="current">Mes actual · ${monthLabel(current)}</option><option value="next">Precargar mes siguiente · ${monthLabel(following)}</option></select>`;
-      frequency.before(month);
-    }
+    installMonthField(frequency);
     frequency.classList.add('hidden');frequency.setAttribute('aria-hidden','true');
     const recurringBox=document.createElement('label');recurringBox.className='flex items-start gap-3 p-3 rounded-xl border bg-slate-50 cursor-pointer';
     recurringBox.innerHTML=`<input id="expense-repeat-monthly" type="checkbox" class="mt-1"><span><b>Repetir automáticamente cada mes</b><small class="block text-slate-500 mt-1">El monto podrá ajustarse en la precarga. Anular un mes no elimina la repetición futura.</small></span>`;
     frequency.after(recurringBox);
     form.addEventListener('submit',()=>{frequency.value=document.getElementById('expense-repeat-monthly')?.checked?'Fijo':'Eventual'},true);
+    form.addEventListener('reset',()=>setTimeout(updateMonthDestination,0));
+  }
+
+  function filterExpenses(){
+    const filter=document.getElementById('vla-expense-filter')?.value||'all';
+    document.querySelectorAll('#expenses-body tr[data-vla-expense-state]').forEach(row=>{const visible=filter==='all'||row.dataset.vlaExpenseState===filter||row.dataset.vlaExpenseFrequency===filter;row.hidden=!visible});
+  }
+  function renderOverview(){
+    const records=expenseRecords(),current=currentMonth(),following=nextMonth(current),count=predicate=>records.filter(predicate).length;
+    const active=count(record=>(f(record)['Estado del Gasto']||'')!=='Programado'),scheduled=count(record=>(f(record)['Estado del Gasto']||'')==='Programado'),fixed=count(recurring),eventual=records.length-fixed;
+    const summary=document.getElementById('vla-expense-summary');if(summary)summary.innerHTML=`<span><b>${active}</b> activos · ${titleMonth(current)}</span><span><b>${scheduled}</b> precargados · ${titleMonth(following)}</span><span><b>${fixed}</b> recurrentes</span><span><b>${eventual}</b> eventuales</span>`;
+    filterExpenses();
+  }
+  function installOverview(){
+    const body=document.getElementById('expenses-body'),table=body?.closest('.overflow-x-auto');if(!body||!table||document.getElementById('vla-expense-overview'))return;
+    const overview=document.createElement('div');overview.id='vla-expense-overview';overview.className='mb-3 rounded-xl border bg-slate-50 p-3';overview.innerHTML='<div id="vla-expense-summary" class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600"></div><label class="block text-xs font-semibold mt-3" for="vla-expense-filter">Vista de gastos</label><select id="vla-expense-filter" class="w-full mt-1 p-2 border rounded-lg"><option value="all">Todos los gastos visibles</option><option value="active">Activos del mes</option><option value="scheduled">Precargados del mes siguiente</option><option value="recurring">Recurrentes / fijos</option><option value="eventual">Eventuales / variables</option></select>';
+    table.before(overview);document.getElementById('vla-expense-filter').addEventListener('change',filterExpenses);renderOverview();
   }
 
   function decorateRows(){
@@ -49,6 +80,7 @@
       else{button.classList.add('make-recurring');button.textContent=isRecurring?'Reanudar repetición':'Repetir cada mes'}
       actions.appendChild(button);
     });
+    installOverview();renderOverview();
   }
 
   async function handleClick(event){
@@ -82,6 +114,6 @@
     window.renderExpenses=enhancedRender;
     try{renderExpenses=enhancedRender}catch(_){/* el binding global puede no ser reasignable en navegadores antiguos */}
   }
-  installForm();decorateRows();
+  installForm();installOverview();decorateRows();
   const body=document.getElementById('expenses-body');if(body)body.addEventListener('click',handleClick);
 })();

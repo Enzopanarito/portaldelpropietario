@@ -3,13 +3,13 @@
 const {resolveEncryptionKey}=require('./_payment_proof_store');
 const {safeModel}=require('./_payment_ai_gemini');
 
-function checkPaymentAutomation({rules,configFields={},authorizedAccounts=null,env=process.env}={}){
+function checkPaymentAutomation({rules,configFields={},authorizedAccounts=null,env=process.env,strictReadiness=false}={}){
  const checks=[],blockers=[];const add=(code,ok,detail)=>{const item={code,ok:Boolean(ok),detail};checks.push(item);if(!ok)blockers.push(item)};
- const automaticRequested=rules?.payment?.automaticApprovalEnabled===true,analysisRequested=configFields['AI Enabled']===true,requested=automaticRequested||analysisRequested;
+ const automaticRequested=strictReadiness||rules?.payment?.automaticApprovalEnabled===true,analysisRequested=strictReadiness||configFields['AI Enabled']===true,requested=automaticRequested||analysisRequested;
  add('AI_ENABLED',!automaticRequested||analysisRequested,'El analizador de comprobantes debe estar habilitado.');
  add('GEMINI_KEY',!requested||Boolean(String(env.GEMINI_API_KEY||'').trim()),'GEMINI_API_KEY debe estar configurada.');
  let encryptionOk=true,encryptionDetail='Clave AES-256 disponible para cifrar comprobantes.';
- try{const resolved=resolveEncryptionKey(env);encryptionDetail=resolved.derived?'Clave AES-256 derivada de forma segura desde un secreto interno del backend.':'PAYMENT_PROOF_ENCRYPTION_KEY representa 32 bytes.'}catch(error){
+ try{const resolved=resolveEncryptionKey(env);if(strictReadiness&&resolved.source!=='PAYMENT_PROOF_ENCRYPTION_KEY')throw Object.assign(new Error('Producción requiere una clave dedicada.'),{code:'PROOF_ENCRYPTION_KEY_MISSING'});encryptionDetail=resolved.derived?'Clave AES-256 derivada de forma segura desde un secreto interno del backend.':'PAYMENT_PROOF_ENCRYPTION_KEY representa 32 bytes.'}catch(error){
   encryptionOk=false;
   const characters=String(env.PAYMENT_PROOF_ENCRYPTION_KEY||'').trim().length;
   encryptionDetail=error?.code==='PROOF_ENCRYPTION_KEY_MISSING'
@@ -17,7 +17,7 @@ function checkPaymentAutomation({rules,configFields={},authorizedAccounts=null,e
    :`PAYMENT_PROOF_ENCRYPTION_KEY tiene formato inválido (${characters} caracteres); debe representar 32 bytes.`;
  }
  add('PROOF_ENCRYPTION',!requested||encryptionOk,encryptionDetail);
- add('JOB_AUTH',!requested||Boolean(String(env.AUTOMATION_JOB_SECRET||env.ADMIN_TOKEN_SECRET||env.ADMIN_PASSWORD||'').trim()),'Debe existir un secreto para autenticar trabajos internos.');
+ add('JOB_AUTH',!requested||Boolean(String(strictReadiness?env.AUTOMATION_JOB_SECRET:(env.AUTOMATION_JOB_SECRET||env.ADMIN_TOKEN_SECRET||env.ADMIN_PASSWORD)||'').trim()),strictReadiness?'Debe existir AUTOMATION_JOB_SECRET dedicada.':'Debe existir un secreto para autenticar trabajos internos.');
  add('SITE_URL',!requested||/^https:\/\//.test(String(env.URL||'')),'La URL de producción debe estar disponible.');
  let primaryOk=true;try{safeModel(configFields['AI Primary Model']||env.PAYMENT_AI_PRIMARY_MODEL||'gemini-2.5-flash')}catch(_){primaryOk=false}
  add('PRIMARY_MODEL',!requested||primaryOk,'El modelo principal debe ser un identificador estable válido.');
@@ -31,7 +31,7 @@ function checkPaymentAutomation({rules,configFields={},authorizedAccounts=null,e
  add('RECIPIENT_IDENTIFIERS',!automaticRequested||!accountsKnown||active.every(recipient),'Cada cuenta activa debe tener un titular, teléfono, correo o número verificable.');
  add('NORMALIZED_RECIPIENT_IDENTIFIERS',!automaticRequested||!accountsKnown||active.every(normalizedIdentifier),'Las cuentas Venezuela, Zelle y Binance deben tener su identificador normalizado aplicable; si falta, el caso queda en revisión manual.');
  add('MINIMUM_CONFIDENCE',!automaticRequested||Number(rules?.payment?.minimumAutomaticConfidence||0)>=0.95,'La confianza automática mínima debe ser 95% o superior.');
- return{ok:blockers.length===0,requested,analysisRequested,automaticRequested,checks,blockers};
+ return{ok:blockers.length===0,requested,analysisRequested,automaticRequested,strictReadiness,checks,blockers};
 }
 
 module.exports={checkPaymentAutomation};
