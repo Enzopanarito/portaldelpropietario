@@ -13,6 +13,9 @@ const OWNER_ID='recOWNER123456789';
 function autoAudit(paymentId=PAYMENT_ID){
   return JSON.stringify({version:1,at:'2026-08-22T01:00:00.000Z',action:'approve',adminId:'AUTOPILOT',reason:'',corrections:{},result:'payment-created',paymentId});
 }
+function manualAudit(paymentId=PAYMENT_ID){
+  return JSON.stringify({version:1,at:'2026-09-11T18:00:00.000Z',action:'approve',adminId:'ADMIN-TEST',reason:'',corrections:{},result:'payment-created',paymentId});
+}
 function report(overrides={}){
   return {id:REPORT_ID,fields:{
     'Propietario que Reporta':[OWNER_ID],
@@ -54,8 +57,23 @@ test('historial marca autopago activo como reversible antes del cierre',()=>{
   assert.equal(item.status,'ACTIVO');
   assert.equal(item.canReverse,true);
   assert.equal(item.appliedAtClose,false);
+  assert.equal(item.validationSource,'AUTOMATIC');
   assert.equal(item.amountUsd,120);
   assert.equal(item.reference,'839271');
+});
+
+test('historial incluye pago aprobado manualmente y lo hace reversible',()=>{
+  const manualReport=report({
+    'Decisión Administrativa':'Aprobado',
+    'Validación Realizada Por':'Administrador',
+    'Log de Auditoría':manualAudit()
+  });
+  const manualPayment=payment({'Fuente de Validación':'Manual'});
+  const item=supervision.historyItem(manualReport,manualPayment,owners);
+  assert.equal(item.status,'ACTIVO');
+  assert.equal(item.canReverse,true);
+  assert.equal(item.validationSource,'MANUAL');
+  assert.equal(item.validationLabel,'Validado por administrador');
 });
 
 test('historial bloquea reversión simple después del cierre',()=>{
@@ -65,11 +83,11 @@ test('historial bloquea reversión simple después del cierre',()=>{
   assert.equal(item.canReverse,false);
 });
 
-test('reversión conserva auditoría y retira el vínculo financiero del reporte',()=>{
+test('reversión automática conserva auditoría y retira el vínculo financiero del reporte',()=>{
   const fields=report().fields;
   const patch=supervision.reversalReportPatch(fields,{
     who:'ADMIN-TEST',reason:'Comprobante corresponde a otra operación',paymentId:PAYMENT_ID,
-    paymentSnapshot:{amountUsd:120,reference:'839271'},at:'2026-08-22T02:00:00.000Z'
+    paymentSnapshot:{amountUsd:120,reference:'839271',validationSource:'AUTOMATIC'},at:'2026-08-22T02:00:00.000Z',source:'AUTOMATIC'
   });
   assert.equal(patch.Estado,'Rechazado');
   assert.equal(patch['Pago Definitivo Creado'],false);
@@ -80,22 +98,34 @@ test('reversión conserva auditoría y retira el vínculo financiero del reporte
   assert.match(patch['Log de Auditoría'],/839271/);
 });
 
+test('reversión manual usa auditoría específica sin perder evidencia',()=>{
+  const fields=report({'Decisión Administrativa':'Aprobado','Log de Auditoría':manualAudit()}).fields;
+  const patch=supervision.reversalReportPatch(fields,{
+    who:'ADMIN-TEST',reason:'Monto escrito manualmente por error',paymentId:PAYMENT_ID,
+    paymentSnapshot:{amountUsd:.05,amountBs:46,validationSource:'MANUAL'},at:'2026-09-11T18:05:00.000Z',source:'MANUAL'
+  });
+  assert.match(patch['Motivo del Rechazo'],/Reversión administrativa/);
+  assert.match(patch['Log de Auditoría'],/reverse_approved_payment/);
+  assert.match(patch['Log de Auditoría'],/Monto escrito manualmente por error/);
+});
+
 test('historial reconoce un autopago revertido aunque el pago definitivo ya no exista',()=>{
-  const reversal=JSON.stringify({version:1,at:'2026-08-22T02:00:00.000Z',action:'reverse_automatic_payment',adminId:'ADMIN-TEST',reason:'Error detectado posteriormente',corrections:{paymentSnapshot:{amountUsd:120}},result:'payment-deleted-and-reverted',paymentId:PAYMENT_ID});
+  const reversal=JSON.stringify({version:1,at:'2026-08-22T02:00:00.000Z',action:'reverse_automatic_payment',adminId:'ADMIN-TEST',reason:'Error detectado posteriormente',corrections:{paymentSnapshot:{amountUsd:120,validationSource:'AUTOMATIC'}},result:'payment-deleted-and-reverted',paymentId:PAYMENT_ID});
   const item=supervision.historyItem(report({'Log de Auditoría':autoAudit()+'\n'+reversal,'Pago Definitivo Relacionado':[],'Pago Definitivo Creado':false}),null,owners);
   assert.equal(item.status,'REVERTIDO');
   assert.equal(item.canReverse,false);
+  assert.equal(item.validationSource,'AUTOMATIC');
   assert.equal(item.reversalReason,'Error detectado posteriormente');
 });
 
-test('resumen separa activos, revertidos y anomalías',()=>{
+test('resumen separa pagos manuales y automáticos',()=>{
   const summary=supervision.buildSummary([
-    {status:'ACTIVO',amountUsd:100,confidence:.99},
-    {status:'ACTIVO',amountUsd:50,confidence:.97},
-    {status:'REVERTIDO',amountUsd:20,confidence:.98},
-    {status:'REVISAR',amountUsd:30,confidence:0}
+    {status:'ACTIVO',amountUsd:100,validationSource:'AUTOMATIC'},
+    {status:'ACTIVO',amountUsd:50,validationSource:'MANUAL'},
+    {status:'REVERTIDO',amountUsd:20,validationSource:'MANUAL'},
+    {status:'REVISAR',amountUsd:30,validationSource:'AUTOMATIC'}
   ]);
-  assert.deepEqual(summary,{active:2,reverted:1,attention:1,totalActiveUsd:150,averageConfidence:.98});
+  assert.deepEqual(summary,{active:2,manual:1,automatic:1,reverted:1,attention:1,totalActiveUsd:150});
 });
 
 test('build de producción incluye los assets de supervisión sin editar credenciales',()=>{
