@@ -28,6 +28,9 @@ function normalizePhone(value) {
   if (raw.startsWith('0') && raw.length === 11 && raw[1] === '4') return `+58${raw.slice(1)}`;
   if (raw.length === 10 && raw[0] === '4') return `+58${raw}`;
 
+  // WhatsApp/Meta commonly emits wa_id as E.164 digits without the leading +.
+  if (raw.length >= 11 && raw.length <= 15 && raw[0] !== '0') return `+${raw}`;
+
   return '';
 }
 
