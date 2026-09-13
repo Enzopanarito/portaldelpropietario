@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - main
+      - vla-ai-staging
       - hardening-final-all-2026-07-11
       - fix-balance-pronto-pago-2026-07-11
       - fix-all-houses-pronto-pago-2026-07-11
