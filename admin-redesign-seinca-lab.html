@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VLA · SEINCA Palette Lab</title>
+<meta name="robots" content="noindex,nofollow">
+<style>
+:root{
+  --navy:#050607;
+  --navy2:#111214;
+  --navy3:#202124;
+  --ink:#151515;
+  --muted:#777b80;
+  --paper:#f2f2f2;
+  --cream:#fbfbfb;
+  --white:#fff;
+  --line:#dedede;
+  --gold:#ED1C2E;
+  --gold2:#ff7b86;
+  --green:#5d8f80;
+  --green2:#e4efea;
+  --red:#b95a58;
+  --red2:#f3e2df;
+  --blue:#555b62;
+  --blue2:#e9eaec;
+  --shadow:0 18px 60px rgba(0,0,0,.13);
+  --shadow2:0 8px 24px rgba(0,0,0,.08);
+  --radius:22px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:var(--paper);color:var(--ink);font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+button,input{font:inherit}
+button{cursor:pointer}
+svg{display:block}
+.lab-ribbon{
+  position:fixed;right:18px;top:18px;z-index:80;
+  padding:9px 13px;border:1px solid rgba(237,28,46,.28);border-radius:999px;
+  background:rgba(250,248,243,.91);backdrop-filter:blur(16px);
+  color:#9e1824;font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;
+  box-shadow:0 8px 30px rgba(0,0,0,.08);
+}
+.shell{min-height:100vh;display:grid;grid-template-columns:252px minmax(0,1fr)}
+.sidebar{
+  position:sticky;top:0;height:100vh;padding:24px 18px 18px;
+  display:flex;flex-direction:column;
+  background:
+    radial-gradient(circle at 15% 0%,rgba(237,28,46,.16),transparent 240px),
+    linear-gradient(180deg,#050607,#101114 68%,#070708);
+  color:#dfe8eb;border-right:1px solid rgba(255,255,255,.06);
+}
+.brand{display:flex;align-items:center;gap:13px;padding:4px 8px 23px;margin-bottom:18px;border-bottom:1px solid rgba(255,255,255,.08)}
+.mark{width:44px;height:44px;display:grid;place-items:center;border-radius:14px;background:linear-gradient(145deg,#ff3445,#ED1C2E);color:#ffffff;font-family:Georgia,serif;font-weight:800;box-shadow:0 10px 30px rgba(0,0,0,.18)}
+.brand-copy strong{display:block;color:#fff;font-size:14px;letter-spacing:.08em}
+.brand-copy span{display:block;margin-top:4px;color:#9b9da1;font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+.nav-label{padding:0 10px;margin:9px 0 8px;color:#74767a;font-size:9px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}
+.nav{display:grid;gap:5px}
+.nav button{
+  position:relative;width:100%;height:46px;padding:0 12px;border:1px solid transparent;border-radius:13px;
+  display:flex;align-items:center;gap:11px;background:transparent;color:#b9bbbf;text-align:left;font-size:12.5px;font-weight:650;
+}
+.nav button svg{width:17px;height:17px;stroke:currentColor;stroke-width:1.8;fill:none}
+.nav button:hover{background:rgba(255,255,255,.05);color:#fff}
+.nav button.active{background:linear-gradient(90deg,rgba(237,28,46,.17),rgba(255,255,255,.03));border-color:rgba(237,28,46,.22);color:#fff}
+.nav button.active:before{content:"";position:absolute;left:-1px;top:9px;bottom:9px;width:2px;border-radius:2px;background:#ED1C2E}
+.nav button.active svg{color:#ff5060}
+.nav-badge{margin-left:auto;min-width:20px;height:20px;padding:0 6px;display:grid;place-items:center;border-radius:999px;background:#c15f5f;color:#fff;font-size:9px;font-weight:800}
+.side-foot{margin-top:auto;padding-top:16px;border-top:1px solid rgba(255,255,255,.08)}
+.system-mini{display:flex;gap:10px;align-items:center;padding:11px;border-radius:14px;background:rgba(255,255,255,.035)}
+.pulse{width:9px;height:9px;border-radius:50%;background:#6bc7aa;box-shadow:0 0 0 5px rgba(107,199,170,.08)}
+.system-mini b{display:block;font-size:11px;color:#e7edef}
+.system-mini span{display:block;margin-top:3px;color:#758b97;font-size:9px}
+.profile{display:flex;gap:10px;align-items:center;margin-top:9px;padding:11px}
+.avatar{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;background:#1d1e21;color:#ffffff;font-weight:800;font-size:11px;border:1px solid rgba(255,255,255,.07)}
+.profile b{display:block;color:#fff;font-size:11px}.profile span{font-size:9px;color:#78909c}
+
+.main{min-width:0}
+.topbar{
+  height:74px;padding:0 30px;display:flex;align-items:center;justify-content:space-between;
+  border-bottom:1px solid rgba(18,32,42,.07);background:rgba(242,242,242,.86);backdrop-filter:blur(18px);
+  position:sticky;top:0;z-index:30;
+}
+.breadcrumb small{display:block;color:#8c958e;font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+.breadcrumb strong{display:block;margin-top:5px;font-family:Georgia,serif;font-size:18px;font-weight:500}
+.top-actions{display:flex;align-items:center;gap:9px}
+.iconbtn,.search{
+  height:38px;border:1px solid #dddddd;border-radius:12px;background:rgba(255,255,255,.72);color:#61707a;box-shadow:0 3px 10px rgba(12,27,39,.035)
+}
+.iconbtn{width:38px;display:grid;place-items:center}.iconbtn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8}
+.search{width:220px;padding:0 14px;outline:none}
+.search::placeholder{color:#a3aaa5}
+.content{padding:26px 30px 42px;max-width:1600px;margin:0 auto}
+.view{display:none}.view.active{display:block}
+.hero{
+  position:relative;overflow:hidden;min-height:282px;border-radius:28px;background:#102634;color:#fff;box-shadow:var(--shadow);
+  display:grid;grid-template-columns:1.16fr .84fr;
+}
+.hero-copy{position:relative;z-index:2;padding:35px 38px 32px;background:linear-gradient(90deg,#0f2635 0%,#0f2635 68%,rgba(15,38,53,.78) 100%)}
+.eyebrow{display:flex;align-items:center;gap:9px;color:#d1bd91;font-size:9px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}
+.eyebrow:before{content:"";width:23px;height:1px;background:#c4a86e}
+.hero h1{margin:25px 0 11px;max-width:670px;font-family:Georgia,serif;font-weight:400;font-size:43px;line-height:1.03;letter-spacing:-.035em}
+.hero p{max-width:600px;margin:0;color:#9fb0b9;font-size:12.5px;line-height:1.65}
+.hero-status{display:flex;gap:18px;margin-top:29px}
+.hero-status .metric{padding-right:18px;border-right:1px solid rgba(255,255,255,.12)}
+.hero-status .metric:last-child{border:none}
+.metric b{display:block;color:#fff;font-size:20px;font-weight:650}.metric span{display:block;margin-top:5px;color:#8097a2;font-size:9px;text-transform:uppercase;letter-spacing:.10em}
+.hero-photo{
+  position:relative;min-height:282px;
+  background:
+    linear-gradient(90deg,#0f2635 0%,rgba(15,38,53,.05) 28%),
+    linear-gradient(180deg,rgba(0,0,0,.02),rgba(0,0,0,.24)),
+    url('https://upload.wikimedia.org/wikipedia/commons/2/22/Modern_architecture_build.jpg') center/cover no-repeat;
+}
+.hero-photo:after{
+  content:"RESIDENCIA PRIVADA";position:absolute;right:22px;bottom:20px;padding:7px 10px;border:1px solid rgba(255,255,255,.22);border-radius:999px;
+  background:rgba(6,20,29,.32);backdrop-filter:blur(8px);font-size:8px;font-weight:800;letter-spacing:.16em;color:#fff;
+}
+.hero-chip{position:absolute;top:21px;right:22px;z-index:3;padding:8px 10px;border-radius:999px;background:rgba(255,255,255,.9);color:#203745;font-size:8px;font-weight:800;letter-spacing:.12em}
+
+.section-title{display:flex;align-items:flex-end;justify-content:space-between;margin:27px 0 13px}
+.section-title .left small{display:block;color:#ED1C2E;font-size:9px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}
+.section-title h2{margin:5px 0 0;font-family:Georgia,serif;font-size:23px;font-weight:500;letter-spacing:-.02em}
+.section-title .link{border:0;background:transparent;color:#6d7d86;font-size:10px;font-weight:700}
+
+.kpis{display:grid;grid-template-columns:1.25fr repeat(3,1fr);gap:13px}
+.card{
+  border:1px solid var(--line);border-radius:var(--radius);background:rgba(250,248,243,.94);box-shadow:var(--shadow2);
+}
+.kpi{position:relative;min-height:154px;padding:20px;overflow:hidden}
+.kpi.primary{background:linear-gradient(145deg,#f5f5f5,#ffffff);border-color:#dddddd}
+.kpi small{display:block;color:#8b948f;font-size:9px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
+.kpi .value{margin-top:23px;font-family:Georgia,serif;font-size:32px;line-height:1;color:#1a2c36;letter-spacing:-.035em}
+.kpi .sub{margin-top:8px;font-size:10px;color:#85908c}
+.delta{position:absolute;right:15px;top:15px;padding:6px 8px;border-radius:999px;background:#e4efe9;color:#3f7567;font-size:8px;font-weight:800}
+.delta.red{background:#f2e2df;color:#a15250}
+.spark{position:absolute;right:14px;bottom:13px;width:92px;height:38px;opacity:.82}.spark path{fill:none;stroke:#ED1C2E;stroke-width:2}.spark .area{fill:url(#fade);stroke:none}
+
+.grid-2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.65fr);gap:13px}
+.finance-card{padding:22px;min-height:360px}
+.card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.card-head h3{margin:0;font-family:Georgia,serif;font-size:20px;font-weight:500}
+.card-head span{color:#8b9690;font-size:9px}
+.pill{padding:7px 9px;border:1px solid #e3ddd2;border-radius:999px;background:#fff;color:#66757d;font-size:8px;font-weight:800;letter-spacing:.07em;text-transform:uppercase}
+.chart-wrap{display:grid;grid-template-columns:190px minmax(0,1fr);gap:24px;align-items:center}
+.donut{width:170px;height:170px;border-radius:50%;background:conic-gradient(var(--green) 0 76%,#c7c7c7 76% 89%,#e3e3e3 89% 100%);display:grid;place-items:center;margin:auto;position:relative}
+.donut:before{content:"";width:122px;height:122px;border-radius:50%;background:var(--cream);box-shadow:inset 0 0 0 1px var(--line)}
+.donut-center{position:absolute;text-align:center}.donut-center b{display:block;font-family:Georgia,serif;font-size:28px}.donut-center span{display:block;color:#8b958f;font-size:8px;text-transform:uppercase;letter-spacing:.10em}
+.legend{display:grid;gap:15px}
+.legend-row{display:grid;grid-template-columns:10px 1fr auto;gap:10px;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%}.dot.green{background:var(--green)}.dot.gold{background:#ED1C2E}.dot.gray{background:#c9c9c9}
+.legend-row b{font-size:11px}.legend-row small{display:block;margin-top:3px;color:#8d9792;font-size:9px}.legend-row strong{font-family:Georgia,serif;font-size:15px;font-weight:500}
+
+.operations{padding:22px}
+.op-list{display:grid;gap:9px}
+.op{display:grid;grid-template-columns:38px 1fr auto;gap:11px;align-items:center;padding:12px;border-radius:15px;background:#fff;border:1px solid #e4e4e4}
+.op-icon{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:#edf3f1;color:#477b6e}.op-icon.warn{background:#f5eeee;color:#9a4b50}.op-icon.blue{background:#e8f0f4;color:#567d94}
+.op-icon svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.8}
+.op b{display:block;font-size:10.5px}.op small{display:block;margin-top:4px;color:#8e9792;font-size:8.5px}
+.status-ok,.status-warn{padding:6px 8px;border-radius:999px;font-size:7.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+.status-ok{background:#e4f0eb;color:#427769}.status-warn{background:#f6ecdc;color:#98733a}
+
+.table-card{overflow:hidden}
+.table-head{display:flex;justify-content:space-between;align-items:center;padding:19px 20px;border-bottom:1px solid var(--line)}
+.table-head h3{margin:0;font-family:Georgia,serif;font-size:19px;font-weight:500}.table-head .actions{display:flex;gap:8px}
+.smallbtn{height:32px;padding:0 11px;border:1px solid #e2dbcf;border-radius:10px;background:#fff;color:#65747c;font-size:9px;font-weight:700}
+table{width:100%;border-collapse:collapse}
+th{padding:11px 16px;text-align:left;background:#f3f3f3;color:#8c948f;font-size:8px;text-transform:uppercase;letter-spacing:.11em}
+td{padding:13px 16px;border-top:1px solid #e6e6e6;font-size:10px;color:#42545e}
+td strong{font-size:10.5px;color:#1f333e}
+tr:hover td{background:#ffffff}
+.money{font-family:Georgia,serif;font-size:13px}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:6px 8px;border-radius:999px;font-size:7.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em}
+.badge:before{content:"";width:5px;height:5px;border-radius:50%}
+.badge.ok{background:#e6f0eb;color:#49786c}.badge.ok:before{background:#4f897b}
+.badge.pending{background:#f6edde;color:#8f703f}.badge.pending:before{background:#b58a49}
+.badge.alert{background:#f3e2df;color:#9f5652}.badge.alert:before{background:#b95a58}
+
+.page-head{display:flex;justify-content:space-between;gap:20px;align-items:flex-end;margin:8px 0 22px}
+.page-head small{display:block;color:#ED1C2E;font-size:9px;font-weight:800;letter-spacing:.15em;text-transform:uppercase}.page-head h1{margin:5px 0 0;font-family:Georgia,serif;font-size:31px;font-weight:500}.page-head p{max-width:620px;margin:7px 0 0;color:#7f8b86;font-size:11px;line-height:1.55}
+.primarybtn{height:38px;padding:0 14px;border:0;border-radius:11px;background:#122a39;color:white;font-size:9px;font-weight:800;letter-spacing:.03em;box-shadow:0 8px 18px rgba(18,42,57,.14)}
+.filters{display:flex;gap:8px;margin-bottom:13px}.filter{height:36px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:#68777f;font-size:9px}.filter.active{background:#142a38;color:#fff;border-color:#142a38}
+
+.owner-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.owner{padding:18px}.owner-top{display:flex;justify-content:space-between;align-items:flex-start}.house{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:#efefef;color:#ED1C2E;font-family:Georgia,serif;font-size:15px}.owner h3{margin:15px 0 4px;font-size:12px}.owner p{margin:0;color:#8b9691;font-size:9px}.owner-meta{display:flex;gap:8px;margin-top:15px;padding-top:13px;border-top:1px solid #e6e6e6}.owner-meta div{flex:1}.owner-meta span{display:block;color:#929b96;font-size:7.5px;text-transform:uppercase;letter-spacing:.07em}.owner-meta b{display:block;margin-top:4px;font-size:10px}
+
+.finance-layout{display:grid;grid-template-columns:1fr 1fr;gap:13px}.bigcard{padding:22px;min-height:300px}
+.bar-chart{height:190px;display:flex;align-items:flex-end;gap:10px;padding-top:18px}.bar-col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:7px}.bar{width:100%;max-width:32px;border-radius:9px 9px 3px 3px;background:linear-gradient(180deg,#ED1C2E,#ff7b86)}.bar-col:nth-child(2n) .bar{background:linear-gradient(180deg,#4f8278,#89ada5)}.bar-col small{font-size:7.5px;color:#8f9893}
+.progress-list{display:grid;gap:17px;margin-top:20px}.progress-row .labels{display:flex;justify-content:space-between;font-size:9px}.progress-row .labels b{font-size:9px}.track{height:7px;margin-top:8px;border-radius:999px;background:#e4e4e4;overflow:hidden}.fill{height:100%;border-radius:999px;background:#4f8278}.fill.gold{background:#ED1C2E}.fill.red{background:#b95a58}
+
+.system-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.system-card{padding:19px}.system-card .head{display:flex;align-items:center;justify-content:space-between}.system-card h3{margin:14px 0 4px;font-size:12px}.system-card p{margin:0;color:#8a9590;font-size:9px;line-height:1.5}.system-card .details{margin-top:15px;padding-top:13px;border-top:1px solid #e6e6e6;display:grid;grid-template-columns:1fr 1fr;gap:9px}.system-card .details span{display:block;color:#969f9a;font-size:7.5px;text-transform:uppercase;letter-spacing:.06em}.system-card .details b{display:block;margin-top:4px;font-size:9.5px}
+
+.mobile-note{display:none}
+@media(max-width:1200px){
+  .shell{grid-template-columns:218px minmax(0,1fr)}
+  .kpis{grid-template-columns:repeat(2,1fr)}
+  .hero h1{font-size:38px}
+  .owner-grid{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:900px){
+  .shell{display:block}.sidebar{position:static;height:auto;padding:14px}.brand{margin-bottom:8px;padding-bottom:12px}.nav-label,.side-foot{display:none}.nav{display:flex;overflow:auto;gap:6px}.nav button{min-width:max-content;width:auto}.topbar{top:0;padding:0 16px}.search{display:none}.content{padding:16px}.hero{grid-template-columns:1fr}.hero-photo{min-height:210px}.grid-2,.finance-layout{grid-template-columns:1fr}.owner-grid,.system-grid{grid-template-columns:1fr 1fr}
+}
+@media(max-width:640px){
+  .lab-ribbon{display:none}.topbar{height:60px}.breadcrumb strong{font-size:15px}.content{padding:10px}.hero{border-radius:20px}.hero-copy{padding:24px 20px}.hero h1{font-size:31px}.hero-status{gap:10px}.hero-status .metric{padding-right:10px}.metric b{font-size:16px}.hero-photo{min-height:180px}.kpis{grid-template-columns:1fr}.chart-wrap{grid-template-columns:1fr}.owner-grid,.system-grid{grid-template-columns:1fr}.table-card{overflow:auto}table{min-width:680px}.mobile-note{display:block;margin:10px 0;color:#8b948f;font-size:9px}
+}
+
+/* SEINCA visual override: same UX, different brand expression */
+.brand-copy strong{letter-spacing:.11em}
+.mark{border-radius:10px;box-shadow:0 10px 30px rgba(237,28,46,.16)}
+.nav button.active{box-shadow:inset 0 0 0 1px rgba(237,28,46,.08)}
+.eyebrow{color:#ff6673}
+.eyebrow:before{background:#ED1C2E}
+.hero{
+  background:#08090a;
+  box-shadow:0 20px 60px rgba(0,0,0,.18);
+}
+.hero-copy{
+  background:linear-gradient(90deg,#070809 0%,#0a0b0d 68%,rgba(10,11,13,.78) 100%);
+}
+.hero-photo{
+  filter:saturate(.48) contrast(1.08);
+}
+.hero-photo:after{background:rgba(0,0,0,.48)}
+.hero-chip{
+  background:#ED1C2E;
+  color:#fff;
+  border:1px solid rgba(255,255,255,.16);
+}
+.kpi.primary{
+  border-top:3px solid #ED1C2E;
+  background:linear-gradient(145deg,#f8f8f8,#fff);
+}
+.delta:not(.red){
+  background:#f3dddd;color:#a51624;
+}
+.pill{
+  border-color:#dcdcdc;
+}
+.primarybtn{
+  background:#ED1C2E;
+  box-shadow:0 8px 20px rgba(237,28,46,.18);
+}
+.filter.active{
+  background:#050607;border-color:#050607;
+}
+.status-ok{
+  background:#e9efec;color:#476f64;
+}
+.badge.pending{
+  background:#f0f0f0;color:#555;
+}
+.table-head{
+  border-bottom-color:#dedede;
+}
+th{
+  background:#f1f1f1;
+}
+.system-mini{
+  border:1px solid rgba(237,28,46,.08);
+}
+.sidebar:after{
+  content:"SEINCA PALETTE STUDY";
+  position:absolute;left:18px;bottom:6px;
+  font-size:7px;letter-spacing:.18em;color:rgba(237,28,46,.32);font-weight:800;
+}
+</style>
+</head>
+<body>
+<div class="lab-ribbon">Laboratorio SEINCA · sin datos reales</div>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="mark">VLA</div>
+      <div class="brand-copy"><strong>VILLA LOS APAMATES</strong><span>Administración ejecutiva</span></div>
+    </div>
+    <div class="nav-label">Gestión</div>
+    <nav class="nav">
+      <button class="active" data-view="overview"><svg viewBox="0 0 24 24"><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v5h6V4h-6Z"/></svg>Resumen ejecutivo</button>
+      <button data-view="owners"><svg viewBox="0 0 24 24"><path d="m3 11 9-7 9 7M5 10v10h14V10M9 20v-6h6v6"/></svg>Propietarios</button>
+      <button data-view="finance"><svg viewBox="0 0 24 24"><path d="M4 19V9m5 10V5m5 14v-7m5 7V3"/></svg>Finanzas</button>
+      <button data-view="payments"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></svg>Pagos y revisión<span class="nav-badge">3</span></button>
+      <button data-view="systems"><svg viewBox="0 0 24 24"><path d="M12 3v4m0 10v4M3 12h4m10 0h4M5.6 5.6l2.8 2.8m7.2 7.2 2.8 2.8m0-12.8-2.8 2.8m-7.2 7.2-2.8 2.8"/><circle cx="12" cy="12" r="4"/></svg>Sistemas</button>
+      <button data-view="access"><svg viewBox="0 0 24 24"><path d="M7 11V8a5 5 0 0 1 10 0v3m-11 0h12v10H6zM12 15v3"/></svg>Accesos</button>
+    </nav>
+    <div class="nav-label" style="margin-top:18px">Gobernanza</div>
+    <nav class="nav">
+      <button data-view="audit"><svg viewBox="0 0 24 24"><path d="M7 4h10v3h3v13H4V7h3V4Zm2 0v5h6V4M8 13h8m-8 4h5"/></svg>Auditoría</button>
+      <button data-view="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1a7 7 0 0 0-1.8-1L14.4 3h-4.8l-.4 3.1a7 7 0 0 0-1.8 1l-2.4-1-2 3.4L5.1 11a7 7 0 0 0 0 2L3 14.5l2 3.4 2.4-1a7 7 0 0 0 1.8 1l.4 3.1h4.8l.4-3.1a7 7 0 0 0 1.8-1l2.4 1 2-3.4L18.9 13a7 7 0 0 0 .1-1Z"/></svg>Configuración</button>
+    </nav>
+    <div class="side-foot">
+      <div class="system-mini"><span class="pulse"></span><div><b>Servicios conectados</b><span>Laboratorio visual · no operativo</span></div></div>
+      <div class="profile"><div class="avatar">EP</div><div><b>Administración</b><span>Presidencia de Condominio</span></div></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="breadcrumb"><small>VLA / Portal administrativo</small><strong id="top-title">Resumen ejecutivo</strong></div>
+      <div class="top-actions">
+        <input class="search" placeholder="Buscar casa, pago o movimiento…">
+        <button class="iconbtn" aria-label="Notificaciones"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 7h18s-3 0-3-7M10 19h4"/></svg></button>
+        <button class="iconbtn" aria-label="Ayuda"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.7 2.7 0 1 1 4.1 2.3c-1 .6-1.6 1.1-1.6 2.2M12 17h.01"/></svg></button>
+      </div>
+    </header>
+
+    <div class="content">
+      <section class="view active" id="overview">
+        <div class="hero">
+          <div class="hero-copy">
+            <div class="eyebrow">Centro de gestión privada</div>
+            <h1>Una visión ejecutiva de toda la urbanización.</h1>
+            <p>Finanzas, propietarios, pagos, infraestructura y accesos reunidos en una sola experiencia administrativa. Información priorizada para decidir rápido, sin convertir la pantalla en una feria de botones.</p>
+            <div class="hero-status">
+              <div class="metric"><b>15</b><span>Residencias</span></div>
+              <div class="metric"><b>92%</b><span>Operación estable</span></div>
+              <div class="metric"><b>6</b><span>Módulos activos</span></div>
+            </div>
+          </div>
+          <div class="hero-photo"><span class="hero-chip">VLA · PRIVATE RESIDENTIAL</span></div>
+        </div>
+
+        <div class="section-title"><div class="left"><small>Indicadores principales</small><h2>Situación financiera</h2></div><button class="link">Ver detalle financiero →</button></div>
+        <div class="kpis">
+          <article class="card kpi primary"><span class="delta">+8.4%</span><small>Total por cobrar</small><div class="value">$4,820</div><div class="sub">Obligaciones pendientes del período</div><svg class="spark" viewBox="0 0 100 40"><defs><linearGradient id="fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ED1C2E" stop-opacity=".2"/><stop offset="1" stop-color="#ED1C2E" stop-opacity="0"/></linearGradient></defs><path class="area" d="M2 34 15 29 29 31 42 20 56 23 70 13 83 17 98 6V40H2Z"/><path d="M2 34 15 29 29 31 42 20 56 23 70 13 83 17 98 6"/></svg></article>
+          <article class="card kpi"><span class="delta">Al día</span><small>Recaudado USD</small><div class="value">$3,640</div><div class="sub">76% de la meta mensual</div></article>
+          <article class="card kpi"><span class="delta">BCV</span><small>Recaudado Bs.</small><div class="value">Bs. 78,420</div><div class="sub">Conciliado en el período</div></article>
+          <article class="card kpi"><span class="delta red">3 casos</span><small>Por regularizar</small><div class="value">20%</div><div class="sub">Residencias con saldo vencido</div></article>
+        </div>
+
+        <div class="section-title"><div class="left"><small>Control ejecutivo</small><h2>Finanzas e infraestructura</h2></div><button class="link">Última actualización · ahora</button></div>
+        <div class="grid-2">
+          <article class="card finance-card">
+            <div class="card-head"><div><h3>Salud de cobranza</h3><span>Distribución del período actual</span></div><span class="pill">Septiembre 2026</span></div>
+            <div class="chart-wrap">
+              <div class="donut"><div class="donut-center"><b>76%</b><span>Recaudado</span></div></div>
+              <div class="legend">
+                <div class="legend-row"><span class="dot green"></span><div><b>Pagado</b><small>Fondos conciliados</small></div><strong>$3,640</strong></div>
+                <div class="legend-row"><span class="dot gold"></span><div><b>Pendiente</b><small>Dentro del período</small></div><strong>$760</strong></div>
+                <div class="legend-row"><span class="dot gray"></span><div><b>Vencido</b><small>Requiere seguimiento</small></div><strong>$420</strong></div>
+              </div>
+            </div>
+          </article>
+          <article class="card operations">
+            <div class="card-head"><div><h3>Operación hoy</h3><span>Estado general de servicios</span></div><span class="pill">En vivo · demo</span></div>
+            <div class="op-list">
+              <div class="op"><div class="op-icon"><svg viewBox="0 0 24 24"><path d="M13 2 5 14h6l-1 8 9-13h-6V2Z"/></svg></div><div><b>Planta eléctrica</b><small>Sistema disponible para contingencia</small></div><span class="status-ok">Disponible</span></div>
+              <div class="op"><div class="op-icon blue"><svg viewBox="0 0 24 24"><path d="M4 18V6h16v12M8 18v-4h8v4M9 9h6"/></svg></div><div><b>Portón MKJ</b><small>Dispositivo de acceso enlazado</small></div><span class="status-ok">En línea</span></div>
+              <div class="op"><div class="op-icon"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM7 8h10M7 12h7M7 16h5"/></svg></div><div><b>Airtable</b><small>Base administrativa sincronizada</small></div><span class="status-ok">Sincronizado</span></div>
+              <div class="op"><div class="op-icon warn"><svg viewBox="0 0 24 24"><path d="M12 3 2 20h20L12 3Zm0 6v5m0 3h.01"/></svg></div><div><b>Pagos por revisar</b><small>Tres reportes requieren validación</small></div><span class="status-warn">Atención</span></div>
+            </div>
+          </article>
+        </div>
+
+        <div class="section-title"><div class="left"><small>Movimientos recientes</small><h2>Actividad de pagos</h2></div><button class="link">Abrir centro de revisión →</button></div>
+        <article class="card table-card">
+          <div class="table-head"><h3>Últimos reportes</h3><div class="actions"><button class="smallbtn">Exportar</button><button class="smallbtn">Filtrar</button></div></div>
+          <table><thead><tr><th>Residencia</th><th>Fecha</th><th>Medio</th><th>Referencia</th><th>Monto</th><th>Estado</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Casa 12</strong></td><td>27 Sep · 08:41</td><td>Zelle</td><td>•• 4839</td><td class="money">$185.00</td><td><span class="badge ok">Conciliado</span></td></tr>
+            <tr><td><strong>Casa 04</strong></td><td>26 Sep · 19:12</td><td>Binance</td><td>USDT</td><td class="money">$160.00</td><td><span class="badge pending">En revisión</span></td></tr>
+            <tr><td><strong>Casa 09</strong></td><td>26 Sep · 13:07</td><td>Transferencia</td><td>•• 7102</td><td class="money">Bs. 9,840</td><td><span class="badge ok">Conciliado</span></td></tr>
+            <tr><td><strong>Casa 15</strong></td><td>25 Sep · 21:30</td><td>Efectivo</td><td>Recibo</td><td class="money">$120.00</td><td><span class="badge alert">Pendiente</span></td></tr>
+          </tbody></table>
+        </article>
+      </section>
+
+      <section class="view" id="owners">
+        <div class="page-head"><div><small>Residencias</small><h1>Propietarios</h1><p>Una ficha clara por vivienda con situación financiera, estado de acceso y actividad reciente.</p></div><button class="primarybtn">+ Nueva gestión</button></div>
+        <div class="filters"><button class="filter active">Todos · 15</button><button class="filter">Al día · 12</button><button class="filter">Pendientes · 3</button><button class="filter">Acceso limitado · 2</button></div>
+        <div class="owner-grid">
+          <article class="card owner"><div class="owner-top"><div class="house">01</div><span class="badge ok">Al día</span></div><h3>Casa 01</h3><p>Propietario registrado · información protegida</p><div class="owner-meta"><div><span>Balance</span><b>$0</b></div><div><span>Acceso</span><b>Normal</b></div><div><span>Último pago</span><b>22 Sep</b></div></div></article><article class="card owner"><div class="owner-top"><div class="house">02</div><span class="badge ok">Al día</span></div><h3>Casa 02</h3><p>Propietario registrado · información protegida</p><div class="owner-meta"><div><span>Balance</span><b>$0</b></div><div><span>Acceso</span><b>Normal</b></div><div><span>Último pago</span><b>21 Sep</b></div></div></article><article class="card owner"><div class="owner-top"><div class="house">03</div><span class="badge alert">Pendiente</span></div><h3>Casa 03</h3><p>Propietario registrado · información protegida</p><div class="owner-meta"><div><span>Balance</span><b>$320</b></div><div><span>Acceso</span><b>Limitado</b></div><div><span>Último pago</span><b>20 Sep</b></div></div></article><article class="card owner"><div class="owner-top"><div class="house">04</div><span class="badge ok">Al día</span></div><h3>Casa 04</h3><p>Propietario registrado · información protegida</p><div class="owner-meta"><div><span>Balance</span><b>$0</b></div><div><span>Acceso</span><b>Normal</b></div><div><span>Último pago</span><b>19 Sep</b></div></div></article><article class="card owner"><div class="owner-top"><div class="house">05</div><span class="badge ok">Al día</span></div><h3>Casa 05</h3><p>Propietario registrado · información protegida</p><div class="owner-meta"><div><span>Balance</span><b>$0</b></div><div><span>Acceso</span><b>Normal</b></div><div><span>Último pago</span><b>18 Sep</b></div></div></article><article class="card owner"><div class="owner-top"><div class="house">06</div><span class="badge ok">Al día</span></div><h3>Casa 06</h3><p>Propietario registrado · información protegida</p><div class="owner-meta"><div><span>Balance</span><b>$0</b></div><div><span>Acceso</span><b>Normal</b></div><div><span>Último pago</span><b>17 Sep</b></div></div></article><article class="card owner"><div class="owner-top"><div class="house">07</div><span class="badge ok">Al día</span></div><h3>Casa 07</h3><p>Propietario registrado · información protegida</p><div class="owner-meta"><div><span>Balance</span><b>$0</b></div><div><span>Acceso</span><b>Normal</b></div><div><span>Último pago</span><b>16 Sep</b></div></div></article><article class="card owner"><div class="owner-top"><div class="house">08</div><span class="badge alert">Pendiente</span></div><h3>Casa 08</h3><p>Propietario registrado · información protegida</p><div class="owner-meta"><div><span>Balance</span><b>$0</b></div><div><span>Acceso</span><b>Normal</b></div><div><span>Último pago</span><b>15 Sep</b></div></div></article><article class="card owner"><div class="owner-top"><div class="house">09</div><span class="badge ok">Al día</span></div><h3>Casa 09</h3><p>Propietario registrado · información protegida</p><div class="owner-meta"><div><span>Balance</span><b>$0</b></div><div><span>Acceso</span><b>Normal</b></div><div><span>Último pago</span><b>14 Sep</b></div></div></article>
+        </div>
+      </section>
+
+      <section class="view" id="finance">
+        <div class="page-head"><div><small>Administración financiera</small><h1>Finanzas</h1><p>Ingresos, compromisos, gastos y evolución del condominio con lectura ejecutiva.</p></div><button class="primarybtn">Registrar movimiento</button></div>
+        <div class="finance-layout">
+          <article class="card bigcard"><div class="card-head"><div><h3>Recaudación mensual</h3><span>Comparativo últimos seis períodos</span></div><span class="pill">USD equivalentes</span></div><div class="bar-chart"><div class="bar-col"><div class="bar" style="height:58%"></div><small>Abr</small></div><div class="bar-col"><div class="bar" style="height:76%"></div><small>May</small></div><div class="bar-col"><div class="bar" style="height:66%"></div><small>Jun</small></div><div class="bar-col"><div class="bar" style="height:88%"></div><small>Jul</small></div><div class="bar-col"><div class="bar" style="height:72%"></div><small>Ago</small></div><div class="bar-col"><div class="bar" style="height:93%"></div><small>Sep</small></div></div></article>
+          <article class="card bigcard"><div class="card-head"><div><h3>Composición del presupuesto</h3><span>Distribución estimada del período</span></div></div><div class="progress-list">
+            <div class="progress-row"><div class="labels"><b>Seguridad y vigilancia</b><span>38%</span></div><div class="track"><div class="fill" style="width:38%"></div></div></div>
+            <div class="progress-row"><div class="labels"><b>Mantenimiento</b><span>27%</span></div><div class="track"><div class="fill gold" style="width:27%"></div></div></div>
+            <div class="progress-row"><div class="labels"><b>Servicios comunes</b><span>21%</span></div><div class="track"><div class="fill" style="width:21%"></div></div></div>
+            <div class="progress-row"><div class="labels"><b>Contingencias</b><span>14%</span></div><div class="track"><div class="fill red" style="width:14%"></div></div></div>
+          </div></article>
+        </div>
+      </section>
+
+      <section class="view" id="payments">
+        <div class="page-head"><div><small>Centro de validación</small><h1>Pagos y revisión</h1><p>Los casos que requieren atención aparecen primero. Lo resuelto deja de estorbar, como debería haber ocurrido desde que la humanidad inventó las bandejas de entrada.</p></div><button class="primarybtn">Conciliar seleccionados</button></div>
+        <article class="card table-card">
+          <div class="table-head"><h3>Reportes pendientes</h3><div class="actions"><button class="smallbtn">Solo anomalías</button><button class="smallbtn">Historial</button></div></div>
+          <table><thead><tr><th>Prioridad</th><th>Residencia</th><th>Reportado</th><th>Método</th><th>Monto</th><th>Observación</th><th>Estado</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge alert">Alta</span></td><td><strong>Casa 15</strong></td><td>25 Sep · 21:30</td><td>Efectivo</td><td class="money">$120</td><td>Falta comprobante final</td><td><span class="badge pending">Revisar</span></td></tr>
+            <tr><td><span class="badge pending">Media</span></td><td><strong>Casa 04</strong></td><td>26 Sep · 19:12</td><td>Binance</td><td class="money">$160</td><td>Validación USDT</td><td><span class="badge pending">Revisar</span></td></tr>
+            <tr><td><span class="badge pending">Media</span></td><td><strong>Casa 03</strong></td><td>26 Sep · 09:44</td><td>Zelle</td><td class="money">$90</td><td>Referencia parcial</td><td><span class="badge pending">Revisar</span></td></tr>
+          </tbody></table>
+        </article>
+      </section>
+
+      <section class="view" id="systems">
+        <div class="page-head"><div><small>Infraestructura digital y física</small><h1>Sistemas</h1><p>Estado operativo de los servicios críticos que sostienen la administración y la urbanización.</p></div><button class="primarybtn">Ejecutar diagnóstico</button></div>
+        <div class="system-grid">
+          <article class="card system-card"><div class="head"><span class="pill">Servicio 01</span><span class="status-ok">Disponible</span></div><h3>Planta eléctrica</h3><p>Servicio monitorizado desde el panel administrativo.</p><div class="details"><div><span>Última revisión</span><b>Hoy · 02:31</b></div><div><span>Automatización</span><b>Activa</b></div></div></article><article class="card system-card"><div class="head"><span class="pill">Servicio 02</span><span class="status-ok">En línea</span></div><h3>Portón MKJ</h3><p>Servicio monitorizado desde el panel administrativo.</p><div class="details"><div><span>Dispositivo</span><b>ESP32 VMA</b></div><div><span>Último evento</span><b>Hace 2 min</b></div></div></article><article class="card system-card"><div class="head"><span class="pill">Servicio 03</span><span class="status-ok">Sincronizado</span></div><h3>Airtable</h3><p>Servicio monitorizado desde el panel administrativo.</p><div class="details"><div><span>Registros</span><b>Actualizados</b></div><div><span>Última sync</span><b>Hace 1 min</b></div></div></article><article class="card system-card"><div class="head"><span class="pill">Servicio 04</span><span class="status-ok">Operativo</span></div><h3>WhatsApp</h3><p>Servicio monitorizado desde el panel administrativo.</p><div class="details"><div><span>Automáticos</span><b>Activos</b></div><div><span>Manual</span><b>Disponible</b></div></div></article><article class="card system-card"><div class="head"><span class="pill">Servicio 05</span><span class="status-ok">Operativo</span></div><h3>Netlify</h3><p>Servicio monitorizado desde el panel administrativo.</p><div class="details"><div><span>Producción</span><b>Estable</b></div><div><span>Deploy</span><b>Sin cambios</b></div></div></article><article class="card system-card"><div class="head"><span class="pill">Servicio 06</span><span class="status-ok">Correcto</span></div><h3>Respaldo</h3><p>Servicio monitorizado desde el panel administrativo.</p><div class="details"><div><span>Último backup</span><b>Hoy</b></div><div><span>Integridad</span><b>Verificada</b></div></div></article>
+        </div>
+      </section>
+
+      <section class="view" id="access">
+        <div class="page-head"><div><small>Control residencial</small><h1>Accesos</h1><p>Visibilidad del portón, permisos administrativos y situaciones que requieren intervención.</p></div><button class="primarybtn">Abrir gestión MKJ</button></div>
+        <div class="grid-2">
+          <article class="card bigcard"><div class="card-head"><div><h3>Portón principal</h3><span>Estado de dispositivo</span></div><span class="status-ok">En línea</span></div><div style="margin-top:35px;font-family:Georgia,serif;font-size:52px;color:#162d3b">Operativo</div><p style="color:#84918c;font-size:10px;max-width:520px;line-height:1.6">Control de acceso VMA conectado. Este laboratorio no envía órdenes ni modifica permisos.</p></article>
+          <article class="card operations"><div class="card-head"><div><h3>Resumen de acceso</h3><span>Lectura ejecutiva</span></div></div><div class="op-list">
+            <div class="op"><div class="op-icon"><svg viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></svg></div><div><b>Acceso normal</b><small>Residencias habilitadas</small></div><strong>13</strong></div>
+            <div class="op"><div class="op-icon warn"><svg viewBox="0 0 24 24"><path d="M4 12h16"/></svg></div><div><b>Acceso limitado</b><small>Revisión administrativa</small></div><strong>2</strong></div>
+          </div></article>
+        </div>
+      </section>
+
+      <section class="view" id="audit"><div class="page-head"><div><small>Gobernanza</small><h1>Auditoría</h1><p>Historial claro de acciones administrativas, cierres y modificaciones críticas.</p></div><button class="primarybtn">Exportar informe</button></div><article class="card table-card"><div class="table-head"><h3>Actividad administrativa</h3></div><table><thead><tr><th>Fecha</th><th>Módulo</th><th>Acción</th><th>Usuario</th><th>Resultado</th></tr></thead><tbody><tr><td>27 Sep · 08:55</td><td>Pagos</td><td>Conciliación de reporte</td><td>Administración</td><td><span class="badge ok">Correcto</span></td></tr><tr><td>27 Sep · 08:32</td><td>Propietarios</td><td>Actualización de estado</td><td>Administración</td><td><span class="badge ok">Correcto</span></td></tr></tbody></table></article></section>
+
+      <section class="view" id="settings"><div class="page-head"><div><small>Sistema</small><h1>Configuración</h1><p>Preferencias del panel, integraciones y reglas operativas. En este prototipo todos los controles son visuales.</p></div></div><div class="system-grid"><article class="card system-card"><div class="head"><span class="pill">Interfaz</span><span class="status-ok">A+B</span></div><h3>Identidad visual</h3><p>Executive Corporate con acentos Luxury Real Estate.</p></article><article class="card system-card"><div class="head"><span class="pill">Seguridad</span><span class="status-ok">Aislado</span></div><h3>Laboratorio</h3><p>Sin conexión a datos reales ni funciones operativas.</p></article></div></section>
+      <p class="mobile-note">Laboratorio optimizado también para móvil. Los datos son demostrativos.</p>
+    </div>
+  </main>
+</div>
+<script>
+const titles={overview:"Resumen ejecutivo",owners:"Propietarios",finance:"Finanzas",payments:"Pagos y revisión",systems:"Sistemas",access:"Accesos",audit:"Auditoría",settings:"Configuración"};
+document.querySelectorAll(".nav button").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    document.querySelectorAll(".nav button").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
+    const id=btn.dataset.view;
+    document.getElementById(id)?.classList.add("active");
+    document.getElementById("top-title").textContent=titles[id]||"Administración";
+    window.scrollTo({top:0,behavior:"smooth"});
+  });
+});
+</script>
+</body>
+</html>
