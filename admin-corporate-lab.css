@@ -219,6 +219,13 @@ body:before{
   box-shadow:0 0 0 3px #0a2133;
 }
 
+.vla-nav-icon{
+  width:18px;height:18px;min-width:18px;margin-right:11px;
+  fill:currentColor;opacity:.86;
+}
+#app nav .nav.active .vla-nav-icon{opacity:1;color:#5ed9d7}
+#app nav a .vla-nav-icon,#app nav>#backup-btn .vla-nav-icon{opacity:.72}
+
 /* ---------- HERO / TOP BAR ---------- */
 #app header{
   grid-column:2!important;
