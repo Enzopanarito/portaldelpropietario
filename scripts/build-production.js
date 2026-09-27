@@ -14,7 +14,7 @@ const PUBLIC_FILES=[
   'admin-autopay-supervision.css','admin-autopay-supervision.js',
   'admin-plant-v1.css','admin-plant-v1.js',
   'admin-owner-access-v1.js','admin-premium-10.css','admin-premium-10.js',
-  'admin-payment-review-v10.css','admin-payment-review-v10.js',
+  'admin-payment-review-v10.css','admin-payment-review-v10.js','admin-corporate-lab.css',
   'admin-premium-controls.js','admin-premium-polish.css','admin-premium-preflight.js',
   'admin-premium.css','admin-premium.js','admin-responsive-v4.css','admin-responsive-v4.js',
   'admin-session-bridge.js','owner-current-month-v1.css','owner-current-month-v1.js',
