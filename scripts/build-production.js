@@ -8,7 +8,7 @@ const ROOT=path.join(__dirname,'..');
 const DIST=path.join(ROOT,'dist');
 const PUBLIC_FILES=[
   '_redirects',
-  'index.html','admin.html','admin-redesign-ab-lab.html','audit.html','auditoria.html','cierre-auditoria.html',
+  'index.html','admin.html','admin-redesign-ab-lab.html','admin-redesign-seinca-lab.html','audit.html','auditoria.html','cierre-auditoria.html',
   'mkj-access.html','seguridad.html','verificar-respaldo.html','whatsapp.html',
   'admin-autopilot.css','admin-autopilot.js','admin-feature-parity.js','admin-recurring-expenses.js',
   'admin-autopay-supervision.css','admin-autopay-supervision.js',
