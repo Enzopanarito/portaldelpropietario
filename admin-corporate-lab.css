@@ -31,7 +31,7 @@ body{
   position:relative;overflow:hidden;
   background:
     linear-gradient(118deg,rgba(5,22,38,.94),rgba(9,40,62,.69)),
-    url('https://images.unsplash.com/photo-1760905662771-1896561b010a?auto=format&fit=crop&fm=jpg&ixlib=rb-4.1.0&q=82&w=2400') center/cover no-repeat;
+    url('https://upload.wikimedia.org/wikipedia/commons/2/26/Arquitetura_moderna.jpg') center/cover no-repeat;
 }
 #login:before{
   content:"VLA";position:absolute;right:-2vw;bottom:-7vh;
@@ -63,7 +63,7 @@ body{
   text-align:left!important;border-radius:32px;
   background:
     linear-gradient(104deg,rgba(5,22,38,.96) 0%,rgba(8,43,68,.84) 48%,rgba(8,43,68,.35) 100%),
-    url('https://images.unsplash.com/photo-1760905662771-1896561b010a?auto=format&fit=crop&fm=jpg&ixlib=rb-4.1.0&q=82&w=2400') center 42%/cover no-repeat;
+    url('https://upload.wikimedia.org/wikipedia/commons/2/26/Arquitetura_moderna.jpg') center 42%/cover no-repeat;
   box-shadow:0 24px 62px rgba(5,25,45,.19);
 }
 #app header:before{
