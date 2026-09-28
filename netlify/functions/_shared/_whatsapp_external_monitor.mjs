@@ -8,6 +8,7 @@ const REASON_LABELS = Object.freeze({
   CONTROL_ENDPOINT_MISSING: 'El túnel responde, pero el webhook de control no existe o no está activo.',
   CONTROL_UPSTREAM_ERROR: 'El gateway respondió con un error interno al consultar WhatsApp.',
   CONTROL_HTTP_ERROR: 'El gateway respondió con un estado HTTP inesperado.',
+  GATEWAY_TIMEOUT: 'El gateway respondió, pero la consulta de estado excedió el tiempo máximo permitido.',
   CONTROLLER_NOT_OK: 'El Controller de WhatsApp no reporta estado saludable.',
   AGENT_NOT_OK: 'El Agent de WhatsApp no reporta estado saludable.',
   AGENT_NOT_REAL: 'El Agent no está en modo REAL.',
@@ -140,7 +141,16 @@ async function relayStatus({ url, secret, fetchImpl = fetch, timeoutMs = 15000 }
     }
     return data;
   } catch (error) {
-    if (!error.code) error.code = 'MAC_OR_GATEWAY_UNREACHABLE';
+    if (error?.name === 'AbortError') {
+      const timeoutError = new Error('GATEWAY_TIMEOUT');
+      timeoutError.code = 'GATEWAY_TIMEOUT';
+      throw timeoutError;
+    }
+    if (typeof error?.code !== 'string' || !error.code.trim()) {
+      const wrapped = new Error(String(error?.message || 'MAC_OR_GATEWAY_UNREACHABLE'));
+      wrapped.code = 'MAC_OR_GATEWAY_UNREACHABLE';
+      throw wrapped;
+    }
     throw error;
   } finally {
     clearTimeout(timeout);
