@@ -343,14 +343,19 @@ function createControllerState() {
 
   async function agent(pathname, options = {}) {
     const controller = new AbortController();
-    const timeoutMs = pathname === '/tick' || pathname === '/broadcast'
-      ? 45 * 60 * 1000
-      : 240000;
+    const requestedTimeoutMs = Number(options.timeoutMs);
+    const timeoutMs = Number.isFinite(requestedTimeoutMs) && requestedTimeoutMs >= 1000
+      ? Math.floor(requestedTimeoutMs)
+      : pathname === '/tick' || pathname === '/broadcast'
+        ? 45 * 60 * 1000
+        : 240000;
+    const requestOptions = { ...options };
+    delete requestOptions.timeoutMs;
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await agentHttpRequest(`${AGENT_URL}${pathname}`, {
-        ...options,
-        headers: { 'Content-Type': 'application/json', 'x-agent-token': TOKEN, ...(options.headers || {}) },
+        ...requestOptions,
+        headers: { 'Content-Type': 'application/json', 'x-agent-token': TOKEN, ...(requestOptions.headers || {}) },
         signal: controller.signal
       }, timeoutMs);
       const data = response.data || {};
@@ -364,12 +369,12 @@ function createControllerState() {
   }
   async function health() {
     let liveness;
-    try { liveness = await agent('/health', { method: 'GET' }); }
+    try { liveness = await agent('/health', { method: 'GET', timeoutMs: 3000 }); }
     catch (error) {
       return { ok:false, livenessOk:false, readiness:{ ready:false, code:'AGENT_UNREACHABLE', loggedIn:null }, error:String(error.message || error) };
     }
     let readiness;
-    try { readiness = await agent('/readiness', { method: 'GET' }); }
+    try { readiness = await agent('/readiness', { method: 'GET', timeoutMs: 10000 }); }
     catch (error) {
       readiness = { ready:false, healthy:false, loggedIn:null, code:'READINESS_UNREACHABLE', detail:String(error.message || error) };
     }
