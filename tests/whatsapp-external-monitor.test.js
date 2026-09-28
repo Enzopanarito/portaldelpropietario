@@ -106,6 +106,31 @@ test('relay fails closed when monitor credentials are not configured', async () 
   );
 });
 
+test('relay classifies authentication rejection separately from connectivity loss', async () => {
+  await assert.rejects(
+    () => monitor.relayStatus({
+      url: 'https://gateway.example.test/webhook/vla-whatsapp-control-v1',
+      secret: 'x'.repeat(64),
+      fetchImpl: async () => ({ ok: false, status: 403, json: async () => ({}) }),
+      timeoutMs: 1000
+    }),
+    error => error?.code === 'CONTROL_AUTH_REJECTED' && error?.httpStatus === 403
+  );
+  assert.equal(monitor.unreachableHealth('CONTROL_AUTH_REJECTED').status, 'attention');
+});
+
+test('relay classifies a missing control endpoint separately', async () => {
+  await assert.rejects(
+    () => monitor.relayStatus({
+      url: 'https://gateway.example.test/webhook/vla-whatsapp-control-v1',
+      secret: 'x'.repeat(64),
+      fetchImpl: async () => ({ ok: false, status: 404, json: async () => ({}) }),
+      timeoutMs: 1000
+    }),
+    error => error?.code === 'CONTROL_ENDPOINT_MISSING' && error?.httpStatus === 404
+  );
+});
+
 test('two-review policy avoids alert on one transient failure', () => {
   const health = monitor.unreachableHealth();
   const first = monitor.planTransition(

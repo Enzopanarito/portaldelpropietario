@@ -4,6 +4,10 @@ const EXPECTED_SCHEDULES = Object.freeze(['09:00', '18:00']);
 const REASON_LABELS = Object.freeze({
   MONITOR_CONFIG_MISSING: 'El monitor externo no tiene configurado el puente seguro.',
   MAC_OR_GATEWAY_UNREACHABLE: 'La Mac mini, n8n o el gateway externo no respondieron.',
+  CONTROL_AUTH_REJECTED: 'El monitor llegó a n8n, pero la credencial de control fue rechazada.',
+  CONTROL_ENDPOINT_MISSING: 'El túnel responde, pero el webhook de control no existe o no está activo.',
+  CONTROL_UPSTREAM_ERROR: 'El gateway respondió con un error interno al consultar WhatsApp.',
+  CONTROL_HTTP_ERROR: 'El gateway respondió con un estado HTTP inesperado.',
   CONTROLLER_NOT_OK: 'El Controller de WhatsApp no reporta estado saludable.',
   AGENT_NOT_OK: 'El Agent de WhatsApp no reporta estado saludable.',
   AGENT_NOT_REAL: 'El Agent no está en modo REAL.',
@@ -78,7 +82,7 @@ function evaluateStatus(data = {}) {
 function unreachableHealth(reason = 'MAC_OR_GATEWAY_UNREACHABLE') {
   return {
     healthy: false,
-    status: 'offline',
+    status: reason === 'MAC_OR_GATEWAY_UNREACHABLE' ? 'offline' : 'attention',
     reasons: [reason],
     components: {
       controller: false,
@@ -127,7 +131,11 @@ async function relayStatus({ url, secret, fetchImpl = fetch, timeoutMs = 15000 }
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       const error = new Error(`GATEWAY_HTTP_${response.status}`);
-      error.code = 'MAC_OR_GATEWAY_UNREACHABLE';
+      if (response.status === 401 || response.status === 403) error.code = 'CONTROL_AUTH_REJECTED';
+      else if (response.status === 404) error.code = 'CONTROL_ENDPOINT_MISSING';
+      else if (response.status >= 500) error.code = 'CONTROL_UPSTREAM_ERROR';
+      else error.code = 'CONTROL_HTTP_ERROR';
+      error.httpStatus = response.status;
       throw error;
     }
     return data;
