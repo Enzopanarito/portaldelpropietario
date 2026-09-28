@@ -119,6 +119,26 @@ test('relay classifies authentication rejection separately from connectivity los
   assert.equal(monitor.unreachableHealth('CONTROL_AUTH_REJECTED').status, 'attention');
 });
 
+test('relay classifies an aborted gateway request as timeout', async () => {
+  await assert.rejects(
+    () => monitor.relayStatus({
+      url: 'https://gateway.example.test/webhook/vla-whatsapp-control-v1',
+      secret: 'x'.repeat(64),
+      fetchImpl: async (_url, options) => {
+        await new Promise((_, reject) => {
+          options.signal.addEventListener('abort', () => {
+            const error = new Error('aborted');
+            error.name = 'AbortError';
+            reject(error);
+          }, { once: true });
+        });
+      },
+      timeoutMs: 5
+    }),
+    error => error?.code === 'GATEWAY_TIMEOUT'
+  );
+});
+
 test('relay classifies a missing control endpoint separately', async () => {
   await assert.rejects(
     () => monitor.relayStatus({
