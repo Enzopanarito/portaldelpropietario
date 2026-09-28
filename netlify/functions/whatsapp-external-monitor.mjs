@@ -109,7 +109,8 @@ export default async () => {
     });
     health = evaluateStatus(status);
   } catch (error) {
-    health = unreachableHealth(error?.code === 'MONITOR_CONFIG_MISSING' ? 'MONITOR_CONFIG_MISSING' : 'MAC_OR_GATEWAY_UNREACHABLE');
+    const reason = String(error?.code || '').trim() || 'MAC_OR_GATEWAY_UNREACHABLE';
+    health = unreachableHealth(reason);
   }
 
   const transition = planTransition(previous, health, nowMs, {
