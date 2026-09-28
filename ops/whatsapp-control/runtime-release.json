@@ -86,7 +86,7 @@
     },
     "controller": {
       "targetVersion": "1.4.1",
-      "sha256": "80265db7ffbe6c1338c9e95df921beeef940f340abb4428671d83f0ed0288a25"
+      "sha256": "20369d3c8d7af411b3ccbfc177c3198e8ddd0eeec929213762def122c054318a"
     },
     "preserved": {
       "financialMessageLibrarySha256": "021ecea597b23ecacace73baedb08d1171f4b318fae721dce486cb2762867f38",
