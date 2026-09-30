@@ -4,6 +4,7 @@ const { withAirtableUsage } = require('./_shared/_airtable_meter');
 const publicData = require('./public-data-v3');
 const { getAll, TABLES } = require('./_shared/_monthly_close_store');
 const { buildPunctualityScore } = require('./_shared/_punctuality_score_v3');
+const readCache = require('./_shared/_distributed_read_cache');
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const LEDGER_CONTEXT_TTL_MS = 60 * 1000;
@@ -14,20 +15,29 @@ async function loadLedgerContext({ event, publicHandler, listAll, token, baseId,
   if (state.value && state.expiresAt > nowMs) return state.value;
   if (state.inFlight) return state.inFlight;
   const task = (async () => {
-    const publicResultPromise = publicHandler({
-      ...event,
-      httpMethod: 'GET',
-      queryStringParameters: { ...(event.queryStringParameters || {}), force: '1' }
+    const cached=await readCache.getOrLoad('punctuality-ledger-context',async()=>{
+      const publicResultPromise = publicHandler({
+        ...event,
+        httpMethod: 'GET',
+        queryStringParameters: { ...(event.queryStringParameters || {}), force: '1' }
+      });
+      const auditFormula = encodeURIComponent("LEFT({Concepto},10)='AUDITORIA|'");
+      const [publicResult, expenses, history] = await Promise.all([
+        publicResultPromise,
+        listAll(TABLES.expenses, '', token, baseId, counter),
+        listAll(TABLES.history, `?filterByFormula=${auditFormula}`, token, baseId, counter)
+      ]);
+      const payload = parseBody(publicResult);
+      if (Number(publicResult.statusCode) !== 200) throw new Error(payload.message || 'No se pudo leer el libro contable público.');
+      return { payload, expenses, history };
+    },{
+      event,
+      env:{AIRTABLE_BASE_ID:baseId},
+      ttlMs:60*1000,
+      staleMs:5*60*1000,
+      waitMs:5000
     });
-    const auditFormula = encodeURIComponent("LEFT({Concepto},10)='AUDITORIA|'");
-    const [publicResult, expenses, history] = await Promise.all([
-      publicResultPromise,
-      listAll(TABLES.expenses, '', token, baseId, counter),
-      listAll(TABLES.history, `?filterByFormula=${auditFormula}`, token, baseId, counter)
-    ]);
-    const payload = parseBody(publicResult);
-    if (Number(publicResult.statusCode) !== 200) throw new Error(payload.message || 'No se pudo leer el libro contable público.');
-    return { payload, expenses, history };
+    return cached.value;
   })();
   state.inFlight = task;
   try {
