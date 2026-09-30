@@ -19,6 +19,18 @@ function owner(house){
   return{id:`recOwner${house}`,fields:{Casa:house,Propietario:`Casa ${house}`,'MKJ User ID':String(8000+house),'MKJ Email':`casa${house}@test.local`,'Estado Acceso Portón':limited?'Limitado':'Habilitado','Excepción Acceso':false}};
 }
 
+
+test('membership_is_active manda sobre is_active de la cuenta en el mismo registro',()=>{
+  const record={is_active:true,membership_is_active:false,user:{id:'7963',active:true}};
+  assert.equal(reconciliation.stateKeyPriority('membership_is_active')>reconciliation.stateKeyPriority('is_active'),true);
+  assert.equal(reconciliation.remoteAccessState(record),'Limitado');
+});
+
+test('membership_is_active habilitada manda aunque la cuenta tenga otro indicador',()=>{
+  const record={is_active:false,membership_is_active:true,user:{id:'8004',active:false}};
+  assert.equal(reconciliation.remoteAccessState(record),'Habilitado');
+});
+
 test('una cuenta activa puede pertenecer a una membresía temporalmente limitada',()=>{
   const record={active:false,user:{id:'8003',email:'casa3@test.local',active:true}};
   assert.equal(reconciliation.remoteAccessState(record),'Limitado');

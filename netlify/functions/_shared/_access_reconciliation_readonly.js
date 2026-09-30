@@ -6,18 +6,32 @@ const ENABLED='Habilitado';
 const LIMITED='Limitado';
 const UNKNOWN='Desconocido';
 
+function stateKeyPriority(key){
+  const normalized=String(key||'').toLowerCase();
+  if(!/(?:active|enabled|disabled|status|state)/.test(normalized))return-1;
+  if(/membership|member_(?:is_)?(?:active|enabled|disabled|status|state)|organization_membership/.test(normalized))return 100;
+  return 10;
+}
+function stateValue(key,value){
+  const normalizedKey=String(key||'').toLowerCase();
+  if(typeof value==='boolean'){
+    if(normalizedKey.includes('disabled'))return value?LIMITED:ENABLED;
+    return value?ENABLED:LIMITED;
+  }
+  const text=String(value||'').trim().toLowerCase();
+  if(/^(?:active|enabled|habilitado|authorized|authorised|1)$/.test(text))return ENABLED;
+  if(/^(?:inactive|disabled|limited|blocked|suspended|deshabilitado|0)$/.test(text))return LIMITED;
+  return UNKNOWN;
+}
 function stateFromSource(source){
   if(!source||typeof source!=='object')return UNKNOWN;
-  for(const [key,value] of Object.entries(source)){
-    const normalizedKey=String(key).toLowerCase();
-    if(!/(?:active|enabled|disabled|status|state)/.test(normalizedKey))continue;
-    if(typeof value==='boolean'){
-      if(normalizedKey.includes('disabled'))return value?LIMITED:ENABLED;
-      return value?ENABLED:LIMITED;
-    }
-    const text=String(value||'').trim().toLowerCase();
-    if(/^(?:active|enabled|habilitado|authorized|authorised|1)$/.test(text))return ENABLED;
-    if(/^(?:inactive|disabled|limited|blocked|suspended|deshabilitado|0)$/.test(text))return LIMITED;
+  const entries=Object.entries(source)
+    .map(([key,value],index)=>({key,value,index,priority:stateKeyPriority(key)}))
+    .filter(item=>item.priority>=0)
+    .sort((left,right)=>right.priority-left.priority||left.index-right.index);
+  for(const item of entries){
+    const state=stateValue(item.key,item.value);
+    if(state!==UNKNOWN)return state;
   }
   return UNKNOWN;
 }
@@ -140,4 +154,4 @@ async function runReadOnlyReconciliation(deps={}){
   return{success:true,readOnly:true,mode:modeInfo.mode,total:rows.length,reconciled,coherent,discrepancyCount:discrepancies.length,remoteSources:available.length,lookupWarnings:lookups.filter(item=>item.status==='rejected').map(item=>String(item.reason?.code||item.reason?.message||'MKJ_LOOKUP_WARNING')),rows,discrepancies};
 }
 
-module.exports={ENABLED,LIMITED,UNKNOWN,stateFromSource,remoteAccessState,remoteStateEvidence,authoritativeMembershipRecords,remoteUpdatedAt,uniqueUsers,desiredStates,recommendation,runReadOnlyReconciliation};
+module.exports={ENABLED,LIMITED,UNKNOWN,stateKeyPriority,stateValue,stateFromSource,remoteAccessState,remoteStateEvidence,authoritativeMembershipRecords,remoteUpdatedAt,uniqueUsers,desiredStates,recommendation,runReadOnlyReconciliation};
