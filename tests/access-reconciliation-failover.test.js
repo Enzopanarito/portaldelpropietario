@@ -51,7 +51,9 @@ test('endpoint de failover solo encola el reconciliador canónico y no toca cont
  assert.match(source,/verifyAccessFailoverOidcToken/);
  assert.match(source,/resolveInternalSiteUrl/);
  assert.match(source,/sign\(payload\)/);
- assert.match(source,/\/api\/vla\/access-reconciliation/);
+ assert.match(source,/runReadOnlyReconciliation/);
+ assert.match(source,/syncOwnerAccess/);
+ assert.match(source,/ACCESS_REPAIR_NOT_VERIFIED/);
  assert.doesNotMatch(source,/monthly-close/);
  assert.doesNotMatch(source,/AIRTABLE_API_TOKEN/);
  assert.doesNotMatch(source,/MKJ_ADMIN_PASSWORD/);
@@ -64,5 +66,5 @@ test('workflow de respaldo corre cada hora y después de deploy productivo',()=>
  assert.match(source,/audience=vla-access-reconciliation-failover/);
  assert.match(source,/default: probe/);
  assert.match(source,/id-token: write/);
- assert.match(source,/expected=200; else expected=202/);
+ assert.match(source,/expected=200/);
 });
