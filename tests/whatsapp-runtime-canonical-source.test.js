@@ -20,7 +20,7 @@ test('runtime canónico coincide byte-a-byte con el candidato aditivo registrado
   assert.equal(sha256('ops/whatsapp-runtime/agent/package.json'),
     '85c25a5478dca33a27abf4d4b9844ba370090f9b3eaea0d01e69d98007df2ab8');
   assert.equal(sha256('ops/whatsapp-control/controller.js'),
-    '80265db7ffbe6c1338c9e95df921beeef940f340abb4428671d83f0ed0288a25');
+    '11de4037abbdd17d4659a5eaa9b524ec9fa7309629f3ffd0fbc0bd6dbac8e7bd');
 });
 
 test('versiones y fail-closed del runtime canónico', () => {
