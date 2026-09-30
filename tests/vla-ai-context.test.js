@@ -65,6 +65,20 @@ const deps = {
   assert.strictEqual(context.capabilities.canInitiateWhatsApp, false);
   assert.strictEqual(JSON.stringify(context).includes('Propietario 2'), false, 'No debe filtrar identidad ni datos de otra casa');
 
+  const gasoilDeps = {
+    ...deps,
+    loadAccessContext: async () => ({
+      owners: [ownerA],
+      gastos: [{ id: 'expGasoilA', fields: { Concepto: 'Gasoil', Monto: 60, 'Tipo de Gasto': 'Gasto Especial', 'Forma de Pago': 'USD', Propietarios: [ownerA.id] } }],
+      pagos: [], reportes: []
+    })
+  };
+  const gasoilContext = await buildVlaAiContext({ phone: '+584121234567' }, gasoilDeps);
+  assert.strictEqual(gasoilContext.charges.gasoil.length, 1);
+  assert.strictEqual(gasoilContext.charges.gasoil[0].concept, 'Gasoil');
+  assert.strictEqual(gasoilContext.charges.gasoil[0].amount, 60);
+  assert.strictEqual(gasoilContext.charges.gasoil[0].mode, 'USD');
+
   let notFound = null;
   try { await buildVlaAiContext({ phone: '+584221111111' }, deps); }
   catch (error) { notFound = error; }

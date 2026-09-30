@@ -53,6 +53,15 @@ function reportSummary(record) {
     processingState: clean(selectName(fields['Estado de Procesamiento']))
   };
 }
+function chargeSummaries(balance) {
+  const rows = [...(balance?.expenseLinesUsd || []), ...(balance?.expenseLinesBs || [])]
+    .map(line => ({ concept: clean(line?.concept || 'Gasto').slice(0, 100), amount: money(line?.amount || 0), mode: clean(line?.mode || '') }))
+    .filter(line => Math.abs(line.amount) > 0.009)
+    .slice(0, 12);
+  const gasoil = rows.filter(line => /\bgasoil\b/i.test(line.concept.normalize('NFD').replace(/[\u0300-\u036f]/g, '')));
+  return { current: rows, gasoil };
+}
+
 function publicPlantAsset(asset) {
   if (!asset) return null;
   return {
@@ -137,6 +146,7 @@ async function buildVlaAiContext({ phone }, deps = {}) {
   const expectedLimited = accessDebt.hasExpiredDebt && !exception;
   const accessInconsistent = (expectedLimited && accessStatus === 'Habilitado') || (!expectedLimited && accessStatus === 'Limitado');
   const plant = await buildPlantContext(ownerId, deps);
+  const charges = chargeSummaries(balance);
 
   return {
     success: true,
@@ -177,6 +187,7 @@ async function buildVlaAiContext({ phone }, deps = {}) {
     },
     payments,
     pendingReports,
+    charges,
     plant,
     capabilities: {
       canReadOwnAccount: true,
@@ -200,6 +211,7 @@ module.exports = {
   ownerLinked,
   paymentSummary,
   reportSummary,
+  chargeSummaries,
   publicPlantAsset,
   buildPlantContext,
   buildVlaAiContext
