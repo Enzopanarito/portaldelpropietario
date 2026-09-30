@@ -69,8 +69,8 @@ async function loadPortal(page){
   const serverErrors=[];
   let privatePlantResponses=0;
   page.on('response',response=>{
+    if(response.status()===401&&response.request().method()==='GET'&&/\/api\/vla\/plant(?:\?|$)/.test(response.url()))privatePlantResponses++;
     const status=response.status(),url=response.url();
-    if(status===401&&response.request().method()==='GET'&&/\/api\/vla\/plant(?:\?|$)/.test(url))privatePlantResponses++;
     if(status>=500){
       let label=url;
       try{const parsed=new URL(url);label=parsed.pathname+parsed.search}catch(_){}
