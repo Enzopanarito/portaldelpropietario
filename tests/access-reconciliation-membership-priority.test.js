@@ -20,6 +20,7 @@ function owner(house){
 }
 
 
+// Regresión Casa 3: MKJ puede exponer la cuenta global activa y la membresía del condominio inactiva al mismo tiempo.
 test('membership_is_active prevalece sobre is_active del usuario general',()=>{
   const record={is_active:true,membership_is_active:false};
   assert.equal(reconciliation.stateFieldPriority('membership_is_active')>reconciliation.stateFieldPriority('is_active'),true);
