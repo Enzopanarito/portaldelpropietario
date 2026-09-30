@@ -46,7 +46,7 @@ test('OIDC de reconciliación queda limitado a repo, workflow y eventos autoriza
  assert.equal(oidc.validateClaims({...claims,event_name:'workflow_run'},now).event_name,'workflow_run');
 });
 
-test('endpoint de failover solo encola el reconciliador canónico y no toca contabilidad',()=>{
+test('endpoint de failover ejecuta y verifica el reconciliador canónico sin tocar contabilidad',()=>{
  const source=read('netlify/functions/access-reconciliation-failover-ci.js');
  assert.match(source,/verifyAccessFailoverOidcToken/);
  assert.match(source,/resolveInternalSiteUrl/);
@@ -64,5 +64,6 @@ test('workflow de respaldo corre cada hora y después de deploy productivo',()=>
  assert.match(source,/audience=vla-access-reconciliation-failover/);
  assert.match(source,/default: probe/);
  assert.match(source,/id-token: write/);
- assert.match(source,/expected=200; else expected=202/);
+ assert.match(source,/expected=200/);
+ assert.doesNotMatch(source,/expected=202/);
 });
