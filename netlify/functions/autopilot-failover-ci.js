@@ -2,6 +2,7 @@
 
 const {verifyAutopilotFailoverOidcToken}=require('./_shared/_github_oidc_autopilot');
 const {sign}=require('./_shared/_internal_job_auth');
+const {resolveInternalSiteUrl}=require('./_shared/_internal_site_url');
 
 function response(statusCode,body,headers={}){
  return{
@@ -63,8 +64,7 @@ exports.handler=async function(event){
  }
 
  try{
-  const site=String(process.env.URL||'').replace(/\/$/,'');
-  if(!site)throw new Error('Falta URL del sitio.');
+  const site=resolveInternalSiteUrl(process.env);
   const payload=JSON.stringify({
    requestedAt:new Date().toISOString(),
    source:'github-oidc-autopilot-failover',
