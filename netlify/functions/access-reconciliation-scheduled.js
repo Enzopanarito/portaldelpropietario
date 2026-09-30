@@ -1,6 +1,7 @@
 'use strict';
 
 const {sign}=require('./_shared/_internal_job_auth');
+const {resolveInternalSiteUrl}=require('./_shared/_internal_site_url');
 
 function response(statusCode,body){
  return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:JSON.stringify(body)};
@@ -8,8 +9,7 @@ function response(statusCode,body){
 
 const handler=async function(){
  try{
-  const site=String(process.env.URL||'').replace(/\/$/,'');
-  if(!site)throw new Error('Falta URL del sitio.');
+  const site=resolveInternalSiteUrl(process.env);
   const payload=JSON.stringify({requestedAt:new Date().toISOString(),source:'access-reconciliation-schedule'});
   const authorization=sign(payload);
   const queued=await fetch(`${site}/api/vla/access-reconciliation`,{
