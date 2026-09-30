@@ -6,7 +6,39 @@ const { getAll, TABLES } = require('./_shared/_monthly_close_store');
 const { buildPunctualityScore } = require('./_shared/_punctuality_score_v3');
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
+const LEDGER_CONTEXT_TTL_MS = 60 * 1000;
 const cache = new Map();
+
+function createLedgerContextState() { return { value: null, expiresAt: 0, inFlight: null }; }
+async function loadLedgerContext({ event, publicHandler, listAll, token, baseId, counter, state, nowMs = Date.now() }) {
+  if (state.value && state.expiresAt > nowMs) return state.value;
+  if (state.inFlight) return state.inFlight;
+  const task = (async () => {
+    const publicResultPromise = publicHandler({
+      ...event,
+      httpMethod: 'GET',
+      queryStringParameters: { ...(event.queryStringParameters || {}), force: '1' }
+    });
+    const auditFormula = encodeURIComponent("LEFT({Concepto},10)='AUDITORIA|'");
+    const [publicResult, expenses, history] = await Promise.all([
+      publicResultPromise,
+      listAll(TABLES.expenses, '', token, baseId, counter),
+      listAll(TABLES.history, `?filterByFormula=${auditFormula}`, token, baseId, counter)
+    ]);
+    const payload = parseBody(publicResult);
+    if (Number(publicResult.statusCode) !== 200) throw new Error(payload.message || 'No se pudo leer el libro contable público.');
+    return { payload, expenses, history };
+  })();
+  state.inFlight = task;
+  try {
+    const value = await task;
+    state.value = value;
+    state.expiresAt = Date.now() + LEDGER_CONTEXT_TTL_MS;
+    return value;
+  } finally {
+    if (state.inFlight === task) state.inFlight = null;
+  }
+}
 
 function json(statusCode, body, counter = null, extraHeaders = {}) {
   return {
@@ -113,6 +145,7 @@ function createHandler(deps = {}) {
   const now = deps.now || (() => new Date());
   const env = deps.env || process.env;
   const scoreCache = deps.cache || cache;
+  const ledgerContextState = deps.ledgerContextState || createLedgerContextState();
   return async function handler(event) {
     if (event.httpMethod && event.httpMethod !== 'GET') return json(405, { message: 'Method Not Allowed' });
     const ownerId = String(event.queryStringParameters && event.queryStringParameters.ownerId || '').trim();
@@ -128,19 +161,9 @@ function createHandler(deps = {}) {
     if (!token || !baseId) return json(503, { message: 'Índice temporalmente no disponible.' });
     const counter = { calls: 0 };
     try {
-      const publicResultPromise = publicHandler({
-        ...event,
-        httpMethod: 'GET',
-        queryStringParameters: { ...(event.queryStringParameters || {}), force: '1' }
+      const { payload, expenses, history } = await loadLedgerContext({
+        event, publicHandler, listAll, token, baseId, counter, state: ledgerContextState
       });
-      const auditFormula = encodeURIComponent("LEFT({Concepto},10)='AUDITORIA|'");
-      const [publicResult, expenses, history] = await Promise.all([
-        publicResultPromise,
-        listAll(TABLES.expenses, '', token, baseId, counter),
-        listAll(TABLES.history, `?filterByFormula=${auditFormula}`, token, baseId, counter)
-      ]);
-      const payload = parseBody(publicResult);
-      if (Number(publicResult.statusCode) !== 200) throw new Error(payload.message || 'No se pudo leer el libro contable público.');
       const owner = (payload.propietarios || []).find(item => String(item.id) === ownerId);
       if (!owner) return json(404, { message: 'Propietario no encontrado.' }, counter);
       const dueDay = Number(payload.automation && payload.automation.payment && payload.automation.payment.dueDay || 10);
@@ -164,4 +187,4 @@ function createHandler(deps = {}) {
 
 const handler = createHandler();
 exports.handler = withAirtableUsage('public-punctuality-score', handler);
-module.exports = { handler: exports.handler, createHandler, previewMode, previewScore, sanitizedScore };
+module.exports = { handler: exports.handler, createHandler, previewMode, previewScore, sanitizedScore, createLedgerContextState, loadLedgerContext, LEDGER_CONTEXT_TTL_MS };
