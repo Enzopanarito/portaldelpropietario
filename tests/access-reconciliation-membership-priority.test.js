@@ -19,6 +19,14 @@ function owner(house){
   return{id:`recOwner${house}`,fields:{Casa:house,Propietario:`Casa ${house}`,'MKJ User ID':String(8000+house),'MKJ Email':`casa${house}@test.local`,'Estado Acceso Portón':limited?'Limitado':'Habilitado','Excepción Acceso':false}};
 }
 
+
+// Regresión Casa 3: MKJ puede exponer la cuenta global activa y la membresía del condominio inactiva al mismo tiempo.
+test('membership_is_active prevalece sobre is_active del usuario general',()=>{
+  const record={is_active:true,membership_is_active:false};
+  assert.equal(reconciliation.stateFieldPriority('membership_is_active')>reconciliation.stateFieldPriority('is_active'),true);
+  assert.equal(reconciliation.remoteAccessState(record),'Limitado');
+});
+
 test('una cuenta activa puede pertenecer a una membresía temporalmente limitada',()=>{
   const record={active:false,user:{id:'8003',email:'casa3@test.local',active:true}};
   assert.equal(reconciliation.remoteAccessState(record),'Limitado');

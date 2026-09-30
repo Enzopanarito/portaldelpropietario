@@ -6,11 +6,23 @@ const ENABLED='Habilitado';
 const LIMITED='Limitado';
 const UNKNOWN='Desconocido';
 
+function stateFieldPriority(key){
+  const normalized=String(key||'').toLowerCase();
+  if(normalized.includes('membership')||normalized.includes('member_')||normalized.startsWith('member'))return 100;
+  if(normalized.includes('organization'))return 80;
+  if(normalized.includes('disabled'))return 70;
+  if(normalized.includes('enabled'))return 60;
+  if(normalized.includes('status')||normalized.includes('state'))return 50;
+  if(normalized.includes('active'))return 10;
+  return 0;
+}
 function stateFromSource(source){
   if(!source||typeof source!=='object')return UNKNOWN;
-  for(const [key,value] of Object.entries(source)){
+  const entries=Object.entries(source)
+    .filter(([key])=>/(?:active|enabled|disabled|status|state)/.test(String(key).toLowerCase()))
+    .sort((left,right)=>stateFieldPriority(right[0])-stateFieldPriority(left[0]));
+  for(const [key,value] of entries){
     const normalizedKey=String(key).toLowerCase();
-    if(!/(?:active|enabled|disabled|status|state)/.test(normalizedKey))continue;
     if(typeof value==='boolean'){
       if(normalizedKey.includes('disabled'))return value?LIMITED:ENABLED;
       return value?ENABLED:LIMITED;
@@ -140,4 +152,4 @@ async function runReadOnlyReconciliation(deps={}){
   return{success:true,readOnly:true,mode:modeInfo.mode,total:rows.length,reconciled,coherent,discrepancyCount:discrepancies.length,remoteSources:available.length,lookupWarnings:lookups.filter(item=>item.status==='rejected').map(item=>String(item.reason?.code||item.reason?.message||'MKJ_LOOKUP_WARNING')),rows,discrepancies};
 }
 
-module.exports={ENABLED,LIMITED,UNKNOWN,stateFromSource,remoteAccessState,remoteStateEvidence,authoritativeMembershipRecords,remoteUpdatedAt,uniqueUsers,desiredStates,recommendation,runReadOnlyReconciliation};
+module.exports={ENABLED,LIMITED,UNKNOWN,stateFieldPriority,stateFromSource,remoteAccessState,remoteStateEvidence,authoritativeMembershipRecords,remoteUpdatedAt,uniqueUsers,desiredStates,recommendation,runReadOnlyReconciliation};
