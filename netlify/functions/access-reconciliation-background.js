@@ -70,17 +70,32 @@ async function performAccessReconciliation(){
 
  const verification=await runReadOnlyReconciliation();
  if(Number(verification.discrepancyCount||0)!==0){
+  const repairableHouses=classification.repairable.map(row=>Number(row.casa||0));
+  const syncDiagnostics=(result.results||[]).filter(item=>repairableHouses.includes(Number(item.casa||0))).map(item=>({
+   casa:Number(item.casa||0),
+   action:String(item.action||''),
+   estado:String(item.estado||''),
+   mkjStatus:item.mkjStatus??null,
+   mkjProviderStatus:item.mkjProviderStatus??null,
+   mkjMembershipVerified:item.mkjMembershipVerified===true,
+   mkjMembershipSource:String(item.mkjMembershipSource||''),
+   mkjResolvedMemberId:String(item.mkjResolvedMemberId||item.mkjUserId||'').slice(0,80),
+   mkjAlreadyApplied:item.mkjAlreadyApplied===true
+  }));
   return{statusCode:500,body:{
    success:false,reason:'MKJ_REPAIR_NOT_VERIFIED',
    message:'Se ejecutó la resincronización, pero la verificación posterior todavía detecta discrepancias.',
-   repairableHouses:classification.repairable.map(row=>Number(row.casa||0)),
+   repairableHouses,
+   syncDiagnostics,
    verification:{
     total:Number(verification.total||0),
     coherent:Number(verification.coherent||0),
     discrepancyCount:Number(verification.discrepancyCount||0),
     discrepancies:(verification.discrepancies||[]).map(row=>({
      casa:Number(row.casa||0),
-     reasons:Array.isArray(row.discrepancias)?row.discrepancias.map(String):[]
+     reasons:Array.isArray(row.discrepancias)?row.discrepancias.map(String):[],
+     remoteState:String(row.estadoMkj||''),
+     evidence:Array.isArray(row.estadoMkjEvidencia)?row.estadoMkjEvidencia:[]
     }))
    }
   }};
