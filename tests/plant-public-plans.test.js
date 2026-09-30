@@ -5,13 +5,15 @@ const assert = require('node:assert/strict');
 const { pathToFileURL } = require('node:url');
 const path = require('node:path');
 
-let handler;
+let handler, createReadContextLoader;
 
 test.before(async () => {
   globalThis.Netlify = { env: { get(name) { return name === 'CONTEXT' ? 'deploy-preview' : ''; } } };
   const url = pathToFileURL(path.resolve('netlify/functions/public-plant.mjs'));
   url.searchParams.set('test', String(Date.now()));
-  handler = (await import(url.href)).default;
+  const mod = await import(url.href);
+  handler = mod.default;
+  createReadContextLoader = mod.createReadContextLoader;
 });
 
 test.after(() => { delete globalThis.Netlify; });
@@ -26,6 +28,29 @@ function request(ownerId, body) {
 function readRequest(ownerId) {
   return new Request(`https://deploy-preview-999--vla-test.netlify.app/api/vla/plant?ownerId=${encodeURIComponent(ownerId)}`);
 }
+
+
+test('ráfagas GET de planta comparten una sola carga de contexto y una lectura fresca puede saltar caché', async () => {
+  let reads = 0;
+  const loader = createReadContextLoader(async () => {
+    reads += 1;
+    await new Promise(resolve => setTimeout(resolve, 20));
+    return { read: reads };
+  }, { ttlMs: 60000 });
+
+  const [a, b, c] = await Promise.all([loader(), loader(), loader()]);
+  assert.equal(reads, 1);
+  assert.deepEqual(a, b);
+  assert.deepEqual(b, c);
+
+  const cached = await loader();
+  assert.equal(reads, 1);
+  assert.equal(cached.read, 1);
+
+  const fresh = await loader({ force: true });
+  assert.equal(reads, 2);
+  assert.equal(fresh.read, 2);
+});
 
 test('consulta el estado visible sin código y reserva la autorización para cambiar', async () => {
   const response = await handler(readRequest('recPreviewHouse01'));
