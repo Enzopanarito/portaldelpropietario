@@ -17,7 +17,31 @@ function isFixture(request) {
 function configuredStore() {
   return storeModule.createPlantStore({ token: Netlify.env.get('AIRTABLE_API_TOKEN'), baseId: Netlify.env.get('AIRTABLE_BASE_ID') });
 }
-async function context(fixture) { return fixture ? fixtureModule.createPlantFixture(new Date()) : storeModule.loadPlantContext(configuredStore()); }
+export function createReadContextLoader(loader, { ttlMs = 60 * 1000, now = () => Date.now() } = {}) {
+  let value = null, expiresAt = 0, inFlight = null;
+  return async function load({ force = false } = {}) {
+    const current = now();
+    if (!force && value && expiresAt > current) return value;
+    if (!force && inFlight) return inFlight;
+    const task = Promise.resolve().then(loader);
+    if (!force) inFlight = task;
+    try {
+      const next = await task;
+      if (!force) {
+        value = next;
+        expiresAt = now() + ttlMs;
+      }
+      return next;
+    } finally {
+      if (!force && inFlight === task) inFlight = null;
+    }
+  };
+}
+const loadProductionReadContext = createReadContextLoader(() => storeModule.loadPlantContext(configuredStore()));
+async function context(fixture, { fresh = false } = {}) {
+  if (fixture) return fixtureModule.createPlantFixture(new Date());
+  return fresh ? storeModule.loadPlantContext(configuredStore()) : loadProductionReadContext();
+}
 
 const REQUEST_TYPES = new Set(['SUSPENSION', 'REINCORPORACION', 'CAMBIO_MODALIDAD', 'RENUNCIA', 'CAMBIO_PROPIETARIO']);
 function caracasDay(date = new Date()) {
@@ -54,7 +78,7 @@ export default async function handler(request) {
   }
   let requestOperation = null, requestCreated = false, requestId = '', requestGuardKey = '';
   try {
-    const data = await context(fixture);
+    const data = await context(fixture, { fresh: request.method === 'POST' });
     const owner = data.owners.find(item => item.id === ownerId);
     if (!owner) return http.json(404, { message: 'Propietario no encontrado.' });
     const view = engine.ownerPlantView({ ownerId, profiles: data.profiles, interventions: data.interventions, recognizedPayments: data.recognizedPayments, at: new Date() });
