@@ -89,7 +89,7 @@ jobs:
             "${TARGET_URL}/.netlify/functions/access-reconciliation-failover-ci")"
           rm -f "$request"
           cat "$response"
-          if [ "$MODE" = "probe" ]; then expected=200; else expected=202; fi
+          expected=200
           if [ "$code" != "$expected" ]; then
             echo "Reconciliación failover devolvió HTTP $code; esperado $expected."
             exit 1
