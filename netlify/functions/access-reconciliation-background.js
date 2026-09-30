@@ -23,83 +23,85 @@ function classifyRepairability(audit){
  return{repairable,unsafe};
 }
 
+function safeSyncErrors(result){
+ return (result?.results||[]).filter(item=>item?.error).map(item=>({
+  casa:Number(item.casa||0),
+  error:String(item.error||'').slice(0,300)
+ }));
+}
+
+async function performAccessReconciliation(){
+ const mode=await getAccessMode(),automation=await getAutomationRules(mode);
+ if(mode.mode!==ACCESS_MODE_AUTO||!automation.configured||!automation.rules.masterEnabled||!automation.rules.access.automaticEnabled){
+  return{statusCode:200,body:{success:true,skipped:true,reason:mode.mode!==ACCESS_MODE_AUTO?'MANUAL_MODE':'ACCESS_AUTOMATION_DISABLED'}};
+ }
+
+ const audit=await runReadOnlyReconciliation();
+ const classification=classifyRepairability(audit);
+
+ if(!classification.repairable.length&&!classification.unsafe.length){
+  return{statusCode:200,body:{
+   success:true,unchanged:true,total:Number(audit.total||0),coherent:Number(audit.coherent||0),discrepancies:0,
+   message:'MKJ y Airtable ya están coherentes; no fue necesario escribir.'
+  }};
+ }
+
+ if(classification.unsafe.length){
+  return{statusCode:500,body:{
+   success:false,blocked:true,reason:'UNSAFE_MKJ_DISCREPANCY',
+   message:'La reconciliación detectó una discrepancia que requiere revisión humana; no se aplicaron cambios.',
+   discrepancies:classification.unsafe.map(row=>({
+    casa:Number(row.casa||0),
+    reasons:Array.isArray(row.discrepancias)?row.discrepancias.map(String):[]
+   }))
+  }};
+ }
+
+ const result=await autoSyncAll({forceMkj:true,sendEmail:true,touchUnchanged:false});
+ if(!result.success){
+  return{statusCode:500,body:{
+   success:false,reason:'MKJ_REPAIR_FAILED',
+   message:'La resincronización automática no terminó limpia.',
+   repairableHouses:classification.repairable.map(row=>Number(row.casa||0)),
+   total:Number(result.total||0),errors:Number(result.errors||0),
+   syncErrors:safeSyncErrors(result)
+  }};
+ }
+
+ const verification=await runReadOnlyReconciliation();
+ if(Number(verification.discrepancyCount||0)!==0){
+  return{statusCode:500,body:{
+   success:false,reason:'MKJ_REPAIR_NOT_VERIFIED',
+   message:'Se ejecutó la resincronización, pero la verificación posterior todavía detecta discrepancias.',
+   repairableHouses:classification.repairable.map(row=>Number(row.casa||0)),
+   verification:{
+    total:Number(verification.total||0),
+    coherent:Number(verification.coherent||0),
+    discrepancyCount:Number(verification.discrepancyCount||0),
+    discrepancies:(verification.discrepancies||[]).map(row=>({
+     casa:Number(row.casa||0),
+     reasons:Array.isArray(row.discrepancias)?row.discrepancias.map(String):[]
+    }))
+   }
+  }};
+ }
+
+ return{statusCode:200,body:{
+  success:true,repaired:true,
+  repairableHouses:classification.repairable.map(row=>Number(row.casa||0)),
+  reconciled:result.results.filter(item=>!item.unchanged&&!item.skipped&&!item.error).length,
+  total:Number(verification.total||0),coherent:Number(verification.coherent||0),discrepancyCount:0,
+  message:'Discrepancias de estado reparadas y verificadas contra MKJ.'
+ }};
+}
+
 const handler=async function(event){
  const rawBody=event.body||'';
  if(event.httpMethod!=='POST')return response(405,{message:'Method Not Allowed'});
  if(!verify(rawBody,event.headers||{}))return response(401,{message:'No autorizado.'});
  try{
-  const mode=await getAccessMode(),automation=await getAutomationRules(mode);
-  if(mode.mode!==ACCESS_MODE_AUTO||!automation.configured||!automation.rules.masterEnabled||!automation.rules.access.automaticEnabled){
-   return response(200,{success:true,skipped:true,reason:mode.mode!==ACCESS_MODE_AUTO?'MANUAL_MODE':'ACCESS_AUTOMATION_DISABLED'});
-  }
-
-  const audit=await runReadOnlyReconciliation();
-  const classification=classifyRepairability(audit);
-
-  if(!classification.repairable.length&&!classification.unsafe.length){
-   return response(200,{
-    success:true,
-    unchanged:true,
-    total:Number(audit.total||0),
-    coherent:Number(audit.coherent||0),
-    discrepancies:0,
-    message:'MKJ y Airtable ya están coherentes; no fue necesario escribir.'
-   });
-  }
-
-  if(classification.unsafe.length){
-   return response(500,{
-    success:false,
-    blocked:true,
-    reason:'UNSAFE_MKJ_DISCREPANCY',
-    message:'La reconciliación detectó una discrepancia que requiere revisión humana; no se aplicaron cambios.',
-    discrepancies:classification.unsafe.map(row=>({
-     casa:Number(row.casa||0),
-     reasons:Array.isArray(row.discrepancias)?row.discrepancias.map(String):[]
-    }))
-   });
-  }
-
-  const result=await autoSyncAll({forceMkj:true,sendEmail:true,touchUnchanged:false});
-  if(!result.success){
-   return response(500,{
-    success:false,
-    reason:'MKJ_REPAIR_FAILED',
-    message:'La resincronización automática no terminó limpia.',
-    repairableHouses:classification.repairable.map(row=>Number(row.casa||0)),
-    ...result
-   });
-  }
-
-  const verification=await runReadOnlyReconciliation();
-  if(Number(verification.discrepancyCount||0)!==0){
-   return response(500,{
-    success:false,
-    reason:'MKJ_REPAIR_NOT_VERIFIED',
-    message:'Se ejecutó la resincronización, pero la verificación posterior todavía detecta discrepancias.',
-    repairableHouses:classification.repairable.map(row=>Number(row.casa||0)),
-    verification:{
-     total:Number(verification.total||0),
-     coherent:Number(verification.coherent||0),
-     discrepancyCount:Number(verification.discrepancyCount||0),
-     discrepancies:(verification.discrepancies||[]).map(row=>({
-      casa:Number(row.casa||0),
-      reasons:Array.isArray(row.discrepancias)?row.discrepancias.map(String):[]
-     }))
-    }
-   });
-  }
-
-  return response(200,{
-   success:true,
-   repaired:true,
-   repairableHouses:classification.repairable.map(row=>Number(row.casa||0)),
-   reconciled:result.results.filter(item=>!item.unchanged&&!item.skipped&&!item.error).length,
-   total:Number(verification.total||0),
-   coherent:Number(verification.coherent||0),
-   discrepancyCount:0,
-   message:'Discrepancias de estado reparadas y verificadas contra MKJ.'
-  });
+  const outcome=await performAccessReconciliation();
+  return response(outcome.statusCode,outcome.body);
  }catch(error){
   return response(500,{success:false,message:'Falló la reconciliación periódica del portón.',detail:String(error.message||error).slice(0,300)});
  }
@@ -107,4 +109,6 @@ const handler=async function(event){
 
 exports.AUTO_REPAIRABLE_REASONS=AUTO_REPAIRABLE_REASONS;
 exports.classifyRepairability=classifyRepairability;
+exports.safeSyncErrors=safeSyncErrors;
+exports.performAccessReconciliation=performAccessReconciliation;
 exports.handler=withAirtableUsage('access-reconciliation-background',handler);
