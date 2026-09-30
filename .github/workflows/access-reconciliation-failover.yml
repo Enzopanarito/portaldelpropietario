@@ -64,7 +64,7 @@ jobs:
           echo "::add-mask::$token"
           echo "VLA_ACCESS_OIDC_TOKEN=$token" >> "$GITHUB_ENV"
 
-      - name: Trigger protected access reconciliation
+      - name: Execute and verify protected access reconciliation
         shell: bash
         env:
           MODE: ${{ steps.mode.outputs.mode }}
@@ -89,9 +89,9 @@ jobs:
             "${TARGET_URL}/.netlify/functions/access-reconciliation-failover-ci")"
           rm -f "$request"
           cat "$response"
-          if [ "$MODE" = "probe" ]; then expected=200; else expected=202; fi
+          expected=200
           if [ "$code" != "$expected" ]; then
-            echo "Reconciliación failover devolvió HTTP $code; esperado $expected."
+            echo "Reconciliación verificada devolvió HTTP $code; esperado $expected."
             exit 1
           fi
 
