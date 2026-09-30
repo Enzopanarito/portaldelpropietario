@@ -9,8 +9,8 @@ const UNKNOWN='Desconocido';
 function stateKeyPriority(key){
   const normalized=String(key||'').toLowerCase();
   if(!/(?:active|enabled|disabled|status|state)/.test(normalized))return-1;
-  if(/membership|member_(?:is_)?(?:active|enabled|disabled|status|state)|organization_membership/.test(normalized))return100;
-  return10;
+  if(/membership|member_(?:is_)?(?:active|enabled|disabled|status|state)|organization_membership/.test(normalized))return 100;
+  return 10;
 }
 function stateValue(key,value){
   const normalizedKey=String(key||'').toLowerCase();
