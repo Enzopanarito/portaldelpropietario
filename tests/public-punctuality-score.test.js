@@ -4,7 +4,7 @@ const assert=require('node:assert/strict');
 const {createHandler,previewMode}=require('../netlify/functions/public-punctuality-score');
 
 const OWNER_ID='recABCDEFGHIJKLMN';
-const OWNER_ID_2='recNOPQRSTUVWXYZAB';
+const OWNER_ID_2='recNOPQRSTUVWXYZA';
 function response(statusCode,body){return{statusCode,body:JSON.stringify(body)}}
 
 test('fixture legacy solo se activa con bandera explícita y nunca consulta Airtable',async()=>{
