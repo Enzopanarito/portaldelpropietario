@@ -4,6 +4,7 @@ import fixtureModule from './_shared/_plant_fixture.js';
 import http from './_shared/_plant_http.js';
 import ownerSession from './_shared/_owner_report_session.js';
 import operationGuard from './_shared/_operation_guard.js';
+import readCache from './_shared/_distributed_read_cache.js';
 
 function environment() {
   const context = String(Netlify.env.get('CONTEXT') || '').trim().toLowerCase();
@@ -37,10 +38,24 @@ export function createReadContextLoader(loader, { ttlMs = 60 * 1000, now = () =>
     }
   };
 }
-const loadProductionReadContext = createReadContextLoader(() => storeModule.loadPlantContext(configuredStore()));
+function cacheEnv(){return{AIRTABLE_BASE_ID:Netlify.env.get('AIRTABLE_BASE_ID')||''}}
+async function distributedPlantContext(){
+  const cached=await readCache.getOrLoad('plant-context',()=>storeModule.loadPlantContext(configuredStore()),{
+    event:{__netlifyModernRuntime:true},
+    env:cacheEnv(),
+    ttlMs:60*1000,
+    staleMs:5*60*1000,
+    waitMs:5000
+  });
+  return cached.value;
+}
+const loadProductionReadContext = createReadContextLoader(distributedPlantContext,{ttlMs:30*1000});
 async function context(fixture, { fresh = false } = {}) {
   if (fixture) return fixtureModule.createPlantFixture(new Date());
   return fresh ? storeModule.loadPlantContext(configuredStore()) : loadProductionReadContext();
+}
+async function invalidatePlantReadCache(){
+  return readCache.invalidate('plant-context',{event:{__netlifyModernRuntime:true},env:cacheEnv()});
 }
 
 const REQUEST_TYPES = new Set(['SUSPENSION', 'REINCORPORACION', 'CAMBIO_MODALIDAD', 'RENUNCIA', 'CAMBIO_PROPIETARIO']);
@@ -125,6 +140,7 @@ export default async function handler(request) {
       if (!fixture) {
         await configuredStore().createRecords(storeModule.TABLES.requests, [fields]);
         requestCreated = true;
+        await invalidatePlantReadCache().catch(() => null);
         await operationGuard.setState(requestOperation, 'PLANT_OWNER_REQUEST', idempotencyKey, 'DONE', requestId);
       }
       return http.json(201, {
