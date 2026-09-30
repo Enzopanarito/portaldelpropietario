@@ -66,9 +66,16 @@ async function loadPortal(page){
   const pageErrors=[];
   const consoleErrors=[];
   const recoveredFinancialFetches=[];
+  const serverErrors=[];
   let privatePlantResponses=0;
   page.on('response',response=>{
-    if(response.status()===401&&response.request().method()==='GET'&&/\/api\/vla\/plant(?:\?|$)/.test(response.url()))privatePlantResponses++;
+    const status=response.status(),url=response.url();
+    if(status===401&&response.request().method()==='GET'&&/\/api\/vla\/plant(?:\?|$)/.test(url))privatePlantResponses++;
+    if(status>=500){
+      let label=url;
+      try{const parsed=new URL(url);label=parsed.pathname+parsed.search}catch(_){}
+      serverErrors.push(`${status} ${label}`);
+    }
   });
   page.on('pageerror',error=>pageErrors.push(String(error.stack||error.message||error)));
   page.on('console',message=>{
@@ -140,7 +147,10 @@ async function loadPortal(page){
     const privateChallenges=consoleErrors.filter(message=>privatePlant401.test(message));
     const unexpectedConsoleErrors=consoleErrors.filter(message=>!privatePlant401.test(message));
     if(privateChallenges.length&&!(privateChallengeVisible&&privateChallenges.length===privatePlantResponses))unexpectedConsoleErrors.push(...privateChallenges);
-    if(unexpectedConsoleErrors.length)throw new Error(`Errores de consola: ${unexpectedConsoleErrors.join(' | ')}`);
+    if(unexpectedConsoleErrors.length){
+      const endpoints=[...new Set(serverErrors)];
+      throw new Error(`Errores de consola: ${unexpectedConsoleErrors.join(' | ')}${endpoints.length?` | Endpoints HTTP: ${endpoints.join(' | ')}`:''}`);
+    }
 
     const result={
       target,
@@ -158,7 +168,8 @@ async function loadPortal(page){
       recoveredTransientFetches:recoveredFinancialFetches.length,
       pageErrors,
       consoleErrors:unexpectedConsoleErrors,
-      privatePlantAuthChallenges:privatePlantResponses
+      privatePlantAuthChallenges:privatePlantResponses,
+      serverErrors:[...new Set(serverErrors)]
     };
     fs.writeFileSync('owner-production-result.json',JSON.stringify(result,null,2));
     await page.screenshot({path:'owner-production.png',fullPage:true});
