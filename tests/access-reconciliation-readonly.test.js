@@ -15,4 +15,21 @@ test('reporta ID obsoleto y discrepancia remota sin corregirlos',async()=>{const
 test('modo Manual conserva discrepancias informativas para Health sin mutar',async()=>{const result=await reconciliation.runReadOnlyReconciliation(deps({getAccessMode:async()=>({mode:'Manual'}),listOrganizationUsers:async()=>({users:Array.from({length:15},(_,index)=>remote(index+1,index===0?false:index+1!==3))})}));assert.equal(result.mode,'Manual');assert.equal(result.discrepancyCount,1);assert.equal(result.rows[0].estadoMkj,'Limitado')});
 test('interpreta estados activos, inactivos y desconocidos de varias formas MKJ',()=>{assert.equal(reconciliation.remoteAccessState({membership:{active:true}}),'Habilitado');assert.equal(reconciliation.remoteAccessState({membership:{disabled:true}}),'Limitado');assert.equal(reconciliation.remoteAccessState({status:'inactive'}),'Limitado');assert.equal(reconciliation.remoteAccessState({user:{email:'x@test'}}),'Desconocido')});
 test('prioriza el detalle de organización cuando contiene un estado más completo',async()=>{const general=Array.from({length:15},(_,index)=>({user:{id:String(8001+index),email:`casa${index+1}@test.local`}})),detail=Array.from({length:15},(_,index)=>remote(index+1,index===0?false:index+1!==3)),result=await reconciliation.runReadOnlyReconciliation(deps({listOrganizationUsers:async()=>({users:general}),listOrganizationDetailUsers:async()=>({users:detail})}));assert.equal(result.rows[0].estadoMkj,'Limitado');assert(result.rows[0].discrepancias.includes('MKJ_EXPECTATION_MISMATCH'));assert.equal(result.rows[2].estadoMkj,'Limitado')});
+
+test('expone solo evidencia de estado MKJ y no datos de identidad',()=>{
+ const evidence=reconciliation.remoteStateEvidence({
+   active:false,
+   email:'secret@test.local',
+   user:{id:'7963',email:'secret@test.local',active:true},
+   membership:{status:'inactive',token:'no-debe-salir'}
+ });
+ assert.deepEqual(evidence,[
+   {source:'membership',key:'status',value:'inactive'},
+   {source:'record',key:'active',value:false},
+   {source:'user',key:'active',value:true}
+ ]);
+ assert.equal(JSON.stringify(evidence).includes('secret@test.local'),false);
+ assert.equal(JSON.stringify(evidence).includes('token'),false);
+});
+
 test('la implementación read-only no contiene primitivas de escritura',()=>{const shared=fs.readFileSync('netlify/functions/_shared/_access_reconciliation_readonly.js','utf8'),endpoint=fs.readFileSync('netlify/functions/access-reconciliation-readonly.js','utf8');for(const forbidden of ['mkjSetMemberStatus','airtablePatchRecord','airtableCreateRecord','method:\'PUT\'','method:\'PATCH\'','method:\'POST\''])assert(!shared.includes(forbidden)&&!endpoint.includes(forbidden),`La reconciliación incluyó ${forbidden}`)});

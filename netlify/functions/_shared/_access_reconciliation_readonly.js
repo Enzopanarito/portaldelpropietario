@@ -76,6 +76,30 @@ function authoritativeMembershipRecords(data){
   return candidates[0]?.records||[];
 }
 
+function remoteStateEvidence(user){
+  if(!user||typeof user!=='object')return[];
+  const sources=[
+    ['membership',user.membership],
+    ['organization_membership',user.organization_membership],
+    ['organizationMembership',user.organizationMembership],
+    ['record',user.user?user:null],
+    ['user',user.user],
+    ['record',user.user?null:user]
+  ].filter(([,value])=>value&&typeof value==='object');
+  const seen=new Set(),evidence=[];
+  for(const [label,source] of sources){
+    if(seen.has(source))continue;
+    seen.add(source);
+    for(const [key,value] of Object.entries(source)){
+      const normalizedKey=String(key).toLowerCase();
+      if(!/(?:active|enabled|disabled|status|state)/.test(normalizedKey))continue;
+      if(!['string','number','boolean'].includes(typeof value))continue;
+      evidence.push({source:label,key:String(key).slice(0,80),value:typeof value==='string'?value.slice(0,120):value});
+    }
+  }
+  return evidence.slice(0,20);
+}
+
 function remoteUpdatedAt(user){return String(user?.membership?.updated_at||user?.membership?.updatedAt||user?.updated_at||user?.updatedAt||user?.user?.updated_at||user?.user?.updatedAt||'').trim()||null}
 function uniqueUsers(users){const result=[],seen=new Set();for(const user of users||[]){const id=mkj.organizationUserId(user),email=mkj.organizationUserEmail(user),key=id?`id:${id}`:`email:${email}`;if(!key||seen.has(key))continue;seen.add(key);result.push(user)}return result}
 function desiredStates(fields,calc){const exception=fields['Excepción Acceso']===true;const physical=exception?ENABLED:(calc.hasExpiredDebt?LIMITED:ENABLED);return{airtable:exception?'Excepción Manual':physical,remote:physical,exception}}
@@ -110,10 +134,10 @@ async function runReadOnlyReconciliation(deps={}){
     if(!matched)reasons.push('MKJ_MEMBER_NOT_FOUND');
     else{if(resolvedId&&memberId&&resolvedId!==memberId)reasons.push('STALE_MEMBER_ID');if(email&&resolvedEmail&&email!==resolvedEmail)reasons.push('EMAIL_MISMATCH');if(remoteState===UNKNOWN)reasons.push('MKJ_STATE_UNKNOWN');else if(remoteState!==expected.remote)reasons.push('MKJ_EXPECTATION_MISMATCH')}
     if(airtableState!==expected.airtable)reasons.push('AIRTABLE_EXPECTATION_MISMATCH');
-    return{casa:Number(fields.Casa),propietario:String(fields.Propietario||''),mkjUserId:memberId||null,mkjResolvedUserId:resolvedId||null,email:email||null,mkjResolvedEmail:resolvedEmail||null,estadoEsperadoVla:expected.airtable,estadoFisicoEsperado:expected.remote,estadoAirtable:airtableState,estadoMkj:remoteState,excepcionAdministrativa:expected.exception,modo:modeInfo.mode,ultimaSincronizacion:String(fields['Última Sync MKJ']||'').trim()||null,ultimaActualizacionMkj:remoteUpdatedAt(matched),reconciliada:Boolean(matched)&&remoteState!==UNKNOWN,coherente:reasons.length===0,discrepancias:reasons,accionRecomendada:recommendation(reasons)};
+    return{casa:Number(fields.Casa),propietario:String(fields.Propietario||''),mkjUserId:memberId||null,mkjResolvedUserId:resolvedId||null,email:email||null,mkjResolvedEmail:resolvedEmail||null,estadoEsperadoVla:expected.airtable,estadoFisicoEsperado:expected.remote,estadoAirtable:airtableState,estadoMkj:remoteState,estadoMkjEvidencia:remoteStateEvidence(matched),excepcionAdministrativa:expected.exception,modo:modeInfo.mode,ultimaSincronizacion:String(fields['Última Sync MKJ']||'').trim()||null,ultimaActualizacionMkj:remoteUpdatedAt(matched),reconciliada:Boolean(matched)&&remoteState!==UNKNOWN,coherente:reasons.length===0,discrepancias:reasons,accionRecomendada:recommendation(reasons)};
   });
   const discrepancies=rows.filter(row=>!row.coherente),reconciled=rows.filter(row=>row.reconciliada).length,coherent=rows.filter(row=>row.coherente).length;
   return{success:true,readOnly:true,mode:modeInfo.mode,total:rows.length,reconciled,coherent,discrepancyCount:discrepancies.length,remoteSources:available.length,lookupWarnings:lookups.filter(item=>item.status==='rejected').map(item=>String(item.reason?.code||item.reason?.message||'MKJ_LOOKUP_WARNING')),rows,discrepancies};
 }
 
-module.exports={ENABLED,LIMITED,UNKNOWN,stateFromSource,remoteAccessState,authoritativeMembershipRecords,remoteUpdatedAt,uniqueUsers,desiredStates,recommendation,runReadOnlyReconciliation};
+module.exports={ENABLED,LIMITED,UNKNOWN,stateFromSource,remoteAccessState,remoteStateEvidence,authoritativeMembershipRecords,remoteUpdatedAt,uniqueUsers,desiredStates,recommendation,runReadOnlyReconciliation};
