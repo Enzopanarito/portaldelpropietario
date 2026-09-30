@@ -46,23 +46,34 @@ test('OIDC de reconciliación queda limitado a repo, workflow y eventos autoriza
  assert.equal(oidc.validateClaims({...claims,event_name:'workflow_run'},now).event_name,'workflow_run');
 });
 
-test('endpoint de failover solo encola el reconciliador canónico y no toca contabilidad',()=>{
+test('endpoint de failover ejecuta y verifica reconciliación real, no confunde 202 con éxito',()=>{
  const source=read('netlify/functions/access-reconciliation-failover-ci.js');
  assert.match(source,/verifyAccessFailoverOidcToken/);
- assert.match(source,/resolveInternalSiteUrl/);
- assert.match(source,/sign\(payload\)/);
- assert.match(source,/\/api\/vla\/access-reconciliation/);
+ assert.match(source,/performAccessReconciliation/);
+ assert.match(source,/VLA_ACCESS_FAILOVER_VERIFIED/);
+ assert.match(source,/outcome\.statusCode!==200/);
+ assert.doesNotMatch(source,/\/api\/vla\/access-reconciliation/);
  assert.doesNotMatch(source,/monthly-close/);
  assert.doesNotMatch(source,/AIRTABLE_API_TOKEN/);
  assert.doesNotMatch(source,/MKJ_ADMIN_PASSWORD/);
 });
 
-test('workflow de respaldo corre cada hora y después de deploy productivo',()=>{
+test('reconciliador exporta una ejecución verificable reutilizable por background y failover',()=>{
+ const source=read('netlify/functions/access-reconciliation-background.js');
+ assert.match(source,/async function performAccessReconciliation\(\)/);
+ assert.match(source,/autoSyncAll\(\{forceMkj:true/);
+ assert.match(source,/runReadOnlyReconciliation\(\)/);
+ assert.match(source,/MKJ_REPAIR_NOT_VERIFIED/);
+ assert.match(source,/exports\.performAccessReconciliation=performAccessReconciliation/);
+});
+
+test('workflow de respaldo corre cada hora, después de deploy y exige HTTP 200 verificado',()=>{
  const source=read('.github/workflows/access-reconciliation-failover.yml');
  assert.match(source,/cron: '15 \* \* \* \*'/);
  assert.match(source,/workflows: \["Deploy Netlify Production"\]/);
  assert.match(source,/audience=vla-access-reconciliation-failover/);
  assert.match(source,/default: probe/);
  assert.match(source,/id-token: write/);
- assert.match(source,/expected=200; else expected=202/);
+ assert.match(source,/expected=200/);
+ assert.doesNotMatch(source,/expected=202/);
 });

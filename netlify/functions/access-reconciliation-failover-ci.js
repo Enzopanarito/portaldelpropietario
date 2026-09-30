@@ -1,8 +1,7 @@
 'use strict';
 
 const {verifyAccessFailoverOidcToken}=require('./_shared/_github_oidc_access_failover');
-const {sign}=require('./_shared/_internal_job_auth');
-const {resolveInternalSiteUrl}=require('./_shared/_internal_site_url');
+const {performAccessReconciliation}=require('./access-reconciliation-background');
 
 function response(statusCode,body,headers={}){
  return{statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...headers},body:JSON.stringify(body)};
@@ -25,31 +24,29 @@ exports.handler=async function(event){
  }
 
  if(mode==='probe'){
-  return response(200,{success:true,authenticated:true,dispatched:false,source:'github-oidc-access-probe'});
+  return response(200,{success:true,authenticated:true,verified:false,source:'github-oidc-access-probe'});
  }
 
  try{
-  const site=resolveInternalSiteUrl(process.env);
-  const payload=JSON.stringify({
-   requestedAt:new Date().toISOString(),
-   source:'github-oidc-access-failover',
+  const outcome=await performAccessReconciliation();
+  const payload={
+   ...outcome.body,
+   githubRunId:String(claims.run_id||''),
+   source:'github-oidc-access-failover-verified'
+  };
+  if(outcome.statusCode!==200||payload.success!==true){
+   console.error(JSON.stringify({event:'VLA_ACCESS_FAILOVER_REPAIR_FAILED',reason:String(payload.reason||'REPAIR_FAILED'),githubRunId:String(claims.run_id||'')}));
+   return response(500,payload,{'X-VLA-Access-Failover':'failed'});
+  }
+  console.log(JSON.stringify({
+   event:'VLA_ACCESS_FAILOVER_VERIFIED',
+   repaired:payload.repaired===true,
+   coherent:Number(payload.coherent||payload.total||0),
    githubRunId:String(claims.run_id||'')
-  });
-  const authorization=sign(payload);
-  const queued=await fetch(`${site}/api/vla/access-reconciliation`,{
-   method:'POST',
-   headers:{
-    'Content-Type':'application/json',
-    'x-vla-job-timestamp':authorization.timestamp,
-    'x-vla-job-signature':authorization.signature
-   },
-   body:payload
-  });
-  if(!queued.ok)throw new Error(`La cola de reconciliación respondió HTTP ${queued.status}.`);
-  console.log(JSON.stringify({event:'VLA_ACCESS_FAILOVER_QUEUED',githubRunId:String(claims.run_id||'')}));
-  return response(202,{success:true,queued:true,dispatched:true,source:'github-oidc-access-failover'},{'X-VLA-Access-Failover':'queued'});
+  }));
+  return response(200,payload,{'X-VLA-Access-Failover':'verified'});
  }catch(error){
   console.error(JSON.stringify({event:'VLA_ACCESS_FAILOVER_FAILED',code:String(error.message||'FAILOVER_FAILED').slice(0,160)}));
-  return response(500,{success:false,dispatched:false,message:'No se pudo disparar la reconciliación de respaldo.'});
+  return response(500,{success:false,verified:false,message:'No se pudo completar y verificar la reconciliación de respaldo.',detail:String(error.message||'').slice(0,300)});
  }
 };
