@@ -11,11 +11,11 @@ const LEDGER_CONTEXT_TTL_MS = 60 * 1000;
 const cache = new Map();
 
 function createLedgerContextState() { return { value: null, expiresAt: 0, inFlight: null }; }
-async function loadLedgerContext({ event, publicHandler, listAll, token, baseId, counter, state, nowMs = Date.now() }) {
+async function loadLedgerContext({ event, publicHandler, listAll, token, baseId, counter, state, distributedCache = readCache, nowMs = Date.now() }) {
   if (state.value && state.expiresAt > nowMs) return state.value;
   if (state.inFlight) return state.inFlight;
   const task = (async () => {
-    const cached=await readCache.getOrLoad('punctuality-ledger-context',async()=>{
+    const cached=await distributedCache.getOrLoad('punctuality-ledger-context',async()=>{
       const publicResultPromise = publicHandler({
         ...event,
         httpMethod: 'GET',
@@ -156,6 +156,9 @@ function createHandler(deps = {}) {
   const env = deps.env || process.env;
   const scoreCache = deps.cache || cache;
   const ledgerContextState = deps.ledgerContextState || createLedgerContextState();
+  const distributedCache = deps.readCache || ((deps.publicHandler || deps.getAll) ? {
+    getOrLoad: async (_name, loader) => ({ value: await loader(), source: 'TEST_BYPASS' })
+  } : readCache);
   return async function handler(event) {
     if (event.httpMethod && event.httpMethod !== 'GET') return json(405, { message: 'Method Not Allowed' });
     const ownerId = String(event.queryStringParameters && event.queryStringParameters.ownerId || '').trim();
@@ -172,7 +175,7 @@ function createHandler(deps = {}) {
     const counter = { calls: 0 };
     try {
       const { payload, expenses, history } = await loadLedgerContext({
-        event, publicHandler, listAll, token, baseId, counter, state: ledgerContextState
+        event, publicHandler, listAll, token, baseId, counter, state: ledgerContextState, distributedCache
       });
       const owner = (payload.propietarios || []).find(item => String(item.id) === ownerId);
       if (!owner) return json(404, { message: 'Propietario no encontrado.' }, counter);
