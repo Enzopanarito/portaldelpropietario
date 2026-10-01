@@ -182,6 +182,26 @@ function buildMessage({ owner, expenses = [], nowParts, cycle, hint = {} }) {
   };
 }
 
+function expiredDebt(owner = {}) {
+  const usd = money(Math.max(0, Number(owner.deudaVencidaUsd ?? owner['Deuda Vencida USD'] ?? 0)));
+  const bs = money(Math.max(0, Number(owner.deudaVencidaBs ?? owner['Deuda Vencida Bs Ref'] ?? 0)));
+  return { usd, bs, total: money(usd + bs) };
+}
+
+function buildRestrictionMessage({ owner, nowParts }) {
+  const debt = expiredDebt(owner);
+  const d = `${nowParts.day}/${nowParts.month}/${nowParts.year}`;
+  const blocks = [
+    '*Aviso de acceso al portón*',
+    `📅 *Mensaje generado el ${d}*`,
+    `Estimado/a *${owner.Propietario}*,`,
+    `Su acceso al portón eléctrico se encuentra *limitado* por una deuda vencida de *${fmt(debt.total)}*.`,
+    'Al registrarse y validarse el pago correspondiente, el sistema reevaluará automáticamente su acceso.',
+    'Villa Los Apamates'
+  ];
+  return { text: blocks.join('\n\n'), ...debt };
+}
+
 function normalizeRenderedMessage(text) {
   return String(text || '')
     .replace(/```/g,'')
@@ -207,6 +227,6 @@ function messageAnchors(text) {
 }
 
 module.exports = {
-  money, fmt, buildMessage, promptPaymentLine, monthEndWarning, normalizeRenderedMessage, messageAnchors,
+  money, fmt, buildMessage, buildRestrictionMessage, expiredDebt, promptPaymentLine, monthEndWarning, normalizeRenderedMessage, messageAnchors,
   usdConceptBreakdown, smartBreakdown, localHintBreakdown, paymentNote
 };
