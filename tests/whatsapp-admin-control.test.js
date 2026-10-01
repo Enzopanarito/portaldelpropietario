@@ -107,7 +107,7 @@ test('100 desplazamientos de warmup conservan aritmética exacta', () => {
 test('bootstrap del controlador es PAUSADO para instalación segura', () => {
   const bootstrap = JSON.parse(source('ops/whatsapp-control/bootstrap-control.json'));
   assert.equal(bootstrap.mode, 'paused');
-  assert.deepEqual(bootstrap.schedules, ['09:00', '18:00']);
+  assert.deepEqual(bootstrap.schedules, ['09:00']);
   assert.equal(controller.DEFAULT_CONFIG.mode, 'paused');
 });
 
@@ -120,7 +120,9 @@ test('controlador encola run y warmup, serializa operaciones y limita reintentos
   assert.match(text, /runInProgress/);
   assert.match(text, /warmupInProgress/);
   assert.match(text, /retryAt/);
-  assert.match(text, /superseded/);
+  assert.match(text, /run\|daily/);
+  assert.match(text, /dailyRunKey/);
+  assert.doesNotMatch(text, /superseded/);
   assert.equal(controller.RETRY_MS, 5 * 60 * 1000);
 });
 
