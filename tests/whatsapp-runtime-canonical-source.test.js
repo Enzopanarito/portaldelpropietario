@@ -20,7 +20,7 @@ test('runtime canónico coincide byte-a-byte con el candidato aditivo registrado
   assert.equal(sha256('ops/whatsapp-runtime/agent/package.json'),
     '85c25a5478dca33a27abf4d4b9844ba370090f9b3eaea0d01e69d98007df2ab8');
   assert.equal(sha256('ops/whatsapp-control/controller.js'),
-    '80265db7ffbe6c1338c9e95df921beeef940f340abb4428671d83f0ed0288a25');
+    'acfa4885cd00bb23b3be37fde41f0b54fd003838a4006b65742eb5002f5ec36e');
 });
 
 test('versiones y fail-closed del runtime canónico', () => {
@@ -43,6 +43,9 @@ test('versiones y fail-closed del runtime canónico', () => {
   assert.match(controller, /interrupted-closed/);
   assert.match(controller, /mode:\s*'paused'/);
   assert.match(controller, /VLA_MANUAL_CYCLE_TRIGGER_V1/);
+  assert.match(controller, /VLA_SINGLE_DAILY_RUN_V1/);
+  assert.match(controller, /run\|daily/);
+  assert.match(controller, /dailyRunKey/);
   assert.match(controller, /setInterval\(\(\) => state\.schedulerStep\(\)/);
 });
 
@@ -81,5 +84,7 @@ test('manifiesto fija hashes y habilita activation solo después de certificaci�
   assert.equal(m.communicationsCandidate.preserved.legacyFinancialJobSha256, sha256('netlify/functions/whatsapp-jobs.js'));
   assert.equal(m.communicationsCandidate.preserved.credentialsModified, false);
   assert.equal(m.communicationsCandidate.preserved.schedulerConfigurationModified, false);
-  assert.equal(m.communicationsCandidate.preserved.automaticScheduleDefinitionsModified, false);
+  assert.equal(m.communicationsCandidate.preserved.automaticScheduleDefinitionsModified, true);
+  assert.deepEqual(m.scheduler.expectedSchedules, ['09:00']);
+  assert.equal(m.scheduler.singleDailyRun, true);
 });
