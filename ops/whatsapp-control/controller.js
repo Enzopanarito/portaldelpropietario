@@ -1,3 +1,5 @@
+[Reading 962 lines from start (total: 962 lines, 0 remaining)]
+
 'use strict';
 const VLAHttp = require('node:http'); // VLA_NODE_HTTP_TRANSPORT_V134
 const VLAHttps = require('node:https');
@@ -23,8 +25,10 @@ const LINK_TTL_MS = 10 * 60 * 1000;
 const MANUAL_FORCE_PLAN = true;
 const AUTOMATIC_RUN_OPTIONS = Object.freeze({ forcePlan: false });
 const MANUAL_RUN_OPTIONS = Object.freeze({ forcePlan: MANUAL_FORCE_PLAN });
+const GATE_NOTICE_TIME = '08:00';
+const GATE_NOTICE_WARMUP_TIME = '07:55';
+const GATE_NOTICE_CUTOFF_MINUTE = 8 * 60 + 45;
 // VLA_MANUAL_CYCLE_TRIGGER_V1: manual relee el ciclo vigente conservando idempotencia.
-// VLA_SINGLE_DAILY_RUN_V1: una sola corrida automática diaria, aunque existan horarios extra.
 // VLA_CONTROLLER_RELINK_V1: re-vinculación segura y efímera desde Admin.
 
 const DEFAULT_CONFIG = Object.freeze({
@@ -55,6 +59,11 @@ const DEFAULT_RUNTIME = Object.freeze({
   broadcastStartedAt: null,
   broadcastJobId: null,
   communications: {},
+  restrictionInProgress: false,
+  restrictionStartedAt: null,
+  lastRestrictionAt: null,
+  lastRestrictionResult: null,
+  lastRestrictionError: null,
   ledger: {}
 });
 
@@ -220,6 +229,11 @@ function createControllerState() {
     runtime.linkLastStatus = 'idle';
     interrupted = true;
   }
+  if (runtime.restrictionInProgress) {
+    runtime.restrictionInProgress = false;
+    runtime.restrictionStartedAt = null;
+    runtime.lastRestrictionError = 'El aviso de portón se interrumpió al reiniciar; se reconciliará por referencia antes de cualquier nuevo click.';
+  }
   if (runtime.broadcastInProgress) {
     const interruptedJobId = clean(runtime.broadcastJobId);
     runtime.broadcastInProgress = false;
@@ -260,8 +274,8 @@ function createControllerState() {
     appendAudit({ action:'link-expired', result:'ATTENTION', detail:'admin' }); return true;
   }
   runtime.communications = runtime.communications && typeof runtime.communications === 'object' ? runtime.communications : {};
-  function busy() { expireStaleLink(); return runtime.runInProgress || runtime.warmupInProgress || runtime.linkInProgress || runtime.broadcastInProgress; }
-  function busyWithoutLink() { return runtime.runInProgress || runtime.warmupInProgress || runtime.broadcastInProgress; }
+  function busy() { expireStaleLink(); return runtime.runInProgress || runtime.warmupInProgress || runtime.linkInProgress || runtime.broadcastInProgress || runtime.restrictionInProgress; }
+  function busyWithoutLink() { return runtime.runInProgress || runtime.warmupInProgress || runtime.broadcastInProgress || runtime.restrictionInProgress; }
   function markLedger(key, status, extra = {}) {
     runtime.ledger[key] = { status, at: nowIso(), ...extra };
     persistRuntime();
@@ -346,14 +360,19 @@ function createControllerState() {
 
   async function agent(pathname, options = {}) {
     const controller = new AbortController();
-    const timeoutMs = pathname === '/tick' || pathname === '/broadcast'
-      ? 45 * 60 * 1000
-      : 240000;
+    const requestedTimeoutMs = Number(options.timeoutMs);
+    const timeoutMs = Number.isFinite(requestedTimeoutMs) && requestedTimeoutMs >= 1000
+      ? Math.floor(requestedTimeoutMs)
+      : pathname === '/tick' || pathname === '/broadcast' || pathname === '/restriction-notice'
+        ? 45 * 60 * 1000
+        : 240000;
+    const requestOptions = { ...options };
+    delete requestOptions.timeoutMs;
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await agentHttpRequest(`${AGENT_URL}${pathname}`, {
-        ...options,
-        headers: { 'Content-Type': 'application/json', 'x-agent-token': TOKEN, ...(options.headers || {}) },
+        ...requestOptions,
+        headers: { 'Content-Type': 'application/json', 'x-agent-token': TOKEN, ...(requestOptions.headers || {}) },
         signal: controller.signal
       }, timeoutMs);
       const data = response.data || {};
@@ -367,12 +386,12 @@ function createControllerState() {
   }
   async function health() {
     let liveness;
-    try { liveness = await agent('/health', { method: 'GET' }); }
+    try { liveness = await agent('/health', { method: 'GET', timeoutMs: 3000 }); }
     catch (error) {
       return { ok:false, livenessOk:false, readiness:{ ready:false, code:'AGENT_UNREACHABLE', loggedIn:null }, error:String(error.message || error) };
     }
     let readiness;
-    try { readiness = await agent('/readiness', { method: 'GET' }); }
+    try { readiness = await agent('/readiness', { method: 'GET', timeoutMs: 10000 }); }
     catch (error) {
       readiness = { ready:false, healthy:false, loggedIn:null, code:'READINESS_UNREACHABLE', detail:String(error.message || error) };
     }
@@ -656,6 +675,11 @@ function createControllerState() {
         broadcastInProgress: runtime.broadcastInProgress,
         broadcastStartedAt: runtime.broadcastStartedAt,
         broadcastJobId: runtime.broadcastJobId,
+        restrictionInProgress: runtime.restrictionInProgress,
+        restrictionStartedAt: runtime.restrictionStartedAt,
+        lastRestrictionAt: runtime.lastRestrictionAt,
+        lastRestrictionResult: runtime.lastRestrictionResult,
+        lastRestrictionError: runtime.lastRestrictionError,
         nextRunAt: runtime.linkInProgress ? null : nextRunAt(config)
       },
       communications: Object.values(runtime.communications || {}).sort((a, b) => Date.parse(b.createdAt || 0) - Date.parse(a.createdAt || 0)).slice(0, 10),
@@ -670,6 +694,66 @@ function createControllerState() {
     return config;
   }
 
+  async function restrictionCore(reason='automatic-gate-restriction') {
+    return locked(async()=>{
+      if (runtime.linkInProgress) throw conflict('La vinculación de WhatsApp está en curso.');
+      if (config.mode !== 'automatic') throw conflict('El aviso mensual de portón requiere modo automático.');
+      const preflight=await health();
+      if (preflight.ok !== true) {
+        const code=readinessCodeOf(preflight);
+        const error=new Error(`WHATSAPP_NOT_READY:${code}`); error.code='WHATSAPP_NOT_READY'; throw error;
+      }
+      const result=await agent('/restriction-notice',{method:'POST',body:'{}'});
+      runtime.lastRestrictionAt=nowIso();
+      runtime.lastRestrictionResult=result.status||result.action||'OK';
+      runtime.lastRestrictionError = Number(result.failedSafeCount||0)>0
+        ? `Aviso de portón incompleto recuperable: pendientes=${Number(result.failedSafeCount||0)}`
+        : Number(result.quarantinedCount||0)>0
+          ? `Entrega incierta en ${Number(result.quarantinedCount||0)} casa(s); protegidas por referencia contra reenvío.`
+          : null;
+      persistRuntime();
+      appendAudit({action:'gate-restriction-notice',result:result.status||result.action||'OK',detail:`${reason} · destinatarios=${Number(result.recipientCount||0)}`});
+      return result;
+    });
+  }
+  async function attemptGateRestriction(reason='auto 08:00') {
+    const parts=caracasParts(), key=`${dayKey(parts)}|gate-restriction|${GATE_NOTICE_TIME}`;
+    if (busy() || ledgerBlocks(key)) return false;
+    runtime.restrictionInProgress=true; runtime.restrictionStartedAt=nowIso(); persistRuntime();
+    markLedger(key,'running',{reason});
+    try {
+      const result=await restrictionCore(reason);
+      if (Number(result.failedSafeCount||0)>0) {
+        const detail=`Pendientes pre-dispatch=${Number(result.failedSafeCount||0)}`;
+        markLedger(key,'retry',{reason,retryAt:new Date(Date.now()+RETRY_MS).toISOString(),error:detail});
+        runtime.lastRestrictionError=detail; persistRuntime();
+        appendAudit({action:'gate-restriction-retry',result:'RETRY',detail});
+        return false;
+      }
+      markLedger(key,'done',{reason,resultStatus:result.status||result.action||'OK'});
+      return true;
+    } catch(error) {
+      const detail=String(error.message||error).slice(0,240);
+      markLedger(key,'retry',{reason,retryAt:new Date(Date.now()+RETRY_MS).toISOString(),error:detail});
+      runtime.lastRestrictionError=detail; persistRuntime();
+      appendAudit({action:'gate-restriction-retry',result:'RETRY',detail});
+      return false;
+    } finally {
+      runtime.restrictionInProgress=false; runtime.restrictionStartedAt=null; persistRuntime();
+    }
+  }
+  async function attemptGateWarmup(reason='auto gate warmup 07:55') {
+    const parts=caracasParts(), key=`${dayKey(parts)}|gate-warmup|${GATE_NOTICE_TIME}`;
+    if (busy() || ledgerBlocks(key)) return false;
+    markLedger(key,'running',{reason});
+    try { await executeWarmup(reason); markLedger(key,'done',{reason}); return true; }
+    catch(error) {
+      const detail=String(error.message||error).slice(0,240);
+      markLedger(key,'retry',{reason,retryAt:new Date(Date.now()+RETRY_MS).toISOString(),error:detail});
+      appendAudit({action:'gate-warmup-retry',result:'RETRY',detail});
+      return false;
+    }
+  }
   async function attemptScheduled(kind, schedule, reason) {
     const parts = caracasParts();
     const key = kind === 'run' ? `${dayKey(parts)}|run|daily` : `${dayKey(parts)}|${kind}|${schedule}`;
@@ -718,6 +802,11 @@ function createControllerState() {
     if (config.mode !== 'automatic' || runtime.linkInProgress) return;
     const parts = caracasParts(), now = hhmm(parts), nowMinute = localMinute(parts), today = dayKey(parts);
 
+    const dayOne = Number(parts.day) === 1;
+    if (dayOne && !busy() && now === GATE_NOTICE_WARMUP_TIME) {
+      await attemptGateWarmup(`auto gate warmup ${GATE_NOTICE_TIME}`);
+    }
+
     if (!busy()) {
       for (const schedule of config.schedules) {
         const warm = shiftMinutes(schedule, -config.warmupMinutes);
@@ -729,6 +818,11 @@ function createControllerState() {
     }
 
     if (!inAllowedWindow(parts) || busy()) return;
+    if (dayOne && nowMinute >= parseTime(GATE_NOTICE_TIME) && nowMinute < GATE_NOTICE_CUTOFF_MINUTE) {
+      const gateKey = `${today}|gate-restriction|${GATE_NOTICE_TIME}`;
+      if (!ledgerBlocks(gateKey)) await attemptGateRestriction(now === GATE_NOTICE_TIME ? 'auto 08:00' : `recovery gate ${now}`);
+    }
+    if (busy()) return;
     const dailyRunKey = `${today}|run|daily`;
     const due = config.schedules.filter(schedule => parseTime(schedule) <= nowMinute && !ledgerBlocks(dailyRunKey));
     if (due.length) {
@@ -815,7 +909,7 @@ function startServer() {
   const state = createControllerState();
   const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && req.url === '/health') {
-      return send(res, 200, { ok: true, service: 'vla-whatsapp-controller', version: '1.4.1', mode: state.getConfig().mode });
+      return send(res, 200, { ok: true, service: 'vla-whatsapp-controller', version: '1.4.3', mode: state.getConfig().mode });
     }
     if (!timingSafeToken(req.headers['x-agent-token'])) return send(res, 401, { ok: false, message: 'Token inválido o ausente.' });
     try {
@@ -842,7 +936,7 @@ function startServer() {
 
   setInterval(() => state.schedulerStep().catch(() => {}), LOOP_MS).unref();
   setTimeout(() => state.schedulerStep().catch(() => {}), 15000).unref();
-  server.listen(PORT, '0.0.0.0', () => console.log(`VLA WhatsApp Controller v1.4.1 escuchando en :${PORT} · modo=${state.getConfig().mode}`));
+  server.listen(PORT, '0.0.0.0', () => console.log(`VLA WhatsApp Controller v1.4.3 escuchando en :${PORT} · modo=${state.getConfig().mode}`));
   return { server, state };
 }
 
@@ -854,6 +948,9 @@ module.exports = {
   START_MINUTE,
   END_MINUTE,
   RETRY_MS,
+  GATE_NOTICE_TIME,
+  GATE_NOTICE_WARMUP_TIME,
+  GATE_NOTICE_CUTOFF_MINUTE,
   parseTime,
   validSchedule,
   normalizeConfig,
@@ -865,3 +962,5 @@ module.exports = {
   createControllerState,
   startServer
 };
+
+[executed on device: Mac-mini-de-Enzo (909fb371-3e1b-4735-8ad5-672c084a9358)]
