@@ -1,5 +1,3 @@
-[Reading 1000 lines from start (total: 1624 lines, 624 remaining)]
-
 'use strict';
 
 const express = require('express');
@@ -1000,5 +998,627 @@ async function restrictionNotice({ preview = false } = {}) {
 // VLA_INFORMATIONAL_BROADCAST_V1
 // Canal manual aislado: no consulta saldos, no crea ciclos y no modifica las
 // reglas de recordatorios. Reutiliza exclusivamente la entrega verificada.
+async function broadcast(input = {}) {
+  return serial('tick', async () => {
+    const payload = normalizeBroadcastPayload(input, sha), contacts = loadContacts(), state = store.read();
+    state.broadcasts ||= {};
+    const existing = state.broadcasts[payload.jobId];
+    if (existing?.payloadHash && existing.payloadHash !== payload.payloadHash) throw new Error('El identificador del comunicado ya pertenece a otro contenido.');
+    const bs = state.broadcasts[payload.jobId] ||= { createdAt: nowIso(), status: 'RUNNING', recipients: {}, payloadHash: payload.payloadHash };
+    const results = [];
+    for (const planned of payload.recipients) {
+      const contact = contacts.get(planned.house);
+      const rec = bs.recipients[String(planned.house)] ||= { status: 'PENDING', attempts: 0, messageHash: planned.messageHash, messageReference: planned.messageReference };
+      if (rec.messageHash !== planned.messageHash) throw new Error(`El contenido de la Casa ${planned.house} cambió después de iniciar el envío.`);
+      if (rec.confirmedAt) { results.push({ house: planned.house, status: 'ALREADY_CONFIRMED' }); continue; }
+      if (rec.dispatchAttemptedAt) { rec.status = 'ALREADY_QUARANTINED'; results.push({ house: planned.house, status: rec.status }); continue; }
+      if (!contact?.phone) { rec.status = 'NO_PHONE'; rec.completedAt = nowIso(); results.push({ house: planned.house, status: rec.status }); store.write(state); continue; }
+      rec.attempts += 1;
+      try {
+        const outcome = await sendVerified(contact.phone, planned.message, {
+          beforeDispatch: async () => {
+            rec.dispatchAttemptedAt = nowIso(); rec.status = 'DISPATCHING'; store.write(state);
+          }
+        });
+        if (outcome.reconciled && !rec.dispatchAttemptedAt) rec.dispatchAttemptedAt = nowIso();
+        if (outcome.ok) { rec.status = 'SENT_CONFIRMED'; rec.confirmedAt = nowIso(); rec.ack = outcome.ack || 'acknowledged'; }
+        else if (rec.dispatchAttemptedAt) { rec.status = 'DISPATCHED_UNVERIFIED'; rec.lastError = safeError(outcome.code || outcome.ack || 'Sin confirmación'); }
+        else { rec.status = outcome.code === 'AUTH_REQUIRED' ? 'AUTH_REQUIRED' : 'ERROR_PRE_DISPATCH'; rec.lastError = safeError(outcome.code || 'No enviado'); }
+        results.push({ house: planned.house, status: rec.status, ack: rec.ack || outcome.ack || null });
+      } catch (error) {
+        rec.lastError = safeError(error);
+        rec.status = rec.dispatchAttemptedAt ? 'DISPATCHED_UNVERIFIED' : 'ERROR_PRE_DISPATCH';
+        results.push({ house: planned.house, status: rec.status, error: rec.lastError });
+      }
+      store.write(state);
+      await sleep(BETWEEN_MESSAGES_MS);
+    }
+    Object.assign(bs, summarizeBroadcast(bs), { completedAt: nowIso() });
+    store.write(state);
+    return { ok: true, action: 'INFORMATIONAL_BROADCAST', jobId: payload.jobId, status: bs.status, recipientCount: payload.recipients.length, confirmedCount: bs.confirmedCount, quarantinedCount: bs.quarantinedCount, failedSafeCount: bs.failedSafeCount, results };
+  });
+}
 
-[executed on device: Mac-mini-de-Enzo (909fb371-3e1b-4735-8ad5-672c084a9358)]
+function buildRecipients(data, cycle, parts, revisionNumber = 0) {
+  const contacts = loadContacts();
+  const owners = [...data.propietarios].sort((a,b)=>Number(a.Casa)-Number(b.Casa));
+  const recipients = [];
+  const cycleStamp = String(cycle?.id || '').replace(/\D/g, '').slice(0, 12);
+  if (!/^\d{12}$/.test(cycleStamp)) throw new Error(`Cycle ID inválido para referencia: ${cycle?.id || 'ausente'}`);
+  const revision = Math.max(0, Number(revisionNumber) || 0);
+  const revisionSuffix = revision > 0 ? `-R${String(revision).padStart(2, '0')}` : '';
+  for (const owner of owners) {
+    if (Number(owner.totalPagadero || 0) <= 0.009) continue;
+    const contact = contacts.get(Number(owner.Casa));
+    if (!contact?.phone) continue;
+    const built = buildMessage({ owner, expenses: data.gastos || [], nowParts: parts, cycle, hint: contact.breakdownHint || {} });
+    const messageReference = `VLA-${cycleStamp}-C${String(Number(owner.Casa)).padStart(2, '0')}${revisionSuffix}`;
+    const baseMessage = built.text;
+    const message = `${baseMessage}\n\nReferencia de envío: ${messageReference}`;
+    recipients.push({
+      house: Number(owner.Casa), owner: owner.Propietario, phone: contact.phone,
+      message, baseMessage, messageReference, messageHash: sha(message), total: built.total,
+      accountBsRef: built.bs, accountUsd: built.usd, exactCategorization: built.exactCategorization, breakdownSources: built.breakdownSources
+    });
+  }
+  return recipients;
+}
+
+function cycleState(state, cycleId) {
+  state.cycles ||= {};
+  state.cycles[cycleId] ||= { createdAt: nowIso(), recipients: {}, simulatedAt: null, completedAt: null };
+  return state.cycles[cycleId];
+}
+
+function stableFinancialValue(value) {
+  if (Array.isArray(value)) return value.map(stableFinancialValue);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.keys(value).sort().map(key => [key, stableFinancialValue(value[key])])
+    );
+  }
+  return value;
+}
+
+function expenseFingerprint(data) {
+  const rows = (Array.isArray(data?.gastos) ? data.gastos : [])
+    .map(item => JSON.stringify(stableFinancialValue(item)))
+    .sort();
+  return sha(JSON.stringify(rows));
+}
+
+function archiveCompletedRevision(cs) {
+  cs.revisionHistory ||= [];
+  cs.revisionHistory.push({
+    archivedAt: nowIso(),
+    revisionNumber: Number(cs.revisionNumber || 0),
+    expenseFingerprint: cs.expenseFingerprint || null,
+    completedAt: cs.completedAt || null,
+    recipients: JSON.parse(JSON.stringify(cs.recipients || {}))
+  });
+  if (cs.revisionHistory.length > 12) cs.revisionHistory = cs.revisionHistory.slice(-12);
+}
+
+async function tick({ forcePlan = false, financialRevision = false } = {}) {
+  return serial('tick', async () => {
+    const plan = activeCycle(new Date());
+    const base = { mode: MODE, checkedAt: nowIso(), caracas: plan.parts, allowedWindow: plan.allowed, cycle: plan.cycle, next: plan.next };
+    if (!plan.allowed) return { ...base, action: 'WAIT_WINDOW', message: 'Fuera de ventana 08:00-21:00. No se envía nada.' };
+    if (!plan.cycle) return { ...base, action: 'NO_CYCLE_DUE', message: 'Todavía no existe un ciclo vigente este mes.' };
+
+    const state = store.read();
+    const existingCycle = state.cycles?.[plan.cycle.id];
+    let revisionNumber = Number(existingCycle?.revisionNumber || 0);
+    let data = null;
+    let recipients = null;
+
+    // Automático conserva el comportamiento histórico: no reabre ciclos completos.
+    if (MODE === 'real' && existingCycle?.completedAt && !forcePlan && !financialRevision) {
+      return {
+        ...base,
+        action: 'ALREADY_COMPLETED',
+        recipientCount: Number(existingCycle.lastRecipientCount || 0),
+        completedAt: existingCycle.completedAt,
+        revisionNumber,
+        message: 'El ciclo vigente ya fue completado.'
+      };
+    }
+
+    // Manual desde Admin: solo abre una nueva revisión si cambiaron LOS GASTOS.
+    // Pagos o abonos por sí solos no disparan otro recordatorio.
+    if (MODE === 'real' && existingCycle?.completedAt && financialRevision) {
+      data = await fetchPublicData();
+      const currentExpenseFingerprint = expenseFingerprint(data);
+      const previousExpenseFingerprint = existingCycle.expenseFingerprint || null;
+
+      if (previousExpenseFingerprint && previousExpenseFingerprint === currentExpenseFingerprint) {
+        return {
+          ...base,
+          action: 'ALREADY_COMPLETED',
+          recipientCount: 0,
+          completedAt: existingCycle.completedAt,
+          revisionNumber,
+          message: 'No hay gastos nuevos ni modificados desde el último recordatorio. No se reenvía nada.'
+        };
+      }
+
+      // Migración segura del ciclo que ya estaba completado antes de v1.3.6:
+      // el primer click manual abre UNA revisión y desde allí queda fingerprint persistente.
+      archiveCompletedRevision(existingCycle);
+      revisionNumber += 1;
+      existingCycle.revisionNumber = revisionNumber;
+      existingCycle.recipients = {};
+      existingCycle.completedAt = null;
+      existingCycle.expenseFingerprint = currentExpenseFingerprint;
+      existingCycle.revisionOpenedAt = nowIso();
+      existingCycle.revisionReason = previousExpenseFingerprint ? 'EXPENSES_CHANGED' : 'LEGACY_BASELINE_REFRESH';
+      store.write(state);
+    }
+
+    if (!data) data = await fetchPublicData();
+    if (!recipients) recipients = buildRecipients(data, plan.cycle, plan.parts, revisionNumber);
+    const cs = cycleState(state, plan.cycle.id);
+    cs.revisionNumber = Math.max(Number(cs.revisionNumber || 0), revisionNumber);
+    cs.expenseFingerprint ||= expenseFingerprint(data);
+
+    if (MODE === 'real' && cs.blockedAt) {
+      return { ...base, action: 'CYCLE_BLOCKED_INCIDENT', recipientCount: Number(cs.lastRecipientCount || recipients.length || 0), blockedAt: cs.blockedAt, blockReason: cs.blockReason || 'INCIDENT_BLOCK', deliveryHold: false, message: 'El ciclo vigente está bloqueado por un incidente administrativo. No se envía nada.' };
+    }
+
+    // Toda cola anterior queda obsoleta en cuanto existe un ciclo más reciente.
+    for (const [id, old] of Object.entries(state.cycles || {})) {
+      if (id !== plan.cycle.id && !old.completedAt && id < plan.cycle.id) old.supersededAt ||= nowIso();
+    }
+
+    if (MODE === 'simulation') {
+      if (!cs.simulatedAt || forcePlan) cs.simulatedAt = nowIso();
+      cs.lastRecipientCount = recipients.length;
+      store.write(state);
+      return { ...base, action: 'SIMULATION', recipientCount: recipients.length, recipients, note: 'No se abrió WhatsApp ni se envió ningún mensaje.' };
+    }
+
+    const results = [];
+    let fatalSessionCodeV137 = null;
+    const liveHouses = new Set(recipients.map(r => r.house));
+    for (const [house, rec] of Object.entries(cs.recipients || {})) {
+      if (!liveHouses.has(Number(house)) && !rec.confirmedAt) {
+        rec.skippedAt = nowIso(); rec.status = 'SKIPPED_NO_LONGER_PENDING';
+      }
+    }
+
+    for (const plannedRecipient of recipients) {
+      const key = String(plannedRecipient.house);
+      cs.recipients[key] ||= { status: 'PENDING', attempts: 0, messageHash: plannedRecipient.messageHash };
+      const rec = cs.recipients[key];
+
+      if (rec.confirmedAt) {
+        results.push({ house: plannedRecipient.house, status: 'ALREADY_CONFIRMED' });
+        continue;
+      }
+
+      // AT-MOST-ONCE POR PROPIETARIO:
+      // cualquier evidencia de despacho bloquea SOLO esta casa durante el ciclo.
+      // Las demás casas continúan y un PRE-DISPATCH fallido puede recuperarse
+      // en la revisión de las 18:00.
+      if (rec.dispatchAttemptedAt) {
+        rec.status = 'DISPATCHED_UNVERIFIED';
+        rec.lastCheckedAt = nowIso();
+        rec.quarantinedAt ||= nowIso();
+        rec.quarantineReason ||= rec.lastError || 'PREVIOUS_DISPATCH_UNVERIFIED';
+        store.write(state);
+        results.push({
+          house: plannedRecipient.house,
+          status: 'ALREADY_QUARANTINED',
+          dispatchAttemptedAt: rec.dispatchAttemptedAt,
+          quarantinedAt: rec.quarantinedAt,
+          safety: 'AT_MOST_ONCE_OWNER_BLOCK'
+        });
+        continue;
+      }
+
+      if (rec.attempts >= MAX_ATTEMPTS && rec.status === 'ERROR') {
+        results.push({ house: plannedRecipient.house, status: 'MAX_ATTEMPTS' });
+        continue;
+      }
+
+      const livePlan = activeCycle(new Date());
+      if (!livePlan.allowed || !livePlan.cycle || livePlan.cycle.id !== plan.cycle.id) {
+        results.push({ house: plannedRecipient.house, status: 'STOPPED_WINDOW_OR_CYCLE_CHANGED' });
+        break;
+      }
+
+      let recipient = plannedRecipient;
+      try {
+        const liveData = await fetchPublicData();
+        const liveRecipients = buildRecipients(liveData, plan.cycle, livePlan.parts, revisionNumber);
+        const fresh = liveRecipients.find(r => r.house === plannedRecipient.house);
+
+        if (!fresh) {
+          rec.skippedAt = nowIso();
+          rec.status = 'SKIPPED_NO_LONGER_PENDING';
+          rec.lastCheckedAt = nowIso();
+          store.write(state);
+          results.push({ house: plannedRecipient.house, status: rec.status });
+          continue;
+        }
+
+        recipient = fresh;
+      } catch (error) {
+        rec.status = 'REVALIDATION_ERROR';
+        rec.lastError = safeError(error);
+        rec.lastCheckedAt = nowIso();
+        store.write(state);
+        results.push({ house: plannedRecipient.house, status: rec.status, error: rec.lastError });
+        continue;
+      }
+
+      rec.messageHash = recipient.messageHash;
+      rec.messageReference = recipient.messageReference;
+      rec.owner = recipient.owner;
+      rec.phone = recipient.phone;
+      rec.total = recipient.total;
+
+      rec.attempts += 1;
+      rec.lastAttemptAt = nowIso();
+      rec.status = 'PREPARING';
+      store.write(state);
+      try {
+        const outcome = await sendVerified(recipient.phone, recipient.message, {
+          beforeDispatch: async () => {
+            rec.dispatchAttemptedAt ||= nowIso();
+            rec.dispatchMessageHash = recipient.messageHash;
+            rec.status = 'DISPATCHING';
+            store.write(state);
+          }
+        });
+        if (outcome.reconciled && !rec.dispatchAttemptedAt) {
+          rec.dispatchAttemptedAt = nowIso();
+          rec.dispatchMessageHash = recipient.messageHash;
+          rec.dispatchEvidence = 'existing-bubble';
+        }
+        rec.lastOutcome = outcome; rec.lastCheckedAt = nowIso();
+        if (outcome.ok) {
+          rec.status = 'SENT_CONFIRMED'; rec.confirmedAt = nowIso(); rec.lastError = null;
+        } else if (rec.dispatchAttemptedAt) {
+          rec.status = 'DISPATCHED_UNVERIFIED';
+          rec.lastError = outcome.code || `ACK_${String(outcome.ack || 'UNKNOWN').toUpperCase()}`;
+          rec.quarantinedAt ||= nowIso();
+          rec.quarantineReason = rec.lastError;
+        } else if (outcome.code === 'AUTH_REQUIRED') {
+          rec.status = 'AUTH_REQUIRED'; rec.lastError = outcome.code;
+        } else {
+          rec.status = 'ERROR'; rec.lastError = outcome.code || 'PRE_DISPATCH_ERROR';
+        }
+        results.push({ house: recipient.house, status: rec.status, outcome });
+      } catch (error) {
+        rec.lastCheckedAt = nowIso(); rec.lastError = safeError(error);
+        if (rec.dispatchAttemptedAt) {
+          rec.status = 'DISPATCHED_UNVERIFIED';
+          rec.quarantinedAt ||= nowIso();
+          rec.quarantineReason = rec.lastError || 'POST_DISPATCH_EXCEPTION';
+        } else { rec.status = 'ERROR'; }
+        results.push({ house: recipient.house, status: rec.status, error: rec.lastError });
+      }
+      store.write(state);
+      const fatalSessionCode = [
+        'BROWSER_DATABASE_ERROR',
+        'AUTH_REQUIRED',
+        'SESSION_NOT_READY',
+        'WHATSAPP_NAVIGATION_FAILED'
+      ].find(code => String(rec.lastError || rec.lastOutcome?.code || '').includes(code));
+      if (!rec.dispatchAttemptedAt && fatalSessionCode) {
+        fatalSessionCodeV137 = fatalSessionCode;
+        cs.lastSessionAbortAt = nowIso();
+        cs.lastSessionAbortCode = fatalSessionCode;
+        store.write(state);
+        break;
+      }
+      await sleep(BETWEEN_MESSAGES_MS);
+    }
+
+    const relevant = recipients.filter(r => !cs.recipients?.[String(r.house)]?.skippedAt);
+    if (relevant.length && relevant.every(r => {
+      const rr = cs.recipients?.[String(r.house)];
+      return !!(rr?.confirmedAt || rr?.dispatchAttemptedAt);
+    })) {
+      cs.completedAt ||= nowIso();
+    }
+    if (!recipients.length) cs.completedAt ||= nowIso();
+    const confirmedCount = results.filter(r =>
+      r.status === 'SENT_CONFIRMED' || r.status === 'ALREADY_CONFIRMED'
+    ).length;
+    const quarantinedCount = results.filter(r =>
+      r.status === 'DISPATCHED_UNVERIFIED' || r.status === 'ALREADY_QUARANTINED'
+    ).length;
+    const recoverablePreDispatchCount = results.filter(r => {
+      const rr = cs.recipients?.[String(r.house)];
+      return !rr?.dispatchAttemptedAt && (r.status === 'ERROR' || r.status === 'AUTH_REQUIRED');
+    }).length;
+
+    store.write(state);
+    return {
+      ...base,
+      action: 'REAL_RUN',
+      recipientCount: recipients.length,
+      confirmedCount,
+      quarantinedCount,
+      recoverablePreDispatchCount,
+      fatalPreDispatchCode: fatalSessionCodeV137,
+      results,
+      completedAt: cs.completedAt,
+      revisionNumber: Number(cs.revisionNumber || 0),
+      expenseFingerprintStored: true,
+      deliveryHold: false
+    };
+  });
+}
+
+// VLA_DIAGNOSTIC_NO_SEND_V134
+async function diagnosticDeliveryV134() {
+  return serial('browser', async () => {
+    const plan = activeCycle(new Date());
+    if (!plan.cycle) throw new Error('No existe ciclo vigente para diagnosticar.');
+    const data = await fetchPublicData();
+    const recipients = buildRecipients(data, plan.cycle, plan.parts);
+    const state = store.read();
+    const cs = state.cycles?.[plan.cycle.id];
+    if (!cs) throw new Error(`No existe state para el ciclo ${plan.cycle.id}.`);
+    const { context, page } = await ensureBrowser();
+    const protectedQuarantines = [];
+    const staged = [];
+
+    for (const recipient of recipients) {
+      const rec = cs.recipients?.[String(recipient.house)];
+      if (!rec || rec.confirmedAt || !rec.dispatchAttemptedAt) continue;
+      protectedQuarantines.push({
+        house: recipient.house,
+        dispatchAttemptedAt: rec.dispatchAttemptedAt,
+        protectedAgainstResend: true
+      });
+    }
+
+    for (const recipient of recipients) {
+      const rec = cs.recipients?.[String(recipient.house)];
+      if (!rec || rec.confirmedAt || rec.dispatchAttemptedAt || rec.skippedAt) continue;
+      const composer = await openConversationV134(page, recipient.phone);
+      if (!composer) {
+        staged.push({ house: recipient.house, ok: false, code: 'NO_COMPOSER' });
+        continue;
+      }
+      const result = await stageComposerV134(page, composer, recipient.message);
+      await clearComposerV134(composer);
+      staged.push({
+        house: recipient.house,
+        ok: result.ok,
+        code: result.code || 'STAGED_AND_CLEARED',
+        method: result.method || null,
+        targetHash: result.targetHash || null,
+        actualHash: result.actualHash || null,
+        reference: recipient.messageReference
+      });
+      await sleep(1000);
+    }
+
+    // Prueba aislada del detector nuevo. Incluye un señuelo dentro del footer:
+    // el detector debe ignorarlo y elegir la referencia del historial saliente.
+    const syntheticReference = 'VLA-209912312359-C99';
+    const syntheticMessage = `Prueba local sin envío\n\nReferencia de envío: ${syntheticReference}`;
+    const syntheticPage = await context.newPage();
+    let synthetic = null;
+    try {
+      await syntheticPage.setContent(`
+        <main>
+          <div data-id="true_local_test">
+            <span>Prueba local sin envío</span>
+            <span>Referencia de envío: ${syntheticReference}</span>
+            <span data-icon="msg-check"></span>
+          </div>
+        </main>
+        <footer><div role="textbox">Referencia de envío: ${syntheticReference}</div></footer>
+      `);
+      const match = await matchingOutgoingBubble(syntheticPage, syntheticMessage);
+      synthetic = {
+        ok: !!match,
+        ack: await bubbleAckState(match?.bubble),
+        matchedBy: match?.matchedBy || null,
+        selectorSource: match?.selectorSource || null
+      };
+    } finally {
+      await syntheticPage.close().catch(() => {});
+    }
+
+    return {
+      ok: protectedQuarantines.every(x => x.protectedAgainstResend) && staged.every(x => x.ok) && synthetic?.ok === true && synthetic?.ack === 'acknowledged',
+      action: 'DIAGNOSTIC_NO_SEND',
+      cycleId: plan.cycle.id,
+      protectedQuarantines,
+      staged,
+      syntheticReferenceDetector: synthetic,
+      messagesSent: 0,
+      stateMutations: 0
+    };
+  });
+}
+
+// VLA_DIAGNOSTIC_RECONCILE_V135
+async function diagnosticReconcileV135() {
+  return serial('browser', async () => {
+    const plan = activeCycle(new Date());
+    if (!plan.cycle) throw new Error('No existe ciclo vigente para reconciliar.');
+    const data = await fetchPublicData();
+    const recipients = buildRecipients(data, plan.cycle, plan.parts);
+    const state = store.read();
+    const cs = state.cycles?.[plan.cycle.id];
+    if (!cs) throw new Error(`No existe state para el ciclo ${plan.cycle.id}.`);
+    const { page } = await ensureBrowser();
+    const results = [];
+
+    for (const recipient of recipients) {
+      const rec = cs.recipients?.[String(recipient.house)];
+      if (!rec?.dispatchAttemptedAt || rec.confirmedAt || !rec.messageReference) continue;
+      const composer = await openConversationV134(page, recipient.phone);
+      if (!composer) {
+        results.push({ house: recipient.house, found: false, ack: 'no_composer', reference: rec.messageReference });
+        continue;
+      }
+      const match = await matchingOutgoingBubble(page, recipient.message);
+      results.push({
+        house: recipient.house,
+        found: !!match,
+        ack: await bubbleAckState(match?.bubble),
+        matchedBy: match?.matchedBy || null,
+        selectorSource: match?.selectorSource || null,
+        dataIdPresent: match?.dataIdPresent === true,
+        reference: rec.messageReference
+      });
+      await sleep(750);
+    }
+
+    return {
+      ok: results.length > 0 && results.every(item => item.found && item.ack === 'acknowledged'),
+      action: 'DIAGNOSTIC_RECONCILE_V135',
+      cycleId: plan.cycle.id,
+      results,
+      messagesSent: 0,
+      stateMutations: 0
+    };
+  });
+}
+
+// VLA_READINESS_ENDPOINT_V137: liveness != capacidad real de enviar.
+app.get('/readiness', async (req,res) => {
+  if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
+  try {
+    const readiness = await serial('browser', async () => {
+      const { page } = await ensureBrowser();
+      const navigate = !String(page.url()).startsWith('https://web.whatsapp.com');
+      return sessionReadinessV137({ navigate });
+    });
+    // HTTP 200 significa que el probe respondió. `ready` es la verdad operativa.
+    res.json({ ok:true, ...readiness });
+  } catch (error) {
+    res.status(200).json({
+      ok:true, healthy:false, ready:false, loggedIn:null, code:'READINESS_PROBE_FAILED',
+      status:'down', observedAt:nowIso(), detail:safeError(error)
+    });
+  }
+});
+
+app.get('/health', (_req,res) => {
+  const p = zonedParts(new Date());
+  res.json({ ok: true, service: 'vla-whatsapp-agent', version: '1.4.2', mode: MODE, caracas: p, stateFile: STATE_FILE, capabilities: { relink: true, diagnosticNoSendV134: true, uniqueDeliveryReference: true, referenceReconciliationV135: true, financialRevisionV136: true, informationalBroadcastV1: true, monthlyGateRestrictionNoticeV1: true } });
+});
+app.get('/schedule/:year/:month', (req,res) => {
+  res.json({ year:Number(req.params.year), month:Number(req.params.month), schedule:scheduleSummary(Number(req.params.year),Number(req.params.month)) });
+});
+app.get('/state', (_req,res) => res.json(store.read()));
+app.post('/tick', async (req,res) => {
+  if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
+  try { res.json(await tick({ forcePlan: req.body?.forcePlan === true, financialRevision: req.body?.financialRevision === true })); }
+  catch (error) { res.status(500).json({ ok:false, error:safeError(error) }); }
+});
+app.post('/restriction-notice', async (req,res) => {
+  if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
+  try { res.json(await restrictionNotice({ preview:req.body?.preview === true })); }
+  catch (error) { res.status(500).json({ ok:false, error:safeError(error) }); }
+});
+app.post('/broadcast', async (req,res) => {
+  if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
+  try { res.json(await broadcast(req.body || {})); }
+  catch (error) { res.status(500).json({ ok:false, error:safeError(error) }); }
+});
+app.post('/diagnostic/reconcile-v135', async (req,res) => {
+  if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente invalido o ausente.' });
+  try { res.json(await diagnosticReconcileV135()); }
+  catch (error) { res.status(500).json({ ok:false, action:'DIAGNOSTIC_RECONCILE_V135', error:safeError(error), messagesSent:0, stateMutations:0 }); }
+});
+app.post('/diagnostic/delivery-v134', async (req,res) => {
+  if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
+  try { res.json(await diagnosticDeliveryV134()); }
+  catch (error) { res.status(500).json({ ok:false, action:'DIAGNOSTIC_NO_SEND', error:safeError(error), messagesSent:0 }); }
+});
+app.post('/session/warmup', async (req,res) => {
+  if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
+  try { res.json(await serial('browser', ()=>sessionStatus({ navigate:true }))); }
+  catch (error) { res.status(500).json({ ok:false, error:safeError(error) }); }
+});
+app.post('/session/link/start', async (req,res) => {
+  if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
+  try { res.json(await serial('browser', ()=>linkSessionStatus({ start:true }))); }
+  catch (error) { res.status(500).json({ ok:false, error:safeError(error) }); }
+});
+app.post('/session/link/phone/start', async (req,res) => {
+  if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
+  try { res.json(await phoneLinkStartV141(req.body?.phone || '')); }
+  catch (error) { res.status(500).json({ ok:false, error:safeError(error) }); }
+});
+app.get('/session/link/status', async (req,res) => {
+  if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
+  try { res.json(await serial('browser', ()=>linkSessionStatus({ start:false }))); }
+  catch (error) { res.status(500).json({ ok:false, error:safeError(error) }); }
+});
+app.post('/session/link/cancel', async (req,res) => {
+  if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
+  linkState.active = false;
+  linkState.lastStatus = 'cancelled';
+  res.json({ status:'cancelled', loggedIn:false, qrVisible:false, startedAt:linkState.startedAt, observedAt:nowIso() });
+});
+
+app.post('/session/link/phone/submit-v141', async (req,res) => {
+  if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
+  try { res.json(await submitPhoneLinkV141(req.body?.phone || '')); }
+  catch (error) { res.status(500).json({ ok:false, error:safeError(error) }); }
+});
+
+app.post('/session/link/qr/export-v141', async (req,res) => {
+  if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
+  try { res.json(await exportRawQrV141()); }
+  catch (error) { res.status(500).json({ ok:false, error:safeError(error) }); }
+});
+
+app.post('/session/link/qr/open-v141', async (req,res) => {
+  if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
+  try { res.json(await returnToQrV141()); }
+  catch (error) { res.status(500).json({ ok:false, error:safeError(error) }); }
+});
+
+app.post('/session/link/phone/open-v141', async (req,res) => {
+  if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
+  try { res.json(await openPhoneLinkV141()); }
+  catch (error) { res.status(500).json({ ok:false, error:safeError(error) }); }
+});
+
+app.get('/session/debug-v141', async (req,res) => {
+  if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
+  try { res.json(await browserDebugV141()); }
+  catch (error) { res.status(500).json({ ok:false, error:safeError(error) }); }
+});
+
+app.get('/session/screenshot', async (_req,res) => {
+  try {
+    const { page } = await ensureBrowser();
+    const buffer = await page.screenshot({ type:'png', fullPage:false });
+    res.type('png').send(buffer);
+  } catch (error) { res.status(500).json({ ok:false, error:safeError(error) }); }
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`VLA WhatsApp Agent v1.4.2 escuchando en :${PORT} · modo=${MODE}`);
+  // Recuperación extraordinaria solo al arrancar en modo REAL. No es polling.
+  // Si la Mac estuvo apagada y vuelve dentro de la ventana permitida, intenta retomar
+  // únicamente el ciclo vigente; la idempotencia evita repetir casas ya confirmadas.
+  if (MODE === 'real' && String(process.env.WA_STARTUP_RECOVERY || 'true').toLowerCase() !== 'false') {
+    setTimeout(() => {
+      tick({ forcePlan: false })
+        .then(r => console.log(`startup-recovery action=${r.action} cycle=${r.cycle?.id || 'none'}`))
+        .catch(e => console.error(`startup-recovery error=${safeError(e)}`));
+    }, 15000);
+  }
+});
+
+async function shutdown() {
+  try { if (context) await context.close(); } catch {}
+  process.exit(0);
+}
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
