@@ -57,4 +57,4 @@ export default async (_request,context)=>{
   console.log(`VLA_CLOSE_WATCHDOG_QUEUED month=${closingMonth} priorState=${decision.state}`);
 };
 
-export const config={schedule:'* 4 1 * *'};
+export const config={schedule:'*/5 * 1 * *'};
