@@ -1,5 +1,3 @@
-[Reading 962 lines from start (total: 962 lines, 0 remaining)]
-
 'use strict';
 const VLAHttp = require('node:http'); // VLA_NODE_HTTP_TRANSPORT_V134
 const VLAHttps = require('node:https');
@@ -962,5 +960,3 @@ module.exports = {
   createControllerState,
   startServer
 };
-
-[executed on device: Mac-mini-de-Enzo (909fb371-3e1b-4735-8ad5-672c084a9358)]
