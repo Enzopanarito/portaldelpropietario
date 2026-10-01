@@ -29,16 +29,20 @@
     if(!select){select=document.createElement('select');select.id='expense-month';select.className='w-full p-3 border rounded-lg'}
     if(!field){field=document.createElement('div');field.id='expense-month-field';select.parentNode?.insertBefore(field,select);if(!select.parentNode)frequency.before(field);field.appendChild(select)}
     if(!field.querySelector('label'))field.insertAdjacentHTML('afterbegin','<label class="block text-sm font-semibold mb-1" for="expense-month">Mes del gasto</label>');
-    const current=currentMonth(),following=nextMonth(current);
-    select.innerHTML=`<option value="current">Mes actual · ${titleMonth(current)}</option><option value="next">Precargar mes siguiente · ${titleMonth(following)}</option>`;
+    const current=currentMonth(),following=nextMonth(current),previous=select.value==='next'?'next':'current';
+    if(select.dataset.vlaCurrentMonth!==current){
+      select.innerHTML=`<option value="current">Mes actual · ${titleMonth(current)}</option><option value="next">Precargar mes siguiente · ${titleMonth(following)}</option>`;
+      select.dataset.vlaCurrentMonth=current;select.value=previous;
+    }
     let destination=document.getElementById('expense-month-destination');if(!destination){destination=document.createElement('p');destination.id='expense-month-destination';destination.className='text-xs text-slate-500 mt-1';destination.setAttribute('aria-live','polite');field.appendChild(destination)}
     select.removeEventListener('change',updateMonthDestination);select.addEventListener('change',updateMonthDestination);updateMonthDestination();
   }
 
   function installForm(){
     const form=document.getElementById('expense-form'),frequency=document.getElementById('expense-frequency');
-    if(!form||!frequency||document.getElementById('expense-repeat-monthly'))return;
+    if(!form||!frequency)return;
     installMonthField(frequency);
+    if(document.getElementById('expense-repeat-monthly'))return;
     frequency.classList.add('hidden');frequency.setAttribute('aria-hidden','true');
     const recurringBox=document.createElement('label');recurringBox.className='flex items-start gap-3 p-3 rounded-xl border bg-slate-50 cursor-pointer';
     recurringBox.innerHTML=`<input id="expense-repeat-monthly" type="checkbox" class="mt-1"><span><b>Repetir automáticamente cada mes</b><small class="block text-slate-500 mt-1">El monto podrá ajustarse en la precarga. Anular un mes no elimina la repetición futura.</small></span>`;
@@ -108,12 +112,16 @@
     }catch(error){announce(error.message||'No se pudo actualizar el gasto.',true)}finally{button.disabled=false;button.textContent=original}
   }
 
+  function syncMonthUi(){installForm();renderOverview()}
   const originalRender=typeof renderExpenses==='function'?renderExpenses:null;
   if(originalRender){
-    const enhancedRender=function(){const result=originalRender.apply(this,arguments);decorateRows();return result};
+    const enhancedRender=function(){const result=originalRender.apply(this,arguments);installForm();decorateRows();return result};
     window.renderExpenses=enhancedRender;
     try{renderExpenses=enhancedRender}catch(_){/* el binding global puede no ser reasignable en navegadores antiguos */}
   }
   installForm();installOverview();decorateRows();
+  window.addEventListener('focus',syncMonthUi);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncMonthUi()});
+  setInterval(syncMonthUi,60000);
   const body=document.getElementById('expenses-body');if(body)body.addEventListener('click',handleClick);
 })();
