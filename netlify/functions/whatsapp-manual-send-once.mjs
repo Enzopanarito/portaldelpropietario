@@ -327,7 +327,7 @@ export default async () => {
       const restoreMode = original.mode === 'manual' ? 'manual' : 'automatic';
       await relay('set-config', {
         mode: restoreMode,
-        schedules: Array.isArray(original.schedules) && original.schedules.length ? original.schedules : ['09:00','18:00'],
+        schedules: Array.isArray(original.schedules) && original.schedules.length ? original.schedules : ['09:00'],
         warmupMinutes: Number.isInteger(Number(original.warmupMinutes)) ? Number(original.warmupMinutes) : 5
       });
       const finalStatus = controllerSummary(await relay('status'));
