@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
 const { activeCycle, scheduleSummary, zonedParts } = require('./lib/schedule');
-const { buildMessage, normalizeRenderedMessage, messageAnchors } = require('./lib/message');
+const { buildMessage, buildRestrictionMessage, expiredDebt, normalizeRenderedMessage, messageAnchors } = require('./lib/message');
 const { normalizeBroadcastPayload, summarizeBroadcast } = require('./lib/broadcast');
 const { StateStore } = require('./lib/state');
 
@@ -330,6 +330,208 @@ async function linkSessionStatus({ start = false } = {}) {
     startedAt: linkState.startedAt,
     observedAt: nowIso()
   };
+}
+
+
+async function phoneLinkStartV141(phoneRaw = '') {
+  return serial('browser', async () => {
+    const { page } = await ensureBrowser();
+    if (!String(page.url()).startsWith('https://web.whatsapp.com')) {
+      await page.goto('https://web.whatsapp.com/', { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(()=>{});
+    }
+    const phone = String(phoneRaw || '').replace(/[^0-9+]/g, '');
+    if (!phone || phone.replace(/\D/g, '').length < 8) throw new Error('Número de teléfono inválido.');
+
+    const linkByPhone = await firstVisible([
+      page.getByRole('button', { name:/link with phone number instead|vincular con el n[uú]mero de tel[eé]fono/i }),
+      page.locator('[role="button"]').filter({ hasText:/link with phone number instead|vincular con el n[uú]mero de tel[eé]fono/i }),
+      page.getByRole('button', { name:/log in with phone number|iniciar sesi[oó]n con n[uú]mero de tel[eé]fono/i })
+    ], 8000);
+    if (!linkByPhone) {
+      const shot = screenshotPath('phone-link-option-missing');
+      await page.screenshot({ path: shot, fullPage: false }).catch(()=>{});
+      return { ok:false, code:'PHONE_LINK_OPTION_MISSING', screenshot:shot, bodyText:(await page.locator('body').innerText().catch(()=>'' )).slice(0,4000) };
+    }
+    const shortcut = page.locator('[data-testid="link_device_qr_phone_number_shortcut_link"]').first();
+    if (await shortcut.count().catch(()=>0)) {
+      await shortcut.evaluate(el => el.click());
+    } else {
+      await linkByPhone.evaluate(el => el.click());
+    }
+    await page.waitForTimeout(1200);
+
+    const input = await firstVisible([
+      page.locator('input[type="tel"]'),
+      page.locator('input[type="text"]'),
+      page.locator('input[aria-label*="phone" i]'),
+      page.locator('input[aria-label*="tel" i]'),
+      page.locator('input').last()
+    ], 8000);
+    if (!input) {
+      const shot = screenshotPath('phone-link-input-missing');
+      await page.screenshot({ path: shot, fullPage: false }).catch(()=>{});
+      return { ok:false, code:'PHONE_LINK_INPUT_MISSING', screenshot:shot, bodyText:(await page.locator('body').innerText().catch(()=>'' )).slice(0,4000) };
+    }
+    await input.fill(phone);
+    await page.waitForTimeout(500);
+
+    const next = await firstVisible([
+      page.getByRole('button', { name:/next|siguiente/i }),
+      page.locator('button').filter({ hasText:/next|siguiente/i })
+    ], 5000);
+    if (next) await next.click();
+    else await input.press('Enter').catch(()=>{});
+
+    await page.waitForTimeout(2500);
+    const shot = screenshotPath('phone-link-code');
+    await page.screenshot({ path: shot, fullPage: false }).catch(()=>{});
+    const bodyText = await page.locator('body').innerText().catch(()=>'');
+    return { ok:true, code:'PHONE_LINK_FLOW_OPEN', screenshot:shot, bodyText:String(bodyText).slice(0,6000), observedAt:nowIso() };
+  });
+}
+
+
+
+async function openPhoneLinkV141() {
+  const { page } = await ensureBrowser();
+  if (!String(page.url()).startsWith('https://web.whatsapp.com')) {
+    await page.goto('https://web.whatsapp.com/', { waitUntil:'domcontentloaded', timeout:15000 }).catch(()=>{});
+  }
+  await page.waitForTimeout(1000);
+  const clicked = await page.evaluate(() => {
+    const rx = /^(iniciar sesi[oó]n con n[uú]mero de tel[eé]fono|log in with phone number)$/i;
+    const all = [...document.querySelectorAll('button,a,[role="button"],div,span')];
+    const matches = all.filter(el => rx.test((el.textContent || '').trim()));
+    matches.sort((a,b) => (a.textContent||'').trim().length - (b.textContent||'').trim().length);
+    const el = matches[0];
+    if (!el) return { clicked:false };
+    const target = el.closest('button,a,[role="button"]') || el;
+    target.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,view:window}));
+    target.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true,view:window}));
+    target.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));
+    return { clicked:true, tag:target.tagName, role:target.getAttribute('role'), text:(target.textContent||'').trim().slice(0,300) };
+  });
+  await page.waitForTimeout(1800);
+  const bodyText = await page.locator('body').innerText({timeout:3000}).catch(()=>'');
+  const inputs = await page.locator('input').evaluateAll(els => els.map((e,i)=>({
+    i, type:e.getAttribute('type'), aria:e.getAttribute('aria-label'),
+    placeholder:e.getAttribute('placeholder'), value:e.value || ''
+  }))).catch(()=>[]);
+  return { ok:true, clicked, url:page.url(), bodyText:String(bodyText).slice(0,12000), inputs, observedAt:nowIso() };
+}
+
+async function submitPhoneLinkV141(phoneRaw = '') {
+  const { page } = await ensureBrowser();
+  const digits = String(phoneRaw || '').replace(/\D/g, '');
+  if (digits.length < 8) throw new Error('Número inválido.');
+  const national = digits.startsWith('58') ? digits.slice(2) : digits;
+
+  async function clickText(source) {
+    return page.evaluate((rxSource) => {
+      const rx = new RegExp(rxSource, 'i');
+      const all = [...document.querySelectorAll('button,a,[role="button"],div,span')];
+      const matches = all.filter(el => rx.test((el.textContent || '').trim()));
+      matches.sort((a,b) => (a.textContent || '').trim().length - (b.textContent || '').trim().length);
+      const el = matches[0];
+      if (!el) return false;
+      const target = el.closest('button,a,[role="button"]') || el;
+      target.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,view:window}));
+      target.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true,view:window}));
+      target.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));
+      return true;
+    }, source);
+  }
+
+  if (await clickText('^(Estados Unidos|United States)$')) {
+    await page.waitForTimeout(700);
+    await clickText('^Venezuela$');
+    await page.waitForTimeout(900);
+  }
+
+  const input = page.locator('input[data-testid="phone-number-input"], input[aria-label*="phone" i], input[type="text"]').first();
+  await input.click({ timeout:5000 });
+  const currentValue = await input.inputValue().catch(()=>'');
+  if (/^\+58\s*$/.test(currentValue)) {
+    await input.press('End').catch(()=>{});
+    await page.keyboard.type(national, { delay:40 });
+  } else {
+    await input.fill('').catch(()=>{});
+    await page.keyboard.type('+58 ' + national, { delay:40 });
+  }
+  await page.waitForTimeout(700);
+  const nextButton = page.getByRole('button', { name:/^(Siguiente|Next)$/i }).first();
+  if (await nextButton.isVisible({ timeout:3000 }).catch(()=>false)) {
+    await nextButton.click({ timeout:5000 });
+  } else {
+    await input.press('Enter').catch(()=>{});
+  }
+  await page.waitForTimeout(2500);
+
+  const bodyText = await page.locator('body').innerText({ timeout:3000 }).catch(()=>'');
+  const shot = screenshotPath('phone-link-code-v141');
+  await page.screenshot({ path:shot, fullPage:false }).catch(()=>{});
+  return { ok:true, bodyText:String(bodyText).slice(0,12000), screenshot:shot, observedAt:nowIso() };
+}
+
+async function exportRawQrV141() {
+  const { page } = await ensureBrowser();
+  const qr = await firstVisible(linkQrLocators(page), 6000);
+  if (!qr) return { ok:false, code:'QR_NOT_VISIBLE', observedAt:nowIso() };
+  const buffer = await qr.screenshot({ type:'png' });
+  const out = path.join(SCREENSHOT_DIR, 'qr-original-v141.png');
+  fs.writeFileSync(out, buffer);
+  return {
+    ok:true,
+    file:out,
+    bytes:buffer.length,
+    sha256:crypto.createHash('sha256').update(buffer).digest('hex'),
+    observedAt:nowIso()
+  };
+}
+
+async function returnToQrV141() {
+  const { page } = await ensureBrowser();
+  const clicked = await page.evaluate(() => {
+    const rx = /(iniciar sesi[oó]n con c[oó]digo qr|log in with qr code|scan qr code)/i;
+    const all = [...document.querySelectorAll('button,a,[role="button"],div,span')];
+    const matches = all.filter(el => rx.test((el.textContent || '').trim()));
+    matches.sort((a,b) => (a.textContent || '').trim().length - (b.textContent || '').trim().length);
+    const el = matches[0];
+    if (!el) return false;
+    const target = el.closest('button,a,[role="button"]') || el;
+    target.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,view:window}));
+    target.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true,view:window}));
+    target.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));
+    return true;
+  });
+  await page.waitForTimeout(1800);
+  const bodyText = await page.locator('body').innerText({timeout:3000}).catch(()=>'');
+  return { ok:true, clicked, bodyText:String(bodyText).slice(0,6000), observedAt:nowIso() };
+}
+
+async function browserDebugV141() {
+  const { page } = await ensureBrowser();
+  if (!String(page.url()).startsWith('https://web.whatsapp.com')) {
+    await page.goto('https://web.whatsapp.com/', { waitUntil:'domcontentloaded', timeout:15000 }).catch(()=>{});
+  }
+  await page.waitForTimeout(1500);
+  const bodyText = await page.locator('body').innerText({ timeout:3000 }).catch(()=>'');
+  const inputs = await page.locator('input').evaluateAll(els => els.map((e,i)=>({
+    i, type:e.getAttribute('type'), aria:e.getAttribute('aria-label'),
+    placeholder:e.getAttribute('placeholder'), value:e.value || ''
+  }))).catch(()=>[]);
+  const buttons = await page.locator('button').evaluateAll(els => els.slice(0,80).map((e,i)=>({
+    i, text:(e.innerText||'').trim(), aria:e.getAttribute('aria-label'), title:e.getAttribute('title')
+  }))).catch(()=>[]);
+  const roles = await page.locator('[role="button"],[role="combobox"],[aria-haspopup]').evaluateAll(els => els.slice(0,120).map((e,i)=>({
+    i, tag:e.tagName, role:e.getAttribute('role'), aria:e.getAttribute('aria-label'),
+    haspopup:e.getAttribute('aria-haspopup'), text:(e.innerText||e.textContent||'').trim().slice(0,300),
+    cls:String(e.className||'').slice(0,300)
+  }))).catch(()=>[]);
+  const inputContext = await page.locator('input[type="text"]').evaluateAll(els => els.map((e,i)=>({
+    i, value:e.value||'', parent:(e.parentElement?.outerHTML||'').slice(0,2500)
+  }))).catch(()=>[]);
+  return { ok:true, url:page.url(), bodyText:String(bodyText).slice(0,12000), inputs, buttons, roles, inputContext, observedAt:nowIso() };
 }
 
 // VLA_COMPOSER_BUBBLE_V134
@@ -682,6 +884,115 @@ async function fetchPublicData() {
   const data = await response.json();
   if (!Array.isArray(data.propietarios) || data.propietarios.length !== 15) throw new Error(`VLA devolvió ${data.propietarios?.length || 0}/15 casas.`);
   return data;
+}
+
+// VLA_MONTHLY_GATE_RESTRICTION_NOTICE_V1
+function restrictionCycleKey(parts) {
+  return `${parts.year}-${parts.month}-${parts.day}T08:00`;
+}
+function restrictionReference(parts, house) {
+  return `VLA-${parts.year}${parts.month}${parts.day}0800-C${String(Number(house)).padStart(2,'0')}`;
+}
+function restrictionRecipients(data, parts) {
+  const contacts = loadContacts();
+  const owners = [...(data.propietarios || [])].sort((a,b)=>Number(a.Casa)-Number(b.Casa));
+  const recipients = [];
+  for (const owner of owners) {
+    const actual = String(owner['Estado Acceso Portón'] || '').trim();
+    const expected = String(owner.accesoEsperado || '').trim();
+    const debt = expiredDebt(owner);
+    if (actual !== 'Limitado' || expected !== 'Limitado' || debt.total <= 0.009) continue;
+    const contact = contacts.get(Number(owner.Casa));
+    if (!contact?.phone) {
+      recipients.push({ house:Number(owner.Casa), owner:owner.Propietario, phone:null, ...debt, missingPhone:true });
+      continue;
+    }
+    const reference = restrictionReference(parts, owner.Casa);
+    const built = buildRestrictionMessage({ owner, nowParts:parts });
+    const message = `${built.text}\n\nReferencia de envío: ${reference}`;
+    recipients.push({
+      house:Number(owner.Casa), owner:owner.Propietario, phone:contact.phone,
+      message, messageReference:reference, messageHash:sha(message),
+      usd:built.usd, bs:built.bs, total:built.total
+    });
+  }
+  return recipients;
+}
+function assertRestrictionFinancialReady(data, parts) {
+  if (Number(parts.day) !== 1) throw new Error('GATE_NOTICE_NOT_DAY_ONE');
+  const t = data?.accountingTransition || {};
+  if (t.pending !== false || t.previousCloseStatus !== 'DONE' || t.calendarMonth !== t.accountingMonth) {
+    throw new Error(`GATE_NOTICE_FINANCIAL_NOT_READY:${String(t.previousCloseStatus || 'UNKNOWN')}`);
+  }
+}
+async function restrictionNotice({ preview = false } = {}) {
+  return serial('tick', async () => {
+    const parts = zonedParts(new Date());
+    const data = await fetchPublicData();
+    assertRestrictionFinancialReady(data, parts);
+    const recipients = restrictionRecipients(data, parts);
+    if (preview) {
+      return {
+        ok:true, action:'GATE_RESTRICTION_PREVIEW', cycle:restrictionCycleKey(parts),
+        recipientCount:recipients.length,
+        recipients:recipients.map(r=>({house:r.house,owner:r.owner,usd:r.usd,bs:r.bs,total:r.total,messageReference:r.messageReference||null,message:r.message||null,missingPhone:r.missingPhone===true}))
+      };
+    }
+
+    const state = store.read();
+    state.gateRestrictionNotices ||= {};
+    const cycleKey = restrictionCycleKey(parts);
+    const cycle = state.gateRestrictionNotices[cycleKey] ||= { createdAt:nowIso(), status:'RUNNING', recipients:{} };
+    const liveHouses = new Set(recipients.map(r=>r.house));
+    for (const [house, rec] of Object.entries(cycle.recipients || {})) {
+      if (!liveHouses.has(Number(house)) && !rec.dispatchAttemptedAt && !rec.confirmedAt) {
+        rec.status='SKIPPED_NO_LONGER_RESTRICTED'; rec.completedAt=nowIso();
+      }
+    }
+
+    const results=[];
+    for (const planned of recipients) {
+      const key=String(planned.house);
+      const rec=cycle.recipients[key] ||= {status:'PENDING',attempts:0,messageHash:planned.messageHash||null,messageReference:planned.messageReference||null};
+      if (rec.confirmedAt) { results.push({house:planned.house,status:'ALREADY_CONFIRMED'}); continue; }
+      if (rec.dispatchAttemptedAt) { rec.status='ALREADY_QUARANTINED'; results.push({house:planned.house,status:rec.status}); continue; }
+      if (planned.missingPhone || !planned.phone) { rec.status='NO_PHONE'; rec.completedAt=nowIso(); results.push({house:planned.house,status:rec.status}); store.write(state); continue; }
+      if (rec.messageHash && rec.messageHash !== planned.messageHash) {
+        // Antes del click, una variación financiera puede refrescar el mensaje de forma segura.
+        rec.messageHash=planned.messageHash; rec.messageReference=planned.messageReference; rec.replannedAt=nowIso();
+      }
+      rec.attempts += 1;
+      try {
+        const outcome=await sendVerified(planned.phone, planned.message, {
+          beforeDispatch:async()=>{rec.dispatchAttemptedAt=nowIso();rec.status='DISPATCHING';store.write(state);}
+        });
+        if (outcome.reconciled && !rec.dispatchAttemptedAt) rec.dispatchAttemptedAt=nowIso();
+        if (outcome.ok) {rec.status='SENT_CONFIRMED';rec.confirmedAt=nowIso();rec.ack=outcome.ack||'acknowledged';}
+        else if (rec.dispatchAttemptedAt) {rec.status='DISPATCHED_UNVERIFIED';rec.lastError=safeError(outcome.code||outcome.ack||'Sin confirmación');}
+        else {rec.status=outcome.code==='AUTH_REQUIRED'?'AUTH_REQUIRED':'ERROR_PRE_DISPATCH';rec.lastError=safeError(outcome.code||'No enviado');}
+        results.push({house:planned.house,status:rec.status,ack:rec.ack||outcome.ack||null,reference:planned.messageReference});
+      } catch(error) {
+        rec.lastError=safeError(error);
+        rec.status=rec.dispatchAttemptedAt?'DISPATCHED_UNVERIFIED':'ERROR_PRE_DISPATCH';
+        results.push({house:planned.house,status:rec.status,error:rec.lastError,reference:planned.messageReference});
+      }
+      store.write(state);
+      await sleep(BETWEEN_MESSAGES_MS);
+    }
+    const values=Object.values(cycle.recipients||{});
+    const confirmedCount=values.filter(x=>x.confirmedAt).length;
+    const quarantinedCount=values.filter(x=>x.dispatchAttemptedAt&&!x.confirmedAt).length;
+    const failedSafeCount=values.filter(x=>!x.dispatchAttemptedAt&&['ERROR_PRE_DISPATCH','AUTH_REQUIRED','NO_PHONE'].includes(x.status)).length;
+    const pendingCount=values.filter(x=>['PENDING','DISPATCHING'].includes(x.status)).length;
+    cycle.status = recipients.length===0 ? 'NO_RESTRICTIONS'
+      : confirmedCount===recipients.length ? 'COMPLETED'
+      : quarantinedCount ? 'COMPLETED_WITH_QUARANTINE'
+      : (failedSafeCount||pendingCount) ? 'PARTIAL_FAILED_SAFE' : 'COMPLETED';
+    cycle.completedAt=nowIso();
+    cycle.lastRecipientCount=recipients.length;
+    store.write(state);
+    return {ok:true,action:'GATE_RESTRICTION_NOTICE',cycle:cycleKey,status:cycle.status,recipientCount:recipients.length,confirmedCount,quarantinedCount,failedSafeCount,pendingCount,results};
+  });
 }
 
 // VLA_INFORMATIONAL_BROADCAST_V1
@@ -1195,7 +1506,7 @@ app.get('/readiness', async (req,res) => {
 
 app.get('/health', (_req,res) => {
   const p = zonedParts(new Date());
-  res.json({ ok: true, service: 'vla-whatsapp-agent', version: '1.4.1', mode: MODE, caracas: p, stateFile: STATE_FILE, capabilities: { relink: true, diagnosticNoSendV134: true, uniqueDeliveryReference: true, referenceReconciliationV135: true, financialRevisionV136: true, informationalBroadcastV1: true } });
+  res.json({ ok: true, service: 'vla-whatsapp-agent', version: '1.4.2', mode: MODE, caracas: p, stateFile: STATE_FILE, capabilities: { relink: true, diagnosticNoSendV134: true, uniqueDeliveryReference: true, referenceReconciliationV135: true, financialRevisionV136: true, informationalBroadcastV1: true, monthlyGateRestrictionNoticeV1: true } });
 });
 app.get('/schedule/:year/:month', (req,res) => {
   res.json({ year:Number(req.params.year), month:Number(req.params.month), schedule:scheduleSummary(Number(req.params.year),Number(req.params.month)) });
@@ -1204,6 +1515,11 @@ app.get('/state', (_req,res) => res.json(store.read()));
 app.post('/tick', async (req,res) => {
   if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
   try { res.json(await tick({ forcePlan: req.body?.forcePlan === true, financialRevision: req.body?.financialRevision === true })); }
+  catch (error) { res.status(500).json({ ok:false, error:safeError(error) }); }
+});
+app.post('/restriction-notice', async (req,res) => {
+  if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
+  try { res.json(await restrictionNotice({ preview:req.body?.preview === true })); }
   catch (error) { res.status(500).json({ ok:false, error:safeError(error) }); }
 });
 app.post('/broadcast', async (req,res) => {
@@ -1231,6 +1547,11 @@ app.post('/session/link/start', async (req,res) => {
   try { res.json(await serial('browser', ()=>linkSessionStatus({ start:true }))); }
   catch (error) { res.status(500).json({ ok:false, error:safeError(error) }); }
 });
+app.post('/session/link/phone/start', async (req,res) => {
+  if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
+  try { res.json(await phoneLinkStartV141(req.body?.phone || '')); }
+  catch (error) { res.status(500).json({ ok:false, error:safeError(error) }); }
+});
 app.get('/session/link/status', async (req,res) => {
   if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
   try { res.json(await serial('browser', ()=>linkSessionStatus({ start:false }))); }
@@ -1243,6 +1564,36 @@ app.post('/session/link/cancel', async (req,res) => {
   res.json({ status:'cancelled', loggedIn:false, qrVisible:false, startedAt:linkState.startedAt, observedAt:nowIso() });
 });
 
+app.post('/session/link/phone/submit-v141', async (req,res) => {
+  if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
+  try { res.json(await submitPhoneLinkV141(req.body?.phone || '')); }
+  catch (error) { res.status(500).json({ ok:false, error:safeError(error) }); }
+});
+
+app.post('/session/link/qr/export-v141', async (req,res) => {
+  if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
+  try { res.json(await exportRawQrV141()); }
+  catch (error) { res.status(500).json({ ok:false, error:safeError(error) }); }
+});
+
+app.post('/session/link/qr/open-v141', async (req,res) => {
+  if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
+  try { res.json(await returnToQrV141()); }
+  catch (error) { res.status(500).json({ ok:false, error:safeError(error) }); }
+});
+
+app.post('/session/link/phone/open-v141', async (req,res) => {
+  if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
+  try { res.json(await openPhoneLinkV141()); }
+  catch (error) { res.status(500).json({ ok:false, error:safeError(error) }); }
+});
+
+app.get('/session/debug-v141', async (req,res) => {
+  if (!tokenOk(req)) return res.status(401).json({ ok:false, message:'Token del agente inválido o ausente.' });
+  try { res.json(await browserDebugV141()); }
+  catch (error) { res.status(500).json({ ok:false, error:safeError(error) }); }
+});
+
 app.get('/session/screenshot', async (_req,res) => {
   try {
     const { page } = await ensureBrowser();
@@ -1252,7 +1603,7 @@ app.get('/session/screenshot', async (_req,res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`VLA WhatsApp Agent v1.4.1 escuchando en :${PORT} · modo=${MODE}`);
+  console.log(`VLA WhatsApp Agent v1.4.2 escuchando en :${PORT} · modo=${MODE}`);
   // Recuperación extraordinaria solo al arrancar en modo REAL. No es polling.
   // Si la Mac estuvo apagada y vuelve dentro de la ventana permitida, intenta retomar
   // únicamente el ciclo vigente; la idempotencia evita repetir casas ya confirmadas.

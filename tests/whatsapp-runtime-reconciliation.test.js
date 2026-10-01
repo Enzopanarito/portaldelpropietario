@@ -54,22 +54,24 @@ test('runtime local canónico habilita AUTOMATIC solo tras cerrar todos los gate
   assert.equal(manifest.scheduler.authority, 'controller');
   assert.equal(manifest.scheduler.legacyNetlifySchedulerEnabled, false);
   assert.equal(manifest.scheduler.legacyN8nSchedulerExpected, false);
+  assert.equal(manifest.scheduler.monthlyGateRestrictionNotice.time, '08:00');
+  assert.equal(manifest.scheduler.monthlyGateRestrictionNotice.normalReminderStillRunsAt, '09:00');
   assert.equal(manifest.securityAssessment.n8nMasterKeyPubliclyExposed, false);
   assert.equal(manifest.securityAssessment.futureCapturesRedactEncryptionKeys, true);
   assert.equal(manifest.activation.automaticAllowed, true);
   assert.deepEqual(manifest.activation.blockedUntil, []);
   assert.equal(
     manifest.runtime.agent.sha256,
-    '7a6bd6a1d0bd6af1244ae57ab017101b114ca7183017aebf2fb3345925c7f050'
+    '79a9eeaef011710d81999ff912e1cd8a7aa59f16ef9c9c87d4a0a1cebd7583fe'
   );
   assert.equal(
     manifest.runtime.controller.sha256,
-    'ce6fa2a322f9decdc2d533caec87ddb73082b97241ed5da6e0e8afcac22e9a42'
+    'fd263ada5e72e90fd8458c48a7750a9df3b7fd66a091627afc9d3713fbbdf203'
   );
-  assert.equal(manifest.runtime.controller.hotfix, 'VLA_MANUAL_CYCLE_TRIGGER_V1');
+  assert.equal(manifest.runtime.controller.hotfix, 'VLA_MONTHLY_GATE_RESTRICTION_NOTICE_V1');
   assert.equal(
     manifest.runtime.messageLibrary.sha256,
-    '021ecea597b23ecacace73baedb08d1171f4b318fae721dce486cb2762867f38'
+    '15aca2bce33e63eb4a38340bd9d162cc59192cb592063dfaded9d838ec4e0465'
   );
 });
 

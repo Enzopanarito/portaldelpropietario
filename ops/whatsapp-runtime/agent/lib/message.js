@@ -182,6 +182,32 @@ function buildMessage({ owner, expenses = [], nowParts, cycle, hint = {} }) {
   };
 }
 
+function expiredDebt(owner = {}) {
+  const usd = money(Math.max(0, Number(owner.deudaVencidaUsd ?? owner['Deuda Vencida USD'] ?? 0)));
+  const bs = money(Math.max(0, Number(owner.deudaVencidaBs ?? owner['Deuda Vencida Bs Ref'] ?? 0)));
+  return { usd, bs, total: money(usd + bs) };
+}
+
+function buildRestrictionMessage({ owner, nowParts }) {
+  const debt = expiredDebt(owner);
+  const d = `${nowParts.day}/${nowParts.month}/${nowParts.year}`;
+  const display = value => fmt(value).replace('.', ',');
+  const debtLines = [];
+  if (debt.usd > 0) debtLines.push(`• *USD:* $${display(debt.usd)}, pagaderos en divisas.`);
+  if (debt.bs > 0) debtLines.push(`• *Bs:* equivalente referencial a $${display(debt.bs)}, pagadero en bolívares a la tasa BCV del día.`);
+  const blocks = [
+    '*Aviso de acceso al portón*',
+    `📅 *Mensaje generado el ${d}*`,
+    `Estimado/a *${owner.Propietario}*,`,
+    'Su acceso al portón eléctrico se encuentra *limitado por deuda vencida*:',
+    debtLines.join('\n'),
+    `*TOTAL REFERENCIAL DEUDA VENCIDA: $${display(debt.total)}*`,
+    'Al registrarse y validarse el pago correspondiente, el sistema reevaluará automáticamente su acceso.',
+    'Villa Los Apamates'
+  ];
+  return { text: blocks.filter(Boolean).join('\n\n'), ...debt };
+}
+
 function normalizeRenderedMessage(text) {
   return String(text || '')
     .replace(/```/g,'')
@@ -207,6 +233,6 @@ function messageAnchors(text) {
 }
 
 module.exports = {
-  money, fmt, buildMessage, promptPaymentLine, monthEndWarning, normalizeRenderedMessage, messageAnchors,
+  money, fmt, buildMessage, buildRestrictionMessage, expiredDebt, promptPaymentLine, monthEndWarning, normalizeRenderedMessage, messageAnchors,
   usdConceptBreakdown, smartBreakdown, localHintBreakdown, paymentNote
 };

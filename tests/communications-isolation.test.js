@@ -28,7 +28,7 @@ test('respaldo contractual: el flujo completo de reporte de pago permanece byte 
 
 test('automatización financiera de WhatsApp y su plantilla permanecen byte a byte intactas', () => {
   assert.equal(sha256('netlify/functions/whatsapp-jobs.js'), 'ccbb196a365c0f23e897e48ab612f966a92d69294f02f4f05120c5add94e1cfc');
-  assert.equal(sha256('ops/whatsapp-runtime/agent/lib/message.js'), '021ecea597b23ecacace73baedb08d1171f4b318fae721dce486cb2762867f38');
+  assert.equal(sha256('ops/whatsapp-runtime/agent/lib/message.js'), '15aca2bce33e63eb4a38340bd9d162cc59192cb592063dfaded9d838ec4e0465');
   const controller = source('ops/whatsapp-control/controller.js');
   assert.equal((controller.match(/setInterval\(\(\) => state\.schedulerStep\(\)/g) || []).length, 1);
   assert.match(controller, /AUTOMATIC_RUN_OPTIONS = Object\.freeze\(\{ forcePlan: false \}\)/);
