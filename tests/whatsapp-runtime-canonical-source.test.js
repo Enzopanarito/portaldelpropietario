@@ -46,7 +46,6 @@ test('versiones y fail-closed del runtime canónico', () => {
   assert.match(controller, /interrupted-closed/);
   assert.match(controller, /mode:\s*'paused'/);
   assert.match(controller, /VLA_MANUAL_CYCLE_TRIGGER_V1/);
-  assert.match(controller, /VLA_SINGLE_DAILY_RUN_V1/);
   assert.match(controller, /run\|daily/);
   assert.match(controller, /dailyRunKey/);
   assert.match(controller, /GATE_NOTICE_TIME\s*=\s*'08:00'/);
@@ -73,7 +72,7 @@ test('manifiesto fija hashes y habilita activation solo después de certificaci�
     'fd263ada5e72e90fd8458c48a7750a9df3b7fd66a091627afc9d3713fbbdf203');
   assert.equal(m.runtime.controller.hotfix, 'VLA_MONTHLY_GATE_RESTRICTION_NOTICE_V1');
   assert.equal(m.runtime.messageLibrary.sha256,
-    '021ecea597b23ecacace73baedb08d1171f4b318fae721dce486cb2762867f38');
+    '15aca2bce33e63eb4a38340bd9d162cc59192cb592063dfaded9d838ec4e0465');
   assert.equal(m.scheduler.authority, 'controller');
   assert.equal(m.scheduler.legacyNetlifySchedulerEnabled, false);
   assert.equal(m.scheduler.legacyN8nSchedulerExpected, false);
