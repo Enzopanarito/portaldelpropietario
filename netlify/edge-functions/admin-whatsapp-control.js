@@ -99,7 +99,7 @@ const SCRIPT = `<script>
     row.innerHTML=\`<input type='time' min='08:00' max='20:59' value='\${esc(value)}' class='wa-time flex-1 p-3 border rounded-lg min-h-12'><button type='button' class='wa-remove-time bg-red-100 text-red-700 px-3 py-3 rounded-lg font-semibold min-h-12'>Quitar</button>\`;
     row.querySelector('.wa-remove-time').onclick=()=>row.remove();return row;
   }
-  function setTimes(values){const host=el('wa-times');if(!host)return;host.innerHTML='';const list=Array.isArray(values)?values:['09:00','18:00'];list.forEach(v=>host.appendChild(timeRow(v)))}
+  function setTimes(values){const host=el('wa-times');if(!host)return;host.innerHTML='';const list=Array.isArray(values)?values:['09:00'];list.forEach(v=>host.appendChild(timeRow(v)))}
   function historyMarkup(items){
     if(!Array.isArray(items)||!items.length)return '<p class="text-slate-500">Sin eventos registrados.</p>';
     const rows=items.slice(0,30);
@@ -118,7 +118,7 @@ const SCRIPT = `<script>
     el('wa-kpi-agent').textContent=agentText(agent.mode);
     el('wa-kpi-scheduler').textContent=schedulerText(scheduler.status);
     el('wa-kpi-next').textContent=runtime.nextRunAt?fmt(runtime.nextRunAt):(cfg.mode==='automatic'?'Sin próxima revisión':'No aplica');
-    if(!preserveForm){el('wa-mode').value=cfg.mode||'paused';el('wa-warmup-minutes').value=Number(cfg.warmupMinutes??5);setTimes(Array.isArray(cfg.schedules)?cfg.schedules:['09:00','18:00'])}
+    if(!preserveForm){el('wa-mode').value=cfg.mode||'paused';el('wa-warmup-minutes').value=Number(cfg.warmupMinutes??5);setTimes(Array.isArray(cfg.schedules)?cfg.schedules:['09:00'])}
     el('wa-last-warmup').textContent=fmt(runtime.lastWarmupAt);el('wa-last-run').textContent=fmt(runtime.lastRunAt);el('wa-last-result').textContent=runtime.lastResult||'Sin ejecuciones registradas';
     el('wa-running').textContent=runtime.runInProgress?'⏳ Sí · desde '+fmt(runtime.runStartedAt):'No';
     el('wa-warming').textContent=runtime.warmupInProgress?'⏳ Sí · desde '+fmt(runtime.warmupStartedAt):'No';
