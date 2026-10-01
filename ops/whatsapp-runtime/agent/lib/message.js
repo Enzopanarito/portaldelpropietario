@@ -1,5 +1,3 @@
-[Reading 238 lines from start (total: 238 lines, 0 remaining)]
-
 'use strict';
 
 function money(value) {
@@ -238,5 +236,3 @@ module.exports = {
   money, fmt, buildMessage, buildRestrictionMessage, expiredDebt, promptPaymentLine, monthEndWarning, normalizeRenderedMessage, messageAnchors,
   usdConceptBreakdown, smartBreakdown, localHintBreakdown, paymentNote
 };
-
-[executed on device: Mac-mini-de-Enzo (909fb371-3e1b-4735-8ad5-672c084a9358)]
