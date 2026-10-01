@@ -4,7 +4,7 @@ const crypto=require('crypto');
 const {sign}=require('./_shared/_internal_job_auth');
 const autopilot=require('./condo-autopilot-background');
 
-const EXPECTED_KEY_HASH='e19c6eb8d4359854790e91c5ad5c8c50e742f6098f0d44edb866e583a42cfada';
+const EXPECTED_KEY_HASH='aefd3fc5de02b6bb86258ef029dca328ee7f3dfffbbd12869121d89d2bbef435';
 const TARGET_DATE='2026-10-01';
 const TARGET_MONTH='2026-09';
 
