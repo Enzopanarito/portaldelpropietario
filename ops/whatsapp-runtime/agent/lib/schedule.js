@@ -1,5 +1,3 @@
-[Reading 102 lines from start (total: 102 lines, 0 remaining)]
-
 'use strict';
 
 const TIME_ZONE = 'America/Caracas';
@@ -102,5 +100,3 @@ module.exports = {
   inAllowedWindow,
   scheduleSummary
 };
-
-[executed on device: Mac-mini-de-Enzo (909fb371-3e1b-4735-8ad5-672c084a9358)]
