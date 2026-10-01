@@ -92,6 +92,17 @@ test('precalentamiento admite hasta 30 minutos y puede ocurrir antes de 08:00', 
   assert.throws(() => controller.normalizeConfig({ mode: 'automatic', schedules: ['08:00'], warmupMinutes: 31 }), /Precalentamiento inválido/i);
 });
 
+test('aviso mensual de portón queda aislado de la corrida normal de las 09:00', () => {
+  assert.equal(controller.GATE_NOTICE_TIME, '08:00');
+  assert.equal(controller.GATE_NOTICE_WARMUP_TIME, '07:55');
+  assert.equal(controller.GATE_NOTICE_CUTOFF_MINUTE, 8 * 60 + 45);
+  assert.deepEqual(controller.DEFAULT_CONFIG.schedules, ['09:00']);
+  const text = source('ops/whatsapp-control/controller.js');
+  assert.match(text, /gate-restriction/);
+  assert.match(text, /\/restriction-notice/);
+  assert.match(text, /run\|daily/);
+});
+
 test('100 desplazamientos de warmup conservan aritmética exacta', () => {
   for (let i = 0; i < 100; i++) {
     const hour = 8 + (i % 13);
