@@ -26,6 +26,7 @@ exports.handler=async function(event){
   });
   const authorization=sign(payload);
   const result=await autopilot.handler({
+    __netlifyModernRuntime:event?.__netlifyModernRuntime===true,
     httpMethod:'POST',
     headers:{
       'x-vla-job-timestamp':authorization.timestamp,
