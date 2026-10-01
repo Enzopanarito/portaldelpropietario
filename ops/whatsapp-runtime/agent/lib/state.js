@@ -1,5 +1,3 @@
-[Reading 28 lines from start (total: 28 lines, 0 remaining)]
-
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -28,5 +26,3 @@ class StateStore {
   }
 }
 module.exports = { StateStore };
-
-[executed on device: Mac-mini-de-Enzo (909fb371-3e1b-4735-8ad5-672c084a9358)]
