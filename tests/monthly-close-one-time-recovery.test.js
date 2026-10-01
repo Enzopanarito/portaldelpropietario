@@ -12,4 +12,5 @@ test('recuperación única de septiembre queda fecha-bloqueada y mes-bloqueada',
   assert.match(source,/CONFIRMATION='CLOSE-SEPTEMBER-2026-NOW'/);
   assert.match(source,/one-time-close-recovery/);
   assert.match(source,/autopilot\.handler/);
+  assert.match(source,/blobs:event\?\.blobs/,'La recuperación directa debe preservar el contexto Blobs Lambda.');
 });
