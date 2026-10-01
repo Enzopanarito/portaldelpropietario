@@ -39,6 +39,7 @@ test('wrappers legacy y funciones modernas nativas conservan contratos separados
   assert.match(source,/invokeLegacy\(/,`${name} debe conservar el contrato legacy.`);
  }
  assert.deepEqual(native.map(item=>item.name).sort(),[
+  'monthly-close-watchdog-modern-scheduled.mjs',
   'public-plant.mjs',
   'whatsapp-external-health.mjs',
   'whatsapp-external-monitor.mjs',
