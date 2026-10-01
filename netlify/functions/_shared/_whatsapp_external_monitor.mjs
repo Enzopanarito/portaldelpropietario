@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-const EXPECTED_SCHEDULES = Object.freeze(['09:00', '18:00']);
+const EXPECTED_SCHEDULES = Object.freeze(['09:00']);
 const REASON_LABELS = Object.freeze({
   MONITOR_CONFIG_MISSING: 'El monitor externo no tiene configurado el puente seguro.',
   MAC_OR_GATEWAY_UNREACHABLE: 'La Mac mini, n8n o el gateway externo no respondieron.',
@@ -15,7 +15,7 @@ const REASON_LABELS = Object.freeze({
   AGENT_READINESS_NOT_HEALTHY: 'El Agent está vivo, pero WhatsApp no está realmente listo para enviar.',
   SESSION_NOT_LINKED: 'La sesión de WhatsApp no aparece vinculada.',
   MODE_NOT_AUTOMATIC: 'El Controller no está en modo AUTOMATIC.',
-  SCHEDULE_DRIFT: 'Los horarios configurados ya no son 09:00 y 18:00.',
+  SCHEDULE_DRIFT: 'El horario automático esperado es 09:00, una sola vez al día.',
   WARMUP_DRIFT: 'El warmup configurado ya no es de 5 minutos.',
   RUNTIME_ERROR: 'El runtime de WhatsApp reporta un error activo.'
 });
