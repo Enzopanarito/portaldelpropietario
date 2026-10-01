@@ -9,7 +9,7 @@ Estado: **preparado para autorización final de producción**. Este documento no
 - Modo: AUTOMÁTICO.
 - Agente: REAL.
 - Planificador: ACTIVO.
-- Horarios: 09:00 y 18:00, America/Caracas.
+- Horario automático: 09:00, America/Caracas. Máximo una corrida automática por día.
 - Ventana fija de inicio de envíos: 08:00–20:59.
 - `forcePlan:false` obligatorio.
 - Scheduler viejo de n8n: despublicado.
