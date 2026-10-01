@@ -1,0 +1,49 @@
+name: One-time September Close Recovery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/one-time-september-close-recovery.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Invoke protected September recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          url='https://villalosapamates.netlify.app/.netlify/functions/monthly-close-recovery-2026-09-background'
+          code="$(curl --retry 2 --retry-all-errors --connect-timeout 15 --max-time 60             -sS -o recovery-response.txt -w '%{http_code}'             -X POST "$url"             -H 'x-vla-recovery-confirm: CLOSE-SEPTEMBER-2026-NOW'             -H 'Content-Type: application/json'             --data '{}')"
+          echo "RECOVERY_HTTP=$code"
+          cat recovery-response.txt || true
+          case "$code" in
+            200|202) ;;
+            *) echo "Recovery invocation failed"; exit 1 ;;
+          esac
+
+      - name: Certify September close reached DONE
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint='https://villalosapamates.netlify.app/api/vla/public-data?force=1&close_recovery_ci=20261001'
+          for attempt in $(seq 1 36); do
+            curl --retry 2 --retry-all-errors --connect-timeout 15 --max-time 45 -fsS "$endpoint" -o public-data.json
+            pending="$(jq -r '.accountingTransition.pending // true' public-data.json)"
+            previous="$(jq -r '.accountingTransition.previousCloseStatus // "MISSING"' public-data.json)"
+            accounting="$(jq -r '.accountingTransition.accountingMonth // ""' public-data.json)"
+            echo "attempt=$attempt pending=$pending previousCloseStatus=$previous accountingMonth=$accounting"
+            if [[ "$pending" == "false" && "$previous" == "DONE" && "$accounting" == "2026-10" ]]; then
+              echo "SEPTEMBER_CLOSE_CERTIFIED=1"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "September close did not reach DONE in the certification window."
+          cat public-data.json
+          exit 1
