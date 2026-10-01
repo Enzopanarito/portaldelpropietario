@@ -17,7 +17,7 @@ test.before(async () => {
 function healthyStatus(overrides = {}) {
   return {
     ok: true,
-    config: { mode: 'automatic', schedules: ['09:00', '18:00'], warmupMinutes: 5 },
+    config: { mode: 'automatic', schedules: ['09:00'], warmupMinutes: 5 },
     agent: { ok: true, mode: 'real' },
     readiness: { ready: true, code: 'READY', loggedIn: true, observedAt: '2026-09-03T17:42:33.359Z' },
     session: { loggedIn: true },
@@ -54,7 +54,7 @@ test('alive Agent with unhealthy readiness cannot be reported green', () => {
 
 test('paused controller requires attention', () => {
   const result = monitor.evaluateStatus(healthyStatus({
-    config: { mode: 'paused', schedules: ['09:00', '18:00'], warmupMinutes: 5 }
+    config: { mode: 'paused', schedules: ['09:00'], warmupMinutes: 5 }
   }));
   assert.equal(result.healthy, false);
   assert.ok(result.reasons.includes('MODE_NOT_AUTOMATIC'));
@@ -68,7 +68,7 @@ test('unlinked WhatsApp session requires attention', () => {
 
 test('schedule and warmup drift are detected', () => {
   const result = monitor.evaluateStatus(healthyStatus({
-    config: { mode: 'automatic', schedules: ['09:00'], warmupMinutes: 10 }
+    config: { mode: 'automatic', schedules: ['18:00'], warmupMinutes: 10 }
   }));
   assert.ok(result.reasons.includes('SCHEDULE_DRIFT'));
   assert.ok(result.reasons.includes('WARMUP_DRIFT'));
