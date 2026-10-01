@@ -24,12 +24,13 @@ const MANUAL_FORCE_PLAN = true;
 const AUTOMATIC_RUN_OPTIONS = Object.freeze({ forcePlan: false });
 const MANUAL_RUN_OPTIONS = Object.freeze({ forcePlan: MANUAL_FORCE_PLAN });
 // VLA_MANUAL_CYCLE_TRIGGER_V1: manual relee el ciclo vigente conservando idempotencia.
+// VLA_SINGLE_DAILY_RUN_V1: una sola corrida automática diaria, aunque existan horarios extra.
 // VLA_CONTROLLER_RELINK_V1: re-vinculación segura y efímera desde Admin.
 
 const DEFAULT_CONFIG = Object.freeze({
   version: 1,
   mode: 'paused',
-  schedules: ['09:00', '18:00'],
+  schedules: ['09:00'],
   warmupMinutes: 5,
   updatedAt: null,
   updatedBy: 'safe-bootstrap'
@@ -168,7 +169,9 @@ function isRetryableRunFailure(error) {
   return [
     'WHATSAPP_NOT_READY', 'BROWSER_DATABASE_ERROR', 'AUTH_REQUIRED',
     'SESSION_NOT_READY', 'READINESS_PROBE_FAILED', 'WHATSAPP_NAVIGATION_FAILED',
-    'AGENT TIMEOUT', 'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT'
+    'AGENT TIMEOUT', 'FETCH FAILED', 'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT',
+    'EAI_AGAIN', 'ENOTFOUND', 'EHOSTUNREACH', 'ENETUNREACH', 'ECONNABORTED',
+    'UND_ERR', 'SOCKET HANG UP', 'ABORTERROR', 'THE OPERATION WAS ABORTED'
   ].some(code => text.includes(code));
 }
 
@@ -289,7 +292,7 @@ function createControllerState() {
     const parts = caracasParts(), today = dayKey(parts), nowMinute = localMinute(parts);
     for (const schedule of config.schedules) {
       if (parseTime(schedule) <= nowMinute) {
-        const runKey = `${today}|run|${schedule}`;
+        const runKey = `${today}|run|daily`;
         if (!runtime.ledger[runKey]) runtime.ledger[runKey] = { status: 'seeded', at: nowIso(), reason };
         const warm = shiftMinutes(schedule, -config.warmupMinutes);
         const warmKey = `${today}|warmup|${schedule}`;
@@ -668,7 +671,8 @@ function createControllerState() {
   }
 
   async function attemptScheduled(kind, schedule, reason) {
-    const parts = caracasParts(), key = `${dayKey(parts)}|${kind}|${schedule}`;
+    const parts = caracasParts();
+    const key = kind === 'run' ? `${dayKey(parts)}|run|daily` : `${dayKey(parts)}|${kind}|${schedule}`;
     if (busy() || ledgerBlocks(key)) return false;
     markLedger(key, 'running', { reason });
     try {
@@ -725,10 +729,10 @@ function createControllerState() {
     }
 
     if (!inAllowedWindow(parts) || busy()) return;
-    const due = config.schedules.filter(schedule => parseTime(schedule) <= nowMinute && !ledgerBlocks(`${today}|run|${schedule}`));
+    const dailyRunKey = `${today}|run|daily`;
+    const due = config.schedules.filter(schedule => parseTime(schedule) <= nowMinute && !ledgerBlocks(dailyRunKey));
     if (due.length) {
       const latest = due[due.length - 1];
-      for (const older of due.slice(0, -1)) markLedger(`${today}|run|${older}`, 'superseded', { by: latest });
       await attemptScheduled('run', latest, now === latest ? `auto ${latest}` : `recovery ${latest}`);
     }
     pruneLedger();
