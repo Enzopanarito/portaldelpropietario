@@ -7,7 +7,7 @@
     "bundleSha256": "394f1eb3a9f4f267c9315b864e66acfb108d0f97e05813832b0aaa8ce57a55b4",
     "financialDeltaUsd": "0.00",
     "financialSha256": "dcbca7c8d8381ccda8b2165b9741ff5e9c6fe54d1ea9a6f79544ee5bafdc6aff",
-    "notes": "Runtime real del Mac mini auditado el 2026-09-09 y conservado como partida: Agent 1.3.6 con revisión financiera y readiness; Controller 1.3.5 con reintentos fail-closed. Las comunicaciones son una extensión aislada y no sustituyen esas protecciones."
+    "notes": "Runtime real del Mac mini auditado y endurecido: Agent con revisión financiera/readiness; Controller con reintentos fail-closed y una sola corrida automática diaria a las 09:00. Las comunicaciones son una extensión aislada y no sustituyen esas protecciones."
   },
   "architecture": {
     "path": [
@@ -24,7 +24,9 @@
     "legacyNetlifySchedulerEnabled": false,
     "legacyN8nSchedulerExpected": false,
     "window": "08:00-20:59",
-    "timezone": "America/Caracas"
+    "timezone": "America/Caracas",
+    "expectedSchedules": ["09:00"],
+    "singleDailyRun": true
   },
   "runtime": {
     "agent": {
@@ -86,14 +88,14 @@
     },
     "controller": {
       "targetVersion": "1.4.1",
-      "sha256": "80265db7ffbe6c1338c9e95df921beeef940f340abb4428671d83f0ed0288a25"
+      "sha256": "acfa4885cd00bb23b3be37fde41f0b54fd003838a4006b65742eb5002f5ec36e"
     },
     "preserved": {
       "financialMessageLibrarySha256": "021ecea597b23ecacace73baedb08d1171f4b318fae721dce486cb2762867f38",
       "legacyFinancialJobSha256": "ccbb196a365c0f23e897e48ab612f966a92d69294f02f4f05120c5add94e1cfc",
       "credentialsModified": false,
       "schedulerConfigurationModified": false,
-      "automaticScheduleDefinitionsModified": false
+      "automaticScheduleDefinitionsModified": true
     }
   }
 }
