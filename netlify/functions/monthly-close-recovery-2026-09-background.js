@@ -1,32 +1,24 @@
 'use strict';
 
-const crypto=require('crypto');
 const {sign}=require('./_shared/_internal_job_auth');
 const autopilot=require('./condo-autopilot-background');
 
-const EXPECTED_KEY_HASH='aefd3fc5de02b6bb86258ef029dca328ee7f3dfffbbd12869121d89d2bbef435';
 const TARGET_DATE='2026-10-01';
 const TARGET_MONTH='2026-09';
+const RECOVERY_COMMAND='close-september-2026';
 
-function clean(value){return String(value||'').trim()}
 function caracasDate(now=new Date()){
   const parts=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{
     timeZone:'America/Caracas',year:'numeric',month:'2-digit',day:'2-digit'
   }).formatToParts(now).map(part=>[part.type,part.value]));
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
-function secureKeyMatches(value){
-  const provided=crypto.createHash('sha256').update(clean(value)).digest('hex');
-  const a=Buffer.from(provided),b=Buffer.from(EXPECTED_KEY_HASH);
-  return a.length===b.length&&crypto.timingSafeEqual(a,b);
-}
 
 exports.handler=async function(event){
   if(String(event?.httpMethod||'').toUpperCase()!=='POST')return{statusCode:405,body:'Method Not Allowed'};
   if(caracasDate()!==TARGET_DATE)return{statusCode:410,body:'Recovery expired'};
-  if(!secureKeyMatches(event?.headers?.['x-vla-recovery-key']||event?.headers?.['X-Vla-Recovery-Key'])){
-    return{statusCode:401,body:'Unauthorized'};
-  }
+  const command=String(event?.headers?.['x-vla-recovery-command']||event?.headers?.['X-Vla-Recovery-Command']||'').trim();
+  if(command!==RECOVERY_COMMAND)return{statusCode:401,body:'Recovery command required'};
 
   const payload=JSON.stringify({
     requestedAt:new Date().toISOString(),
