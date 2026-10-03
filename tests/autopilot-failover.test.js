@@ -73,3 +73,28 @@ test('el workflow externo corre después del cron Netlify y el manual queda en p
  assert.match(source,/expected=200; else expected=202/);
  assert.match(source,/id-token: write/);
 });
+
+test('el respaldo normaliza la URL HTTP de Netlify antes de despachar el POST firmado',async()=>{
+ const vm=require('node:vm');
+ const module={exports:{}};
+ let request;
+ const FixedDate=class extends Date { constructor(...args){super(...(args.length?args:['2026-10-01T04:12:00Z']))} };
+ const context={
+  module,exports:module.exports,Date:FixedDate,Intl,URL,console,
+  process:{env:{URL:'http://villalosapamates.netlify.app'}},
+  require(name){
+   if(name.includes('_github_oidc_autopilot'))return{verifyAutopilotFailoverOidcToken:async()=>({run_id:'test'})};
+   if(name.includes('_internal_job_auth'))return{sign:()=>({timestamp:'test-time',signature:'test-signature'})};
+   if(name.includes('_internal_site_url'))return require('../netlify/functions/_shared/_internal_site_url');
+   throw new Error(`Unexpected dependency: ${name}`);
+  },
+  fetch:async(url,options)=>{request={url,options};return{ok:true,status:202}}
+ };
+ vm.runInNewContext(read('netlify/functions/autopilot-failover-ci.js'),context);
+ const result=await module.exports.handler({httpMethod:'POST',body:JSON.stringify({oidcToken:'test',mode:'dispatch'})});
+ assert.equal(result.statusCode,202);
+ assert.equal(request.url,'https://villalosapamates.netlify.app/api/vla/condo-autopilot');
+ assert.equal(request.options.method,'POST');
+ assert.equal(request.options.headers['x-vla-job-signature'],'test-signature');
+ assert.equal(JSON.parse(request.options.body).source,'github-oidc-autopilot-failover');
+});
