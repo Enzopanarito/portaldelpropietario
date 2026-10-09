@@ -138,7 +138,7 @@ function ownerLinkIncludes(record, fieldName, ownerId) {
 
 function calculateExpiredAccessDebt(owner, pagos, reportes, options = {}) {
   // Solo los pagos definitivos afectan la deuda vencida. Los reportes pendientes
-  // se conservan para auditoría, pero nunca cubren deuda ni habilitan el portón.
+  // no cubren deuda. Una habilitación provisional explícita solo afecta el acceso.
   const {expenses=[],...balanceOptions}=options||{},balance = calculateOwnerBalance(owner, expenses, pagos || [], balanceOptions);
   const expiredUsd = money(Math.max(0, balance.expiredUsd));
   const expiredBsRef = money(Math.max(0, balance.expiredBsRef));
@@ -194,7 +194,7 @@ function limitationEmailHtml(owner, calc) {
     <p>Por medio del presente le informamos que, de acuerdo con nuestros registros administrativos, su inmueble presenta una deuda vencida pendiente con el condominio Villas Los Apamates.</p>
     <p>Por tal motivo, el sistema administrativo ha limitado <b>automáticamente</b> el acceso cómodo al portón eléctrico mediante control, aplicación o sistema automatizado.</p>
     <p>Esta medida no impide el acceso a la urbanización, pero sí restringe el uso del sistema cómodo de apertura hasta tanto sea regularizada la situación administrativa.</p>
-    <p>El reporte de un pago queda sujeto a revisión administrativa y, por sí solo, no modifica el estado del portón. El acceso se reevaluará únicamente después de registrar un pago definitivo o una autorización específica, auditada y vigente.</p>
+    <p>Al reportar un pago por el portal, se habilita provisionalmente el acceso mientras administración lo revisa. Si se rechaza, se recalcula la limitación; si se aprueba, el acceso se mantiene cuando el pago cubre la deuda vencida.</p>
     <p>Le agradecemos ponerse al día lo antes posible o reportar su pago a través del portal para que podamos validar la información y solventar la situación.</p>
     <p style="font-size:13px;color:#475569"><b>Referencia administrativa:</b> Casa ${house}. Deuda vencida registrada: ${escapeHtml(accessDebtText(calc))}.</p>
     <p>Atentamente,</p>
@@ -264,7 +264,7 @@ async function syncOwnerAccess(ownerId, options = {}, context = null) {
   let desiredAction = 'enable';
   let desiredStatus = 'Habilitado';
   let reason = 'Sin deuda vencida pendiente. Acceso cómodo habilitado.';
-  const temporary = false;
+  let temporary = false;
 
   let decision = null;
   if (automationInfo.configured) {
@@ -286,6 +286,21 @@ async function syncOwnerAccess(ownerId, options = {}, context = null) {
     desiredAction = 'disable';
     desiredStatus = 'Limitado';
     reason = options.reason || `Limitación automática por deuda vencida pendiente (${accessDebtText(calc)}). Los reportes pendientes no modifican el acceso.`;
+  }
+
+  // Los reportes creados bajo la política de acceso inmediato conservan el
+  // permiso hasta una decisión terminal; nunca se contabilizan como pagos.
+  const pendingAuthorization = (ctx.reportes || []).find(report =>
+    ownerLinkIncludes(report, 'Propietario que Reporta', owner.id) &&
+    (report.fields || {}).Estado === 'Pendiente' &&
+    (report.fields || {})['Habilitación Provisional Aplicada'] === true &&
+    String((report.fields || {})['MKJ Operation ID'] || '').startsWith('REPORT_PENDING|')
+  );
+  if (pendingAuthorization) {
+    desiredAction = 'enable';
+    desiredStatus = 'Habilitado';
+    temporary = true;
+    reason = `Acceso provisional por reporte ${pendingAuthorization.id}, pendiente de revisión administrativa. El saldo no cambia.`;
   }
 
   let mkjResult = null;

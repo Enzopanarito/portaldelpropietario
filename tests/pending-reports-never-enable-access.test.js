@@ -62,6 +62,19 @@ function pending({id,mode,amount}){return{id,fields:{Estado:'Pendiente','Propiet
   assert.match(result.reason,/reportes pendientes no modifican el acceso/i);
   assert.strictEqual(mkjCalls,0);
   assert.strictEqual(ownerPatch.fields['Estado Acceso Portón'],'Limitado');
+  const authorized={...reports[0],fields:{...reports[0].fields,'Habilitación Provisional Aplicada':true,'MKJ Operation ID':'REPORT_PENDING|submission123'}};
+  const provisional=await access.syncOwnerAccess('recOwner00000001',{runMkj:false,sendEmail:false},{owners:[owner()],pagos:[],reportes:[authorized]});
+  assert.strictEqual(provisional.estado,'Habilitado');assert.strictEqual(provisional.temporary,true);
+  assert.strictEqual(provisional.calc.expiredUsd,85,'El permiso no cambia deuda.');
+  const rejected={...authorized,fields:{...authorized.fields,Estado:'Rechazado'}};
+  const revoked=await access.syncOwnerAccess('recOwner00000001',{runMkj:false,sendEmail:false},{owners:[owner()],pagos:[],reportes:[rejected]});
+  assert.strictEqual(revoked.estado,'Limitado');assert.strictEqual(revoked.temporary,false);
+  const another={...authorized,id:'recOtherPending1'};
+  const kept=await access.syncOwnerAccess('recOwner00000001',{runMkj:false,sendEmail:false},{owners:[owner()],pagos:[],reportes:[rejected,another]});
+  assert.strictEqual(kept.estado,'Habilitado','Otro reporte pendiente válido conserva el permiso.');
+  const otherOwner={...authorized,fields:{...authorized.fields,'Propietario que Reporta':['recDifferent001']}};
+  const isolated=await access.syncOwnerAccess('recOwner00000001',{runMkj:false,sendEmail:false},{owners:[owner()],pagos:[],reportes:[otherOwner]});
+  assert.strictEqual(isolated.estado,'Limitado');
  }finally{
   global.fetch=previousFetch;
   for(const key of Object.keys(process.env))if(!(key in previousEnv))delete process.env[key];
@@ -69,7 +82,7 @@ function pending({id,mode,amount}){return{id,fields:{Estado:'Pendiente','Propiet
  }
 
  const endpointSource=fs.readFileSync(path.join(__dirname,'..','netlify','functions','public-report-payment.js'),'utf8');
- assert(!/\bsyncOwnerAccess\b/.test(endpointSource),'El endpoint público no puede importar ni llamar syncOwnerAccess.');
+ assert(/\bsyncOwnerAccess\b/.test(endpointSource),'El reporte debe sincronizar el permiso provisional.');
  assert(endpointSource.includes("require('./_shared/_pending_report_access_policy')"));
  const accessSource=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_shared','_access_control.js'),'utf8');
  assert(!accessSource.includes('Habilitación temporal automática por reporte de pago pendiente'));

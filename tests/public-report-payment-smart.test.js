@@ -4,15 +4,15 @@ const crypto=require('crypto');
 const Module=require('module');
 const path=require('path');
 
-const created=[];const mails=[];const encrypted=new Map(),financialLocks=new Map();let reservationCount=0;let historicalExactDuplicate=false,historicalFinancialDuplicate=false;
+const accessCalls=[];const created=[];const mails=[];const encrypted=new Map(),financialLocks=new Map();let reservationCount=0;let historicalExactDuplicate=false,historicalFinancialDuplicate=false;
 const originalLoad=Module._load;
 Module._load=function(request,parent,isMain){
   if(parent&&String(parent.filename||'').endsWith(path.join('netlify','functions','public-report-payment.js'))){
     if(request==='./_shared/_airtable_meter')return{withAirtableUsage:(_name,handler)=>handler};
     if(request==='./_shared/_access_control')return{
       airtableCreateRecord:async(_table,fields)=>{created.push(fields);return{id:'recREPORT00000001'}},
-      airtableGetRecord:async()=>({fields:{Casa:4,Propietario:'Casa 4'}}),
-      syncOwnerAccess:async()=>({estado:'Habilitado',temporary:false}),
+      airtableGetRecord:async()=>({fields:{Casa:4,Propietario:'Casa 4','Estado Acceso Portón':'Limitado'}}),
+      syncOwnerAccess:async(ownerId,options)=>{accessCalls.push({ownerId,options});return{estado:'Habilitado',temporary:true}},
       TABLES:{reportes:'Reportes de Pago',propietarios:'Propietarios',pagos:'Pagos'},
       money:value=>Math.round((Number(value||0)+Number.EPSILON)*100)/100
     };
@@ -76,6 +76,11 @@ const {todayCaracasISO}=require('../netlify/functions/_shared/_payment_date_reso
   let response=await handler(event({ownerId:'recABCDEFGHIJKLMN',submissionId:'submission-smart-001',mode:'Bs BCV',amount:'15.300,00',enteredCurrency:'BS',reference:'ABC-123',rate:100,bank:'Pago móvil',method:'MOBILE_PAYMENT_VE',transactionDate:'2026-07-31',transactionDateSource:'PROOF_EXTRACTED',dateAttestation,analysisSummary:{provider:'gemini-test',route:'direct',confidence:.98,transactionTime:'10:30:00',transactionStatus:'COMPLETED',recipient:'Enzo Panarito',warnings:['Lectura clara'],possibleVisualModification:false,prefillComplete:true,missingLabels:[]},observations:'Prueba',attachment:{name:'casa4.png',type:'image/png',base64:png.toString('base64')}}));
   assert.equal(response.statusCode,200,JSON.stringify(parse(response)));
   let body=parse(response);
+  assert.equal(body.access.estado,'Habilitado');assert.equal(body.access.temporary,true);
+  assert.equal(created[0].Estado,'Pendiente');assert.equal(created[0]['Habilitación Provisional Aplicada'],true);
+  assert.match(created[0]['MKJ Operation ID'],/^REPORT_PENDING\|/);
+  assert.equal(accessCalls[0].options.ignoreMode,true);assert.equal(accessCalls[0].options.forceMkj,true);
+  assert.match(body.message,/habilitado provisionalmente/);
   assert.equal(body.amountUsdRef,85);
   assert.equal(body.amountEntered,15300);
   assert.equal(body.rateApplied,180,'El servidor debe usar la tasa oficial persistida.');
