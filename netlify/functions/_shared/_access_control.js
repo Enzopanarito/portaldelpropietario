@@ -2,7 +2,8 @@
 
 // Motor central del control automático de acceso cómodo al portón.
 // Regla: el acceso se decide exclusivamente por deuda anterior vencida,
-// nunca por cargos corrientes ni por reportes pendientes sin validar.
+// nunca por cargos corrientes. Reportes pendientes solo permiten acceso
+// provisional cuando cubren íntegramente la deuda vencida de ambas cuentas.
 
 const { sendMail } = require('./_mailer');
 const { calculateOwnerBalance, money } = require('./_balance_engine_v4');
@@ -149,6 +150,25 @@ function calculateExpiredAccessDebt(owner, pagos, reportes, options = {}) {
     .filter(Boolean)
     .sort();
 
+  const provisionalReports = (reportes || []).filter(report =>
+    ownerLinkIncludes(report, 'Propietario que Reporta', owner.id) &&
+    (report.fields || {}).Estado === 'Pendiente' &&
+    String((report.fields || {})['MKJ Operation ID'] || '').startsWith('REPORT_PENDING|')
+  );
+  let provisionalReportedUsd = 0, provisionalReportedBsRef = 0;
+  const seenReports = new Set();
+  for (const report of provisionalReports) {
+    if (!report.id || seenReports.has(report.id)) continue;
+    seenReports.add(report.id);
+    const fields = report.fields || {};
+    const amount = Number(fields['Equivalente USD Reportado'] ?? fields['Monto Reportado']);
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    if (fields['Forma de Pago Reportada'] === 'USD') provisionalReportedUsd += amount;
+    if (fields['Forma de Pago Reportada'] === 'Bs BCV') provisionalReportedBsRef += amount;
+  }
+  provisionalReportedUsd = money(provisionalReportedUsd);
+  provisionalReportedBsRef = money(provisionalReportedBsRef);
+
   return {
     expiredUsd,
     expiredBsRef,
@@ -165,6 +185,11 @@ function calculateExpiredAccessDebt(owner, pagos, reportes, options = {}) {
     ignoredPendingReportIds,
     hasExpiredDebt: expiredUsd > TOLERANCE || expiredBsRef > TOLERANCE,
     pendingCoversExpiredDebt: false,
+    provisionalReportedUsd,
+    provisionalReportedBsRef,
+    provisionalCoversExpiredDebt: provisionalReports.length > 0 &&
+      provisionalReportedUsd + TOLERANCE >= expiredUsd &&
+      provisionalReportedBsRef + TOLERANCE >= expiredBsRef,
     missingUsd: expiredUsd,
     missingBsRef: expiredBsRef
   };
@@ -194,7 +219,7 @@ function limitationEmailHtml(owner, calc) {
     <p>Por medio del presente le informamos que, de acuerdo con nuestros registros administrativos, su inmueble presenta una deuda vencida pendiente con el condominio Villas Los Apamates.</p>
     <p>Por tal motivo, el sistema administrativo ha limitado <b>automáticamente</b> el acceso cómodo al portón eléctrico mediante control, aplicación o sistema automatizado.</p>
     <p>Esta medida no impide el acceso a la urbanización, pero sí restringe el uso del sistema cómodo de apertura hasta tanto sea regularizada la situación administrativa.</p>
-    <p>Al reportar un pago por el portal, se habilita provisionalmente el acceso mientras administración lo revisa. Si se rechaza, se recalcula la limitación; si se aprueba, el acceso se mantiene cuando el pago cubre la deuda vencida.</p>
+    <p>Al reportar pagos por el portal que cubran toda la deuda vencida, se habilita provisionalmente el acceso mientras administración los revisa. Si se rechaza, se recalcula la limitación; si se aprueba, el acceso se mantiene cuando el pago cubre la deuda vencida.</p>
     <p>Le agradecemos ponerse al día lo antes posible o reportar su pago a través del portal para que podamos validar la información y solventar la situación.</p>
     <p style="font-size:13px;color:#475569"><b>Referencia administrativa:</b> Casa ${house}. Deuda vencida registrada: ${escapeHtml(accessDebtText(calc))}.</p>
     <p>Atentamente,</p>
@@ -289,14 +314,13 @@ async function syncOwnerAccess(ownerId, options = {}, context = null) {
   }
 
   // Los reportes creados bajo la política de acceso inmediato conservan el
-  // permiso hasta una decisión terminal; nunca se contabilizan como pagos.
+  // permiso mientras cubran toda la deuda vencida; no se contabilizan como pagos.
   const pendingAuthorization = (ctx.reportes || []).find(report =>
     ownerLinkIncludes(report, 'Propietario que Reporta', owner.id) &&
     (report.fields || {}).Estado === 'Pendiente' &&
-    (report.fields || {})['Habilitación Provisional Aplicada'] === true &&
     String((report.fields || {})['MKJ Operation ID'] || '').startsWith('REPORT_PENDING|')
   );
-  if (pendingAuthorization) {
+  if (pendingAuthorization && calc.provisionalCoversExpiredDebt) {
     desiredAction = 'enable';
     desiredStatus = 'Habilitado';
     temporary = true;

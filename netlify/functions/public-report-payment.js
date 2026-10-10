@@ -6,7 +6,7 @@
 
 const crypto=require('crypto');
 const { withAirtableUsage } = require('./_shared/_airtable_meter');
-const { airtableCreateRecord, airtableGetRecord, syncOwnerAccess, TABLES, money } = require('./_shared/_access_control');
+const { airtableCreateRecord, airtableGetRecord, airtablePatchRecord, syncOwnerAccess, TABLES, money } = require('./_shared/_access_control');
 const { pendingReportAccessDecision } = require('./_shared/_pending_report_access_policy');
 const { sendMail } = require('./_shared/_mailer');
 const { sanitizeReference, escapeHtml, cleanPlainText, safeDisplayText, deepEscapeStrings } = require('./_shared/_security_utils');
@@ -263,21 +263,22 @@ const handler = async function(event){
     if(proof){Object.assign(fields,{'Comprobante Blob Key':proof.key,'Comprobante Nombre Original':attachment.filename,'Comprobante MIME':attachment.contentType,'Comprobante Bytes':attachment.size,'Hash SHA-256':identity.sha256,'Hash Perceptual':identity.visualHash});}
     if(mode==='Bs BCV'){fields['Monto Reportado Bs']=amountBs;fields['Tasa BCV Reporte']=rateInfo.rate;}
     if(String(ownerFields['Estado Acceso Portón']||'')==='Limitado'||String(ownerFields['Motivo Limitación Acceso']||'').startsWith('Acceso provisional por reporte ')){
-      Object.assign(fields,{'Habilitación Provisional Aplicada':true,'Fecha Habilitación Provisional':reportTimestamp,'MKJ Operation ID':`REPORT_PENDING|${submissionId}`});
+      Object.assign(fields,{'MKJ Operation ID':`REPORT_PENDING|${submissionId}`});
     }
     const report=await airtableCreateRecord(TABLES.reportes,fields);
     if(financialReservation)await dedupStore.complete({reservation:financialReservation,reportId:report.id}).catch(error=>console.warn('No se pudo completar la barrera financiera idempotente:',error.message));
     if(identityReservation)await proofStore.completeIdentity({reservation:identityReservation,reportId:report.id}).catch(error=>console.warn('No se pudo completar la reserva idempotente:',error.message));
     let access=pendingReportAccessDecision(report?.id);
-    if(fields['Habilitación Provisional Aplicada']===true){
-      try{access=await syncOwnerAccess(ownerId,{ignoreMode:true,forceMkj:true,sendEmail:false});}
+    if(String(fields['MKJ Operation ID']||'').startsWith('REPORT_PENDING|')){
+      try{access=await syncOwnerAccess(ownerId,{ignoreMode:true,forceMkj:true,sendEmail:false});
+        if(access.estado==='Habilitado'&&access.temporary)await airtablePatchRecord(TABLES.reportes,report.id,{'Habilitación Provisional Aplicada':true,'Fecha Habilitación Provisional':reportTimestamp});}
       catch(error){access={success:false,temporary:true,reason:'ACCESS_SYNC_FAILED',warning:safeDisplayText(error.message,300)};}
     }
     const automationTask=paymentChannel==='CASH'?Promise.resolve({queued:false,status:'CASH_ADMIN_CONFIRMATION_REQUIRED'}):triggerBackgroundAnalysis(report.id).catch(error=>({queued:false,status:safeDisplayText(error.code||error.message,160)}));
     const notificationTask=notifyAdminPaymentReport({ownerId,owner,mode,enteredCurrency,amountEntered:amount,usdEq,amountBs,reference,rateInfo,reportId:report?.id,access,bank,transactionDate,transactionDateSource,transactionDateConfidence,transactionDateNeedsReview,transactionDateEvidence,transactionStatus,observations,analysisSummary,attachment,paymentChannel,cashReceiver,submissionId}).catch(error=>({sent:false,status:'Error enviando notificación admin',detail:safeDisplayText(error.message,500)}));
     const [automation,adminNotification]=await Promise.all([within(automationTask,POST_CREATE_TIMEOUT_MS,{queued:false,status:'BACKGROUND_TRIGGER_TIMEOUT'}),within(notificationTask,POST_CREATE_TIMEOUT_MS,{sent:false,status:'Notificación diferida para proteger la respuesta del portal'})]);
     const requiresReview=presentedWarnings.length>0||transactionDateNeedsReview||analysisSummary.possibleVisualModification||!analysisSummary.prefillComplete||!['COMPLETED','SENT','PROCESSED'].includes(analysisSummary.transactionStatus);
-    const message=access.estado==='Habilitado'&&access.temporary?'Pago recibido. Tu acceso al portón está habilitado provisionalmente mientras administración revisa el reporte. El saldo sigue pendiente de aprobación.':access.reason==='ACCESS_SYNC_FAILED'?'Pago recibido. La habilitación del portón requiere reintento; el reporte quedó guardado para revisión.':'Pago recibido y pendiente de revisión administrativa.';
+    const message=access.estado==='Habilitado'&&access.temporary?'Pago recibido. Tu acceso al portón está habilitado provisionalmente mientras administración revisa el reporte. El saldo sigue pendiente de aprobación.':access.reason==='ACCESS_SYNC_FAILED'?'Pago recibido. La habilitación del portón requiere reintento; el reporte quedó guardado para revisión.':access.estado==='Limitado'?'Pago recibido para revisión. El monto reportado no cubre toda la deuda vencida; el acceso al portón sigue limitado.':'Pago recibido y pendiente de revisión administrativa.';
     console.info(JSON.stringify({event:'VLA_PAYMENT_REPORT_CREATED',reportId:report?.id||null,ownerId,paymentChannel,method,submissionId,reportTimestamp,transactionDate,transactionDateSource,transactionDateConfidence,dateAttestationVerified:Boolean(trustedProofDate),recipientAttestationVerified:Boolean(recipientVerification),recipientClassification:recipientVerification?.classification||'UNAVAILABLE',targetMode:mode,proofStored:Boolean(proof?.verified),analysisQueued:Boolean(automation.queued)}));
     return json(200,deepEscapeStrings({success:true,message,reportId:report?.id,trackingCode:paymentTracking.trackingCode(report.id,trackingCredential.token),paymentChannel,targetMode:mode,enteredCurrency,amountEntered:amount,amountUsdRef:usdEq,amountBs,rateApplied:rateInfo.rate||null,method,transactionDate,transactionDateSource,transactionDateConfidence,transactionDateNeedsReview,transactionDateEvidence,uncertaintyAcknowledged:presentedWarnings.length?uncertaintyAcknowledged:false,uncertaintyWarnings:presentedWarnings,duplicateReview:false,reviewDeadlineHours:requiresReview?72:null,reportTimestamp,attachmentIncluded:Boolean(attachment),proofStored:Boolean(proof?.verified),visualHashStored:Boolean(identity?.visualHash),automation,access,adminNotification}));
   }catch(error){

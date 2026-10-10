@@ -11,6 +11,7 @@ Module._load=function(request,parent,isMain){
     if(request==='./_shared/_airtable_meter')return{withAirtableUsage:(_name,handler)=>handler};
     if(request==='./_shared/_access_control')return{
       airtableCreateRecord:async(_table,fields)=>{created.push(fields);return{id:'recREPORT00000001'}},
+      airtablePatchRecord:async(_table,_id,patch)=>{Object.assign(created[created.length-1],patch);return{fields:patch}},
       airtableGetRecord:async()=>({fields:{Casa:4,Propietario:'Casa 4','Estado Acceso Portón':'Limitado'}}),
       syncOwnerAccess:async(ownerId,options)=>{accessCalls.push({ownerId,options});return{estado:'Habilitado',temporary:true}},
       TABLES:{reportes:'Reportes de Pago',propietarios:'Propietarios',pagos:'Pagos'},

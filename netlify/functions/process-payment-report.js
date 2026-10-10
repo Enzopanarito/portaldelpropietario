@@ -72,7 +72,7 @@ const handler=async function(event){
   const status=selectName(fields.Estado||'Pendiente'),who=adminId(auth,decisionSource),reviewedAt=new Date().toISOString();
   if(status==='Confirmado'||status==='Rechazado'){
    let access={unchanged:true};
-   if(fields['Habilitación Provisional Aplicada']===true){
+   if(fields['Habilitación Provisional Aplicada']===true||String(fields['MKJ Operation ID']||'').startsWith('REPORT_PENDING|')){
     try{access=await syncOwnerAccess(ownerId,{ignoreMode:true,forceMkj:true,sendEmail:false});}
     catch(error){access={success:false,warning:safeDisplayText(error.message,500)};}
    }
@@ -107,7 +107,7 @@ const handler=async function(event){
    const patched=await airtablePatchRecord(TABLES.reportes,reportId,terminalPatch(input.action,fields,{who,reason:input.reason,now:reviewedAt}));writeStage=1;
    let guardWarning=null;try{await setState(operation,'PAYMENT_REPORT',reportId,'DONE',reportId)}catch(error){guardWarning=safeDisplayText(error.message,500)}
    let access={unchanged:true};
-   if(fields['Habilitación Provisional Aplicada']===true){
+   if(fields['Habilitación Provisional Aplicada']===true||String(fields['MKJ Operation ID']||'').startsWith('REPORT_PENDING|')){
     try{access=await syncOwnerAccess(ownerId,{ignoreMode:true,forceMkj:true,sendEmail:false,reason:'Reporte rechazado. Habilitación provisional revocada; acceso recalculado según la deuda vencida.'});}
     catch(error){access={success:false,warning:safeDisplayText(error.message,500)};}
    }
