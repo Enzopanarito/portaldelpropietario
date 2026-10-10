@@ -62,6 +62,37 @@ function pending({id,mode,amount}){return{id,fields:{Estado:'Pendiente','Propiet
   assert.match(result.reason,/reportes pendientes no modifican el acceso/i);
   assert.strictEqual(mkjCalls,0);
   assert.strictEqual(ownerPatch.fields['Estado Acceso Portón'],'Limitado');
+  const usdOnlyOwner={...owner(),fields:{...owner().fields,'Deuda Anterior':100,'Deuda Anterior USD':100,'Deuda Anterior Bs Ref':0}};
+  const authorized={...reports[0],fields:{...reports[0].fields,'Habilitación Provisional Aplicada':true,'MKJ Operation ID':'REPORT_PENDING|submission123'}};
+  const provisional=await access.syncOwnerAccess('recOwner00000001',{runMkj:false,sendEmail:false},{owners:[usdOnlyOwner],pagos:[],reportes:[authorized]});
+  assert.strictEqual(provisional.estado,'Habilitado');assert.strictEqual(provisional.temporary,true);
+  assert.strictEqual(provisional.calc.expiredUsd,100,'El permiso no cambia deuda.');
+  const rejected={...authorized,fields:{...authorized.fields,Estado:'Rechazado'}};
+  const revoked=await access.syncOwnerAccess('recOwner00000001',{runMkj:false,sendEmail:false},{owners:[usdOnlyOwner],pagos:[],reportes:[rejected]});
+  assert.strictEqual(revoked.estado,'Limitado');assert.strictEqual(revoked.temporary,false);
+  const another={...authorized,id:'recOtherPending1'};
+  const kept=await access.syncOwnerAccess('recOwner00000001',{runMkj:false,sendEmail:false},{owners:[usdOnlyOwner],pagos:[],reportes:[rejected,another]});
+  assert.strictEqual(kept.estado,'Habilitado','Otro reporte pendiente válido conserva el permiso.');
+  const otherOwner={...authorized,fields:{...authorized.fields,'Propietario que Reporta':['recDifferent001']}};
+  const isolated=await access.syncOwnerAccess('recOwner00000001',{runMkj:false,sendEmail:false},{owners:[usdOnlyOwner],pagos:[],reportes:[otherOwner]});
+  assert.strictEqual(isolated.estado,'Limitado');
+  for(const amount of [50,99,100,150]){
+   const candidate={...authorized,fields:{...authorized.fields,'Monto Reportado':amount,'Equivalente USD Reportado':amount}};
+   const result=await access.syncOwnerAccess('recOwner00000001',{runMkj:false,sendEmail:false},{owners:[usdOnlyOwner],pagos:[],reportes:[candidate]});
+   assert.strictEqual(result.estado,amount>=100?'Habilitado':'Limitado',`Deuda 100, reporte ${amount}`);
+   assert.strictEqual(result.temporary,amount>=100);
+   assert.strictEqual(result.calc.expiredUsd,100,'Un reporte no disminuye el saldo.');
+  }
+  const mixedOwner=owner();
+  const onlyUsd=access.calculateExpiredAccessDebt(mixedOwner,[],[authorized]);
+  assert.strictEqual(onlyUsd.provisionalCoversExpiredDebt,false,'El exceso USD no cubre deuda Bs.');
+  const authorizedBs={...authorized,id:'recAuthorizedBs1',fields:{...authorized.fields,'Forma de Pago Reportada':'Bs BCV','Monto Reportado':100,'Equivalente USD Reportado':100}};
+  const coveredBoth=access.calculateExpiredAccessDebt(mixedOwner,[],[authorized,authorizedBs]);
+  assert.strictEqual(coveredBoth.provisionalCoversExpiredDebt,true);
+  const rejectedBs={...authorizedBs,fields:{...authorizedBs.fields,Estado:'Rechazado'}};
+  assert.strictEqual(access.calculateExpiredAccessDebt(mixedOwner,[],[authorized,rejectedBs]).provisionalCoversExpiredDebt,false);
+  const partial={...authorized,fields:{...authorized.fields,'Monto Reportado':50,'Equivalente USD Reportado':50}};
+  assert.strictEqual(access.calculateExpiredAccessDebt(usdOnlyOwner,[],[partial,partial]).provisionalCoversExpiredDebt,false,'No se cuenta dos veces el mismo reporte.');
  }finally{
   global.fetch=previousFetch;
   for(const key of Object.keys(process.env))if(!(key in previousEnv))delete process.env[key];
@@ -69,7 +100,7 @@ function pending({id,mode,amount}){return{id,fields:{Estado:'Pendiente','Propiet
  }
 
  const endpointSource=fs.readFileSync(path.join(__dirname,'..','netlify','functions','public-report-payment.js'),'utf8');
- assert(!/\bsyncOwnerAccess\b/.test(endpointSource),'El endpoint público no puede importar ni llamar syncOwnerAccess.');
+ assert(/\bsyncOwnerAccess\b/.test(endpointSource),'El reporte debe sincronizar el permiso provisional.');
  assert(endpointSource.includes("require('./_shared/_pending_report_access_policy')"));
  const accessSource=fs.readFileSync(path.join(__dirname,'..','netlify','functions','_shared','_access_control.js'),'utf8');
  assert(!accessSource.includes('Habilitación temporal automática por reporte de pago pendiente'));
