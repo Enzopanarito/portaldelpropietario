@@ -1,0 +1,3 @@
+unit_code,unit_name,unit_type,structure_type,structure_code,structure_name,ownership_coefficient,person_key,owner_name,owner_email,owner_phone,document_type,document_number,opening_USD,opening_VES
+A-101,Apartamento 101,apartment,tower,A,Torre A,0.5000000000,person-001,Propietario Ejemplo,propietario@example.com,+580000000000,cedula,V-00000000,100.00,-25.00
+A-102,Apartamento 102,apartment,tower,A,Torre A,0.5000000000,person-002,Segundo Propietario,segundo@example.com,+580000000001,cedula,V-00000001,0,500.00
