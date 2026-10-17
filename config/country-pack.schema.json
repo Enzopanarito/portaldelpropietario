@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://platform.example/schemas/country-pack.schema.json",
+  "title": "Country Pack",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "countryCode",
+    "version",
+    "status",
+    "locale",
+    "currency",
+    "terminology",
+    "privacy",
+    "collections",
+    "access",
+    "payments",
+    "documents"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0" },
+    "countryCode": { "type": "string", "pattern": "^[A-Z]{2}$" },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "effectiveFrom": { "type": ["string", "null"], "format": "date" },
+    "status": { "type": "string", "enum": ["draft", "legal-review", "pilot", "supported", "deprecated"] },
+    "locale": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["defaultLanguage", "supportedLanguages", "defaultTimezone", "dateFormat"],
+      "properties": {
+        "defaultLanguage": { "type": "string" },
+        "supportedLanguages": { "type": "array", "items": { "type": "string" }, "minItems": 1, "uniqueItems": true },
+        "defaultTimezone": { "type": "string" },
+        "allowedTimezones": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "dateFormat": { "type": "string" },
+        "phoneCountryCode": { "type": "string" },
+        "addressFormat": { "type": ["string", "null"] }
+      }
+    },
+    "currency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["primary", "allowed", "roundingMode"],
+      "properties": {
+        "primary": { "type": "string", "pattern": "^[A-Z]{3}$" },
+        "allowed": { "type": "array", "items": { "type": "string", "pattern": "^[A-Z]{3}$" }, "minItems": 1, "uniqueItems": true },
+        "roundingMode": { "type": "string", "enum": ["half-up", "half-even", "down", "up"] },
+        "exchangeRateProviders": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+      }
+    },
+    "terminology": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "required": ["community", "unit", "ordinaryCharge", "extraordinaryCharge", "administrator", "owner"]
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "personDocumentTypes": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "organizationDocumentTypes": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "validationProvider": { "type": ["string", "null"] }
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["legalReviewRequired", "biometricClassification", "defaultRetentionPolicy"],
+      "properties": {
+        "legalReviewRequired": { "type": "boolean", "const": true },
+        "governingFrameworkRefs": { "type": "array", "items": { "type": "string" } },
+        "controllerProcessorModel": { "type": "string", "enum": ["country-specific", "controller-processor", "joint-controller-review-required"] },
+        "biometricClassification": { "type": "string", "enum": ["sensitive", "special-category", "personal", "legal-review-required"] },
+        "crossBorderTransferReviewRequired": { "type": "boolean", "default": true },
+        "dataSubjectRights": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "defaultRetentionPolicy": { "type": "string" },
+        "consentTemplates": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+      }
+    },
+    "collections": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lateFeePolicyMode", "physicalAccessRestrictionByDebt"],
+      "properties": {
+        "lateFeePolicyMode": { "type": "string", "enum": ["tenant-configurable-with-country-limits", "country-fixed", "legal-review-required"] },
+        "interestPolicyMode": { "type": "string", "enum": ["tenant-configurable-with-country-limits", "country-fixed", "legal-review-required"] },
+        "physicalAccessRestrictionByDebt": { "type": "string", "enum": ["disabled", "legal-review-required", "conditionally-allowed"] },
+        "minimumDueProcessRequirements": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "access": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["defaultProvider", "allowedProviderKinds", "storeBiometricTemplatesInCore"],
+      "properties": {
+        "defaultProvider": { "type": ["string", "null"] },
+        "allowedProviderKinds": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "storeBiometricTemplatesInCore": { "type": "boolean", "const": false },
+        "accessEventRetentionDays": { "type": ["integer", "null"], "minimum": 1 },
+        "emergencyFailSafeRequired": { "type": "boolean", "default": true }
+      }
+    },
+    "payments": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supportedRails"],
+      "properties": {
+        "supportedRails": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code", "providerType", "enabledByDefault"],
+            "properties": {
+              "code": { "type": "string" },
+              "providerType": { "type": "string", "enum": ["bank-transfer", "instant-payment", "card", "wallet", "cash", "crypto", "manual", "other"] },
+              "enabledByDefault": { "type": "boolean" },
+              "reconciliationMode": { "type": "string", "enum": ["api", "webhook", "file", "proof-review", "manual"] }
+            }
+          }
+        },
+        "paymentProofPolicy": { "type": "string", "enum": ["optional", "required", "provider-dependent", "tenant-configurable"] }
+      }
+    },
+    "documents": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receiptTerminology", "electronicSignaturePolicy"],
+      "properties": {
+        "receiptTerminology": { "type": "string" },
+        "electronicSignaturePolicy": { "type": "string", "enum": ["not-required", "supported", "required-for-specified-docs", "legal-review-required"] },
+        "mandatoryTemplates": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+      }
+    },
+    "messaging": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "preferredChannels": { "type": "array", "items": { "type": "string", "enum": ["whatsapp", "email", "sms", "push", "in-app"] }, "uniqueItems": true },
+        "marketingConsentSeparate": { "type": "boolean", "default": true }
+      }
+    },
+    "legalValidation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reviewedBy": { "type": ["string", "null"] },
+        "reviewDate": { "type": ["string", "null"], "format": "date" },
+        "nextReviewDate": { "type": ["string", "null"], "format": "date" },
+        "notes": { "type": ["string", "null"] }
+      }
+    }
+  }
+}
