@@ -8,6 +8,7 @@
   },
   "deployment": {
     "supabaseRegion": "us-east-1",
+    "dataPlaneMode": "dedicated",
     "ownershipMode": "client_owned",
     "migrationMode": "client_managed",
     "vercelRuntime": "regional-shared",
