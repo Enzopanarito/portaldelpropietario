@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "1.0",
+  "tenant": {
+    "slug": "edificio-demo",
+    "displayName": "Edificio Demo",
+    "legalName": "Edificio Demo",
+    "countryCode": "VE"
+  },
+  "deployment": {
+    "supabaseRegion": "us-east-1",
+    "dataPlaneMode": "shared",
+    "ownershipMode": "platform_owned",
+    "migrationMode": "platform_managed",
+    "vercelRuntime": "regional-shared",
+    "desiredSchemaVersion": "1.0.0"
+  },
+  "localization": {
+    "timezone": "America/Caracas",
+    "primaryCurrency": "VES",
+    "secondaryCurrencies": [
+      "USD"
+    ]
+  },
+  "domain": {
+    "hostname": "demo.example.com",
+    "status": "pending"
+  },
+  "modules": [
+    "payments",
+    "notifications",
+    "documents"
+  ],
+  "access": {
+    "providerKind": "mkj",
+    "storeBiometricTemplatesInCore": false,
+    "debtRestrictionAutomation": false,
+    "legalApprovalRecorded": false
+  },
+  "onboarding": {
+    "source": "csv",
+    "reconciliationRequired": true
+  }
+}
