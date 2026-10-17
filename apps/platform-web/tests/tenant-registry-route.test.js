@@ -18,6 +18,7 @@ function healthyRows() {
   return [
     [{ tenant_id: TENANT_ID, status: 'verified' }],
     [{ id: TENANT_ID, slug: 'residencias-a', display_name: 'Residencias A', country_code: 'VE', country_pack_version: 'VE-0.1', status: 'active' }],
+    [],
     [{ project_url: 'https://abcdefghijklmnopqrst.supabase.co', publishable_key: 'sb_publishable_example', lifecycle_status: 'healthy', schema_version: '1.0.0' }]
   ];
 }
@@ -36,7 +37,7 @@ test('registry uses apikey-only secret auth and custom schema profile', async ()
 
   const record = await registry.lookupByHostname('Portal.Example.COM:443');
   assert.equal(record.tenantSlug, 'residencias-a');
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 4);
   for (const call of calls) {
     assert.equal(call.init.headers.apikey, SECRET);
     assert.equal(call.init.headers['Accept-Profile'], 'platform_control');
@@ -49,7 +50,7 @@ test('registry uses apikey-only secret auth and custom schema profile', async ()
 
 test('unhealthy Data Plane is treated as unavailable', async () => {
   const rows = healthyRows();
-  rows[2][0].lifecycle_status = 'degraded';
+  rows[3][0].lifecycle_status = 'degraded';
   let index = 0;
   const registry = createControlPlaneRegistry({
     baseUrl: BASE,
