@@ -15,6 +15,7 @@ Production topology keeps the Control Plane separate from each customer's Data P
 - schema/function compatibility versions;
 - distributor/installer relationships;
 - encrypted references required to manage a customer-owned Supabase project;
+- deterministic provisioning runs and append-only provisioning step events;
 - platform audit events.
 
 ## What never belongs here
@@ -75,6 +76,12 @@ The schema stores ciphertext, IV, authentication tag, AAD hash and key version o
 ## Client denial
 
 Every Control Plane table has RLS enabled and an explicit deny policy for `anon` and `authenticated`. Grants are also revoked. Only trusted server-side `service_role` access is granted in v1. This is deliberate defense in depth.
+
+## Provisioning runs
+
+Every commercial tenant is provisioned from a validated, secret-free manifest. The Control Plane stores the manifest hash and deterministic plan, not credentials. `provisioning_runs.idempotency_key` prevents accidental duplicate onboarding, while `provisioning_step_events` is append-only so retries are auditable.
+
+A failed step resumes at that same step with a higher attempt number. Completed prior steps are never silently repeated. This prevents a retry from creating duplicate Supabase projects, domains or tenant records.
 
 ## Release compatibility
 
