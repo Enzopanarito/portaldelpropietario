@@ -6,6 +6,37 @@
 
 **Airtable:** se mantiene sin cambios para Villas Los Apamates mientras dure la transición y puede conservarse como herramienta auxiliar de backoffice/importación, pero no será el ledger ni la fuente canónica del SaaS.
 
+## Política de costos: Free-first
+
+La plataforma comercial se desarrollará y validará inicialmente **sin costos fijos de infraestructura** siempre que los límites técnicos lo permitan.
+
+Reglas:
+
+1. Construir sobre el plan gratuito de Supabase durante desarrollo y primer piloto.
+2. No activar add-ons, dominios de pago, backups avanzados, PITR, compute adicional ni otras capacidades facturables durante esta fase.
+3. No subir de plan por anticipación. El upgrade se realizará únicamente cuando el consumo real o las necesidades operativas de uno o más condominios lo justifiquen.
+4. El código deberá ser portable entre Free y Pro sin bifurcar la aplicación ni alterar el modelo de datos.
+5. El sistema deberá registrar métricas de uso por tenant para saber qué cliente está generando base de datos, almacenamiento, egress, funciones y actividad.
+6. Cuando un cliente haga necesario un plan superior, ese costo deberá incorporarse al precio comercial del servicio y no absorberse de forma indefinida como costo oculto.
+
+### Límites de diseño para la fase gratuita
+
+A fecha de octubre de 2026, Supabase Free ofrece por proyecto, entre otros recursos, 500 MB de base de datos, 1 GB de Storage, 5 GB de egress, 50.000 usuarios activos mensuales, 500.000 invocaciones de Edge Functions y APIs sin límite de llamadas. Los proyectos gratuitos pueden pausarse por inactividad.
+
+La arquitectura deberá mantenerse por debajo de estos límites durante desarrollo y piloto, evitando almacenar binarios grandes dentro de PostgreSQL y aplicando políticas de retención a archivos no esenciales.
+
+### Disparadores de upgrade
+
+Evaluar paso a Pro cuando ocurra cualquiera de estos casos:
+
+- La base se acerque de forma sostenida al 70–80 % del límite gratuito.
+- Storage o egress se acerquen al límite y la reducción razonable de consumo no sea suficiente.
+- El proyecto ya sea operación comercial crítica y necesite backups automáticos, mayor disponibilidad operativa o evitar pausas por inactividad.
+- El número de comunidades/clientes activos justifique separar infraestructura o aumentar capacidad.
+- El rendimiento medido en producción deje de cumplir los objetivos de respuesta definidos para propietarios y administradores.
+
+El upgrade no cambia el modelo multi-tenant ni requiere reconstruir la aplicación; únicamente aumenta los recursos y capacidades disponibles.
+
 ## Razones
 
 ### 1. Multi-tenancy real
