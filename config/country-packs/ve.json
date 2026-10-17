@@ -1,0 +1,83 @@
+{
+  "schemaVersion": "1.0",
+  "countryCode": "VE",
+  "version": "0.1.0",
+  "effectiveFrom": null,
+  "status": "pilot",
+  "locale": {
+    "defaultLanguage": "es-VE",
+    "supportedLanguages": ["es-VE"],
+    "defaultTimezone": "America/Caracas",
+    "allowedTimezones": ["America/Caracas"],
+    "dateFormat": "DD/MM/YYYY",
+    "phoneCountryCode": "+58",
+    "addressFormat": null
+  },
+  "currency": {
+    "primary": "VES",
+    "allowed": ["VES", "USD"],
+    "roundingMode": "half-up",
+    "exchangeRateProviders": ["bcv", "manual"]
+  },
+  "terminology": {
+    "community": "condominio",
+    "unit": "unidad",
+    "ordinaryCharge": "cuota ordinaria",
+    "extraordinaryCharge": "cuota extraordinaria",
+    "administrator": "administrador",
+    "owner": "propietario"
+  },
+  "identity": {
+    "personDocumentTypes": ["cedula", "passport"],
+    "organizationDocumentTypes": ["rif"],
+    "validationProvider": null
+  },
+  "privacy": {
+    "legalReviewRequired": true,
+    "governingFrameworkRefs": [],
+    "controllerProcessorModel": "country-specific",
+    "biometricClassification": "legal-review-required",
+    "crossBorderTransferReviewRequired": true,
+    "dataSubjectRights": [],
+    "defaultRetentionPolicy": "tenant-configurable-with-legal-review",
+    "consentTemplates": []
+  },
+  "collections": {
+    "lateFeePolicyMode": "legal-review-required",
+    "interestPolicyMode": "legal-review-required",
+    "physicalAccessRestrictionByDebt": "legal-review-required",
+    "minimumDueProcessRequirements": ["tenant-policy", "audit-event", "human-override", "emergency-fail-safe"]
+  },
+  "access": {
+    "defaultProvider": "mkj",
+    "allowedProviderKinds": ["mkj", "generic-wiegand", "hikvision", "zkteco", "qr", "lpr"],
+    "storeBiometricTemplatesInCore": false,
+    "accessEventRetentionDays": null,
+    "emergencyFailSafeRequired": true
+  },
+  "payments": {
+    "supportedRails": [
+      { "code": "bank-transfer", "providerType": "bank-transfer", "enabledByDefault": true, "reconciliationMode": "proof-review" },
+      { "code": "pago-movil", "providerType": "instant-payment", "enabledByDefault": true, "reconciliationMode": "proof-review" },
+      { "code": "cash", "providerType": "cash", "enabledByDefault": true, "reconciliationMode": "manual" },
+      { "code": "zelle", "providerType": "other", "enabledByDefault": false, "reconciliationMode": "proof-review" },
+      { "code": "crypto", "providerType": "crypto", "enabledByDefault": false, "reconciliationMode": "proof-review" }
+    ],
+    "paymentProofPolicy": "provider-dependent"
+  },
+  "documents": {
+    "receiptTerminology": "recibo de pago",
+    "electronicSignaturePolicy": "legal-review-required",
+    "mandatoryTemplates": []
+  },
+  "messaging": {
+    "preferredChannels": ["whatsapp", "email", "in-app"],
+    "marketingConsentSeparate": true
+  },
+  "legalValidation": {
+    "reviewedBy": null,
+    "reviewDate": null,
+    "nextReviewDate": null,
+    "notes": "Pilot configuration. Sensitive legal automations remain gated until local legal review."
+  }
+}
