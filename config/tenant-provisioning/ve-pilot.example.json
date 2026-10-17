@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "1.0",
+  "tenant": {
+    "slug": "residencias-piloto",
+    "displayName": "Residencias Piloto",
+    "legalName": "Residencias Piloto",
+    "countryCode": "VE"
+  },
+  "deployment": {
+    "supabaseRegion": "us-east-1",
+    "ownershipMode": "client_owned",
+    "migrationMode": "client_managed",
+    "vercelRuntime": "regional-shared",
+    "desiredSchemaVersion": "1.0.0"
+  },
+  "localization": {
+    "timezone": "America/Caracas",
+    "primaryCurrency": "VES",
+    "secondaryCurrencies": ["USD"]
+  },
+  "domain": {
+    "hostname": "piloto.example.com",
+    "status": "pending"
+  },
+  "modules": ["payments", "access", "notifications", "documents"],
+  "access": {
+    "providerKind": "mkj",
+    "storeBiometricTemplatesInCore": false,
+    "debtRestrictionAutomation": false,
+    "legalApprovalRecorded": false
+  },
+  "onboarding": {
+    "source": "csv",
+    "reconciliationRequired": true
+  }
+}
