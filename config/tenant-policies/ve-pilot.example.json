@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "countryCode": "VE",
+  "timezone": "America/Caracas",
+  "currencies": ["VES", "USD"],
+  "payments": {
+    "enabledRails": ["bank-transfer", "pago-movil", "cash"]
+  },
+  "access": {
+    "provider": "mkj",
+    "emergencyFailSafe": true,
+    "debtRestriction": {
+      "enabled": false,
+      "legalApproval": null
+    }
+  }
+}
