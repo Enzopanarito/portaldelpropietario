@@ -96,10 +96,6 @@ const tailwindBin=path.join(ROOT,'node_modules','.bin',process.platform==='win32
 execFileSync(tailwindBin,[
   '-i',path.join(ROOT,'scripts','tailwind-input.css'),
   '-o',path.join(DIST,'tailwind.generated.css'),
-  '--content',[
-    path.join(ROOT,'*.html'),path.join(ROOT,'*.js'),
-    path.join(ROOT,'netlify','edge-functions','*.js')
-  ].join(','),
   '--minify'
 ],{cwd:ROOT,stdio:'inherit'});
 
