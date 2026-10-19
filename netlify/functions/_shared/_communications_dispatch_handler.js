@@ -25,7 +25,7 @@ exports.handler = async function(event) {
     if (!claim.claimed) return response(200, { success: true, idempotent: true, jobId, status: claim.job?.status });
     claimed = true;
     const job = claim.job;
-    const catalog = await loadCatalog();
+    const catalog = await loadCatalog({ requireExpenses: Boolean(job.linkedExpenseId) });
     const ownerSet = new Set(job.ownerIds || []);
     const owners = catalog.owners.filter(owner => ownerSet.has(owner.id));
     if (owners.length !== ownerSet.size) throw new Error('Cambió el catálogo de propietarios; el envío fue bloqueado antes de despachar.');

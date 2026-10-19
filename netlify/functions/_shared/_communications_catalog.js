@@ -23,21 +23,27 @@ async function all(table, fields = []) {
   } while (offset);
   return records;
 }
-async function loadCatalog() {
-  const [ownerRecords, expenseRecords] = await Promise.all([
-    all(TABLES.owners, ['Casa', 'Propietario', 'Email', 'MKJ Email', 'Alicuota']),
-    all(TABLES.expenses, ['Concepto', 'Monto', 'Tipo de Gasto', 'Forma de Pago', 'Propietarios', 'Mes Contable', 'Estado Registro'])
-  ]);
+async function loadCatalog({ requireExpenses = false } = {}) {
+  // Los avisos sin gasto vinculado deben funcionar aunque el listado de gastos falle.
+  const ownerRecords = await all(TABLES.owners, ['Casa', 'Propietario', 'Email', 'MKJ Email', 'Alicuota']);
   const owners = ownerRecords.map(record => ({
     id: record.id, Casa: Number(record.fields?.Casa), Propietario: String(record.fields?.Propietario || ''),
     Email: String(record.fields?.Email || record.fields?.['MKJ Email'] || '').trim(), Alicuota: Number(record.fields?.Alicuota || 0)
   })).filter(owner => owner.Casa >= 1 && owner.Casa <= 15).sort((a, b) => a.Casa - b.Casa);
   if (owners.length !== 15 || new Set(owners.map(owner => owner.Casa)).size !== 15) throw new Error(`El catálogo no contiene las 15 casas canónicas (${owners.length}/15).`);
-  const expenses = filterActiveExpenses(expenseRecords, currentMonthCaracas());
-  return { owners, expenses };
+  let expenses = [], expenseWarning = null;
+  try {
+    const expenseRecords = await all(TABLES.expenses, ['Concepto', 'Monto', 'Tipo de Gasto', 'Forma de Pago', 'Propietarios', 'Mes de Aplicación', 'Estado del Gasto']);
+    expenses = filterActiveExpenses(expenseRecords, currentMonthCaracas());
+  } catch (error) {
+    if (requireExpenses) throw error;
+    expenseWarning = 'No fue posible cargar los gastos. Las comunicaciones sin gasto vinculado siguen disponibles.';
+  }
+  return { owners, expenses, expenseWarning };
 }
 function publicCatalog(catalog) {
   return {
+    expenseWarning: catalog.expenseWarning || null,
     owners: catalog.owners.map(owner => ({ id: owner.id, house: owner.Casa, name: owner.Propietario, emailConfigured: Boolean(owner.Email) })),
     expenses: catalog.expenses.map(record => ({
       id: record.id, concept: String(record.fields?.Concepto || ''), amount: Number(record.fields?.Monto || 0),

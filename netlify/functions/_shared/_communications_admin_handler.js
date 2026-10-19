@@ -79,10 +79,10 @@ exports.handler = async function(event) {
       const draft = contract.normalizeDraft(body);
       const channels = contract.normalizeChannels(body.channels);
       const ownerIds = contract.normalizeOwnerIds(body.ownerIds);
-      const catalog = await loadCatalog();
+      const linkedExpenseId = String(body.linkedExpenseId || '').trim();
+      const catalog = await loadCatalog({ requireExpenses: Boolean(linkedExpenseId) });
       const valid = new Set(catalog.owners.map(owner => owner.id));
       if (ownerIds.some(id => !valid.has(id))) return json(400, { message: 'La selección contiene una casa que ya no existe.' });
-      const linkedExpenseId = String(body.linkedExpenseId || '').trim();
       if (linkedExpenseId && !catalog.expenses.some(expense => expense.id === linkedExpenseId)) return json(400, { message: 'El gasto vinculado ya no está activo.' });
       const now = new Date();
       const jobId = contract.jobIdFromRequest(body.operationId, now);
