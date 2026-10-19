@@ -17,13 +17,13 @@
     "@netlify/blobs": "9.1.5",
     "nodemailer": "10.0.13",
     "pdfkit": "^0.15.0",
-    "sharp": "0.35.4",
-    "tailwindcss": "^3.4.17"
+    "sharp": "0.35.5"
   },
   "overrides": {
     "nanoid": "3.3.18"
   },
   "devDependencies": {
-    "playwright": "1.55.1"
+    "playwright": "1.55.1",
+    "tailwindcss": "^3.4.17"
   }
 }
