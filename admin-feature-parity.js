@@ -2,7 +2,7 @@
   'use strict';
   function loadRecurringExpenses(){
     if(document.getElementById('vla-recurring-expenses-script'))return;
-    const script=document.createElement('script');script.id='vla-recurring-expenses-script';script.src='/admin-recurring-expenses.js';document.body.appendChild(script);
+    const script=document.createElement('script');script.id='vla-recurring-expenses-script';script.src='/admin-recurring-expenses.js?v=20261029-month-label-utc';document.body.appendChild(script);
   }
   function install(){
     const host=document.querySelector('#vla-premium-sidebar .vla-side-bottom');
