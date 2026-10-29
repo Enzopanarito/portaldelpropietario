@@ -11,7 +11,7 @@
     return[...active,...scheduled];
   }
   function findExpense(id){return expenseRecords().find(item=>item.id===id)||null}
-  function monthLabel(ym){try{const [y,m]=String(ym).split('-').map(Number);return new Intl.DateTimeFormat('es-VE',{month:'long',year:'numeric'}).format(new Date(Date.UTC(y,m-1,1)))}catch{return ym}}
+  function monthLabel(ym){const value=String(ym||'');const match=/^(\d{4})-(0[1-9]|1[0-2])$/.exec(value);if(!match)return value;return new Intl.DateTimeFormat('es-VE',{timeZone:'UTC',month:'long',year:'numeric'}).format(new Date(Date.UTC(Number(match[1]),Number(match[2])-1,1)))}
   function nextMonth(ym){const [y,m]=String(ym).split('-').map(Number),d=new Date(Date.UTC(y,m,1));return`${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}`}
   function currentMonth(){return typeof caracasDate==='function'?caracasDate().slice(0,7):new Date().toISOString().slice(0,7)}
   async function post(body){if(typeof adminFetch!=='function')throw new Error('Sesión administrativa no disponible.');return adminFetch('/.netlify/functions/admin-expense-action',{method:'POST',body:JSON.stringify(body)})}
