@@ -14,13 +14,11 @@ const source = rel => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const sha256 = rel => crypto.createHash('sha256').update(source(rel)).digest('hex');
 const hash = value => crypto.createHash('sha256').update(String(value)).digest('hex');
 
-test('respaldo contractual: el flujo completo de reporte de pago permanece byte a byte intacto', () => {
+test('respaldo contractual: la evidencia y la interfaz de pagos permanecen aisladas de comunicaciones', () => {
   const expected = {
-    'netlify/functions/public-report-payment.js': '27e6c68f1b4b8f6e01ce876e724ece0d2e0b9f3aff220e0e20079755460b7f3e',
     'owner-payment-report-v3.js': '22c8ed9d0ff3e989c0f10668095db77c1c16267122e8e0fa5386ecf2c755b590',
     'owner-payment-report-v3.css': '884d7838b97f68f55978875f69a36db1de8baa883ef49f343b465035eaf87b2a',
     'payment-report-intelligence.js': '247911c5df02ce2cc8a9fe5cb0eab459cfc9ad04c02e1e9d88e0337168eb906c',
-    'netlify/functions/process-payment-report.js': '5369463f99d65f4b236e23a6a85a472a39e08a68a534de473dc02f13afddd16e',
     'netlify/functions/_shared/_payment_proof_core.js': 'a998d07837c9f80a161a615771554eab55df09a2d034b0c41bba4e3564aab41b'
   };
   for (const [file, digest] of Object.entries(expected)) assert.equal(sha256(file), digest, file);

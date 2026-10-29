@@ -2,7 +2,7 @@ const {withAirtableUsage}=require('./_shared/_airtable_meter');
 
 // Decisiones administrativas de reportes de pago.
 // Solo una aprobación materializa un pago. Rechazos, solicitudes de información
-// y duplicados nunca recalculan saldo ni acceso. La relación Reporte -> Pago y la
+// y duplicados no cambian saldos y revocan el acceso provisional del reporte. La relación Reporte -> Pago y la
 // guardia persistente permiten reanudar una finalización sin crear un segundo pago.
 
 'use strict';
@@ -70,8 +70,14 @@ const handler=async function(event){
   let report=await airtableGetRecord(TABLES.reportes,reportId),fields=report.fields||{},ownerId=(fields['Propietario que Reporta']||[])[0];
   if(!validRecordId(ownerId))return json(400,{success:false,message:'El reporte no tiene propietario válido.'});
   const status=selectName(fields.Estado||'Pendiente'),who=adminId(auth,decisionSource),reviewedAt=new Date().toISOString();
-  if(status==='Confirmado')return json(200,{success:true,decision:'already-confirmed',message:'Este reporte ya estaba confirmado. No se creó otro pago.',report:deepEscapeStrings(report)});
-  if(status==='Rechazado')return json(200,{success:true,decision:'already-rejected',message:'Este reporte ya estaba rechazado. No se hizo ningún cambio.',report:deepEscapeStrings(report)});
+  if(status==='Confirmado'||status==='Rechazado'){
+   let access={unchanged:true};
+   if(fields['Habilitación Provisional Aplicada']===true||String(fields['MKJ Operation ID']||'').startsWith('REPORT_PENDING|')){
+    try{access=await syncOwnerAccess(ownerId,{ignoreMode:true,forceMkj:true,sendEmail:false});}
+    catch(error){access={success:false,warning:safeDisplayText(error.message,500)};}
+   }
+   return json(200,{success:true,decision:status==='Confirmado'?'already-confirmed':'already-rejected',message:access.success===false?'La decisión ya está guardada; la sincronización del portón requiere reintento.':'La decisión ya está guardada. No se creó otro pago.',report:deepEscapeStrings(report),access:deepEscapeStrings(access)});
+  }
 
   if(input.action==='request_information'){
    const requestHistory=appendInformationRequest(fields['Solicitud de Información'],input.reason,reviewedAt),patched=await airtablePatchRecord(TABLES.reportes,reportId,{'Estado de Procesamiento':'Información solicitada','Decisión Administrativa':'Información solicitada','Validación Realizada Por':'Administrador','Administrador que Revisó':who,'Fecha Revisión':reviewedAt,'Solicitud de Información':requestHistory,'Fecha Solicitud Información':reviewedAt,'Notificación Propietario':input.reason,'Log de Auditoría':audit(fields,{action:input.action,adminId:who,reason:input.reason,result:'information-requested',at:reviewedAt})});
@@ -100,7 +106,12 @@ const handler=async function(event){
   if(input.terminal){
    const patched=await airtablePatchRecord(TABLES.reportes,reportId,terminalPatch(input.action,fields,{who,reason:input.reason,now:reviewedAt}));writeStage=1;
    let guardWarning=null;try{await setState(operation,'PAYMENT_REPORT',reportId,'DONE',reportId)}catch(error){guardWarning=safeDisplayText(error.message,500)}
-   return json(200,{success:true,decision:input.action,message:input.action==='mark_duplicate'?'Reporte marcado como duplicado. No se modificó saldo ni acceso.':'Pago rechazado. No se modificó saldo ni acceso.',warning:guardWarning,report:deepEscapeStrings(patched),access:{unchanged:true}});
+   let access={unchanged:true};
+   if(fields['Habilitación Provisional Aplicada']===true||String(fields['MKJ Operation ID']||'').startsWith('REPORT_PENDING|')){
+    try{access=await syncOwnerAccess(ownerId,{ignoreMode:true,forceMkj:true,sendEmail:false,reason:'Reporte rechazado. Habilitación provisional revocada; acceso recalculado según la deuda vencida.'});}
+    catch(error){access={success:false,warning:safeDisplayText(error.message,500)};}
+   }
+   return json(200,{success:true,decision:input.action,message:access.success===false?'Reporte rechazado. La sincronización del portón requiere reintento.':'Reporte rechazado. El saldo no cambió y el acceso provisional se recalculó.',warning:guardWarning,report:deepEscapeStrings(patched),access:deepEscapeStrings(access)});
   }
 
   const correctionPatch=adminDecision.correctionPatch(fields,input.corrections,effective,input.reason);
@@ -120,7 +131,7 @@ const handler=async function(event){
   writeStage=2;
 
   let receipt=null;try{receipt=await createAndSendReceipt({ownerId,paymentId,mode:effective.mode,amountUsd:effective.amountUsd,amountBs:effective.amountBs,reference:effective.reference,concept:decisionSource==='automatic'?'Pago reportado y validado automáticamente':input.action==='approve_exception'?'Pago reportado y aprobado por excepción administrativa':'Pago reportado y aprobado por administración'})}catch(error){receipt={success:false,warning:safeDisplayText(error.message,500)}}
-  let access=null;try{access=await syncOwnerAccess(ownerId,{reason:'Pago definitivo aprobado. Sincronización posterior a la creación idempotente del pago.',sendEmail:true})}catch(error){access={success:false,warning:safeDisplayText(error.message,500)}}
+  let access=null;try{access=await syncOwnerAccess(ownerId,{ignoreMode:true,forceMkj:true,reason:'Pago definitivo aprobado. Sincronización posterior a la creación idempotente del pago.',sendEmail:true})}catch(error){access={success:false,warning:safeDisplayText(error.message,500)}}
   let guardWarning=null;try{await setState(operation,'PAYMENT_REPORT',reportId,'DONE',paymentId)}catch(error){guardWarning=safeDisplayText(error.message,500)}
   const receiptSent=receipt?.email?.status==='Enviado',accessWarning=access?.success===false;
   return json(200,{success:true,decision:input.action,decisionSource,paymentCreated,message:accessWarning?'Pago confirmado. La sincronización del acceso requiere revisión.':receiptSent?'Pago confirmado, recibo enviado y acceso sincronizado.':'Pago confirmado y acceso sincronizado.',warning:guardWarning,report:deepEscapeStrings(patched),payment:deepEscapeStrings(payment),receipt:deepEscapeStrings(receipt),access:deepEscapeStrings(access),receiptPayload:{ownerId,paymentId,mode:effective.mode,amountUsd:effective.amountUsd,amountBs:effective.amountBs,reference:effective.reference}});
