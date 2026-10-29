@@ -1,5 +1,5 @@
 const ADMIN_PATHS=['/admin','/porton','/mkj-access','/seguridad','/audit','/auditoria','/whatsapp','/cierre-auditoria','/verificar-respaldo'];
-const ADMIN_PLANT_RELEASE='admin-plant-v3-2026-08-30-service-suspension-v1';
+const ADMIN_PLANT_RELEASE='admin-plant-v4-2026-10-29-manual-owner-selection';
 
 const ADMIN_ICON='/.netlify/functions/app-icon?app=portal&size=180';
 

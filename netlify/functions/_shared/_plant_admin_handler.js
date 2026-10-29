@@ -72,14 +72,21 @@ function createHandler(deps = {}) {
         if (body.type === 'Gasto Común') return json(400, { message: 'Los gastos de planta deben registrarse como Gasto Especial para mantenerlos fuera del pronto pago. El factor común aún no está aprobado.' });
         const classification = engine.inferPlantExpense(body.concept);
         if (!classification.isPlant && !body.category) return json(400, { message: 'El concepto no parece corresponder a la planta. Puede elegir la categoría manualmente.' });
+        const selectionMode = String(body.selectionMode || 'AUTO').toUpperCase();
+        if (!['AUTO','MANUAL'].includes(selectionMode)) return json(400, { message: 'Modo de selección inválido.' });
+        const selectedIds = body.ownerIds;
+        if (selectionMode === 'MANUAL' && (!Array.isArray(selectedIds) || !selectedIds.length || selectedIds.length > context.owners.length || selectedIds.some(id => typeof id !== 'string' || !context.owners.some(owner => owner.id === id)) || new Set(selectedIds).size !== selectedIds.length)) {
+          return json(400, { message: 'Seleccione manualmente al menos una casa válida, sin duplicados.' });
+        }
         const snapshot = engine.buildExpenseSnapshot({
           owners: context.owners, profiles: context.profiles, effectiveDate: body.effectiveDate || new Date(), classification,
+          explicitOwnerIds: selectionMode === 'MANUAL' ? selectedIds : undefined,
           explicitCategory: body.category || undefined,
           explicitRetroactive: typeof body.generatesRetroactive === 'boolean' ? body.generatesRetroactive : undefined,
           expense: { concept: body.concept, amount: body.amount, type: body.type || 'Gasto Especial', mode: body.mode || 'Bs BCV' }
         });
         return json(200, {
-          success: true, readOnly: true, classification, snapshotHash: snapshot.snapshotHash,
+          success: true, readOnly: true, classification, selectionMode, snapshotHash: snapshot.snapshotHash,
           category: snapshot.category, generatesRetroactive: snapshot.generatesRetroactive, allocationRule: snapshot.allocationRule,
           totalAmount: snapshot.totalAmount, assignedAmount: snapshot.totals.assignedAmount,
           included: snapshot.participants.filter(item => item.included).map(item => ({ house: item.house, ownerId: item.ownerId, amount: item.amount, profileState: item.profileState })),

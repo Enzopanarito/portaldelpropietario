@@ -2,6 +2,7 @@
 
 const crypto=require('crypto');
 const {EXPENSE_FIELDS:PLANT_FIELDS}=require('./_plant_store');
+const plantEngine=require('./_plant_engine');
 
 const FIELDS=Object.freeze({
  month:'Mes de Aplicación',
@@ -98,7 +99,13 @@ function buildPreloadPlan(records,{closingMonth=currentMonthCaracas(),targetMont
   const template=compactTemplate(record,targetMonth),key=templateKey(template),identity=templateIdentity(template);
   if(existingRecurringKeys.has(recurringKey)||existingKeys.has(key)||existingIdentities.has(identity))continue;
   existingRecurringKeys.add(recurringKey);existingKeys.add(key);existingIdentities.add(identity);
-  creates.push({sourceId:template.sourceId,key,recurringKey,fields:{Concepto:template.concept,Monto:template.amount,'Tipo de Gasto':template.type,'Forma de Pago':template.mode,Frecuencia:'Fijo',Propietarios:template.owners,[FIELDS.month]:targetMonth,[FIELDS.status]:STATUS.SCHEDULED,[FIELDS.origin]:ORIGIN.RECURRING,[FIELDS.templateKey]:key,[FIELDS.recurringKey]:recurringKey,[FIELDS.repeatActive]:true,[FIELDS.preparedAt]:now.toISOString(),...(template.plant.domain?{[PLANT_FIELDS.domain]:template.plant.domain,[PLANT_FIELDS.category]:template.plant.category,[PLANT_FIELDS.retroactive]:template.plant.retroactive}:{})}});
+  // Si la plantilla fue asignada manualmente, conservar el padrón confirmado
+  // al precargar meses futuros. Los gastos AUTO se recalculan por perfil.
+  const savedSnapshot=plantEngine.parseSnapshot(fieldsOf(record)[PLANT_FIELDS.snapshot]);
+  const manualRoster=template.plant.domain==='PLANTA' && (savedSnapshot?.classification?.selectionMode==='MANUAL' || savedSnapshot?.participants?.some(item=>item.participationFlag==='SELECCION_ADMIN_CONFIRMADA'))
+   ? savedSnapshot.participants.filter(item=>item.included).map(item=>item.ownerId).sort()
+   : null;
+  creates.push({sourceId:template.sourceId,key,recurringKey,...(manualRoster?{manualOwnerIds:manualRoster}:{}),fields:{Concepto:template.concept,Monto:template.amount,'Tipo de Gasto':template.type,'Forma de Pago':template.mode,Frecuencia:'Fijo',Propietarios:template.owners,[FIELDS.month]:targetMonth,[FIELDS.status]:STATUS.SCHEDULED,[FIELDS.origin]:ORIGIN.RECURRING,[FIELDS.templateKey]:key,[FIELDS.recurringKey]:recurringKey,[FIELDS.repeatActive]:true,[FIELDS.preparedAt]:now.toISOString(),...(template.plant.domain?{[PLANT_FIELDS.domain]:template.plant.domain,[PLANT_FIELDS.category]:template.plant.category,[PLANT_FIELDS.retroactive]:template.plant.retroactive}:{})}});
  }
  return{schemaVersion:2,closingMonth,targetMonth,sourceCount:sources.filter(repeatActiveOf).length,createCount:creates.length,creates};
 }

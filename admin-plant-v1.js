@@ -206,34 +206,73 @@
   }
   function looksPlant(concept) { var value = String(concept || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); return ['planta electrica', 'planta', 'generador', 'grupo electrogeno', 'gasoil', 'diesel', 'avr', 'alternador', 'radiador'].some(function (term) { return value.includes(term); }); }
   function enhanceExpenseForm() {
-    var form = document.getElementById('expense-form'); if (!form || document.getElementById('expense-domain')) return;
-    var concept = document.getElementById('expense-concept'), ownersBox = document.getElementById('owners-checks'), wrapper = document.createElement('div'); wrapper.className = 'plant-expense-intelligence';
-    wrapper.innerHTML = '<div class="plant-expense-badge">⚡ Distribución inteligente</div><select id="expense-domain"><option value="AUTO">Detectar automáticamente</option><option value="PLANTA">Gasto de planta</option><option value="GENERAL">Gasto general</option></select><select id="expense-plant-category"><option value="">Categoría automática</option>' + categories.map(function (category) { return '<option value="' + category + '">' + esc(text(category)) + '</option>'; }).join('') + '</select><select id="expense-plant-retroactive"><option value="AUTO">Retroactivo según categoría</option><option value="SI">Genera retroactivo</option><option value="NO">No genera retroactivo</option></select><p id="expense-plant-note">Si el concepto corresponde a la planta, el sistema aplicará los perfiles vigentes y mostrará una confirmación antes de crear el gasto.</p>';
+    var form = document.getElementById('expense-form');
+    if (!form || document.getElementById('expense-domain')) return;
+    var concept = document.getElementById('expense-concept'), ownersBox = document.getElementById('owners-checks');
+    var wrapper = document.createElement('div'); wrapper.className = 'plant-expense-intelligence';
+    wrapper.innerHTML = '<div class="plant-expense-badge">⚡ Distribución inteligente</div>' +
+      '<label class="plant-expense-label" for="expense-domain">Origen del gasto</label>' +
+      '<select id="expense-domain"><option value="AUTO">Detectar gasto automáticamente</option><option value="PLANTA">Gasto de planta</option><option value="GENERAL">Gasto general</option></select>' +
+      '<div id="expense-plant-participants-field" hidden>' +
+      '<label class="plant-expense-label" for="expense-plant-participants-mode">Casas a las que se cobrará</label>' +
+      '<select id="expense-plant-participants-mode"><option value="AUTO">Autodetectar por modalidad de cada casa</option><option value="MANUAL">Seleccionar casas manualmente</option></select>' +
+      '<p id="expense-plant-owner-count" aria-live="polite"></p></div>' +
+      '<select id="expense-plant-category"><option value="">Categoría automática</option>' + categories.map(function (category) { return '<option value="' + category + '">' + esc(text(category)) + '</option>'; }).join('') + '</select>' +
+      '<select id="expense-plant-retroactive"><option value="AUTO">Retroactivo según categoría</option><option value="SI">Genera retroactivo</option><option value="NO">No genera retroactivo</option></select>' +
+      '<p id="expense-plant-note">Detecta gastos de planta sin impedir la selección manual.</p>';
     form.insertBefore(wrapper, document.getElementById('expense-type'));
-    var domain = document.getElementById('expense-domain'), category = document.getElementById('expense-plant-category'), retroactive = document.getElementById('expense-plant-retroactive'), expenseType = document.getElementById('expense-type');
-    function update() { var active = domain.value === 'PLANTA' || (domain.value === 'AUTO' && looksPlant(concept.value)); category.hidden = !active; retroactive.hidden = !active; ownersBox.classList.toggle('plant-auto-participants', active); if (active) expenseType.value = 'Gasto Especial'; document.getElementById('expense-plant-note').textContent = active ? 'Participantes automáticos según el perfil vigente. Se registra como gasto especial para quedar fuera del pronto pago.' : 'Gasto general: se conserva la selección manual de propietarios.'; }
-    domain.addEventListener('change', update); concept.addEventListener('input', update); update();
+    var domain = document.getElementById('expense-domain'), category = document.getElementById('expense-plant-category'), retroactive = document.getElementById('expense-plant-retroactive');
+    var expenseType = document.getElementById('expense-type'), participantMode = document.getElementById('expense-plant-participants-mode');
+    var participantsField = document.getElementById('expense-plant-participants-field'), note = document.getElementById('expense-plant-note'), count = document.getElementById('expense-plant-owner-count');
+    function isPlant() { return domain.value === 'PLANTA' || (domain.value === 'AUTO' && looksPlant(concept.value)); }
+    function update() {
+      var active = isPlant(), manual = active && participantMode.value === 'MANUAL';
+      category.hidden = !active; retroactive.hidden = !active; participantsField.hidden = !active;
+      ownersBox.classList.toggle('plant-auto-participants', active && !manual);
+      if (active) expenseType.value = 'Gasto Especial';
+      var inputs = Array.from(document.querySelectorAll('#owners-list input[type="checkbox"]'));
+      count.textContent = manual ? inputs.filter(function (input) { return input.checked; }).length + ' de ' + inputs.length + ' casas seleccionadas. Puedes marcar y desmarcar libremente.' : 'El sistema calculará automáticamente las casas correspondientes y mostrará el resultado antes de guardar.';
+      note.textContent = !active ? 'Gasto general: puedes seleccionar los propietarios manualmente.' : manual ? 'Selección manual habilitada. Solo las casas marcadas recibirán este cargo. La selección quedará guardada en el registro histórico.' : 'Selección automática por modalidad vigente de planta. Para elegir casas tú mismo, cambia a selección manual.';
+    }
+    domain.addEventListener('change', update); concept.addEventListener('input', update); participantMode.addEventListener('change', update);
+    ownersBox.addEventListener('change', update);
+    document.getElementById('toggle-owners').addEventListener('click', function () { setTimeout(update, 0); });
+    form.addEventListener('reset', function () { setTimeout(update, 0); });
+    update();
     form.addEventListener('submit', function (event) {
-      var active = domain.value === 'PLANTA' || (domain.value === 'AUTO' && looksPlant(concept.value)); if (!active || domain.value === 'GENERAL') return;
-      event.preventDefault(); event.stopImmediatePropagation(); submitPlantExpense(form).catch(function (error) { notice(error.message, true); });
+      if (!isPlant()) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      submitPlantExpense(form).catch(function (error) { notice(error.message, true); });
     }, true);
   }
   async function submitPlantExpense(form) {
     if (window.vlaPlantExpenseBusy) return;
-    var concept = document.getElementById('expense-concept').value.trim(), amount = Number(document.getElementById('expense-amount').value), type = document.getElementById('expense-type').value, mode = document.getElementById('expense-mode').value, frequency = document.getElementById('expense-frequency').value;
-    var monthChoice = (document.getElementById('expense-month') || {}).value || 'current', currentMonth = caracasDate().slice(0, 7), monthDate = new Date(currentMonth + '-01T00:00:00.000Z'); monthDate.setUTCMonth(monthDate.getUTCMonth() + 1); var month = monthChoice === 'next' ? monthDate.toISOString().slice(0, 7) : currentMonth, effectiveDate = month + '-01';
+    var concept = document.getElementById('expense-concept').value.trim(), amount = Number(document.getElementById('expense-amount').value), type = document.getElementById('expense-type').value, mode = document.getElementById('expense-mode').value;
+    var frequency = document.getElementById('expense-repeat-monthly')?.checked ? 'Fijo' : document.getElementById('expense-frequency').value;
+    var monthChoice = (document.getElementById('expense-month') || {}).value || 'current', currentMonth = caracasDate().slice(0, 7), monthDate = new Date(currentMonth + '-01T00:00:00.000Z'); monthDate.setUTCMonth(monthDate.getUTCMonth() + 1);
+    var month = monthChoice === 'next' ? monthDate.toISOString().slice(0, 7) : currentMonth, effectiveDate = month + '-01';
+    var selectionMode = document.getElementById('expense-plant-participants-mode').value;
+    var selectedOwnerIds = selectionMode === 'MANUAL' ? Array.from(document.querySelectorAll('#owners-list input:checked')).map(function (input) { return input.value; }) : [];
     if (!concept || !(amount > 0)) throw new Error('Complete concepto y monto.');
-    window.vlaPlantExpenseBusy = true; var submit = form.querySelector('button[type="submit"],button:not([type])'), original = submit.textContent; submit.disabled = true; submit.textContent = 'Calculando distribución…';
+    if (selectionMode === 'MANUAL' && !selectedOwnerIds.length) throw new Error('Seleccione al menos una casa para este gasto.');
+    window.vlaPlantExpenseBusy = true;
+    var submit = form.querySelector('button[type="submit"],button:not([type])'), original = submit.textContent;
+    submit.disabled = true; submit.textContent = 'Calculando distribución…';
     try {
-      var category = document.getElementById('expense-plant-category').value || undefined, retroactiveChoice = document.getElementById('expense-plant-retroactive').value, generatesRetroactive = retroactiveChoice === 'AUTO' ? undefined : retroactiveChoice === 'SI';
-      var preview = await api(endpoint, { method: 'POST', body: JSON.stringify({ action: 'preview-expense', concept: concept, amount: amount, type: type, mode: mode, category: category, generatesRetroactive: generatesRetroactive, effectiveDate: effectiveDate }) });
-      var included = preview.included.map(function (item) { return 'Casa ' + item.house + ' (' + money(item.amount) + ')'; }).join(', '), excluded = preview.excluded.map(function (item) { return 'Casa ' + item.house; }).join(', ') || 'Ninguna';
-      var message = 'Clasificación: ' + text(preview.category) + '\nRegla: ' + text(preview.allocationRule) + '\nGenera retroactivo: ' + (preview.generatesRetroactive ? 'Sí' : 'No') + '\nIncluidas: ' + included + '\nExcluidas: ' + excluded + '\nTotal asignado: ' + money(preview.assignedAmount) + '\n\n¿Confirmar y sellar este snapshot?';
+      var category = document.getElementById('expense-plant-category').value || undefined, retroactiveChoice = document.getElementById('expense-plant-retroactive').value;
+      var generatesRetroactive = retroactiveChoice === 'AUTO' ? undefined : retroactiveChoice === 'SI';
+      var preview = await api(endpoint, { method: 'POST', body: JSON.stringify({ action: 'preview-expense', concept: concept, amount: amount, type: type, mode: mode, category: category, generatesRetroactive: generatesRetroactive, effectiveDate: effectiveDate, selectionMode: selectionMode, ownerIds: selectedOwnerIds }) });
+      var included = preview.included.map(function (item) { return 'Casa ' + item.house + ' (' + money(item.amount) + ')'; }).join(', ');
+      var excluded = preview.excluded.map(function (item) { return 'Casa ' + item.house + (Number(item.theoreticalRetroactiveAmount || 0) > 0 ? ' (retroactivo teórico ' + money(item.theoreticalRetroactiveAmount) + ')' : ''); }).join(', ') || 'Ninguna';
+      var message = 'Selección: ' + (selectionMode === 'MANUAL' ? 'MANUAL (confirmada por administración)' : 'AUTOMÁTICA (por perfil vigente)') + '\nClasificación: ' + text(preview.category) + '\nRegla: ' + text(preview.allocationRule) + '\nGenera retroactivo: ' + (preview.generatesRetroactive ? 'Sí' : 'No') + '\nIncluidas: ' + included + '\nExcluidas: ' + excluded + '\nTotal asignado: ' + money(preview.assignedAmount) + '\n\n¿Confirmar y sellar este snapshot?';
       if (!confirm(message)) return;
       submit.textContent = 'Creando gasto sellado…';
-      var allOwners = []; try { allOwners = owners.map(function (owner) { return owner.id; }); } catch (_) { allOwners = Array.from(document.querySelectorAll('#owners-list input')).map(function (input) { return input.value; }); }
-      var result = await api('/.netlify/functions/admin-expense', { method: 'POST', body: JSON.stringify({ action: 'create', concept: concept, amount: amount, type: type, mode: mode, frequency: frequency, month: month, ownerIds: allOwners, expenseDomain: 'PLANTA', plantCategory: preview.category, generatesRetroactive: preview.generatesRetroactive, effectiveDate: effectiveDate, confirmPlantSnapshot: true, plantSnapshotHash: preview.snapshotHash }) });
-      notice(result.message); form.reset(); document.querySelectorAll('#owners-list input').forEach(function (input) { input.checked = true; }); document.getElementById('expense-domain').value = 'AUTO'; document.getElementById('expense-plant-category').hidden = true; document.getElementById('expense-plant-retroactive').hidden = true; await loadAll(true); plantData = null;
+      var result = await api('/.netlify/functions/admin-expense', { method: 'POST', body: JSON.stringify({ action: 'create', concept: concept, amount: amount, type: type, mode: mode, frequency: frequency, month: month, ownerIds: selectedOwnerIds, expenseDomain: 'PLANTA', selectionMode: selectionMode, plantCategory: preview.category, generatesRetroactive: preview.generatesRetroactive, effectiveDate: effectiveDate, confirmPlantSnapshot: true, plantSnapshotHash: preview.snapshotHash }) });
+      notice(result.message); form.reset();
+      document.querySelectorAll('#owners-list input').forEach(function (input) { input.checked = true; });
+      document.getElementById('expense-domain').value = 'AUTO'; document.getElementById('expense-plant-participants-mode').value = 'AUTO';
+      document.getElementById('expense-plant-category').hidden = true; document.getElementById('expense-plant-retroactive').hidden = true;
+      await loadAll(true); plantData = null;
     } finally { window.vlaPlantExpenseBusy = false; submit.disabled = false; submit.textContent = original; }
   }
   function boot() {
