@@ -69,7 +69,10 @@ async function executeAutomaticClose({rules,cycle,context,adminToken}){
   return{success:false,blocked:true,blockers};
  }
  const auditResult=await auditSnapshot.handler(internalEvent(adminToken,{month:closingMonth,date:cycle.clock.date})),audit=parse(auditResult);
- if(auditResult.statusCode!==200||audit.complete!==true){
+ // Un cierre DONE conserva el snapshot inmutable. Esta respuesta solo permite
+ // llegar a la certificación histórica; nunca autoriza otro cierre por sí sola.
+ const immutableExisting=audit.success===true&&audit.skipped===true&&audit.immutable===true&&audit.month===closingMonth;
+ if(auditResult.statusCode!==200||(audit.complete!==true&&!immutableExisting)){
   const blockers=[{code:'AUDIT_SNAPSHOT',detail:audit.detail||audit.message||'Corte de auditoría incompleto.'}];await alertOnce(cycle.clock.date,'AUDIT_SNAPSHOT',blockers);return{success:false,blocked:true,blockers};
  }
  const dryResult=await monthlyClose.handler(internalEvent(adminToken,{dryRun:true,month:closingMonth})),dryRun=parse(dryResult);
