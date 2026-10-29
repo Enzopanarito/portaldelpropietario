@@ -339,7 +339,10 @@ function buildExpenseSnapshot({ owners, profiles, expense, effectiveDate = new D
   const generatesRetroactive = typeof explicitRetroactive === 'boolean' ? explicitRetroactive : DEFAULT_RETROACTIVE.has(category);
   const participants = profileRows.map(row => {
     const isIncluded = included.some(item => item.ownerId === row.ownerId);
-    const theoretical = !isIncluded && generatesRetroactive && canAccrueRetroactive(row.profile)
+    // Una exclusión manual de una casa que normalmente participa no crea deuda
+    // retroactiva oculta; solo se acumula si la modalidad ya la excluía.
+    const eligibleRetroactive = !explicit || (flag && row.profile[flag] === false);
+    const theoretical = !isIncluded && generatesRetroactive && canAccrueRetroactive(row.profile) && eligibleRetroactive
       ? (allocationRule === 'PARTES_IGUALES' ? equalTheoretical : money(amount * row.alicuota))
       : 0;
     const assigned = isIncluded ? money(shares.get(row.ownerId)) : 0;
@@ -350,7 +353,7 @@ function buildExpenseSnapshot({ owners, profiles, expense, effectiveDate = new D
       amount: assigned, percentage: isIncluded ? Math.round((assigned / amount) * 100000000) / 1000000 : 0,
       theoreticalRetroactiveAmount: theoretical,
       theoreticalRetroactivePercentage: theoretical > 0 ? Math.round((theoretical / amount) * 100000000) / 1000000 : 0,
-      reason: isIncluded ? 'INCLUIDO_POR_PERFIL_VIGENTE' : (explicit ? 'EXCLUIDO_POR_SELECCION_CONFIRMADA' : `EXCLUIDO_${flag || 'SIN_REGLA'}`)
+      reason: isIncluded ? (explicit ? 'INCLUIDO_POR_SELECCION_CONFIRMADA' : 'INCLUIDO_POR_PERFIL_VIGENTE') : (explicit ? 'EXCLUIDO_POR_SELECCION_CONFIRMADA' : `EXCLUIDO_${flag || 'SIN_REGLA'}`)
     };
   });
   const payload = {
@@ -360,7 +363,8 @@ function buildExpenseSnapshot({ owners, profiles, expense, effectiveDate = new D
     classification: {
       source: clean(inferred.source || 'ADMIN'), confidence: Number(inferred.confidence || 0),
       matchedTerms: Array.isArray(inferred.matchedTerms) ? inferred.matchedTerms.map(clean).filter(Boolean) : [],
-      requiresConfirmation: Boolean(inferred.requiresConfirmation)
+      requiresConfirmation: Boolean(inferred.requiresConfirmation),
+      ...(explicit ? { selectionMode: 'MANUAL' } : {})
     },
     participants,
     totals: {

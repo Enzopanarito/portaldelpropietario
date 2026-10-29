@@ -34,6 +34,7 @@ async function hydratePlantPreloads(plan,{token,baseId,counter}){
  for(const item of plantRows){
   const fields=item.fields,classification=plantEngine.inferPlantExpense(fields.Concepto),snapshot=plantEngine.buildExpenseSnapshot({
    owners,profiles,effectiveDate:`${plan.targetMonth}-01`,classification,
+   explicitOwnerIds:item.manualOwnerIds||undefined,
    explicitCategory:String(fields[PLANT_FIELDS.category]||'')||undefined,
    explicitRetroactive:fields[PLANT_FIELDS.retroactive]===true,
    expense:{concept:fields.Concepto,amount:fields.Monto,type:fields['Tipo de Gasto'],mode:fields['Forma de Pago']}

@@ -79,6 +79,9 @@ const handler = async function(event) {
     const owners = await existingOwnerIds(),ownerIdSet=new Set(owners.map(owner=>owner.id));
     if (ownerIds.some(id => !ownerIdSet.has(id))) return json(400, { message:'La selección contiene un propietario inválido.' });
 
+    const selectionMode=String(body.selectionMode||'AUTO').toUpperCase();
+    if(!['AUTO','MANUAL'].includes(selectionMode)) return json(400,{message:'Modo de selección de casas inválido.'});
+    if(selectionMode==='MANUAL'&&(!Array.isArray(body.ownerIds)||!body.ownerIds.length||body.ownerIds.length!==ownerIds.length)) return json(400,{message:'Seleccione al menos una casa válida, sin duplicados.'});
     const inferredPlant=plantEngine.inferPlantExpense(concept),expenseDomain=String(body.expenseDomain||'AUTO').toUpperCase();
     const isPlant=expenseDomain==='PLANTA'||(expenseDomain!=='GENERAL'&&inferredPlant.isPlant);
     if (!isPlant && !ownerIds.length) return json(400, { message:'Debe seleccionar al menos un propietario.' });
@@ -88,6 +91,7 @@ const handler = async function(event) {
       const profiles=await plantProfiles();
       plantSnapshot=plantEngine.buildExpenseSnapshot({
         owners,profiles,effectiveDate:body.effectiveDate||`${month}-01`,classification:inferredPlant,
+        explicitOwnerIds:selectionMode==='MANUAL'?ownerIds:undefined,
         explicitCategory:body.plantCategory||undefined,
         explicitRetroactive:typeof body.generatesRetroactive==='boolean'?body.generatesRetroactive:undefined,
         expense:{concept,amount,type,mode}
@@ -135,7 +139,7 @@ const handler = async function(event) {
       try{recurringSync=await syncRecurringPreloads({closingMonth:currentMonth,targetMonth:nextMonth(currentMonth),token:process.env.AIRTABLE_API_TOKEN,baseId:process.env.AIRTABLE_BASE_ID,counter:{calls:0}})}
       catch(error){warning='El gasto recurrente quedó creado, pero la precarga del mes siguiente requiere reintento seguro.';recurringSync={success:false,error:safeDisplayText(error.message,300),retryable:true}}
     }
-    const message=warning||(plantSnapshot?`Gasto de planta creado y distribuido automáticamente entre ${ownerIds.length} casa(s); el snapshot histórico quedó sellado.`:month!==currentMonthCaracas()?`Gasto precargado para ${month}; se activará con el cierre.`:repeatMonthly?`Gasto recurrente creado; el mes siguiente quedó preparado automáticamente.`:type==='Gasto Especial'?`Gasto especial creado entre ${ownerIds.length} propietario(s).`:'Gasto común creado correctamente.');
+    const message=warning||(plantSnapshot?`Gasto de planta creado con selección ${selectionMode==='MANUAL'?'manual':'automática'} entre ${ownerIds.length} casa(s); el snapshot histórico quedó sellado.`:month!==currentMonthCaracas()?`Gasto precargado para ${month}; se activará con el cierre.`:repeatMonthly?`Gasto recurrente creado; el mes siguiente quedó preparado automáticamente.`:type==='Gasto Especial'?`Gasto especial creado entre ${ownerIds.length} propietario(s).`:'Gasto común creado correctamente.');
     return json(200, deepEscapeStrings({ success:true,record,month,plant:isPlant,repeatMonthly,recurringKey:recurringKey||null,recurringSync,warning,plantSnapshotHash:plantSnapshot?.snapshotHash||null,scheduled:month!==currentMonthCaracas(),message }));
   } catch (error) {
     if (operation) await setState(operation, 'EXPENSE_CREATE', key, recordId ? 'PARTIAL' : 'ERROR', recordId).catch(() => null);
