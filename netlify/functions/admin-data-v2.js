@@ -6,6 +6,10 @@ const { requireAdmin } = require('./_shared/_auth');
 const { deepEscapeStrings, safeDisplayText } = require('./_shared/_security_utils');
 const { calculateAllOwners, calculatedFields } = require('./_shared/_balance_engine_v4');
 const { filterActiveExpenses, currentMonthCaracas, STATUS, statusOf, monthOf } = require('./_shared/_expense_lifecycle');
+const {filterClosingExpenses}=require('./_shared/_expense_lifecycle');
+const {splitPaymentsForClose}=require('./_shared/_monthly_close_core_v4');
+const {resolveAccountingTransition,closeMarkerQuery}=require('./_shared/_accounting_month_guard');
+const {assertStableClose,closeReadFingerprint}=require('./public-data-v4');
 const { mergeConfig } = require('./_shared/_automation_rules');
 
 let adminCache = null;
@@ -33,10 +37,13 @@ const handler = async function(event){
   const auth=requireAdmin(event);if(!auth.ok)return auth.response;
   const token=process.env.AIRTABLE_API_TOKEN,baseId=process.env.AIRTABLE_BASE_ID;
   if(!token||!baseId)return{statusCode:500,headers:NO_STORE_HEADERS,body:JSON.stringify({message:'Airtable no está configurado.'})};
-  const force=(event.queryStringParameters||{}).force==='1';
-  if(!force&&adminCache&&adminCache.expiresAt>Date.now())return{statusCode:200,headers:Object.assign({},NO_STORE_HEADERS,{'X-Cache':'HIT','X-Airtable-Calls':'0'}),body:JSON.stringify(adminCache.payload)};
+  const force=(event.queryStringParameters||{}).force==='1',calendarMonth=currentMonthCaracas();
+  if(!force&&adminCache&&adminCache.expiresAt>Date.now()&&adminCache.payload?.accountingTransition?.calendarMonth===calendarMonth)return{statusCode:200,headers:Object.assign({},NO_STORE_HEADERS,{'X-Cache':'HIT','X-Airtable-Calls':'0'}),body:JSON.stringify(adminCache.payload)};
   const counter={calls:0};
   try{
+    const provisional=resolveAccountingTransition(calendarMonth,[]),closeQuery=closeMarkerQuery(provisional.previousMonth);
+    const closeRecords=await airtableGetAll('ControlVersiones',closeQuery,token,baseId,counter);
+    assertStableClose(closeRecords,provisional.previousMonth);
     const results=await Promise.all([
       safeLoad('propietarios',()=>airtableGetAll(TABLES.propietarios,withFields('',FIELD_SETS.propietarios),token,baseId,counter),true),
       // La vista de Airtable puede ocultar registros recién creados. Admin lee la
@@ -48,17 +55,26 @@ const handler = async function(event){
     ]);
     const byLabel=Object.fromEntries(results.map(r=>[r.label,r]));
     const requiredFailures=results.filter(r=>r.required&&!r.ok);
-    if(requiredFailures.length&&adminCache?.payload){const stale=Object.assign({},adminCache.payload,{stale:true,warnings:requiredFailures.map(r=>({table:r.label,detail:r.error}))});return{statusCode:200,headers:Object.assign({},NO_STORE_HEADERS,{'X-Cache':'STALE','X-Airtable-Calls':String(counter.calls)}),body:JSON.stringify(stale)}}
+    if(requiredFailures.length&&adminCache?.payload?.accountingTransition?.calendarMonth===calendarMonth){const stale=Object.assign({},adminCache.payload,{stale:true,warnings:requiredFailures.map(r=>({table:r.label,detail:r.error}))});return{statusCode:200,headers:Object.assign({},NO_STORE_HEADERS,{'X-Cache':'STALE','X-Airtable-Calls':String(counter.calls)}),body:JSON.stringify(stale)}}
     if(requiredFailures.length)return{statusCode:503,headers:Object.assign({},NO_STORE_HEADERS,{'X-Airtable-Calls':String(counter.calls)}),body:JSON.stringify({message:'Airtable tardó o falló cargando datos base.',detail:requiredFailures.map(r=>r.label+': '+r.error).join(' | ')})};
-    const rawOwners=byLabel.propietarios.records||[],allExpenses=byLabel.gastos.records||[],gastos=filterActiveExpenses(allExpenses,currentMonthCaracas()),gastosProgramados=allExpenses.filter(record=>statusOf(record)===STATUS.SCHEDULED&&monthOf(record)>currentMonthCaracas()),pagos=byLabel.pagos.records||[];
-    const rules=mergeConfig((byLabel.config.records||[])[0]||{}),balances=calculateAllOwners(rawOwners,gastos,pagos,{dueDay:rules.payment.dueDay,surchargeRate:rules.payment.surchargeRate});
+    const finalCloseRecords=await airtableGetAll('ControlVersiones',closeQuery,token,baseId,counter);
+    assertStableClose(finalCloseRecords,provisional.previousMonth);
+    if(closeReadFingerprint(closeRecords)!==closeReadFingerprint(finalCloseRecords)){const error=new Error('El cierre cambió durante la lectura administrativa.');error.code='ACCOUNTING_TRANSITION_CHANGED';throw error;}
+    const accountingTransition=resolveAccountingTransition(calendarMonth,closeRecords);
+    const rawOwners=byLabel.propietarios.records||[],allExpenses=byLabel.gastos.records||[],gastos=accountingTransition.pending?filterClosingExpenses(allExpenses,accountingTransition.accountingMonth):filterActiveExpenses(allExpenses,calendarMonth),gastosProgramados=allExpenses.filter(record=>statusOf(record)===STATUS.SCHEDULED&&monthOf(record)>accountingTransition.accountingMonth),pagos=byLabel.pagos.records||[];
+    if(!byLabel.pagos.ok)throw new Error('No se pudieron cargar los pagos para certificar el saldo administrativo.');
+    const paymentScope=accountingTransition.pending?splitPaymentsForClose(pagos,accountingTransition.accountingMonth):null;
+    if(paymentScope?.invalid.length)throw new Error('Existen pagos sin fecha válida durante la transición contable.');
+    const balancePayments=paymentScope?paymentScope.eligible:pagos;
+    const transitionOptions=accountingTransition.pending?{month:accountingTransition.accountingMonth,day:31}:{};
+    const rules=mergeConfig((byLabel.config.records||[])[0]||{}),balances=calculateAllOwners(rawOwners,gastos,balancePayments,{...transitionOptions,dueDay:rules.payment.dueDay,surchargeRate:rules.payment.surchargeRate});
     const propietarios=rawOwners.map(record=>flattenOwner(record,balances.get(record.id))).sort((a,b)=>Number(a.Casa||0)-Number(b.Casa||0));
     const reportes=onlyPendingReports(byLabel.reportes.records||[]);
     const warnings=results.filter(r=>!r.ok).map(r=>({table:r.label,detail:r.error}));
-    const payload=deepEscapeStrings({generatedAt:new Date().toISOString(),generatedAtCaracas:new Intl.DateTimeFormat('es-VE',{timeZone:'America/Caracas',dateStyle:'medium',timeStyle:'short'}).format(new Date()),balanceEngineVersion:4,propietarios,gastos,gastosProgramados,pagos,reportes,warnings,partial:warnings.length>0});
+    const payload=deepEscapeStrings({generatedAt:new Date().toISOString(),generatedAtCaracas:new Intl.DateTimeFormat('es-VE',{timeZone:'America/Caracas',dateStyle:'medium',timeStyle:'short'}).format(new Date()),balanceEngineVersion:4,accountingTransition,balanceOptions:{...transitionOptions,dueDay:rules.payment.dueDay,surchargeRate:rules.payment.surchargeRate},propietarios,gastos,gastosProgramados,pagos,reportes,warnings,partial:warnings.length>0});
     adminCache={payload,expiresAt:Date.now()+ADMIN_CACHE_TTL_MS};
     return{statusCode:200,headers:Object.assign({},NO_STORE_HEADERS,{'X-Cache':force?'BYPASS':'MISS','X-Airtable-Calls':String(counter.calls)}),body:JSON.stringify(payload)};
-  }catch(error){return{statusCode:500,headers:Object.assign({},NO_STORE_HEADERS,{'X-Airtable-Calls':String(counter.calls)}),body:JSON.stringify({message:'Error cargando datos administrativos.',detail:safeDisplayText(error.message,500)})}}
+  }catch(error){return{statusCode:503,headers:Object.assign({},NO_STORE_HEADERS,{'X-Airtable-Calls':String(counter.calls)}),body:JSON.stringify({message:'Error cargando datos administrativos.',code:error.code||'ADMIN_DATA_ERROR',detail:safeDisplayText(error.message,500)})}}
 };
 
 exports.handler = withAirtableUsage('admin-data-v2', handler);

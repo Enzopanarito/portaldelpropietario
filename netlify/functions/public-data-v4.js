@@ -70,3 +70,6 @@ const handler=async function(event){
 };
 exports.handler=withAirtableUsage('public-data-v4',handler);
 exports.compactOwner=compactOwner;
+
+exports.assertStableClose=assertStableClose;
+exports.closeReadFingerprint=closeReadFingerprint;

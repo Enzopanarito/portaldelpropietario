@@ -66,8 +66,13 @@ function canonicalFields(balance,record){
 
 function synchronizePayload(payload, controlRecords) {
   const rawOwners = (payload.propietarios || []).map(asOwnerRecord);
-  const officialOwners = attachOfficialBalances(rawOwners, controlRecords);
-  const balances = calculateAllOwners(officialOwners, payload.gastos || [], payload.pagos || []);
+  const officialOwners = attachOfficialBalances(rawOwners, controlRecords, payload.accountingTransition?.accountingMonth);
+  const transition=payload.accountingTransition;
+  const options=payload.balanceOptions||{};
+  const scopedPayments=transition?.pending
+    ? require('./_shared/_monthly_close_core_v4').splitPaymentsForClose(payload.pagos||[],transition.accountingMonth).eligible
+    : payload.pagos||[];
+  const balances = calculateAllOwners(officialOwners, payload.gastos || [], scopedPayments, options);
   const propietarios = officialOwners
     .map(record => Object.assign(
       { id: record.id },
